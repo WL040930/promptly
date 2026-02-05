@@ -1,7 +1,7 @@
 {
   "name": "promptly",
   "version": "1.0.0",
-  "description": "Full-stack Express.js + Vue.js application",
+  "description": "Full-stack Express.js + React application",
   "main": "packages/cli/server.js",
   "type": "module",
   "scripts": {
@@ -12,19 +12,26 @@
     "start": "cd packages/cli && node server.js",
     "cli:watch": "cd packages/cli && nodemon server.js"
   },
-  "keywords": ["express", "vue", "vite", "fullstack", "monorepo"],
+  "keywords": [
+    "express",
+    "react",
+    "vite",
+    "fullstack",
+    "monorepo"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "vue": "^3.3.4"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
     "nodemon": "^3.0.1",
-    "@vitejs/plugin-vue": "^4.2.3",
+    "@vitejs/plugin-react": "^4.2.1",
     "vite": "^4.4.5"
   }
 }
