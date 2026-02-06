@@ -53,20 +53,21 @@ app.post('/api/prompts', (req, res) => {
   });
 });
 
-// Error handling middleware
+// Serve built UI assets
+const frontendDir = join(__dirname, '../ui/dist');
+app.use(express.static(frontendDir));
+
+// SPA fallback: let client-side router handle unknown paths
+app.get('*', (req, res) => {
+  res.sendFile(join(frontendDir, 'index.html'));
+});
+
+// Error handling middleware (keep last)
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({
     error: 'Something went wrong!',
     message: err.message
-  });
-});
-
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({
-    error: 'Route not found',
-    message: `Cannot ${req.method} ${req.originalUrl}`
   });
 });
 
