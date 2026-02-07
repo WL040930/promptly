@@ -1,5 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;600;700;800&display=swap');
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root,
+html {
+  scroll-behavior: smooth;
+}
+
 :root {
   font-family: 'Space Grotesk', 'Manrope', sans-serif;
   line-height: 1.6;
@@ -24,188 +33,30 @@ body {
   background: #f7f9fc;
 }
 
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-  font-family: 'Space Grotesk', 'Manrope', sans-serif;
-  margin: 0;
-  color: #0f172a;
+.gradient-text {
+  background: linear-gradient(90deg, #2563eb 0%, #22d3ee 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
-p {
-  margin: 0;
-}
+@layer components {
+  .edge-fade-left {
+    @apply absolute inset-y-0 left-0 w-40 pointer-events-none;
+    background: linear-gradient(to right, #ffffff, transparent);
+  }
 
-a {
-  color: inherit;
-}
+  .edge-fade-right {
+    @apply absolute inset-y-0 right-0 w-40 pointer-events-none;
+    background: linear-gradient(to left, #ffffff, transparent);
+  }
 
-#root {
-  min-height: 100vh;
-}
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-md border border-white/60 shadow-xl;
+  }
 
-.page {
-  min-height: 100vh;
-  background: linear-gradient(180deg, #f8fafc 0%, #f3f4f6 100%);
-  color: #0b1224;
-  position: relative;
-  overflow: hidden;
-  padding-bottom: 4rem;
-}
-
-.ambient {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 25% 18%, rgba(79, 70, 229, 0.08), transparent 30%),
-    radial-gradient(circle at 72% 12%, rgba(14, 165, 233, 0.06), transparent 32%),
-    radial-gradient(circle at 50% 72%, rgba(59, 130, 246, 0.06), transparent 38%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-main,
-.nav {
-  position: relative;
-  z-index: 1;
-}
-
-.nav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1.25rem 2rem;
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.logo {
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #0f172a, #1d4ed8);
-  display: grid;
-  place-items: center;
-  color: #e2e8f0;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
-}
-
-.nav-links {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-}
-
-.nav-links a {
-  text-decoration: none;
-  color: #0b1224;
-  font-weight: 600;
-  padding: 0.5rem 0.75rem;
-  border-radius: 10px;
-  transition: background 0.2s ease, color 0.2s ease;
-}
-
-.nav-links a:hover {
-  background: #e8ecf5;
-  color: #111827;
-}
-
-.nav-actions {
-  display: flex;
-  gap: 0.75rem;
-}
-
-.hero {
-  max-width: 1200px;
-  margin: 1.5rem auto 1rem;
-  padding: 2rem;
-  display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-  gap: 2rem;
-  align-items: center;
-}
-
-.hero-copy h1 {
-  font-size: 2.7rem;
-  line-height: 1.1;
-  margin: 1rem 0 0.75rem;
-}
-
-.lede {
-  font-size: 1.05rem;
-  color: #1f2937;
-  margin-bottom: 1.5rem;
-}
-
-.pill-row {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.pill {
-  padding: 0.35rem 0.75rem;
-  border-radius: 999px;
-  background: #e5e7eb;
-  color: #0b1224;
-  font-weight: 700;
-  font-size: 0.85rem;
-}
-
-.pill-soft {
-  background: #dceafe;
-  color: #1d4ed8;
-}
-
-.hero-ctas {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.hero-panel {
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 1.5rem;
-  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.08);
-  border: 1px solid #e5e7eb;
-}
-
-.panel-header,
-.panel-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.panel-header strong {
-  font-size: 1.1rem;
-}
-
-.badge {
-  padding: 0.35rem 0.65rem;
-  border-radius: 10px;
-  background: #e5edff;
-  color: #1d4ed8;
-  font-weight: 700;
-}
-
-.conversation {
-  margin: 1rem 0;
-  display: grid;
-  gap: 0.75rem;
+  .section-shell {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
 }
 
 .bubble {
