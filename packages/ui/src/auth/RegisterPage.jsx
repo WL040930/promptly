@@ -1,20 +1,34 @@
 import React, { useState } from 'react'
+import { register } from '../api/auth.js'
 
 const RegisterPage = ({ onLogin }) => {
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [confirmPassword, setConfirmPassword] = useState('')
     const [error, setError] = useState(null)
+    const [isSubmitting, setIsSubmitting] = useState(false)
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault()
         if (password !== confirmPassword) {
             setError('Passwords do not match')
             return
         }
+
+        setIsSubmitting(true)
         setError(null)
-        // TODO: Implement actual registration logic
-        console.log('Registration attempt:', { email, password })
+
+        try {
+            const payload = await register({ email, password })
+            console.log('Registration successful:', payload)
+            if (onLogin) {
+                onLogin()
+            }
+        } catch (err) {
+            setError(err?.message || 'Registration failed. Please try again.')
+        } finally {
+            setIsSubmitting(false)
+        }
     }
 
     return (
@@ -154,9 +168,10 @@ const RegisterPage = ({ onLogin }) => {
                         padding: '1rem',
                         fontSize: '1.05rem',
                         borderRadius: '12px',
-                        marginTop: '0.5rem'
-                    }}>
-                        Sign Up
+                        marginTop: '0.5rem',
+                        opacity: isSubmitting ? 0.7 : 1
+                    }} disabled={isSubmitting}>
+                        {isSubmitting ? 'Signing Up...' : 'Sign Up'}
                     </button>
                 </form>
 

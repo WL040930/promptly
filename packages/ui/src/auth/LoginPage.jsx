@@ -1,13 +1,25 @@
 import React, { useState } from 'react'
+import { login } from '../api/auth.js'
 
 const LoginPage = ({ onRegister }) => {
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
+    const [error, setError] = useState(null)
+    const [isSubmitting, setIsSubmitting] = useState(false)
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault()
-        // TODO: Implement actual login logic
-        console.log('Login attempt:', { email, password })
+        setIsSubmitting(true)
+        setError(null)
+
+        try {
+            const payload = await login({ email, password })
+            console.log('Login successful:', payload)
+        } catch (err) {
+            setError(err?.message || 'Login failed. Please try again.')
+        } finally {
+            setIsSubmitting(false)
+        }
     }
 
     return (
@@ -100,13 +112,20 @@ const LoginPage = ({ onRegister }) => {
                         />
                     </div>
 
+                    {error && (
+                        <p style={{ color: '#ef4444', fontSize: '0.9rem', marginTop: '-0.5rem', fontWeight: '600' }}>
+                            {error}
+                        </p>
+                    )}
+
                     <button type="submit" className="solid full" style={{
                         padding: '1rem',
                         fontSize: '1.05rem',
                         borderRadius: '12px',
-                        marginTop: '0.5rem'
-                    }}>
-                        Sign In
+                        marginTop: '0.5rem',
+                        opacity: isSubmitting ? 0.7 : 1
+                    }} disabled={isSubmitting}>
+                        {isSubmitting ? 'Signing In...' : 'Sign In'}
                     </button>
                 </form>
 

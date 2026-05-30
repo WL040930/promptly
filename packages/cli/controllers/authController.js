@@ -1,0 +1,74 @@
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
+import env from '../config/env.js';
+import { normalizeEmail, emailPattern, passwordPattern } from '../utils/validators.js';
+
+const createAuthToken = (user) =>
+    jwt.sign({ sub: user.id, email: user.email }, env.jwt.secret, {
+        expiresIn: env.jwt.expiresIn
+    });
+
+const register = async (req, res) => {
+    const email = normalizeEmail(req.body.email);
+    const password = String(req.body.password || '');
+
+    if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required.' });
+    }
+
+    if (!emailPattern.test(email)) {
+        return res.status(400).json({ error: 'Please provide a valid email address.' });
+    }
+
+    if (!passwordPattern.test(password)) {
+        return res.status(400).json({
+            error:
+                'Password must be at least 12 characters and include uppercase, lowercase, number, and symbol.'
+        });
+    }
+
+    const existingUser = await User.findOne({ where: { email } });
+    if (existingUser) {
+        return res.status(409).json({ error: 'Email already registered.' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await User.create({ email, passwordHash });
+    const token = createAuthToken(user);
+
+    return res.status(201).json({
+        message: 'User registered successfully',
+        user: { id: user.id, email: user.email },
+        token
+    });
+};
+
+const login = async (req, res) => {
+    const email = normalizeEmail(req.body.email);
+    const password = String(req.body.password || '');
+
+    if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required.' });
+    }
+
+    const user = await User.findOne({ where: { email } });
+    if (!user) {
+        return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const matches = await bcrypt.compare(password, user.passwordHash);
+    if (!matches) {
+        return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const token = createAuthToken(user);
+
+    return res.json({
+        message: 'Login successful',
+        user: { id: user.id, email: user.email },
+        token
+    });
+};
+
+export { register, login };
