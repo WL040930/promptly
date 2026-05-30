@@ -20,6 +20,11 @@ const User = sequelize.define(
         passwordHash: {
             type: DataTypes.STRING(255),
             allowNull: false
+        },
+        experienceLevel: {
+            type: DataTypes.STRING(30),
+            allowNull: true,
+            defaultValue: null
         }
     },
     {

@@ -36,7 +36,7 @@ const env = {
     },
     jwt: {
         secret: getJwtSecret(),
-        expiresIn: process.env.JWT_EXPIRES_IN || '1h'
+        expiresIn: process.env.JWT_EXPIRES_IN || '90d'
     }
 };
 

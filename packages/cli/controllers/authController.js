@@ -39,7 +39,7 @@ const register = async (req, res) => {
 
     return res.status(201).json({
         message: 'User registered successfully',
-        user: { id: user.id, email: user.email },
+        user: { id: user.id, email: user.email, experienceLevel: user.experienceLevel },
         token
     });
 };
@@ -66,9 +66,34 @@ const login = async (req, res) => {
 
     return res.json({
         message: 'Login successful',
-        user: { id: user.id, email: user.email },
+        user: { id: user.id, email: user.email, experienceLevel: user.experienceLevel },
         token
     });
 };
 
-export { register, login };
+const updateOnboarding = async (req, res) => {
+    const { experienceLevel } = req.body;
+
+    if (!['newbie', 'professional'].includes(experienceLevel)) {
+        return res.status(400).json({ error: 'Invalid experience level selection.' });
+    }
+
+    const user = await User.findByPk(req.userId);
+    if (!user) {
+        return res.status(404).json({ error: 'User not found.' });
+    }
+
+    user.experienceLevel = experienceLevel;
+    await user.save();
+
+    return res.json({
+        message: 'Onboarding selection saved successfully.',
+        user: {
+            id: user.id,
+            email: user.email,
+            experienceLevel: user.experienceLevel
+        }
+    });
+};
+
+export { register, login, updateOnboarding };

@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { login } from '../api/auth.js'
 
-const LoginPage = ({ onRegister }) => {
+const LoginPage = ({ onRegister, onLoginSuccess }) => {
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [error, setError] = useState(null)
@@ -15,6 +15,9 @@ const LoginPage = ({ onRegister }) => {
         try {
             const payload = await login({ email, password })
             console.log('Login successful:', payload)
+            if (onLoginSuccess) {
+                onLoginSuccess(payload)
+            }
         } catch (err) {
             setError(err?.message || 'Login failed. Please try again.')
         } finally {

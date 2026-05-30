@@ -5,7 +5,7 @@ import env from './config/env.js';
 const startServer = async () => {
   try {
     await sequelize.authenticate();
-    await sequelize.sync();
+    await sequelize.sync({ alter: true });
     app.listen(env.app.port, () => {
       console.log(`🚀 Server running on http://localhost:${env.app.port}`);
       console.log(`📚 API Health: http://localhost:${env.app.port}/api/health`);

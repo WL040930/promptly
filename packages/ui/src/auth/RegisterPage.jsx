@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { register } from '../api/auth.js'
 
-const RegisterPage = ({ onLogin }) => {
+const RegisterPage = ({ onLogin, onLoginSuccess }) => {
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [confirmPassword, setConfirmPassword] = useState('')
@@ -21,7 +21,9 @@ const RegisterPage = ({ onLogin }) => {
         try {
             const payload = await register({ email, password })
             console.log('Registration successful:', payload)
-            if (onLogin) {
+            if (onLoginSuccess) {
+                onLoginSuccess(payload)
+            } else if (onLogin) {
                 onLogin()
             }
         } catch (err) {
