@@ -114,62 +114,82 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                         </>
                     )}
 
-                    {/* Professional Navigation */}
+                    {/* Professional Navigation (n8n Structure, Prompty Style) */}
                     {!isNewbie && (
                         <>
-                            <div className="px-2 mb-1 mt-2 text-xs font-bold uppercase tracking-wider text-slate-400 opacity-80 whitespace-nowrap overflow-hidden">
-                                {!isCollapsed && 'Workspace'}
-                            </div>
                             <button className="flex items-center gap-3 w-full p-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 shadow-sm font-semibold transition-colors">
                                 <span className="shrink-0 text-blue-600"><TerminalIcon /></span>
-                                {!isCollapsed && <span className="truncate">Sandbox</span>}
+                                {!isCollapsed && <span className="truncate">Overview</span>}
                             </button>
                             <button className="flex items-center gap-3 w-full p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-medium transition-colors">
-                                <span className="shrink-0"><SettingsIcon /></span>
-                                {!isCollapsed && <span className="truncate">Integrations</span>}
+                                <span className="shrink-0"><MessageSquareIcon /></span>
+                                {!isCollapsed && <span className="truncate flex items-center gap-2">Chat <span className="text-[0.6rem] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full uppercase tracking-wider font-bold">Beta</span></span>}
                             </button>
+
+                            <div className="mt-auto pt-6 flex flex-col gap-1">
+                                <button className="flex items-center gap-3 w-full p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-medium transition-colors">
+                                    <span className="shrink-0">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+                                    </span>
+                                    {!isCollapsed && <span className="truncate">Templates</span>}
+                                </button>
+                                <button className="flex items-center gap-3 w-full p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-medium transition-colors">
+                                    <span className="shrink-0">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                                    </span>
+                                    {!isCollapsed && <span className="truncate">Insights</span>}
+                                </button>
+                                <button className="flex items-center gap-3 w-full p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-medium transition-colors">
+                                    <span className="shrink-0">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                                    </span>
+                                    {!isCollapsed && <span className="truncate">Help</span>}
+                                </button>
+                                <button className="flex items-center gap-3 w-full p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-medium transition-colors">
+                                    <span className="shrink-0"><SettingsIcon /></span>
+                                    {!isCollapsed && <span className="truncate">Settings</span>}
+                                </button>
+                            </div>
                         </>
                     )}
                 </div>
 
-                {/* Bottom Settings */}
+                {/* Bottom Settings / Profile */}
                 <div className="p-3 border-t border-slate-200 flex flex-col gap-1">
                     
                     {/* Role Switcher Menu */}
                     {showRoleDropdown && !isCollapsed && (
-                        <div className="mb-2 bg-white border border-slate-200 rounded-xl p-1.5 shadow-xl shadow-slate-200/50 flex flex-col gap-0.5 z-50">
+                        <div className="mb-2 bg-white border border-slate-200 rounded-xl p-1.5 shadow-xl shadow-slate-200/50 flex flex-col gap-0.5 z-50 animate-fade-in">
                             <button onClick={() => handleSwitchRole('newbie')} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${user?.experienceLevel === 'newbie' ? 'bg-cyan-50 text-cyan-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
                                 <MessageSquareIcon /> Newbie Chat
                             </button>
                             <button onClick={() => handleSwitchRole('professional')} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${user?.experienceLevel === 'professional' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
                                 <TerminalIcon /> Professional
                             </button>
+                            <div className="w-full h-px bg-slate-100 my-1"></div>
+                            <button 
+                                onClick={handleLogout}
+                                className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 text-red-600 hover:bg-red-50`}
+                            >
+                                <LogOutIcon /> Log out
+                            </button>
                         </div>
                     )}
 
-                    {/* User Profile & Role Switch Toggle */}
+                    {/* User Profile Toggle */}
                     <button 
                         onClick={() => !isCollapsed && setShowRoleDropdown(!showRoleDropdown)}
-                        className={`flex items-center gap-3 w-full p-2 rounded-xl text-slate-700 hover:bg-slate-200 transition-colors ${isCollapsed ? 'justify-center' : ''}`}
+                        className={`flex items-center gap-3 w-full p-2 rounded-xl transition-colors ${showRoleDropdown ? 'bg-blue-50 border-blue-100' : 'text-slate-700 hover:bg-slate-200'} ${isCollapsed ? 'justify-center' : ''}`}
                     >
-                        <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0 border border-blue-200">
+                        <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-inner">
                             {user?.email ? user.email.substring(0,2).toUpperCase() : 'U'}
                         </div>
                         {!isCollapsed && (
                             <div className="flex flex-col items-start truncate flex-1">
                                 <span className="text-sm font-bold truncate w-full">{user?.email || 'User'}</span>
-                                <span className="text-xs font-semibold text-slate-500 capitalize">{user?.experienceLevel || 'Setup'} Mode</span>
+                                <span className="text-[0.65rem] font-bold text-slate-500 uppercase tracking-wider">{user?.experienceLevel || 'Setup'} Mode</span>
                             </div>
                         )}
-                    </button>
-
-                    {/* Logout */}
-                    <button 
-                        onClick={handleLogout}
-                        className={`flex items-center gap-3 w-full p-2 rounded-xl text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors ${isCollapsed ? 'justify-center' : ''}`}
-                    >
-                        <span className="shrink-0"><LogOutIcon /></span>
-                        {!isCollapsed && <span className="text-sm font-bold truncate">Log out</span>}
                     </button>
                 </div>
             </aside>
