@@ -4,9 +4,9 @@ import LoginPage from './auth/LoginPage.jsx'
 import RegisterPage from './auth/RegisterPage.jsx'
 import { getAuthUser, setAuthUser } from './utils/storage.js'
 import DashboardShell from './dashboard/DashboardShell'
-import OnboardingModal from './onboarding/OnboardingModal'
-import NewbieView from './chat/NewbieView'
-import ProfessionalView from './professional/ProfessionalView'
+import OnboardingPage from './onboarding/OnboardingPage'
+import ChatView from './chat/ChatView'
+import WorkflowBuilderView from './builder/WorkflowBuilderView'
 
 function App() {
     const [path, setPath] = useState(typeof window !== 'undefined' ? window.location.pathname : '/')
@@ -50,6 +50,18 @@ function App() {
     const isDashboard = path === '/dashboard'
 
     if (isDashboard && user) {
+        if (!user.experienceLevel) {
+            return (
+                <OnboardingPage
+                    user={user}
+                    onOnboardingComplete={(updatedUser) => {
+                        setAuthUser(updatedUser)
+                        setUser(updatedUser)
+                    }}
+                />
+            )
+        }
+
         return (
             <DashboardShell
                 user={user}
@@ -59,18 +71,10 @@ function App() {
                 }}
                 onLogout={handleLogout}
             >
-                {!user.experienceLevel ? (
-                    <OnboardingModal
-                        user={user}
-                        onOnboardingComplete={(updatedUser) => {
-                            setAuthUser(updatedUser)
-                            setUser(updatedUser)
-                        }}
-                    />
-                ) : user.experienceLevel === 'newbie' ? (
-                    <NewbieView user={user} />
+                {user.experienceLevel === 'chat' ? (
+                    <ChatView user={user} />
                 ) : (
-                    <ProfessionalView />
+                    <WorkflowBuilderView />
                 )}
             </DashboardShell>
         )

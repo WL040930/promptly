@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { clearAuthToken, clearAuthUser } from '../utils/storage.js';
+import SettingsModal from './SettingsModal';
+
 
 // Icons
 const PanelLeftIcon = () => (
@@ -53,7 +55,7 @@ const TerminalIcon = () => (
 
 const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
     const [isCollapsed, setIsCollapsed] = useState(false);
-    const [showRoleDropdown, setShowRoleDropdown] = useState(false);
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
     const handleLogout = () => {
         clearAuthToken();
@@ -62,12 +64,11 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
     };
 
     const handleSwitchRole = (newRole) => {
-        setShowRoleDropdown(false);
         const updatedUser = { ...user, experienceLevel: newRole };
         if (onUserUpdate) onUserUpdate(updatedUser);
     };
 
-    const isNewbie = user?.experienceLevel === 'newbie';
+    const isChatMode = user?.experienceLevel === 'chat';
 
     return (
         <div className="flex h-screen bg-[#f7f9fc] text-slate-900 font-['Space_Grotesk','Manrope',sans-serif] overflow-hidden">
@@ -98,7 +99,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                 {/* Navigation Items */}
                 <div className="flex-1 overflow-y-auto py-4 flex flex-col gap-1 px-3">
                     {/* Newbie Navigation */}
-                    {isNewbie && (
+                    {isChatMode && (
                         <>
                             <div className="px-2 mb-1 mt-2 text-xs font-bold uppercase tracking-wider text-slate-400 opacity-80 whitespace-nowrap overflow-hidden">
                                 {!isCollapsed && 'Chat'}
@@ -111,11 +112,18 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                                 <span className="shrink-0"><BookIcon /></span>
                                 {!isCollapsed && <span className="truncate">Tutorial Docs</span>}
                             </button>
+                            
+                            <div className="mt-auto pt-6 flex flex-col gap-1">
+                                <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-3 w-full p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-medium transition-colors">
+                                    <span className="shrink-0"><SettingsIcon /></span>
+                                    {!isCollapsed && <span className="truncate">Settings</span>}
+                                </button>
+                            </div>
                         </>
                     )}
 
                     {/* Professional Navigation (n8n Structure, Prompty Style) */}
-                    {!isNewbie && (
+                    {!isChatMode && (
                         <>
                             <button className="flex items-center gap-3 w-full p-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 shadow-sm font-semibold transition-colors">
                                 <span className="shrink-0 text-blue-600"><TerminalIcon /></span>
@@ -145,7 +153,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                                     </span>
                                     {!isCollapsed && <span className="truncate">Help</span>}
                                 </button>
-                                <button className="flex items-center gap-3 w-full p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-medium transition-colors">
+                                <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-3 w-full p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-medium transition-colors">
                                     <span className="shrink-0"><SettingsIcon /></span>
                                     {!isCollapsed && <span className="truncate">Settings</span>}
                                 </button>
@@ -157,30 +165,8 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                 {/* Bottom Settings / Profile */}
                 <div className="p-3 border-t border-slate-200 flex flex-col gap-1">
                     
-                    {/* Role Switcher Menu */}
-                    {showRoleDropdown && !isCollapsed && (
-                        <div className="mb-2 bg-white border border-slate-200 rounded-xl p-1.5 shadow-xl shadow-slate-200/50 flex flex-col gap-0.5 z-50 animate-fade-in">
-                            <button onClick={() => handleSwitchRole('newbie')} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${user?.experienceLevel === 'newbie' ? 'bg-cyan-50 text-cyan-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
-                                <MessageSquareIcon /> Newbie Chat
-                            </button>
-                            <button onClick={() => handleSwitchRole('professional')} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${user?.experienceLevel === 'professional' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
-                                <TerminalIcon /> Professional
-                            </button>
-                            <div className="w-full h-px bg-slate-100 my-1"></div>
-                            <button 
-                                onClick={handleLogout}
-                                className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 text-red-600 hover:bg-red-50`}
-                            >
-                                <LogOutIcon /> Log out
-                            </button>
-                        </div>
-                    )}
-
-                    {/* User Profile Toggle */}
-                    <button 
-                        onClick={() => !isCollapsed && setShowRoleDropdown(!showRoleDropdown)}
-                        className={`flex items-center gap-3 w-full p-2 rounded-xl transition-colors ${showRoleDropdown ? 'bg-blue-50 border-blue-100' : 'text-slate-700 hover:bg-slate-200'} ${isCollapsed ? 'justify-center' : ''}`}
-                    >
+                    {/* User Profile */}
+                    <div className={`flex items-center gap-3 w-full p-2 rounded-xl transition-colors text-slate-700 ${isCollapsed ? 'justify-center' : ''}`}>
                         <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-inner">
                             {user?.email ? user.email.substring(0,2).toUpperCase() : 'U'}
                         </div>
@@ -190,7 +176,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                                 <span className="text-[0.65rem] font-bold text-slate-500 uppercase tracking-wider">{user?.experienceLevel || 'Setup'} Mode</span>
                             </div>
                         )}
-                    </button>
+                    </div>
                 </div>
             </aside>
 
@@ -198,6 +184,15 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
             <main className="flex-1 flex flex-col relative w-full h-full overflow-hidden bg-white">
                 {children}
             </main>
+            
+            {isSettingsOpen && (
+                <SettingsModal 
+                    user={user} 
+                    onClose={() => setIsSettingsOpen(false)} 
+                    onSwitchRole={handleSwitchRole} 
+                    onLogout={handleLogout} 
+                />
+            )}
         </div>
     );
 };
