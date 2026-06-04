@@ -1,8 +1,9 @@
 import { Router } from 'express';
+import { requireAuth } from '../middleware/authMiddleware.js';
 
 const router = Router();
 
-router.get('/', (req, res) => {
+router.get('/', requireAuth, (req, res) => {
     res.json({
         prompts: [
             { id: 1, title: 'Sample Prompt 1', content: 'This is a sample prompt' },
@@ -11,7 +12,7 @@ router.get('/', (req, res) => {
     });
 });
 
-router.post('/', (req, res) => {
+router.post('/', requireAuth, (req, res) => {
     const { title, content } = req.body;
     res.json({
         message: 'Prompt created successfully',

@@ -1,6 +1,6 @@
 import React from 'react'
 
-function Footer() {
+function Footer({ onSecurity }) {
   return (
     <footer className="bg-slate-900 py-16 text-slate-400">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -22,7 +22,18 @@ function Footer() {
               <li><a href="#" className="hover:text-white transition-colors">Dashboard</a></li>
               <li><a href="#" className="hover:text-white transition-colors">AI Agents</a></li>
               <li><a href="#" className="hover:text-white transition-colors">Integrations</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Security</a></li>
+              <li>
+                <a
+                  href="/security"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (onSecurity) onSecurity();
+                  }}
+                  className="hover:text-white transition-colors"
+                >
+                  Security
+                </a>
+              </li>
             </ul>
           </div>
           <div>

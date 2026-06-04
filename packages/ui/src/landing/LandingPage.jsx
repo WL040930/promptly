@@ -20,10 +20,10 @@ const BRANDS = [
   'SyncSystems'
 ]
 
-function LandingPage({ onLogin }) {
+function LandingPage({ onLogin, onSecurity }) {
   return (
     <div className="min-h-screen bg-white text-slate-900">
-      <Header onLogin={onLogin} />
+      <Header onLogin={onLogin} onSecurity={onSecurity} />
       <main>
         <Hero />
 
@@ -80,7 +80,7 @@ function LandingPage({ onLogin }) {
           </div>
         </section>
       </main>
-      <Footer />
+      <Footer onSecurity={onSecurity} />
     </div>
   )
 }

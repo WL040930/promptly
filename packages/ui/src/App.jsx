@@ -7,6 +7,7 @@ import DashboardShell from './dashboard/DashboardShell'
 import OnboardingPage from './onboarding/OnboardingPage'
 import ChatView from './chat/ChatView'
 import WorkflowBuilderView from './builder/WorkflowBuilderView'
+import SecurityPage from './landing/SecurityPage.jsx'
 
 function App() {
     const [path, setPath] = useState(typeof window !== 'undefined' ? window.location.pathname : '/')
@@ -48,6 +49,7 @@ function App() {
     const isLogin = path === '/login'
     const isRegister = path === '/register'
     const isDashboard = path === '/dashboard'
+    const isSecurity = path === '/landing/security' || path === '/security'
 
     if (isDashboard && user) {
         if (!user.experienceLevel) {
@@ -100,7 +102,11 @@ function App() {
         )
     }
 
-    return <LandingPage onLogin={() => goTo('/login')} />
+    if (isSecurity) {
+        return <SecurityPage onHome={() => goTo('/')} onLogin={() => goTo('/login')} />
+    }
+
+    return <LandingPage onLogin={() => goTo('/login')} onSecurity={() => goTo('/landing/security')} />
 }
 
 export default App

@@ -5,7 +5,7 @@
   "main": "packages/cli/server.js",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm run cli:dev\" \"npm run ui:dev\"",
+    "dev": "concurrently \"npm run cli:watch\" \"npm run ui:dev\"",
     "cli:dev": "cd packages/cli && node server.js",
     "ui:dev": "cd packages/ui && vite",
     "build": "cd packages/ui && vite build",
@@ -22,14 +22,16 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "bcryptjs": "^2.4.3",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
+    "jsonwebtoken": "^9.0.2",
     "pg": "^8.12.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "jsonwebtoken": "^9.0.2",
     "recharts": "^2.12.7",
     "sequelize": "^6.37.3"
   },

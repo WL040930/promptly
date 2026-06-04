@@ -37,7 +37,7 @@ Here's what we can do:
 Let me know if you would like me to generate a step-by-step workflow guide tailored for this task!`
 };
 
-const NewbieView = ({ user }) => {
+const ChatView = ({ user }) => {
     const [messages, setMessages] = useState([
         {
             sender: 'bot',
@@ -79,7 +79,7 @@ Type a question to get started.`
             
             {/* Header / Top padding */}
             <div className="w-full flex justify-center py-4 border-b border-slate-100 shadow-sm sticky top-0 bg-white/90 backdrop-blur z-10">
-                <span className="text-sm font-bold text-slate-400">Newbie Mode Session</span>
+                <span className="text-sm font-bold text-slate-400">Chat Mode Session</span>
             </div>
 
             {/* Message Log */}
@@ -156,4 +156,4 @@ Type a question to get started.`
     );
 };
 
-export default NewbieView;
+export default ChatView;

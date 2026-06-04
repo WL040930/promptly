@@ -74,8 +74,8 @@ const login = async (req, res) => {
 const updateOnboarding = async (req, res) => {
     const { experienceLevel } = req.body;
 
-    if (!['newbie', 'professional'].includes(experienceLevel)) {
-        return res.status(400).json({ error: 'Invalid experience level selection.' });
+    if (!['chat', 'builder'].includes(experienceLevel)) {
+        return res.status(400).json({ error: 'Invalid mode selection.' });
     }
 
     const user = await User.findByPk(req.userId);

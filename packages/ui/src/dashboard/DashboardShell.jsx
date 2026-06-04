@@ -98,7 +98,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
 
                 {/* Navigation Items */}
                 <div className="flex-1 overflow-y-auto py-4 flex flex-col gap-1 px-3">
-                    {/* Newbie Navigation */}
+                    {/* Chat Mode Navigation */}
                     {isChatMode && (
                         <>
                             <div className="px-2 mb-1 mt-2 text-xs font-bold uppercase tracking-wider text-slate-400 opacity-80 whitespace-nowrap overflow-hidden">
