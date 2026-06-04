@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { clearAuthToken, clearAuthUser } from '../utils/storage.js';
+import { apiRequest } from '../api/client.js';
 import SettingsModal from './SettingsModal';
 
 
@@ -63,9 +64,19 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
         if (onLogout) onLogout();
     };
 
-    const handleSwitchRole = (newRole) => {
-        const updatedUser = { ...user, experienceLevel: newRole };
-        if (onUserUpdate) onUserUpdate(updatedUser);
+    const handleSwitchRole = async (newRole) => {
+        try {
+            const data = await apiRequest('/api/auth/experience-level', {
+                method: 'PUT',
+                body: JSON.stringify({ experienceLevel: newRole })
+            });
+            if (onUserUpdate && data?.user) {
+                onUserUpdate(data.user);
+            }
+        } catch (err) {
+            console.error('Failed to update experience level:', err);
+            alert('Failed to save settings. Please try again.');
+        }
     };
 
     const isChatMode = user?.experienceLevel === 'chat';

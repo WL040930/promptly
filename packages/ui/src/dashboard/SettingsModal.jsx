@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
     const [activeTab, setActiveTab] = useState('general');
     const [selectedRole, setSelectedRole] = useState(user?.experienceLevel || 'chat');
+    const [isSaving, setIsSaving] = useState(false);
 
     // Reset selected role if user prop changes externally
     useEffect(() => {
@@ -11,9 +12,17 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
         }
     }, [user?.experienceLevel]);
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (selectedRole !== user?.experienceLevel) {
-            onSwitchRole(selectedRole);
+            setIsSaving(true);
+            try {
+                await onSwitchRole(selectedRole);
+                onClose();
+            } catch (err) {
+                // Error is caught and alerted in DashboardShell
+            } finally {
+                setIsSaving(false);
+            }
         }
     };
 
@@ -102,13 +111,23 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
             </div>
 
             {/* Save Button Overlay */}
-            <div className={`absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-100 flex justify-end transition-transform duration-300 ${isDirty ? 'translate-y-0 opacity-100 z-10' : 'translate-y-full opacity-0 -z-10'}`}>
+            <div className={`absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-100 flex justify-end transition-transform duration-300 ${(isDirty || isSaving) ? 'translate-y-0 opacity-100 z-10' : 'translate-y-full opacity-0 -z-10'}`}>
                 <button 
                     onClick={handleSave}
-                    disabled={!isDirty}
-                    className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl transition-colors shadow-md shadow-blue-600/20"
+                    disabled={!isDirty || isSaving}
+                    className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl transition-colors shadow-md shadow-blue-600/20 flex items-center gap-2"
                 >
-                    Save Changes
+                    {isSaving ? (
+                        <>
+                            <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            Saving...
+                        </>
+                    ) : (
+                        'Save Changes'
+                    )}
                 </button>
             </div>
         </div>

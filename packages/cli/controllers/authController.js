@@ -71,7 +71,7 @@ const login = async (req, res) => {
     });
 };
 
-const updateOnboarding = async (req, res) => {
+const updateExperienceLevel = async (req, res) => {
     const { experienceLevel } = req.body;
 
     if (!['chat', 'builder'].includes(experienceLevel)) {
@@ -87,7 +87,7 @@ const updateOnboarding = async (req, res) => {
     await user.save();
 
     return res.json({
-        message: 'Onboarding selection saved successfully.',
+        message: 'Experience level saved successfully.',
         user: {
             id: user.id,
             email: user.email,
@@ -96,4 +96,18 @@ const updateOnboarding = async (req, res) => {
     });
 };
 
-export { register, login, updateOnboarding };
+const getMe = async (req, res) => {
+    const user = await User.findByPk(req.userId);
+    if (!user) {
+        return res.status(404).json({ error: 'User not found.' });
+    }
+    return res.json({
+        user: {
+            id: user.id,
+            email: user.email,
+            experienceLevel: user.experienceLevel
+        }
+    });
+};
+
+export { register, login, updateExperienceLevel, getMe };

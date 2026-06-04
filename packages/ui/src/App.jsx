@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react'
 import LandingPage from './landing/LandingPage.jsx'
 import LoginPage from './auth/LoginPage.jsx'
 import RegisterPage from './auth/RegisterPage.jsx'
-import { getAuthUser, setAuthUser } from './utils/storage.js'
+import { getAuthUser, setAuthUser, getAuthToken, clearAuthUser, clearAuthToken } from './utils/storage.js'
+import { apiRequest } from './api/client.js'
 import DashboardShell from './dashboard/DashboardShell'
 import OnboardingPage from './onboarding/OnboardingPage'
 import ChatView from './chat/ChatView'
@@ -12,6 +13,33 @@ import SecurityPage from './landing/SecurityPage.jsx'
 function App() {
     const [path, setPath] = useState(typeof window !== 'undefined' ? window.location.pathname : '/')
     const [user, setUser] = useState(getAuthUser())
+    const [isLoading, setIsLoading] = useState(!!getAuthToken())
+
+    useEffect(() => {
+        const syncUser = async () => {
+            if (getAuthToken()) {
+                try {
+                    const data = await apiRequest('/api/auth/me');
+                    if (data?.user) {
+                        setAuthUser(data.user);
+                        setUser(data.user);
+                    }
+                } catch (err) {
+                    console.error('Failed to sync user from database:', err);
+                    if (err.status === 401) {
+                        setUser(null);
+                        clearAuthUser();
+                        clearAuthToken();
+                    }
+                } finally {
+                    setIsLoading(false);
+                }
+            } else {
+                setIsLoading(false);
+            }
+        };
+        syncUser();
+    }, []);
 
     useEffect(() => {
         const handler = () => setPath(window.location.pathname)
@@ -50,6 +78,14 @@ function App() {
     const isRegister = path === '/register'
     const isDashboard = path === '/dashboard'
     const isSecurity = path === '/landing/security' || path === '/security'
+
+    if (isLoading) {
+        return (
+            <div className="min-h-screen bg-[#f7f9fc] flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full border-4 border-blue-600 border-t-transparent animate-spin"></div>
+            </div>
+        )
+    }
 
     if (isDashboard && user) {
         if (!user.experienceLevel) {
