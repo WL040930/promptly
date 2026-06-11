@@ -1,4 +1,5 @@
 import React from 'react';
+import { Handle, Position } from '@xyflow/react';
 
 const NODE_STYLES = {
     trigger: {
@@ -27,7 +28,8 @@ const NODE_STYLES = {
     }
 };
 
-const WorkflowNode = ({ type, title, description, isActive, onClick }) => {
+const WorkflowNode = ({ type, data, isConnectable }) => {
+    const { title, description, isActive, onClick } = data;
     const nodeStyle = NODE_STYLES[type] || NODE_STYLES.ai;
     const typeLabel = type || 'node';
 
@@ -39,6 +41,16 @@ const WorkflowNode = ({ type, title, description, isActive, onClick }) => {
                     : 'border-slate-200 hover:border-blue-300'
                 }`}
         >
+            {/* Input Handle (don't show for triggers) */}
+            {type !== 'trigger' && (
+                <Handle
+                    type="target"
+                    position={Position.Top}
+                    isConnectable={isConnectable}
+                    className="w-3 h-3 bg-slate-200 border-2 border-white"
+                />
+            )}
+
             <div className="p-4 flex items-start gap-3">
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 shadow-inner ${nodeStyle.badge}`}>
                     {nodeStyle.icon}
@@ -58,6 +70,14 @@ const WorkflowNode = ({ type, title, description, isActive, onClick }) => {
                     Ready
                 </span>
             </div>
+
+            {/* Output Handle */}
+            <Handle
+                type="source"
+                position={Position.Bottom}
+                isConnectable={isConnectable}
+                className="w-3 h-3 bg-blue-500 border-2 border-white"
+            />
         </div>
     );
 };

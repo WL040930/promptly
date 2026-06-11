@@ -31,7 +31,7 @@ const OnboardingPage = ({ user, onOnboardingComplete }) => {
     };
 
     return (
-        <div className="min-h-screen bg-[#f7f9fc] flex flex-col items-center justify-center p-4 md:p-8 font-['Space_Grotesk','Manrope',sans-serif] relative overflow-hidden">
+        <div className="min-h-screen bg-[#f7f9fc] flex flex-col items-center justify-center p-4 md:p-8 font-sans relative overflow-hidden">
             {/* Background Decorations */}
             <div className="absolute top-[-20%] right-[-10%] w-[60%] h-[60%] bg-blue-100/40 rounded-full blur-[100px] pointer-events-none z-0"></div>
             <div className="absolute bottom-[-20%] left-[-10%] w-[60%] h-[60%] bg-cyan-100/40 rounded-full blur-[100px] pointer-events-none z-0"></div>

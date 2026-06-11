@@ -7,7 +7,7 @@ const sectionClassName = 'flex flex-col gap-1.5';
 const PropertyInspector = ({ activeNode }) => {
     if (!activeNode) {
         return (
-            <div className="w-80 bg-white border-l border-slate-200 p-6 flex flex-col items-center justify-center text-center">
+            <div className="h-full p-6 flex flex-col items-center justify-center text-center">
                 <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 mb-4 shadow-inner">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="12" cy="12" r="3"></circle>
@@ -23,7 +23,7 @@ const PropertyInspector = ({ activeNode }) => {
     return (
         <div
             key={activeNode.id}
-            className="w-80 bg-white border-l border-slate-200 flex flex-col h-full shadow-[-4px_0_24px_rgba(0,0,0,0.02)] z-10"
+            className="flex flex-col h-full w-full"
         >
             <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <h3 className="font-bold text-slate-900 text-sm">Node Configuration</h3>
