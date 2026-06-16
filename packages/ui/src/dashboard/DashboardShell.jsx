@@ -61,9 +61,10 @@ const RECENT_CHATS_PREVIEW = [
 ];
 
 const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
-    const [isCollapsed, setIsCollapsed] = useState(false);
+    const isChatMode = user?.experienceLevel === 'chat';
+    const [isCollapsed, setIsCollapsed] = useState(!isChatMode);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState('chat');
+    const [activeTab, setActiveTab] = useState(isChatMode ? 'chat' : 'workflow');
     const [hoveredTab, setHoveredTab] = useState(null);
 
     // Auto-collapse sidebar when opening the workflow page
@@ -96,7 +97,6 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
         }
     };
 
-    const isChatMode = user?.experienceLevel === 'chat';
 
     return (
         <div className="flex h-screen bg-[#f7f9fc] text-slate-900 font-sans overflow-hidden">

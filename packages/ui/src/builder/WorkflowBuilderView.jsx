@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import MetricsBar from './components/MetricsBar';
 import WorkflowCanvas from './components/WorkflowCanvas';
 import PropertyInspector from './components/PropertyInspector';
 import AICopilotChat from './components/AICopilotChat';
@@ -68,8 +67,8 @@ const WorkflowBuilderView = () => {
     const [activeNodeId, setActiveNodeId] = useState('w2-2');
     
     // Sidebar visibility state (left and right sidebars default to closed)
-    const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false);
-    const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
+    const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
+    const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
     
     // Right panel active tab: 'chat' | 'properties'
     const [rightTab, setRightTab] = useState('chat');
@@ -170,8 +169,8 @@ const WorkflowBuilderView = () => {
             
             {/* 1. LEFT SIDEBAR: Node Library */}
             <aside 
-                className={`bg-slate-50 border-r border-slate-200 flex flex-col h-full transition-all duration-300 relative ${
-                    isLeftSidebarOpen ? 'w-64' : 'w-0 opacity-0 overflow-hidden border-none'
+                className={`bg-slate-50/90 backdrop-blur-md border-r border-slate-200/60 flex flex-col h-full transition-all duration-300 relative z-20 ${
+                    isLeftSidebarOpen ? 'w-72' : 'w-0 opacity-0 overflow-hidden border-none'
                 }`}
             >
                 {/* Search / Action */}
@@ -240,15 +239,15 @@ const WorkflowBuilderView = () => {
             </aside>
 
             {/* 2. CENTER PANEL: Main Interactive Canvas */}
-            <main className="flex-1 flex flex-col h-full bg-white relative overflow-hidden">
+            <main className="flex-1 flex flex-col h-full bg-slate-50/50 relative overflow-hidden">
                 
                 {/* Header toolbar */}
-                <div className="w-full h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 z-10 shrink-0">
-                    <div className="flex items-center gap-3">
+                <div className="w-full h-14 bg-white/80 backdrop-blur-md border-b border-slate-200/60 flex items-center justify-between px-4 z-10 shrink-0 shadow-sm gap-4">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
                         {/* Sidebar toggle buttons */}
                         <button
                             onClick={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)}
-                            className={`p-1.5 rounded-lg border transition-colors ${
+                            className={`shrink-0 p-1.5 rounded-lg border transition-colors ${
                                 isLeftSidebarOpen 
                                     ? 'border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100'
                                     : 'border-slate-200 text-slate-500 hover:bg-slate-100' 
@@ -258,11 +257,11 @@ const WorkflowBuilderView = () => {
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
                         </button>
 
-                        <div className="flex items-center gap-1.5">
-                            <span className="text-slate-400 text-xs font-bold">{activeWorkflow.folder}</span>
-                            <span className="text-slate-300 text-xs">/</span>
-                            <h2 className="text-sm font-extrabold text-slate-800">{activeWorkflow.name}</h2>
-                            <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ml-2 ${
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                            <span className="text-slate-400 text-xs font-bold truncate hidden sm:block">{activeWorkflow.folder}</span>
+                            <span className="text-slate-300 text-xs hidden sm:block">/</span>
+                            <h2 className="text-sm font-extrabold text-slate-800 truncate">{activeWorkflow.name}</h2>
+                            <span className={`shrink-0 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ml-2 ${
                                 activeWorkflow.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
                             }`}>
                                 {activeWorkflow.status}
@@ -270,16 +269,14 @@ const WorkflowBuilderView = () => {
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                        <MetricsBar />
-                        <div className="h-6 w-px bg-slate-200"></div>
-                        <button className="ghost text-xs py-1.5 px-3 rounded-lg font-bold border-slate-200 shadow-sm hover:shadow">Test Run</button>
-                        <button className="solid text-xs py-1.5 px-4 rounded-lg shadow bg-blue-600 text-white font-bold hover:bg-blue-700">Deploy</button>
+                    <div className="flex items-center gap-3 shrink-0">
+                        <button className="ghost text-xs py-1.5 px-3 rounded-lg font-bold border-slate-200 shadow-sm hover:shadow whitespace-nowrap">Test Run</button>
+                        <button className="solid text-xs py-1.5 px-4 rounded-lg shadow bg-blue-600 text-white font-bold hover:bg-blue-700 whitespace-nowrap">Deploy</button>
                         
                         {/* Copilot toggle button */}
                         <button
                             onClick={() => setIsRightSidebarOpen(!isRightSidebarOpen)}
-                            className={`p-1.5 rounded-lg border transition-colors ${
+                            className={`shrink-0 p-1.5 rounded-lg border transition-colors ${
                                 isRightSidebarOpen 
                                     ? 'border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100'
                                     : 'border-slate-200 text-slate-500 hover:bg-slate-100' 
@@ -312,28 +309,28 @@ const WorkflowBuilderView = () => {
 
             {/* 3. RIGHT PANEL: Promptly Agent & Property Inspector */}
             <aside 
-                className={`bg-white border-l border-slate-200 flex flex-col h-full transition-all duration-300 relative ${
-                    isRightSidebarOpen ? 'w-80' : 'w-0 opacity-0 overflow-hidden border-none'
+                className={`bg-white/90 backdrop-blur-md border-l border-slate-200/60 flex flex-col h-full transition-all duration-300 relative z-20 shadow-xl ${
+                    isRightSidebarOpen ? 'w-[340px]' : 'w-0 opacity-0 overflow-hidden border-none'
                 }`}
             >
                 {/* Tab select bar */}
-                <div className="flex border-b border-slate-200 shrink-0">
+                <div className="flex border-b border-slate-200/60 shrink-0">
                     <button
                         onClick={() => setRightTab('chat')}
-                        className={`flex-1 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
+                        className={`flex-1 py-3 px-1 text-center text-[10px] truncate font-extrabold uppercase tracking-wider transition-all border-b-2 ${
                             rightTab === 'chat'
-                                ? 'border-blue-600 text-blue-600 bg-blue-50/10'
-                                : 'border-transparent text-slate-500 hover:text-slate-800'
+                                ? 'border-blue-600 text-blue-600 bg-blue-50/30'
+                                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
                         }`}
                     >
                         Promptly Agent
                     </button>
                     <button
                         onClick={() => setRightTab('properties')}
-                        className={`flex-1 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
+                        className={`flex-1 py-3 px-1 text-center text-[10px] truncate font-extrabold uppercase tracking-wider transition-all border-b-2 ${
                             rightTab === 'properties'
-                                ? 'border-blue-600 text-blue-600 bg-blue-50/10'
-                                : 'border-transparent text-slate-500 hover:text-slate-800'
+                                ? 'border-blue-600 text-blue-600 bg-blue-50/30'
+                                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
                         }`}
                     >
                         Properties

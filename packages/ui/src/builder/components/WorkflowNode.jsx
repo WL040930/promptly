@@ -36,9 +36,9 @@ const WorkflowNode = ({ type, data, isConnectable }) => {
     return (
         <div
             onClick={onClick}
-            className={`w-64 bg-white rounded-xl border-2 transition-all cursor-pointer group flex flex-col shadow-sm hover:shadow-md ${isActive
-                    ? 'border-blue-500 shadow-blue-500/10 scale-[1.02]'
-                    : 'border-slate-200 hover:border-blue-300'
+            className={`w-72 bg-white/90 backdrop-blur-md rounded-2xl border transition-all duration-300 cursor-pointer group flex flex-col shadow-sm hover:shadow-xl hover:-translate-y-1 ${isActive
+                    ? 'border-blue-500 shadow-[0_0_25px_rgba(59,130,246,0.3)] ring-4 ring-blue-500/20 scale-[1.02] z-10'
+                    : 'border-slate-200 hover:border-blue-400'
                 }`}
         >
             {/* Input Handle (don't show for triggers) */}
@@ -55,18 +55,18 @@ const WorkflowNode = ({ type, data, isConnectable }) => {
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 shadow-inner ${nodeStyle.badge}`}>
                     {nodeStyle.icon}
                 </div>
-                <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-bold text-slate-900 truncate">{title}</h4>
-                    <p className="text-xs font-medium text-slate-500 mt-0.5 line-clamp-2 leading-relaxed">
+                <div className="flex-1 min-w-0 pr-2">
+                    <h4 className="text-sm font-extrabold text-slate-900 truncate">{title}</h4>
+                    <p className="text-[11px] font-medium text-slate-500 mt-1 line-clamp-3 leading-relaxed break-words">
                         {description}
                     </p>
                 </div>
             </div>
 
-            <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 rounded-b-[10px] flex justify-between items-center text-[0.65rem] font-bold uppercase tracking-wider text-slate-400 group-hover:bg-slate-100 transition-colors">
+            <div className="px-4 py-2.5 bg-slate-50/80 border-t border-slate-100/80 rounded-b-[15px] flex justify-between items-center text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:bg-slate-100/80 group-hover:text-slate-500 transition-colors">
                 <span>{typeLabel}</span>
-                <span className="flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                <span className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded border border-emerald-100">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                     Ready
                 </span>
             </div>
