@@ -3,14 +3,19 @@ import WorkflowCanvas from './components/WorkflowCanvas';
 import PropertyInspector from './components/PropertyInspector';
 import AICopilotChat from './components/AICopilotChat';
 import WorkflowOverview from './overview/WorkflowOverview';
+import DashboardTab from './components/DashboardTab';
+import FormsTab from './components/FormsTab';
+import LogsTab from '../chat/components/LogsTab';
 
 const INITIAL_WORKFLOWS = {
     'w1': {
         id: 'w1',
         name: 'Welcome Email Sequence',
-        folder: 'Client Onboarding',
+        folderId: 'f1',
         status: 'Active',
         lastEdited: '2 hours ago',
+        iconColor: 'text-green-600',
+        iconBg: 'bg-green-100',
         nodes: [
             { id: 'w1-1', type: 'trigger', title: 'New Customer Subscription', description: 'Triggers when a payment is received in Stripe.' },
             { id: 'w1-2', type: 'ai', title: 'Draft Welcome Email', description: 'Generates a personalized onboarding message using GPT.' },
@@ -20,9 +25,11 @@ const INITIAL_WORKFLOWS = {
     'w2': {
         id: 'w2',
         name: 'Support Ticket Automation',
-        folder: 'Client Onboarding',
+        folderId: 'f1',
         status: 'Draft',
         lastEdited: '2 mins ago',
+        iconColor: 'text-blue-600',
+        iconBg: 'bg-blue-100',
         nodes: [
             { id: 'w2-1', type: 'trigger', title: 'Incoming Email', description: 'Triggers when a new email arrives at support@company.com' },
             { id: 'w2-2', type: 'ai', title: 'Extract Intent', description: 'Uses AI to parse the email and extract client intent and urgency.' },
@@ -32,9 +39,11 @@ const INITIAL_WORKFLOWS = {
     'w3': {
         id: 'w3',
         name: 'Weekly Analytics Engine',
-        folder: 'Internal Operations',
+        folderId: 'f3',
         status: 'Active',
         lastEdited: '3 days ago',
+        iconColor: 'text-orange-600',
+        iconBg: 'bg-orange-100',
         nodes: [
             { id: 'w3-1', type: 'trigger', title: 'Weekly Schedule', description: 'Triggers every Friday at 5:00 PM.' },
             { id: 'w3-2', type: 'action', title: 'Fetch Database Metrics', description: 'Executes a Postgres query counting active weekly users.' },
@@ -43,6 +52,12 @@ const INITIAL_WORKFLOWS = {
         ]
     }
 };
+
+const INITIAL_FOLDERS = [
+    { id: 'f1', parentId: null, name: 'Client Onboarding', isExpanded: true },
+    { id: 'f2', parentId: null, name: 'Internal Operations', isExpanded: true },
+    { id: 'f3', parentId: 'f2', name: 'Weekly Reports', isExpanded: true }
+];
 
 const SYSTEM_NODES = {
     'Triggers': [
@@ -98,7 +113,23 @@ const CARD_STYLES = {
     }
 };
 
-const WorkflowBuilderView = ({ setSidebarCollapsed }) => {
+const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) => {
+    const [folders, setFolders] = useState(() => {
+        const saved = localStorage.getItem('promptly_folders');
+        if (saved) {
+            try {
+                return JSON.parse(saved);
+            } catch (e) {
+                console.error('Failed to parse saved folders', e);
+            }
+        }
+        return INITIAL_FOLDERS;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('promptly_folders', JSON.stringify(folders));
+    }, [folders]);
+
     const [workflows, setWorkflows] = useState(() => {
         const saved = localStorage.getItem('promptly_workflows');
         if (saved) {
@@ -114,6 +145,7 @@ const WorkflowBuilderView = ({ setSidebarCollapsed }) => {
     useEffect(() => {
         localStorage.setItem('promptly_workflows', JSON.stringify(workflows));
     }, [workflows]);
+
     const [activeWorkflowId, setActiveWorkflowId] = useState('w2');
     const [activeNodeId, setActiveNodeId] = useState('w2-2');
     const [viewMode, setViewMode] = useState('overview'); // 'overview' | 'builder'
@@ -127,9 +159,11 @@ const WorkflowBuilderView = ({ setSidebarCollapsed }) => {
                 [wfId]: {
                     id: wfId,
                     name: name || 'Untitled Workflow',
-                    folder: folderName || 'Unassigned',
+                    folderId: null,
                     status: 'Draft',
                     lastEdited: 'Just now',
+                    iconColor: 'text-blue-600',
+                    iconBg: 'bg-blue-100',
                     nodes: []
                 }
             };
@@ -149,9 +183,11 @@ const WorkflowBuilderView = ({ setSidebarCollapsed }) => {
             [newWfId]: {
                 id: newWfId,
                 name: 'New Sequence Automation',
-                folder: 'Client Onboarding',
+                folderId: 'f1',
                 status: 'Draft',
                 lastEdited: 'Just now',
+                iconColor: 'text-blue-600',
+                iconBg: 'bg-blue-100',
                 nodes: []
             }
         }));
@@ -180,6 +216,13 @@ const WorkflowBuilderView = ({ setSidebarCollapsed }) => {
     const activeWorkflow = useMemo(() => workflows[activeWorkflowId] || Object.values(workflows)[0], [workflows, activeWorkflowId]);
     const nodes = activeWorkflow.nodes;
     const activeNode = useMemo(() => nodes.find(n => n.id === activeNodeId), [nodes, activeNodeId]);
+
+    const activeFolder = useMemo(() => {
+        if (!activeWorkflow || !activeWorkflow.folderId) return null;
+        return folders.find(f => f.id === activeWorkflow.folderId);
+    }, [folders, activeWorkflow]);
+
+    const activeFolderName = activeFolder ? activeFolder.name : 'Root';
 
     // Handle node selection
     const handleNodeClick = (nodeId) => {
@@ -262,9 +305,57 @@ const WorkflowBuilderView = ({ setSidebarCollapsed }) => {
         });
     };
 
+    // Live update of node configuration from properties panel
+    const handleUpdateNode = (nodeId, updatedFields) => {
+        setWorkflows(prev => {
+            const currentWf = prev[activeWorkflowId];
+            if (!currentWf) return prev;
+
+            const updatedNodes = currentWf.nodes.map(node => {
+                if (node.id === nodeId) {
+                    const nextNode = { ...node, ...updatedFields };
+                    if (updatedFields.config && node.config) {
+                        nextNode.config = { ...node.config, ...updatedFields.config };
+                    }
+                    return nextNode;
+                }
+                return node;
+            });
+
+            return {
+                ...prev,
+                [activeWorkflowId]: {
+                    ...currentWf,
+                    nodes: updatedNodes
+                }
+            };
+        });
+    };
+
+    const activeWorkflowCount = useMemo(() => {
+        return Object.values(workflows).filter(w => w.status === 'Active').length;
+    }, [workflows]);
+
+    // Sidebar tab-based routing
+    if (activeTab === 'dashboard') {
+        return <DashboardTab activeWorkflowCount={activeWorkflowCount} onNavigateTab={setActiveTab} />;
+    }
+
+    if (activeTab === 'forms') {
+        return <FormsTab />;
+    }
+
+    if (activeTab === 'logs') {
+        return <LogsTab />;
+    }
+
     if (viewMode === 'overview') {
         return (
             <WorkflowOverview
+                folders={folders}
+                setFolders={setFolders}
+                workflows={workflows}
+                setWorkflows={setWorkflows}
                 onCreateWorkflow={handleCreateWorkflow}
                 onSelectWorkflow={handleSelectWorkflow}
             />
@@ -397,7 +488,7 @@ const WorkflowBuilderView = ({ setSidebarCollapsed }) => {
                         </button>
 
                         <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                            <span className="text-slate-400 text-xs font-bold truncate hidden sm:block">{activeWorkflow.folder}</span>
+                            <span className="text-slate-400 text-xs font-bold truncate hidden sm:block">{activeFolderName}</span>
                             <span className="text-slate-300 text-xs hidden sm:block">/</span>
                             <h2 className="text-sm font-extrabold text-slate-800 truncate">{activeWorkflow.name}</h2>
                             <span className={`shrink-0 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ml-2 ${
@@ -488,7 +579,7 @@ const WorkflowBuilderView = ({ setSidebarCollapsed }) => {
                     {rightTab === 'chat' ? (
                         <AICopilotChat onApplyAction={handleApplyAction} />
                     ) : (
-                        <PropertyInspector activeNode={activeNode} />
+                        <PropertyInspector activeNode={activeNode} onUpdateNode={handleUpdateNode} />
                     )}
                 </div>
             </aside>

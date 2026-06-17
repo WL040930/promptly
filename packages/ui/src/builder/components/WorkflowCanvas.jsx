@@ -59,18 +59,24 @@ const WorkflowCanvasInner = ({ initialNodes, activeNodeId, onNodeClick, onNodesC
     setEdges(rfEdges);
   }, [initialNodes.map(n => n.id).join(',')]); // Only re-run if node identities change
 
-  // Sync active node visual state
+  // Sync active node visual state, title, and description from props
   useEffect(() => {
     setNodes((nds) =>
-      nds.map((node) => ({
-        ...node,
-        data: {
-          ...node.data,
-          isActive: node.id === activeNodeId,
-        },
-      }))
+      nds.map((node) => {
+        const matchingInitialNode = initialNodes.find((n) => n.id === node.id);
+        if (!matchingInitialNode) return node;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            title: matchingInitialNode.title,
+            description: matchingInitialNode.description,
+            isActive: node.id === activeNodeId,
+          },
+        };
+      })
     );
-  }, [activeNodeId, setNodes]);
+  }, [initialNodes, activeNodeId, setNodes]);
 
   const triggerAutoLayout = useCallback(() => {
     // 1. Build adjacency list and in-degree maps

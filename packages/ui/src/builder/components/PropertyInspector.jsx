@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 const labelClassName = 'text-xs font-bold text-slate-600 uppercase tracking-wide';
 const inputClassName = 'w-full bg-slate-50 border border-slate-200 rounded-lg text-slate-800 px-3 py-2 outline-none text-sm font-medium focus:border-blue-400 focus:ring-2 focus:ring-blue-500/10 transition-all shadow-inner';
 const sectionClassName = 'flex flex-col gap-1.5';
 
-const PropertyInspector = ({ activeNode }) => {
+const PropertyInspector = ({ activeNode, onUpdateNode }) => {
     if (!activeNode) {
         return (
             <div className="h-full p-6 flex flex-col items-center justify-center text-center">
@@ -19,6 +19,35 @@ const PropertyInspector = ({ activeNode }) => {
             </div>
         );
     }
+
+    const [title, setTitle] = useState(activeNode.title || '');
+    const [description, setDescription] = useState(activeNode.description || '');
+    const [prompt, setPrompt] = useState(activeNode.config?.prompt || 'Extract the main intent and urgency from the following email: {{email_body}}');
+    const [model, setModel] = useState(activeNode.config?.model || 'prompty-ultra-v3');
+
+    const handleTitleChange = (e) => {
+        const val = e.target.value;
+        setTitle(val);
+        onUpdateNode?.(activeNode.id, { title: val });
+    };
+
+    const handleDescriptionChange = (e) => {
+        const val = e.target.value;
+        setDescription(val);
+        onUpdateNode?.(activeNode.id, { description: val });
+    };
+
+    const handlePromptChange = (e) => {
+        const val = e.target.value;
+        setPrompt(val);
+        onUpdateNode?.(activeNode.id, { config: { prompt: val } });
+    };
+
+    const handleModelChange = (e) => {
+        const val = e.target.value;
+        setModel(val);
+        onUpdateNode?.(activeNode.id, { config: { model: val } });
+    };
 
     return (
         <div
@@ -37,7 +66,8 @@ const PropertyInspector = ({ activeNode }) => {
                     <label className={labelClassName}>Node Name</label>
                     <input
                         type="text"
-                        defaultValue={activeNode.title}
+                        value={title}
+                        onChange={handleTitleChange}
                         className={inputClassName}
                     />
                 </div>
@@ -45,7 +75,8 @@ const PropertyInspector = ({ activeNode }) => {
                 <div className={sectionClassName}>
                     <label className={labelClassName}>Description</label>
                     <textarea
-                        defaultValue={activeNode.description}
+                        value={description}
+                        onChange={handleDescriptionChange}
                         rows="2"
                         className={`${inputClassName} resize-none`}
                     />
@@ -61,16 +92,21 @@ const PropertyInspector = ({ activeNode }) => {
                                 <span className="text-blue-500 cursor-pointer hover:underline">Variables</span>
                             </label>
                             <textarea
-                                defaultValue="Extract the main intent and urgency from the following email: {{email_body}}"
+                                value={prompt}
+                                onChange={handlePromptChange}
                                 rows="4"
                                 className="w-full bg-slate-900 border border-slate-800 rounded-lg text-blue-100 px-3 py-3 outline-none font-mono text-xs focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all shadow-inner resize-none leading-relaxed"
                             />
                         </div>
                         <div className={sectionClassName}>
                             <label className={labelClassName}>Model Selection</label>
-                            <select className={`${inputClassName} appearance-none cursor-pointer`}>
-                                <option>prompty-ultra-v3</option>
-                                <option>prompty-fast-v3</option>
+                            <select 
+                                value={model}
+                                onChange={handleModelChange}
+                                className={`${inputClassName} appearance-none cursor-pointer`}
+                            >
+                                <option value="prompty-ultra-v3">prompty-ultra-v3</option>
+                                <option value="prompty-fast-v3">prompty-fast-v3</option>
                             </select>
                         </div>
                     </div>
