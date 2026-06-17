@@ -82,7 +82,7 @@ const ChatTab = () => {
                     </button>
                 </div>
                 <div className="p-4 flex-1 overflow-y-auto">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-1">Past Chats</h4>
+                    <h4 className="text-xs font-semibold text-slate-500 mb-3 px-1">Past Chats</h4>
                     <div className="flex flex-col gap-1">
                         {PAST_CHATS.map(chat => (
                             <button 
@@ -90,10 +90,10 @@ const ChatTab = () => {
                                 onClick={() => loadPastChat(chat.title)}
                                 className="w-full text-left p-3 rounded-xl hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-200 transition-all group"
                             >
-                                <div className="text-sm font-bold text-slate-700 truncate group-hover:text-blue-600 transition-colors">
+                                <div className="text-sm font-medium text-slate-700 truncate group-hover:text-blue-600 transition-colors">
                                     {chat.title}
                                 </div>
-                                <div className="text-xs text-slate-400 truncate mt-0.5">
+                                <div className="text-xs font-normal text-slate-500 truncate mt-1">
                                     {chat.preview}
                                 </div>
                             </button>
@@ -106,7 +106,7 @@ const ChatTab = () => {
             <div className="flex-1 flex flex-col h-full relative">
                 {/* Header */}
                 <div className="w-full flex justify-center py-4 border-b border-slate-100 shadow-sm bg-white/90 backdrop-blur z-10 shrink-0">
-                    <span className="text-sm font-bold text-slate-400">Prompty Assistant</span>
+                    <span className="text-sm font-semibold text-slate-500">Prompty Assistant</span>
                 </div>
 
                 {/* Message Log */}

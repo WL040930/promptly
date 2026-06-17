@@ -59,7 +59,7 @@ const FolderNode = ({
 
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={`text-slate-400 transition-transform duration-200 ml-3 shrink-0 ${folder.isExpanded ? 'rotate-90' : ''}`}><polyline points="9 18 15 12 9 6"></polyline></svg>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-colors ${folder.isExpanded ? 'text-blue-500' : 'text-slate-400'}`}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                <span className="font-bold text-sm text-slate-700 truncate">{folder.name}</span>
+                <span className="font-semibold text-sm text-slate-700 truncate">{folder.name}</span>
 
                 <span className="ml-auto text-xs font-semibold text-slate-400 shrink-0">{childFolders.length + folderWorkflows.length} items</span>
 
@@ -126,7 +126,7 @@ const FolderNode = ({
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
                                 </div>
                                 <div className="flex flex-col flex-1 min-w-0">
-                                    <span className="text-sm font-bold text-slate-900 group-hover:text-blue-700 transition-colors leading-tight truncate">{workflow.name}</span>
+                                    <span className="text-sm font-medium text-slate-900 group-hover:text-blue-700 transition-colors leading-tight truncate">{workflow.name}</span>
                                     <span className="text-xs font-medium text-slate-500 leading-tight mt-0.5">{workflow.status || 'Draft'} • Updated {workflow.updated || 'Just now'}</span>
                                 </div>
                                 <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-0.5 shrink-0 bg-blue-50 z-10 px-1 rounded">

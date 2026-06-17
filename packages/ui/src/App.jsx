@@ -49,9 +49,10 @@ function App() {
 
     useEffect(() => {
         // Recover session and redirect to dashboard if authenticated
-        if (user && path !== '/dashboard') {
-            goTo('/dashboard')
-        } else if (!user && path === '/dashboard') {
+        const isAppPath = path.startsWith('/workflow') || path.startsWith('/chat');
+        if (user && !isAppPath) {
+            goTo(user.experienceLevel === 'chat' ? '/chat/chat' : '/workflow/dashboard')
+        } else if (!user && isAppPath) {
             goTo('/login')
         }
     }, [user])
@@ -65,7 +66,7 @@ function App() {
         if (payload?.user) {
             setAuthUser(payload.user)
             setUser(payload.user)
-            goTo('/dashboard')
+            goTo(payload.user.experienceLevel === 'chat' ? '/chat/chat' : '/workflow/dashboard')
         }
     }
 
@@ -76,7 +77,7 @@ function App() {
 
     const isLogin = path === '/login'
     const isRegister = path === '/register'
-    const isDashboard = path === '/dashboard'
+    const isDashboard = path.startsWith('/workflow') || path.startsWith('/chat')
     const isSecurity = path === '/landing/security' || path === '/security'
 
     if (isLoading) {

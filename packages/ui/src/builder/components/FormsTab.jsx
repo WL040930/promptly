@@ -184,7 +184,7 @@ const FormsTab = () => {
 
                 {/* Form Body Container */}
                 <div className="flex-1 overflow-y-auto p-6 md:p-8 flex flex-col items-center">
-                    <div className="w-full max-w-xl flex flex-col gap-5">
+                    <div className="w-full max-w-3xl flex flex-col gap-8">
                         
                         {/* 1. VIEW MODE: Visual Form Preview */}
                         {isPreviewMode ? (

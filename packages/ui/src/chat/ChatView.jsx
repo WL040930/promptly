@@ -3,6 +3,7 @@ import DashboardTab from './components/DashboardTab';
 import ChatTab from './components/ChatTab';
 import WorkflowTab from './components/WorkflowTab';
 import LogsTab from './components/LogsTab';
+import FormsTab from '../builder/components/FormsTab';
 
 const ChatView = ({ user, activeTab = 'chat' }) => {
     const renderActiveTab = () => {
@@ -11,6 +12,8 @@ const ChatView = ({ user, activeTab = 'chat' }) => {
                 return <DashboardTab />;
             case 'workflow':
                 return <WorkflowTab />;
+            case 'forms':
+                return <FormsTab />;
             case 'logs':
                 return <LogsTab />;
             case 'chat':

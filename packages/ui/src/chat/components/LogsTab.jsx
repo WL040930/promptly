@@ -92,12 +92,12 @@ const LogsTab = () => {
         <div className="flex-1 flex overflow-hidden bg-slate-50/50 font-sans h-full animate-fade-in">
             
             {/* Logs List Pane */}
-            <div className={`flex-1 p-6 md:p-8 overflow-y-auto flex flex-col gap-6 ${selectedLog ? 'hidden lg:flex lg:w-1/2' : 'w-full'}`}>
-                <div className="max-w-4xl mx-auto w-full flex flex-col gap-5">
+            <div className={`flex-1 p-6 md:p-8 overflow-y-auto flex flex-col gap-8 ${selectedLog ? 'hidden lg:flex lg:w-1/2' : 'w-full'}`}>
+                <div className="max-w-6xl mx-auto w-full flex flex-col gap-8">
                     {/* Header */}
                     <div>
-                        <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Execution logs console</h2>
-                        <p className="text-slate-500 font-medium text-xs sm:text-sm mt-1">Inspect live logs, latency times, and nodes execution paths.</p>
+                        <h2 className="text-2xl font-semibold text-slate-900 tracking-tight">Execution Logs</h2>
+                        <p className="text-sm text-slate-500 mt-1">Inspect live logs, latency times, and node execution paths.</p>
                     </div>
 
                     {/* Filter and Search Bar */}
@@ -108,7 +108,7 @@ const LogsTab = () => {
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 placeholder="Search by run ID or workflow name..."
-                                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs sm:text-sm font-semibold text-slate-800 placeholder:text-slate-400 outline-none focus:border-blue-400 transition-all shadow-inner"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-2 text-sm font-medium text-slate-800 placeholder:text-slate-400 outline-none focus:border-blue-400 transition-all shadow-inner"
                             />
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="absolute left-2.5 top-3 text-slate-400"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                         </div>
@@ -118,7 +118,7 @@ const LogsTab = () => {
                                 <button
                                     key={status}
                                     onClick={() => setStatusFilter(status)}
-                                    className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition-all border ${
+                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all border ${
                                         statusFilter === status
                                             ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
                                             : 'bg-white text-slate-650 border-slate-200 hover:bg-slate-50'
@@ -133,7 +133,7 @@ const LogsTab = () => {
                     {/* Developer Log Console List */}
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
                         {filteredLogs.length === 0 ? (
-                            <div className="p-12 text-center text-slate-500 font-semibold text-sm">
+                            <div className="p-12 text-center text-slate-500 font-medium text-sm">
                                 No logs found matching query filters.
                             </div>
                         ) : (
@@ -147,8 +147,8 @@ const LogsTab = () => {
                                 >
                                     <div className="flex flex-col gap-1.5 min-w-0 flex-1">
                                         <div className="flex items-center gap-3">
-                                            <span className="font-extrabold text-slate-900 text-sm sm:text-base truncate">{log.workflow}</span>
-                                            <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border ${
+                                            <span className="font-semibold text-slate-900 text-sm sm:text-base truncate">{log.workflow}</span>
+                                            <span className={`px-2 py-0.5 rounded text-xs font-medium border ${
                                                 log.status === 'Success' 
                                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-105 border-emerald-200' 
                                                     : 'bg-red-50 text-red-700 border-red-200'
@@ -157,7 +157,7 @@ const LogsTab = () => {
                                             </span>
                                         </div>
                                         
-                                        <div className="flex items-center gap-2 flex-wrap text-xs font-bold text-slate-400">
+                                        <div className="flex items-center gap-2 flex-wrap text-xs font-medium text-slate-500">
                                             <span className="font-mono text-slate-500 shrink-0">{log.id}</span>
                                             <span>•</span>
                                             <span>{log.trigger}</span>
@@ -167,17 +167,17 @@ const LogsTab = () => {
 
                                         {/* Error Alert Tag */}
                                         {log.error && (
-                                            <div className="text-xs font-bold text-red-650 bg-red-50/50 border border-red-100 rounded-md py-1.5 px-3.5 mt-1.5 leading-relaxed truncate">
+                                            <div className="text-xs font-medium text-red-600 bg-red-50/50 border border-red-100 rounded-lg py-1.5 px-3 mt-1.5 leading-relaxed truncate">
                                                 {log.error}
                                             </div>
                                         )}
                                     </div>
 
                                     <div className="flex flex-col items-end gap-1.5 shrink-0 select-none">
-                                        <span className="text-xs sm:text-sm font-bold text-slate-800">{log.duration}</span>
+                                        <span className="text-xs sm:text-sm font-medium text-slate-800">{log.duration}</span>
                                         <div className="flex gap-1">
                                             {log.tags.map(tag => (
-                                                <span key={tag} className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-150">
+                                                <span key={tag} className="text-xs font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
                                                     {tag}
                                                 </span>
                                             ))}
@@ -196,7 +196,7 @@ const LogsTab = () => {
                     {/* Drawer Header */}
                     <div className="p-4 border-b border-slate-150 flex items-center justify-between bg-slate-50/50 shrink-0">
                         <div>
-                            <h3 className="font-extrabold text-slate-800 text-sm sm:text-base">Execution Inspector</h3>
+                            <h3 className="font-semibold text-slate-900 text-sm sm:text-base">Execution Inspector</h3>
                             <span className="font-mono text-xs text-slate-500">{selectedLog.id}</span>
                         </div>
                         <button 
@@ -213,12 +213,12 @@ const LogsTab = () => {
                         {/* Summary Details */}
                         <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-150 text-xs sm:text-sm">
                             <div className="flex flex-col gap-0.5">
-                                <span className="font-bold text-slate-400 text-xs uppercase">Duration</span>
-                                <span className="font-extrabold text-slate-850 text-slate-800">{selectedLog.duration}</span>
+                                <span className="font-medium text-slate-500 text-xs">Duration</span>
+                                <span className="font-semibold text-slate-850 text-slate-800">{selectedLog.duration}</span>
                             </div>
                             <div className="flex flex-col gap-0.5">
-                                <span className="font-bold text-slate-400 text-xs uppercase">Outcome</span>
-                                <span className={`font-extrabold ${selectedLog.status === 'Success' ? 'text-emerald-600' : 'text-red-700'}`}>
+                                <span className="font-medium text-slate-500 text-xs">Outcome</span>
+                                <span className={`font-semibold ${selectedLog.status === 'Success' ? 'text-emerald-600' : 'text-red-700'}`}>
                                     {selectedLog.status}
                                 </span>
                             </div>
@@ -226,7 +226,7 @@ const LogsTab = () => {
 
                         {/* Step-by-Step Flow Path Visualizer */}
                         <div className="flex flex-col gap-3">
-                            <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Execution Path Debugger</span>
+                            <span className="text-xs font-semibold text-slate-500">Execution Path Debugger</span>
                             
                             <div className="flex flex-col pl-4 relative border-l border-slate-150 ml-1.5 gap-5">
                                 {selectedLog.steps.map((step, idx) => {
@@ -241,15 +241,15 @@ const LogsTab = () => {
                                     return (
                                         <div key={idx} className="relative flex flex-col gap-1">
                                             {/* Node icon node bubble */}
-                                            <div className={`absolute -left-[24px] top-0 w-[18px] h-[18px] rounded-full ring-2 ${badgeBg} flex items-center justify-center font-bold text-[9px] z-10 bg-white`}>
+                                            <div className={`absolute -left-[24px] top-0 w-[18px] h-[18px] rounded-full ring-2 ${badgeBg} flex items-center justify-center font-medium text-[9px] z-10 bg-white`}>
                                                 {isSuccess && '✓'}
                                                 {isFailed && '✗'}
                                                 {isSkipped && '○'}
                                             </div>
 
                                             <div className="flex items-center justify-between pl-2 select-none">
-                                                <span className={`text-xs sm:text-sm font-extrabold ${isSkipped ? 'text-slate-400' : 'text-slate-800'}`}>{step.name}</span>
-                                                <span className="text-[10px] font-bold text-slate-400">{step.time}</span>
+                                                <span className={`text-xs sm:text-sm font-medium ${isSkipped ? 'text-slate-400' : 'text-slate-800'}`}>{step.name}</span>
+                                                <span className="text-xs font-medium text-slate-400">{step.time}</span>
                                             </div>
                                             <p className="text-xs font-medium text-slate-500 pl-2 leading-relaxed break-words">{step.details}</p>
                                         </div>
@@ -260,7 +260,7 @@ const LogsTab = () => {
 
                         {/* Input/Output Payload Debug Block */}
                         <div className="flex flex-col gap-2.5">
-                            <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Raw Input Payload</span>
+                            <span className="text-xs font-semibold text-slate-500">Raw Input Payload</span>
                             <div className="bg-slate-900 border border-slate-800 text-indigo-150 p-4 rounded-2xl text-xs font-mono shadow-inner overflow-x-auto select-all leading-relaxed">
                                 <pre>{JSON.stringify({
                                     event: selectedLog.trigger,

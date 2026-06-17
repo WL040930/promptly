@@ -6,6 +6,7 @@ import WorkflowOverview from './overview/WorkflowOverview';
 import DashboardTab from './components/DashboardTab';
 import FormsTab from './components/FormsTab';
 import LogsTab from '../chat/components/LogsTab';
+import { navigate, parsePath } from '../utils/router.js';
 
 const INITIAL_WORKFLOWS = {
     'w1': {
@@ -146,10 +147,50 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         localStorage.setItem('promptly_workflows', JSON.stringify(workflows));
     }, [workflows]);
 
-    const [activeWorkflowId, setActiveWorkflowId] = useState('w2');
+    // ── URL-driven view mode ─────────────────────────────────────────────────
+    const getViewStateFromUrl = () => {
+        const parsed = parsePath(window.location.pathname);
+        return {
+            viewMode: parsed.viewMode || 'overview',
+            workflowId: parsed.workflowId || 'w2'
+        };
+    };
+
+    const [activeWorkflowId, setActiveWorkflowId] = useState(() => getViewStateFromUrl().workflowId);
     const [activeNodeId, setActiveNodeId] = useState('w2-2');
-    const [viewMode, setViewMode] = useState('overview'); // 'overview' | 'builder'
-    
+    const [viewMode, setViewModeState] = useState(() => getViewStateFromUrl().viewMode);
+
+    // Keep viewMode/workflowId in sync when the user hits back/forward
+    useEffect(() => {
+        const handler = () => {
+            const { viewMode: vm, workflowId: wid } = getViewStateFromUrl();
+            setViewModeState(vm);
+            setActiveWorkflowId(wid);
+        };
+        window.addEventListener('popstate', handler);
+        return () => window.removeEventListener('popstate', handler);
+    }, []);
+
+    // Navigate to builder view for a given workflow id
+    const navigateToBuilder = (wfId) => {
+        navigate(`/workflow/builder/${wfId}`);
+        setViewModeState('builder');
+        setActiveWorkflowId(wfId);
+        if (setSidebarCollapsed) setSidebarCollapsed(true);
+    };
+
+    // Navigate to overview
+    const navigateToOverview = () => {
+        navigate('/workflow/workflows');
+        setViewModeState('overview');
+    };
+
+    // Alias used by the rest of the component for backward compat
+    const setViewMode = (mode) => {
+        if (mode === 'overview') navigateToOverview();
+        // 'builder' is handled via navigateToBuilder
+    };
+
     // Select workflow from overview folder tree
     const handleSelectWorkflow = (wfId, name, folderName) => {
         setWorkflows(prev => {
@@ -168,11 +209,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                 }
             };
         });
-        setActiveWorkflowId(wfId);
-        setViewMode('builder');
-        if (setSidebarCollapsed) {
-            setSidebarCollapsed(true);
-        }
+        navigateToBuilder(wfId);
     };
 
     // Create workflow from overview header
@@ -191,13 +228,8 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                 nodes: []
             }
         }));
-        setActiveWorkflowId(newWfId);
-        setViewMode('builder');
-        if (setSidebarCollapsed) {
-            setSidebarCollapsed(true);
-        }
+        navigateToBuilder(newWfId);
     };
-
 
     
     // Sidebar visibility state (left and right sidebars default to closed)
@@ -373,16 +405,16 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
             >
                 {/* Search / Action */}
                 <div className="p-4 border-b border-slate-200 flex flex-col gap-2 shrink-0">
-                    <h3 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">Node Library</h3>
+                    <h3 className="font-semibold text-slate-900 text-sm">Node Library</h3>
                     <div className="relative">
                         <input
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             placeholder="Find nodes..."
-                            className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs font-semibold text-slate-800 placeholder:text-slate-400 outline-none focus:border-blue-400 transition-all shadow-inner"
+                            className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm font-medium text-slate-800 placeholder:text-slate-400 outline-none focus:border-blue-400 transition-all shadow-inner"
                         />
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="absolute left-2.5 top-2.5 text-slate-400"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="absolute left-2.5 top-2.5 text-slate-400"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                     </div>
                 </div>
 
@@ -399,8 +431,8 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                         return (
                             <div key={category} className="flex flex-col gap-2">
                                 <div className="flex items-center gap-1.5 text-slate-400 px-1 select-none">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{category}</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                    <span className="text-xs font-semibold text-slate-500">{category}</span>
                                 </div>
 
                                 <div className="flex flex-col gap-2">
@@ -432,15 +464,15 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                                                 }`}
                                             >
                                                 <div className="flex items-center justify-between gap-2">
-                                                    <span className="text-xs font-bold text-slate-800 truncate">{node.title}</span>
+                                                    <span className="text-sm font-medium text-slate-800 truncate">{node.title}</span>
                                                     <div className="flex items-center gap-1.5 shrink-0">
-                                                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border tracking-wider select-none ${nodeTheme.badge}`}>
+                                                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border select-none ${nodeTheme.badge}`}>
                                                             {node.type}
                                                         </span>
                                                         {typeIcon}
                                                     </div>
                                                 </div>
-                                                <p className="text-[10px] font-medium text-slate-500 leading-snug line-clamp-1">{node.description}</p>
+                                                <p className="text-xs font-medium text-slate-500 leading-snug line-clamp-1">{node.description}</p>
                                             </div>
                                         );
                                     })}
@@ -488,10 +520,10 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                         </button>
 
                         <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                            <span className="text-slate-400 text-xs font-bold truncate hidden sm:block">{activeFolderName}</span>
-                            <span className="text-slate-300 text-xs hidden sm:block">/</span>
-                            <h2 className="text-sm font-extrabold text-slate-800 truncate">{activeWorkflow.name}</h2>
-                            <span className={`shrink-0 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ml-2 ${
+                            <span className="text-slate-500 text-sm font-medium truncate hidden sm:block">{activeFolderName}</span>
+                            <span className="text-slate-300 text-sm hidden sm:block">/</span>
+                            <h2 className="text-base font-semibold text-slate-900 truncate">{activeWorkflow.name}</h2>
+                            <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded ml-2 ${
                                 activeWorkflow.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
                             }`}>
                                 {activeWorkflow.status}
@@ -500,8 +532,8 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                     </div>
 
                     <div className="flex items-center gap-3 shrink-0">
-                        <button className="ghost text-xs py-1.5 px-3 rounded-lg font-bold border-slate-200 shadow-sm hover:shadow whitespace-nowrap">Test Run</button>
-                        <button className="solid text-xs py-1.5 px-4 rounded-lg shadow bg-blue-600 text-white font-bold hover:bg-blue-700 whitespace-nowrap">Deploy</button>
+                        <button className="ghost text-sm py-1.5 px-3.5 rounded-lg font-medium border-slate-200 shadow-sm hover:shadow whitespace-nowrap">Test Run</button>
+                        <button className="solid text-sm py-1.5 px-4 rounded-lg shadow bg-blue-600 text-white font-medium hover:bg-blue-700 whitespace-nowrap">Deploy</button>
                         
                         {/* Copilot toggle button */}
                         <button
@@ -519,7 +551,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                 </div>
 
                 {/* Breadcrumbs / Last edited subheader */}
-                <div className="px-6 py-2 bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-400 flex items-center justify-between shrink-0">
+                <div className="px-6 py-2 bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-500 flex items-center justify-between shrink-0">
                     <span>Active nodes: {nodes.length}</span>
                     <span>Last edit: {activeWorkflow.lastEdited}</span>
                 </div>
@@ -547,7 +579,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                 <div className="flex border-b border-slate-200/60 shrink-0">
                     <button
                         onClick={() => setRightTab('chat')}
-                        className={`flex-1 py-3 px-1 text-center text-[10px] truncate font-extrabold uppercase tracking-wider transition-all border-b-2 ${
+                        className={`flex-1 py-3 px-1 text-center text-sm truncate font-medium transition-all border-b-2 ${
                             rightTab === 'chat'
                                 ? 'border-blue-600 text-blue-600 bg-blue-50/30'
                                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
@@ -557,7 +589,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                     </button>
                     <button
                         onClick={() => setRightTab('properties')}
-                        className={`flex-1 py-3 px-1 text-center text-[10px] truncate font-extrabold uppercase tracking-wider transition-all border-b-2 ${
+                        className={`flex-1 py-3 px-1 text-center text-sm truncate font-medium transition-all border-b-2 ${
                             rightTab === 'properties'
                                 ? 'border-blue-600 text-blue-600 bg-blue-50/30'
                                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'

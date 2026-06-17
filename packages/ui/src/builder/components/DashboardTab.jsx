@@ -9,7 +9,7 @@ const RECENT_ACTIVITIES = [
 
 const INTEGRATIONS = [
     { name: 'OpenAI GPT-4o', category: 'Language Model', status: 'Healthy', uptime: '99.9%', color: 'indigo' },
-    { name: 'Stripe Webhook', category: 'Payment gateway', status: 'Healthy', uptime: '100%', color: 'emerald' },
+    { name: 'Stripe Webhook', category: 'Payment Gateway', status: 'Healthy', uptime: '100%', color: 'emerald' },
     { name: 'Slack Bot API', category: 'Chat Platform', status: 'Healthy', uptime: '100%', color: 'orange' },
     { name: 'Resend SMTP', category: 'Email Service', status: 'Healthy', uptime: '99.7%', color: 'blue' },
     { name: 'PostgreSQL DB', category: 'Database Storage', status: 'Healthy', uptime: '100%', color: 'cyan' }
@@ -25,221 +25,271 @@ const WEEKLY_DATA = [
     { day: 'Sun', runs: 150, successRate: '100%' }
 ];
 
+const KPI_CARDS = [
+    {
+        label: 'Active Automations',
+        valueKey: 'activeWorkflowCount',
+        badge: 'Syncing',
+        badgeClass: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+        subtitle: 'Active triggers polling live data',
+        accentColor: 'from-indigo-500 to-blue-500',
+        icon: (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                <polyline points="2 17 12 22 22 17"></polyline>
+                <polyline points="2 12 12 17 22 12"></polyline>
+            </svg>
+        )
+    },
+    {
+        label: 'Avg Success Rate',
+        value: '99.8%',
+        badge: 'Target Met',
+        badgeClass: 'bg-blue-50 text-blue-600 border-blue-100',
+        subtitle: '1 fail in 15.2k execution cycles',
+        accentColor: 'from-emerald-500 to-teal-500',
+        icon: (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+        )
+    },
+    {
+        label: 'Total Run Volume',
+        value: '2,785',
+        badge: '+12% MoM',
+        badgeClass: 'bg-slate-100 text-slate-600 border-slate-200',
+        subtitle: 'Calculated run cycles past 30 days',
+        accentColor: 'from-orange-500 to-amber-500',
+        icon: (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="20" x2="18" y2="10"></line>
+                <line x1="12" y1="20" x2="12" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+        )
+    },
+    {
+        label: 'AI Tokens Saved',
+        value: '14.2M',
+        badge: 'Optimal',
+        badgeClass: 'bg-cyan-50 text-cyan-600 border-cyan-100',
+        subtitle: 'Saved via cached query templates',
+        accentColor: 'from-cyan-500 to-sky-500',
+        icon: (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+        )
+    }
+];
+
 const DashboardTab = ({ activeWorkflowCount, onNavigateTab }) => {
-    
-    // Find highest run count to normalize SVG chart bars
+
     const maxRuns = useMemo(() => Math.max(...WEEKLY_DATA.map(d => d.runs)), []);
 
     return (
-        <div className="flex-1 overflow-y-auto bg-slate-50 font-sans p-6 md:p-8 animate-fade-in relative">
-            <div className="max-w-6xl mx-auto flex flex-col gap-6">
-                
-                {/* 1. Hero Systems Status Welcome Banner */}
-                <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden flex items-center justify-between gap-6 min-h-[140px] group border border-slate-800">
-                    <div className="absolute -right-10 -bottom-10 w-44 h-44 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-all duration-700"></div>
-                    <div className="absolute left-1/3 -top-10 w-36 h-36 bg-indigo-500/10 rounded-full blur-3xl group-hover:bg-indigo-500/25 transition-all duration-700"></div>
-                    
-                    <div className="relative z-10 flex flex-col gap-1.5">
-                        <span className="text-xs font-bold uppercase tracking-wider text-indigo-405 text-indigo-400">Workspace Status Overview</span>
-                        <h2 className="text-2xl font-extrabold tracking-tight">Welcome to Promptly Workspace</h2>
-                        <p className="text-slate-350 font-medium text-xs sm:text-sm max-w-xl leading-relaxed mt-0.5">
-                            All automated triggers are active. 5 integrations are online and performing within normal latencies.
+        <div className="flex-1 overflow-y-auto bg-slate-50 font-sans p-6 md:p-8">
+            <div className="max-w-6xl mx-auto flex flex-col gap-8">
+
+                {/* ─── Section 1: Page Header ─── */}
+                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+                    <div>
+                        <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Dashboard</h1>
+                        <p className="text-sm text-slate-500 mt-1">
+                            Overview of your automation workspace health and activity.
                         </p>
                     </div>
-
-                    <div className="relative z-10 shrink-0 hidden sm:flex items-center gap-2 bg-white/10 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-white/10 shadow-inner">
-                        <span className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-ping"></span>
-                        <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full absolute"></span>
-                        <span className="text-xs sm:text-sm font-bold tracking-tight pl-2">System Healthy</span>
+                    <div className="flex items-center gap-2.5 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-sm">
+                        <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                        <span className="text-sm font-medium text-slate-700">All Systems Operational</span>
                     </div>
                 </div>
 
-                {/* 2. Premium 4-Column KPI Grid */}
+                {/* ─── Section 2: KPI Metric Cards ─── */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {/* KPI 1 */}
-                    <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm relative overflow-hidden group">
-                        <div className="flex justify-between items-start mb-3">
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Automations</span>
-                            <span className="w-7 h-7 rounded-xl bg-indigo-50 text-indigo-650 flex items-center justify-center shrink-0">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline></svg>
-                            </span>
+                    {KPI_CARDS.map((kpi, i) => (
+                        <div key={i} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                            {/* Colored accent bar */}
+                            <div className={`h-1 bg-gradient-to-r ${kpi.accentColor}`}></div>
+                            <div className="p-5">
+                                <div className="flex items-center justify-between mb-4">
+                                    <span className="text-xs font-medium text-slate-500">{kpi.label}</span>
+                                    <span className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 flex items-center justify-center">
+                                        {kpi.icon}
+                                    </span>
+                                </div>
+                                <div className="flex items-baseline gap-2.5">
+                                    <span className="text-3xl font-semibold text-slate-900 tracking-tight">
+                                        {kpi.valueKey ? activeWorkflowCount : kpi.value}
+                                    </span>
+                                    <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${kpi.badgeClass}`}>
+                                        {kpi.badge}
+                                    </span>
+                                </div>
+                                <p className="text-xs text-slate-400 mt-2.5">{kpi.subtitle}</p>
+                            </div>
                         </div>
-                        <div className="flex items-baseline gap-2 mt-1">
-                            <span className="text-3xl font-extrabold text-slate-900 tracking-tight">{activeWorkflowCount}</span>
-                            <span className="text-xs font-bold text-emerald-650 bg-emerald-55 bg-emerald-50 px-2 py-0.5 rounded tracking-wide">Syncing</span>
-                        </div>
-                        <p className="text-xs font-medium text-slate-450 text-slate-500 mt-2">Active triggers polling live data</p>
-                    </div>
-
-                    {/* KPI 2 */}
-                    <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm relative overflow-hidden group">
-                        <div className="flex justify-between items-start mb-3">
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Avg Success Rate</span>
-                            <span className="w-7 h-7 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                            </span>
-                        </div>
-                        <div className="flex items-baseline gap-2 mt-1">
-                            <span className="text-3xl font-extrabold text-slate-900 tracking-tight">99.8%</span>
-                            <span className="text-xs font-bold text-blue-650 bg-blue-50 px-2 py-0.5 rounded tracking-wide">Target Met</span>
-                        </div>
-                        <p className="text-xs font-medium text-slate-500 mt-2">1 fail in 15.2k execution cycles</p>
-                    </div>
-
-                    {/* KPI 3 */}
-                    <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm relative overflow-hidden group">
-                        <div className="flex justify-between items-start mb-3">
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Run Volume</span>
-                            <span className="w-7 h-7 rounded-xl bg-orange-50 text-orange-655 text-orange-600 flex items-center justify-center shrink-0">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
-                            </span>
-                        </div>
-                        <div className="flex items-baseline gap-2 mt-1">
-                            <span className="text-3xl font-extrabold text-slate-900 tracking-tight">2,785</span>
-                            <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded tracking-wide">+12% MoM</span>
-                        </div>
-                        <p className="text-xs font-medium text-slate-500 mt-2">Calculated run cycles past 30 days</p>
-                    </div>
-
-                    {/* KPI 4 */}
-                    <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm relative overflow-hidden group">
-                        <div className="flex justify-between items-start mb-3">
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">AI Tokens Saved</span>
-                            <span className="w-7 h-7 rounded-xl bg-cyan-50 text-cyan-650 flex items-center justify-center shrink-0">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                            </span>
-                        </div>
-                        <div className="flex items-baseline gap-2 mt-1">
-                            <span className="text-3xl font-extrabold text-slate-900 tracking-tight">14.2M</span>
-                            <span className="text-xs font-bold text-cyan-600 bg-cyan-50 px-2 py-0.5 rounded tracking-wide">Optimal</span>
-                        </div>
-                        <p className="text-xs font-medium text-slate-500 mt-2">Saved via cached query templates</p>
-                    </div>
+                    ))}
                 </div>
 
-                {/* 3. Mid Section: SVG Run Chart & Quick Actions */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* SVG Chart: Automation Runs Volume */}
-                    <div className="lg:col-span-2 bg-white border border-slate-200 rounded-3xl p-5 shadow-sm flex flex-col gap-4">
-                        <div className="flex items-center justify-between">
+                {/* ─── Section 3: Chart + Quick Actions ─── */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+                    {/* Bar Chart */}
+                    <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                        <div className="flex items-center justify-between mb-6">
                             <div>
-                                <h3 className="font-bold text-slate-800 text-sm sm:text-base">Execution Volume Trends</h3>
-                                <p className="text-slate-400 font-medium text-xs mt-0.5">Executions mapped per weekday</p>
+                                <h2 className="text-base font-semibold text-slate-900">Execution Volume</h2>
+                                <p className="text-xs text-slate-400 mt-0.5">Automation runs per day this week</p>
                             </div>
-                            <span className="text-xs font-bold text-slate-500 bg-slate-55 bg-slate-50 px-3 py-1 rounded border border-slate-100 uppercase tracking-wide">Past 7 Days</span>
+                            <span className="text-xs font-medium text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+                                Past 7 Days
+                            </span>
                         </div>
 
-                        {/* Rendering custom SVG bar chart */}
-                        <div className="w-full relative h-[160px] flex items-end justify-between px-2 pt-4">
+                        <div className="w-full h-[180px] flex items-end gap-3 px-1">
                             {WEEKLY_DATA.map((data, index) => {
-                                const heightPercentage = (data.runs / maxRuns) * 110; // Max height inside container 110px
+                                const heightPct = (data.runs / maxRuns) * 100;
+                                const isHighest = data.runs === maxRuns;
                                 return (
-                                    <div key={index} className="flex flex-col items-center gap-2 flex-1 group">
-                                        {/* Run volume tooltip */}
-                                        <div className="opacity-0 group-hover:opacity-100 absolute bg-slate-800 text-white font-extrabold text-xs px-2.5 py-1 rounded-lg -translate-y-9 shadow-md transition-opacity pointer-events-none z-10">
+                                    <div key={index} className="flex-1 flex flex-col items-center gap-2 group relative">
+                                        {/* Tooltip */}
+                                        <div className="opacity-0 group-hover:opacity-100 absolute -top-8 bg-slate-800 text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-lg transition-opacity pointer-events-none z-10 whitespace-nowrap">
                                             {data.runs} runs
                                         </div>
-                                        {/* Visual bar */}
-                                        <div 
-                                            style={{ height: `${heightPercentage}px` }}
-                                            className="w-8 rounded-t-lg bg-gradient-to-t from-indigo-500 to-indigo-400 group-hover:from-indigo-600 group-hover:to-indigo-500 hover:shadow-lg transition-all duration-300 relative overflow-hidden"
-                                        >
-                                            <div className="absolute inset-0 bg-gradient-to-r from-white/10 to-transparent"></div>
+                                        {/* Bar */}
+                                        <div className="w-full max-w-[40px] relative" style={{ height: `${heightPct}%`, minHeight: '16px' }}>
+                                            <div className={`w-full h-full rounded-lg transition-all duration-300 ${
+                                                isHighest
+                                                    ? 'bg-blue-500 group-hover:bg-blue-600'
+                                                    : 'bg-blue-200 group-hover:bg-blue-400'
+                                            }`}></div>
                                         </div>
-                                        <span className="text-xs font-bold text-slate-400">{data.day}</span>
+                                        {/* Label */}
+                                        <span className="text-[11px] font-medium text-slate-400">{data.day}</span>
                                     </div>
                                 );
                             })}
                         </div>
                     </div>
 
-                    {/* Quick Actions Panel */}
-                    <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm flex flex-col justify-between gap-4">
-                        <div>
-                            <h3 className="font-bold text-slate-800 text-sm sm:text-base">Automation Workspace</h3>
-                            <p className="text-slate-400 font-medium text-xs mt-0.5">Quick actions to design nodes & intake</p>
+                    {/* Quick Actions */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col">
+                        <div className="mb-5">
+                            <h2 className="text-base font-semibold text-slate-900">Quick Actions</h2>
+                            <p className="text-xs text-slate-400 mt-0.5">Jump into building workflows</p>
                         </div>
-                        <div className="flex flex-col gap-2.5">
-                            <button 
+                        <div className="flex flex-col gap-3 flex-1 justify-center">
+                            <button
                                 onClick={() => onNavigateTab?.('workflows')}
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm py-3 px-4 rounded-xl shadow-md shadow-blue-500/10 hover:shadow-blue-500/20 active:scale-98 transition-all flex items-center justify-center gap-2"
+                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm py-3 px-4 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all flex items-center justify-center gap-2.5"
                             >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-                                Create automation flow
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                                </svg>
+                                Create Automation Flow
                             </button>
-                            <button 
+                            <button
                                 onClick={() => onNavigateTab?.('forms')}
-                                className="w-full bg-slate-900 hover:bg-slate-950 text-white font-bold text-xs sm:text-sm py-3 px-4 rounded-xl shadow-md hover:shadow-lg active:scale-98 transition-all flex items-center justify-center gap-2"
+                                className="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium text-sm py-3 px-4 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all flex items-center justify-center gap-2.5"
                             >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
-                                Design intake web form
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                    <line x1="3" y1="9" x2="21" y2="9"></line>
+                                    <line x1="9" y1="21" x2="9" y2="9"></line>
+                                </svg>
+                                Design Intake Form
+                            </button>
+                            <button
+                                onClick={() => onNavigateTab?.('logs')}
+                                className="w-full bg-white hover:bg-slate-50 text-slate-700 font-medium text-sm py-3 px-4 rounded-xl border border-slate-200 shadow-sm hover:shadow active:scale-[0.98] transition-all flex items-center justify-center gap-2.5"
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                                </svg>
+                                View Execution Logs
                             </button>
                         </div>
                     </div>
                 </div>
 
-                {/* 4. Bottom Section: Connections Health & Live Ledger */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Connections health monitor */}
-                    <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm flex flex-col gap-4">
-                        <div>
-                            <h3 className="font-bold text-slate-800 text-sm sm:text-base">Connected Integrations</h3>
-                            <p className="text-slate-400 font-medium text-xs mt-0.5">Uptime logs for active API services</p>
+                {/* ─── Section 4: Integrations + Activity Feed ─── */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+                    {/* Integrations Health */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                        <div className="mb-5">
+                            <h2 className="text-base font-semibold text-slate-900">Integrations</h2>
+                            <p className="text-xs text-slate-400 mt-0.5">Connected services and uptime</p>
                         </div>
 
-                        <div className="flex flex-col gap-3">
+                        <div className="flex flex-col gap-1">
                             {INTEGRATIONS.map((integration, index) => (
-                                <div key={index} className="flex items-center justify-between">
+                                <div key={index} className="flex items-center justify-between py-2.5 border-b border-slate-50 last:border-b-0">
                                     <div className="flex items-center gap-3 min-w-0">
-                                        <div className={`w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse`}></div>
+                                        <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></div>
                                         <div className="flex flex-col min-w-0">
-                                            <span className="text-xs sm:text-sm font-bold text-slate-800 truncate">{integration.name}</span>
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide truncate">{integration.category}</span>
+                                            <span className="text-sm font-medium text-slate-800 truncate">{integration.name}</span>
+                                            <span className="text-xs text-slate-400 truncate">{integration.category}</span>
                                         </div>
                                     </div>
-                                    <span className="text-xs font-bold text-emerald-650 bg-emerald-50 border border-emerald-100 px-2.5 py-0.5 rounded-md">{integration.uptime}</span>
+                                    <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100 shrink-0">
+                                        {integration.uptime}
+                                    </span>
                                 </div>
                             ))}
                         </div>
                     </div>
 
-                    {/* Activity Ledger Timeline */}
-                    <div className="lg:col-span-2 bg-white border border-slate-200 rounded-3xl p-5 shadow-sm flex flex-col gap-4">
-                        <div className="flex items-center justify-between">
+                    {/* Activity Feed */}
+                    <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                        <div className="flex items-center justify-between mb-5">
                             <div>
-                                <h3 className="font-bold text-slate-800 text-sm sm:text-base">Execution Activity Feed</h3>
-                                <p className="text-slate-400 font-medium text-xs mt-0.5">Live events streaming from runtime ledger</p>
+                                <h2 className="text-base font-semibold text-slate-900">Recent Activity</h2>
+                                <p className="text-xs text-slate-400 mt-0.5">Latest workflow executions and events</p>
                             </div>
-                            <button 
+                            <button
                                 onClick={() => onNavigateTab?.('logs')}
-                                className="text-xs sm:text-sm font-bold text-blue-600 hover:text-blue-750 hover:underline"
+                                className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
                             >
-                                View all logs &rarr;
+                                View all &rarr;
                             </button>
                         </div>
 
-                        <div className="flex flex-col gap-4">
-                            {RECENT_ACTIVITIES.map((activity) => (
-                                <div key={activity.id} className="flex gap-4 items-start select-none border-b border-slate-50 pb-3 last:border-b-0 last:pb-0">
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
-                                        activity.type === 'success' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-650'
+                        <div className="flex flex-col">
+                            {RECENT_ACTIVITIES.map((activity, index) => (
+                                <div key={activity.id} className={`flex gap-4 items-start py-3.5 ${
+                                    index < RECENT_ACTIVITIES.length - 1 ? 'border-b border-slate-100' : ''
+                                }`}>
+                                    {/* Status icon */}
+                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                        activity.type === 'success'
+                                            ? 'bg-emerald-50 text-emerald-500'
+                                            : 'bg-red-50 text-red-500'
                                     }`}>
                                         {activity.type === 'success' ? (
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
                                         ) : (
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
                                         )}
                                     </div>
+
+                                    {/* Content */}
                                     <div className="flex-1 min-w-0">
-                                        <div className="flex justify-between items-baseline gap-2">
-                                            <h4 className="font-bold text-slate-800 text-xs sm:text-sm">{activity.action}</h4>
-                                            <div className="flex items-center gap-2 shrink-0 text-xs text-slate-400 font-medium">
-                                                <span>{activity.latency}</span>
-                                                <span className="text-slate-300">•</span>
+                                        <div className="flex items-baseline justify-between gap-3">
+                                            <h4 className="text-sm font-medium text-slate-800">{activity.action}</h4>
+                                            <div className="flex items-center gap-2 shrink-0 text-xs text-slate-400">
+                                                <span className="font-mono text-[11px]">{activity.latency}</span>
+                                                <span className="text-slate-200">·</span>
                                                 <span>{activity.time}</span>
                                             </div>
                                         </div>
-                                        <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1 leading-normal truncate">{activity.detail}</p>
+                                        <p className="text-xs text-slate-400 mt-1 leading-relaxed truncate">{activity.detail}</p>
                                     </div>
                                 </div>
                             ))}
