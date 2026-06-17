@@ -61,6 +61,42 @@ const SYSTEM_NODES = {
     ]
 };
 
+const SIDEBAR_ICONS = {
+    trigger: (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-orange-500 shrink-0">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+    ),
+    ai: (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-indigo-600 shrink-0">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+    ),
+    action: (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-emerald-500 shrink-0">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+        </svg>
+    )
+};
+
+const CARD_STYLES = {
+    trigger: {
+        border: 'border-l-4 border-l-orange-500 hover:border-orange-200 hover:bg-orange-50/10',
+        badge: 'bg-orange-500/10 text-orange-600 border-orange-500/10',
+        shadow: 'hover:shadow-[0_4px_12px_rgba(249,115,22,0.08)] hover:-translate-y-0.5'
+    },
+    ai: {
+        border: 'border-l-4 border-l-indigo-500 hover:border-indigo-200 hover:bg-indigo-50/10',
+        badge: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/10',
+        shadow: 'hover:shadow-[0_4px_12px_rgba(99,102,241,0.08)] hover:-translate-y-0.5'
+    },
+    action: {
+        border: 'border-l-4 border-l-emerald-500 hover:border-emerald-200 hover:bg-emerald-50/10',
+        badge: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/10',
+        shadow: 'hover:shadow-[0_4px_12px_rgba(16,185,129,0.08)] hover:-translate-y-0.5'
+    }
+};
+
 const WorkflowBuilderView = () => {
     const [workflows, setWorkflows] = useState(() => {
         const saved = localStorage.getItem('promptly_workflows');
@@ -219,9 +255,12 @@ const WorkflowBuilderView = () => {
                                     <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{category}</span>
                                 </div>
 
-                                <div className="flex flex-col gap-1.5">
+                                <div className="flex flex-col gap-2">
                                     {filteredItems.map(node => {
                                         const isDragging = draggedNode?.title === node.title;
+                                        const typeIcon = SIDEBAR_ICONS[node.type] || SIDEBAR_ICONS.ai;
+                                        const nodeTheme = CARD_STYLES[node.type] || CARD_STYLES.ai;
+                                        
                                         return (
                                             <div
                                                 key={node.title}
@@ -238,22 +277,22 @@ const WorkflowBuilderView = () => {
                                                     e.dataTransfer.setDragImage(img, 0, 0);
                                                 }}
                                                 onDragEnd={() => setDraggedNode(null)}
-                                                className={`bg-white border p-2.5 rounded-lg shadow-sm cursor-grab active:cursor-grabbing hover:shadow transition-all group ${
+                                                className={`bg-white border-t border-r border-b border-slate-200 p-3 rounded-r-xl cursor-grab active:cursor-grabbing transition-all duration-300 flex flex-col gap-1.5 ${nodeTheme.border} ${nodeTheme.shadow} ${
                                                     isDragging 
-                                                        ? 'opacity-40 border-dashed border-blue-400 bg-slate-50' 
-                                                        : 'border-slate-200 hover:border-blue-300'
+                                                        ? 'opacity-30 border-dashed border-slate-300' 
+                                                        : ''
                                                 }`}
                                             >
-                                                <div className="flex items-center gap-2">
-                                                    <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded shrink-0 ${
-                                                        node.type === 'trigger' ? 'bg-indigo-100 text-indigo-700' :
-                                                        node.type === 'ai' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
-                                                    }`}>
-                                                        {node.type}
-                                                    </span>
+                                                <div className="flex items-center justify-between gap-2">
                                                     <span className="text-xs font-bold text-slate-800 truncate">{node.title}</span>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border tracking-wider select-none ${nodeTheme.badge}`}>
+                                                            {node.type}
+                                                        </span>
+                                                        {typeIcon}
+                                                    </div>
                                                 </div>
-                                                <p className="text-[10px] text-slate-500 mt-1 truncate">{node.description}</p>
+                                                <p className="text-[10px] font-medium text-slate-500 leading-snug line-clamp-1">{node.description}</p>
                                             </div>
                                         );
                                     })}

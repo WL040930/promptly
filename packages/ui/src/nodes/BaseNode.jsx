@@ -3,28 +3,37 @@ import { Handle, Position } from '@xyflow/react';
 
 const NODE_STYLES = {
     trigger: {
+        themeColor: 'from-orange-500 to-amber-500',
+        badge: 'bg-orange-500/10 text-orange-600 border-orange-500/20',
+        glow: 'shadow-[0_0_20px_rgba(249,115,22,0.15)]',
+        bgGradient: 'from-orange-50/20 to-transparent',
         icon: (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-orange-600">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-white">
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
             </svg>
         ),
-        badge: 'bg-orange-50 border border-orange-100'
     },
     ai: {
+        themeColor: 'from-indigo-500 to-purple-600',
+        badge: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20',
+        glow: 'shadow-[0_0_20px_rgba(99,102,241,0.15)]',
+        bgGradient: 'from-indigo-50/20 to-transparent',
         icon: (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-white">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
             </svg>
         ),
-        badge: 'bg-blue-50 border border-blue-100'
     },
     action: {
+        themeColor: 'from-emerald-500 to-teal-600',
+        badge: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
+        glow: 'shadow-[0_0_20px_rgba(16,185,129,0.15)]',
+        bgGradient: 'from-emerald-50/20 to-transparent',
         icon: (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-white">
                 <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
             </svg>
         ),
-        badge: 'bg-emerald-50 border border-emerald-100'
     }
 };
 
@@ -38,50 +47,60 @@ const BaseNode = ({
     showInputHandle = type !== 'trigger',
     showOutputHandle = true,
     icon,
-    badgeClass,
     children
 }) => {
-    const defaultStyle = NODE_STYLES[type] || NODE_STYLES.ai;
-    const nodeIcon = icon || defaultStyle.icon;
-    const nodeBadge = badgeClass || defaultStyle.badge;
+    const style = NODE_STYLES[type] || NODE_STYLES.ai;
+    const nodeIcon = icon || style.icon;
 
     return (
         <div
             onClick={onClick}
-            className={`w-72 bg-white/90 backdrop-blur-md rounded-2xl border transition-all duration-300 cursor-pointer group flex flex-col shadow-sm hover:shadow-xl hover:-translate-y-1 ${isActive
-                    ? 'border-blue-500 shadow-[0_0_25px_rgba(59,130,246,0.3)] ring-4 ring-blue-500/20 scale-[1.02] z-10'
-                    : 'border-slate-200 hover:border-blue-400'
-                }`}
+            className={`w-[290px] bg-white rounded-2xl border transition-all duration-500 flex flex-col relative overflow-visible ${
+                isActive
+                    ? 'border-blue-600 shadow-[0_0_30px_rgba(59,130,246,0.3)] ring-2 ring-blue-600/20 scale-[1.03] z-20'
+                    : 'border-slate-200/80 hover:border-slate-300 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_12px_30px_rgba(0,0,0,0.06)] hover:-translate-y-1 z-10'
+            }`}
         >
+            {/* Header: vibrant header panel with title and status */}
+            <div className={`px-4 py-3 bg-gradient-to-r ${style.themeColor} rounded-t-2xl flex items-center justify-between text-white relative`}>
+                <div className="flex items-center gap-2.5">
+                    {/* Glowing floating icon */}
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/20 backdrop-blur-md shadow-inner transition-transform duration-300 group-hover:scale-105">
+                        {nodeIcon}
+                    </div>
+                    <span className="text-[10px] font-black tracking-widest uppercase opacity-90 select-none">
+                        {type}
+                    </span>
+                </div>
+                
+                {/* Small Pill indicator */}
+                <div className="flex items-center gap-1.5 bg-white/15 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/10 text-[9px] font-bold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
+                    Ready
+                </div>
+            </div>
+
             {/* Input Handle */}
             {showInputHandle && (
                 <Handle
                     type="target"
                     position={Position.Top}
                     isConnectable={isConnectable}
-                    className="w-3 h-3 bg-slate-200 border-2 border-white"
+                    className="!w-3 !h-3 !bg-white !border-2 !border-slate-300 hover:!border-blue-500 hover:!scale-125 !transition-all !shadow-sm"
+                    style={{ top: '0px' }}
                 />
             )}
 
-            <div className="p-4 flex items-start gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 shadow-inner ${nodeBadge}`}>
-                    {nodeIcon}
-                </div>
-                <div className="flex-1 min-w-0 pr-2">
-                    <h4 className="text-sm font-extrabold text-slate-900 truncate">{title}</h4>
-                    <p className="text-[11px] font-medium text-slate-500 mt-1 line-clamp-3 leading-relaxed break-words">
-                        {description}
-                    </p>
-                    {children}
-                </div>
-            </div>
+            {/* Content Body */}
+            <div className={`p-4 flex flex-col bg-gradient-to-b ${style.bgGradient} rounded-b-2xl flex-1`}>
+                <h4 className="text-[13.5px] font-extrabold text-slate-800 tracking-tight leading-snug">
+                    {title}
+                </h4>
+                <p className="text-[10.5px] font-medium text-slate-500 mt-1.5 line-clamp-2 leading-relaxed break-words">
+                    {description}
+                </p>
 
-            <div className="px-4 py-2.5 bg-slate-50/80 border-t border-slate-100/80 rounded-b-[15px] flex justify-between items-center text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:bg-slate-100/80 group-hover:text-slate-500 transition-colors">
-                <span>{type}</span>
-                <span className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded border border-emerald-100">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    Ready
-                </span>
+                {children}
             </div>
 
             {/* Output Handle */}
@@ -90,7 +109,8 @@ const BaseNode = ({
                     type="source"
                     position={Position.Bottom}
                     isConnectable={isConnectable}
-                    className="w-3 h-3 bg-blue-500 border-2 border-white"
+                    className="!w-3 !h-3 !bg-white !border-2 !border-blue-500 hover:!scale-125 hover:!bg-blue-50 !transition-all !shadow-[0_2px_6px_rgba(59,130,246,0.3)]"
+                    style={{ bottom: '0px' }}
                 />
             )}
         </div>
