@@ -10,12 +10,14 @@ import {
   ReactFlowProvider,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import WorkflowNode from './WorkflowNode';
+import TriggerNode from '../../nodes/TriggerNode';
+import AINode from '../../nodes/AINode';
+import ActionNode from '../../nodes/ActionNode';
 
 const nodeTypes = {
-  trigger: WorkflowNode,
-  ai: WorkflowNode,
-  action: WorkflowNode,
+  trigger: TriggerNode,
+  ai: AINode,
+  action: ActionNode,
 };
 
 const WorkflowCanvasInner = ({ initialNodes, activeNodeId, onNodeClick, onNodesChangeCallback, onEdgesChangeCallback, onAddNode, draggedNode }) => {
@@ -81,11 +83,23 @@ const WorkflowCanvasInner = ({ initialNodes, activeNodeId, onNodeClick, onNodesC
         x: event.clientX,
         y: event.clientY,
       });
+      // Center the node (288px width, ~110px height) under the cursor
+      position.x -= 144;
+      position.y -= 55;
       setDragPosition(position);
     }
   }, [reactFlowInstance, draggedNode]);
 
-  const onDragLeave = useCallback(() => {
+  const onDragLeave = useCallback((event) => {
+    if (reactFlowWrapper.current) {
+      const rect = reactFlowWrapper.current.getBoundingClientRect();
+      const x = event.clientX;
+      const y = event.clientY;
+      // If cursor is still within the canvas boundaries, do not clear the preview
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+        return;
+      }
+    }
     setDragPosition(null);
   }, []);
 
@@ -106,6 +120,9 @@ const WorkflowCanvasInner = ({ initialNodes, activeNodeId, onNodeClick, onNodesC
         x: event.clientX,
         y: event.clientY,
       });
+      // Center the node (288px width, ~110px height) under the cursor
+      position.x -= 144;
+      position.y -= 55;
 
       const parsedData = JSON.parse(dataStr);
       onAddNode(parsedData, position);

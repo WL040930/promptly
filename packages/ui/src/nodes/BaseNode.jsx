@@ -28,10 +28,22 @@ const NODE_STYLES = {
     }
 };
 
-const WorkflowNode = ({ type, data, isConnectable }) => {
-    const { title, description, isActive, onClick } = data;
-    const nodeStyle = NODE_STYLES[type] || NODE_STYLES.ai;
-    const typeLabel = type || 'node';
+const BaseNode = ({
+    type = 'ai',
+    title,
+    description,
+    isActive,
+    onClick,
+    isConnectable = true,
+    showInputHandle = type !== 'trigger',
+    showOutputHandle = true,
+    icon,
+    badgeClass,
+    children
+}) => {
+    const defaultStyle = NODE_STYLES[type] || NODE_STYLES.ai;
+    const nodeIcon = icon || defaultStyle.icon;
+    const nodeBadge = badgeClass || defaultStyle.badge;
 
     return (
         <div
@@ -41,8 +53,8 @@ const WorkflowNode = ({ type, data, isConnectable }) => {
                     : 'border-slate-200 hover:border-blue-400'
                 }`}
         >
-            {/* Input Handle (don't show for triggers) */}
-            {type !== 'trigger' && (
+            {/* Input Handle */}
+            {showInputHandle && (
                 <Handle
                     type="target"
                     position={Position.Top}
@@ -52,19 +64,20 @@ const WorkflowNode = ({ type, data, isConnectable }) => {
             )}
 
             <div className="p-4 flex items-start gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 shadow-inner ${nodeStyle.badge}`}>
-                    {nodeStyle.icon}
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 shadow-inner ${nodeBadge}`}>
+                    {nodeIcon}
                 </div>
                 <div className="flex-1 min-w-0 pr-2">
                     <h4 className="text-sm font-extrabold text-slate-900 truncate">{title}</h4>
                     <p className="text-[11px] font-medium text-slate-500 mt-1 line-clamp-3 leading-relaxed break-words">
                         {description}
                     </p>
+                    {children}
                 </div>
             </div>
 
             <div className="px-4 py-2.5 bg-slate-50/80 border-t border-slate-100/80 rounded-b-[15px] flex justify-between items-center text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:bg-slate-100/80 group-hover:text-slate-500 transition-colors">
-                <span>{typeLabel}</span>
+                <span>{type}</span>
                 <span className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded border border-emerald-100">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                     Ready
@@ -72,14 +85,16 @@ const WorkflowNode = ({ type, data, isConnectable }) => {
             </div>
 
             {/* Output Handle */}
-            <Handle
-                type="source"
-                position={Position.Bottom}
-                isConnectable={isConnectable}
-                className="w-3 h-3 bg-blue-500 border-2 border-white"
-            />
+            {showOutputHandle && (
+                <Handle
+                    type="source"
+                    position={Position.Bottom}
+                    isConnectable={isConnectable}
+                    className="w-3 h-3 bg-blue-500 border-2 border-white"
+                />
+            )}
         </div>
     );
 };
 
-export default WorkflowNode;
+export default BaseNode;

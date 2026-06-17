@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import WorkflowCanvas from './components/WorkflowCanvas';
 import PropertyInspector from './components/PropertyInspector';
 import AICopilotChat from './components/AICopilotChat';
@@ -62,7 +62,21 @@ const SYSTEM_NODES = {
 };
 
 const WorkflowBuilderView = () => {
-    const [workflows, setWorkflows] = useState(INITIAL_WORKFLOWS);
+    const [workflows, setWorkflows] = useState(() => {
+        const saved = localStorage.getItem('promptly_workflows');
+        if (saved) {
+            try {
+                return JSON.parse(saved);
+            } catch (e) {
+                console.error('Failed to parse saved workflows', e);
+            }
+        }
+        return INITIAL_WORKFLOWS;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('promptly_workflows', JSON.stringify(workflows));
+    }, [workflows]);
     const [activeWorkflowId, setActiveWorkflowId] = useState('w2');
     const [activeNodeId, setActiveNodeId] = useState('w2-2');
     
@@ -206,31 +220,43 @@ const WorkflowBuilderView = () => {
                                 </div>
 
                                 <div className="flex flex-col gap-1.5">
-                                    {filteredItems.map(node => (
-                                        <div
-                                            key={node.title}
-                                            draggable
-                                            onDragStart={(e) => {
-                                                setDraggedNode(node);
-                                                e.dataTransfer.setData('application/reactflow-type', node.type);
-                                                e.dataTransfer.setData('application/reactflow-data', JSON.stringify(node));
-                                                e.dataTransfer.effectAllowed = 'copy';
-                                            }}
-                                            onDragEnd={() => setDraggedNode(null)}
-                                            className="bg-white border border-slate-200 p-2.5 rounded-lg shadow-sm cursor-grab active:cursor-grabbing hover:border-blue-300 hover:shadow transition-all group"
-                                        >
-                                            <div className="flex items-center gap-2">
-                                                <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded shrink-0 ${
-                                                    node.type === 'trigger' ? 'bg-indigo-100 text-indigo-700' :
-                                                    node.type === 'ai' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
-                                                }`}>
-                                                    {node.type}
-                                                </span>
-                                                <span className="text-xs font-bold text-slate-800 truncate">{node.title}</span>
+                                    {filteredItems.map(node => {
+                                        const isDragging = draggedNode?.title === node.title;
+                                        return (
+                                            <div
+                                                key={node.title}
+                                                draggable
+                                                onDragStart={(e) => {
+                                                    setDraggedNode(node);
+                                                    e.dataTransfer.setData('application/reactflow-type', node.type);
+                                                    e.dataTransfer.setData('application/reactflow-data', JSON.stringify(node));
+                                                    e.dataTransfer.effectAllowed = 'copy';
+                                                    
+                                                    // Hide the default browser drag ghost
+                                                    const img = new Image();
+                                                    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                                                    e.dataTransfer.setDragImage(img, 0, 0);
+                                                }}
+                                                onDragEnd={() => setDraggedNode(null)}
+                                                className={`bg-white border p-2.5 rounded-lg shadow-sm cursor-grab active:cursor-grabbing hover:shadow transition-all group ${
+                                                    isDragging 
+                                                        ? 'opacity-40 border-dashed border-blue-400 bg-slate-50' 
+                                                        : 'border-slate-200 hover:border-blue-300'
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded shrink-0 ${
+                                                        node.type === 'trigger' ? 'bg-indigo-100 text-indigo-700' :
+                                                        node.type === 'ai' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                                                    }`}>
+                                                        {node.type}
+                                                    </span>
+                                                    <span className="text-xs font-bold text-slate-800 truncate">{node.title}</span>
+                                                </div>
+                                                <p className="text-[10px] text-slate-500 mt-1 truncate">{node.description}</p>
                                             </div>
-                                            <p className="text-[10px] text-slate-500 mt-1 truncate">{node.description}</p>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         );
