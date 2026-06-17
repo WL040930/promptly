@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { clearAuthToken, clearAuthUser } from '../utils/storage.js';
 import { apiRequest } from '../api/client.js';
 import SettingsModal from './SettingsModal';
@@ -62,19 +62,12 @@ const RECENT_CHATS_PREVIEW = [
 
 const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
     const isChatMode = user?.experienceLevel === 'chat';
-    const [isCollapsed, setIsCollapsed] = useState(!isChatMode);
+    const [isCollapsed, setIsCollapsed] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState(isChatMode ? 'chat' : 'workflow');
     const [hoveredTab, setHoveredTab] = useState(null);
 
-    // Auto-collapse sidebar when opening the workflow page
-    useEffect(() => {
-        if (activeTab === 'workflow') {
-            setIsCollapsed(true);
-        } else {
-            setIsCollapsed(false);
-        }
-    }, [activeTab]);
+
 
     const handleLogout = () => {
         clearAuthToken();
@@ -257,7 +250,11 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
             <main className="flex-1 flex flex-col relative w-full h-full overflow-hidden bg-white">
                 {React.Children.map(children, child => {
                     if (React.isValidElement(child)) {
-                        return React.cloneElement(child, { activeTab });
+                        return React.cloneElement(child, {
+                            activeTab,
+                            isSidebarCollapsed: isCollapsed,
+                            setSidebarCollapsed: setIsCollapsed
+                        });
                     }
                     return child;
                 })}
