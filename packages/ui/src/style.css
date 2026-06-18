@@ -54,9 +54,35 @@ body {
     @apply bg-white/80 backdrop-blur-md border border-white/60 shadow-xl;
   }
 
+  .glass-panel {
+    @apply bg-white/70 backdrop-blur-lg border border-white/50 shadow-sm;
+  }
+
+  .glass-input {
+    @apply bg-white/60 backdrop-blur-sm border border-white/80 shadow-inner focus:bg-white;
+  }
+
   .section-shell {
     @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
   }
+
+  .form-card-active {
+    @apply border-l-4 shadow-md scale-[1.005] transition-all duration-300 ease-out;
+    background-image: linear-gradient(to right, var(--accent-light, #f8fafc), transparent);
+  }
+
+  .form-card-inactive {
+    @apply border-l-4 border-l-transparent border-gray-200 hover:shadow-sm transition-all duration-300 ease-out;
+  }
+}
+
+@keyframes slide-up-fade {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-up-fade {
+  animation: slide-up-fade 0.3s ease-out forwards;
 }
 
 .bubble {
