@@ -14,7 +14,6 @@ const LoginPage = ({ onRegister, onLoginSuccess }) => {
 
         try {
             const payload = await login({ email, password })
-            console.log('Login successful:', payload)
             if (onLoginSuccess) {
                 onLoginSuccess(payload)
             }

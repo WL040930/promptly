@@ -4,12 +4,12 @@ import React, { useState } from 'react';
  * FieldRenderer — renders a single form field in preview/fill mode.
  * Handles all 15 field types with proper HTML inputs and premium styling.
  */
+const inputClasses = 'w-full bg-white/80 backdrop-blur-sm border border-gray-200 hover:border-gray-300 rounded-xl px-4 py-3 text-[15px] font-medium text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:bg-white shadow-sm transition-all duration-300';
+const focusRing = `focus:border-transparent`;
+
 const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
     const [rating, setRating] = useState(value || 0);
     const [hoveredStar, setHoveredStar] = useState(0);
-
-    const inputClasses = 'w-full bg-white/80 backdrop-blur-sm border border-gray-200 hover:border-gray-300 rounded-xl px-4 py-3 text-[15px] font-medium text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:bg-white shadow-sm transition-all duration-300';
-    const focusRing = `focus:border-transparent`;
 
     const inputStyle = {
         '--tw-ring-color': accentColor + '40',

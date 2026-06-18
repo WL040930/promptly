@@ -6,6 +6,17 @@ import { FIELD_TYPES, getTypesByCategory, createField } from './fields/fieldType
  * FormEditor — the design-mode editor view.
  * Redesigned with premium header card, glassmorphism UI, and animated add button.
  */
+
+const TypeIcon = ({ typeName, size = 15 }) => {
+    const def = FIELD_TYPES[typeName];
+    if (!def) return null;
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d={def.icon} />
+        </svg>
+    );
+};
+
 const FormEditor = ({
     form,
     onUpdateForm,
@@ -60,15 +71,7 @@ const FormEditor = ({
         setShowAddMenu(false);
     };
 
-    const TypeIcon = ({ typeName, size = 15 }) => {
-        const def = FIELD_TYPES[typeName];
-        if (!def) return null;
-        return (
-            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d={def.icon} />
-            </svg>
-        );
-    };
+
 
     return (
         <div className="flex flex-col gap-6 pb-16">

@@ -1,6 +1,16 @@
 import React, { useState, useRef } from 'react';
 import { FIELD_TYPES, getTypesByCategory } from './fieldTypes';
 
+const TypeIcon = ({ typeName, size = 16 }) => {
+    const def = FIELD_TYPES[typeName];
+    if (!def) return null;
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d={def.icon} />
+        </svg>
+    );
+};
+
 /**
  * FieldCard — individual field builder card shown in the form editor.
  * Upgraded with premium design: glassmorphism hints, glowing borders, smooth transitions.
@@ -51,16 +61,6 @@ const FieldCard = ({
         if ((field.choices || []).length <= 1) return;
         const choices = (field.choices || []).filter((_, i) => i !== index);
         onUpdate({ choices });
-    };
-
-    const TypeIcon = ({ typeName, size = 16 }) => {
-        const def = FIELD_TYPES[typeName];
-        if (!def) return null;
-        return (
-            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d={def.icon} />
-            </svg>
-        );
     };
 
     return (

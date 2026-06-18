@@ -20,7 +20,6 @@ const RegisterPage = ({ onLogin, onLoginSuccess }) => {
 
         try {
             const payload = await register({ email, password })
-            console.log('Registration successful:', payload)
             if (onLoginSuccess) {
                 onLoginSuccess(payload)
             } else if (onLogin) {
