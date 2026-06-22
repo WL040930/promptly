@@ -71,9 +71,8 @@ const FieldCard = ({
             onDragOver={onDragOver}
             onDrop={onDrop}
             onClick={onSelect}
-            className={`relative bg-white rounded-2xl cursor-pointer group animate-slide-up-fade ${
-                isSelected ? 'form-card-active z-10' : 'form-card-inactive'
-            }`}
+            className={`relative bg-white rounded-2xl cursor-pointer group animate-slide-up-fade ${isSelected ? 'form-card-active z-10' : 'form-card-inactive'
+                }`}
             style={{
                 borderLeftColor: isSelected ? accentColor : 'transparent',
                 '--accent-light': accentColor + '08'
@@ -82,7 +81,7 @@ const FieldCard = ({
             <div className="flex">
                 {/* Drag Handle */}
                 <div className="flex items-center justify-center w-10 shrink-0 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 transition-colors group-hover:opacity-100 opacity-60"
-                     title="Drag to reorder">
+                    title="Drag to reorder">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                         <circle cx="9" cy="5" r="1.5" /><circle cx="15" cy="5" r="1.5" />
                         <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
@@ -116,9 +115,8 @@ const FieldCard = ({
                         <div className="relative" ref={typeSelectorRef}>
                             <button
                                 onClick={(e) => { e.stopPropagation(); setIsTypeSelectorOpen(!isTypeSelectorOpen); }}
-                                className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-[13px] font-bold transition-all shadow-sm ${
-                                    isSelected ? 'bg-white border-gray-200 hover:border-gray-300 hover:shadow text-gray-700' : 'bg-gray-50 border-gray-100 text-gray-500 hover:bg-gray-100'
-                                }`}
+                                className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-[13px] font-bold transition-all shadow-sm ${isSelected ? 'bg-white border-gray-200 hover:border-gray-300 hover:shadow text-gray-700' : 'bg-gray-50 border-gray-100 text-gray-500 hover:bg-gray-100'
+                                    }`}
                             >
                                 <TypeIcon typeName={field.type} size={15} />
                                 <span>{typeDef.label}</span>
@@ -137,36 +135,35 @@ const FieldCard = ({
                                                     {cat.label}
                                                 </div>
                                                 <div className="px-1.5">
-                                                {cat.types.map(typeKey => {
-                                                    const tDef = FIELD_TYPES[typeKey];
-                                                    const isActive = field.type === typeKey;
-                                                    return (
-                                                        <button
-                                                            key={typeKey}
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                const defaults = tDef.defaults || {};
-                                                                onUpdate({ type: typeKey, ...defaults });
-                                                                setIsTypeSelectorOpen(false);
-                                                            }}
-                                                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm transition-all ${
-                                                                isActive
-                                                                    ? 'bg-gray-100 text-gray-900 font-bold'
-                                                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 font-medium'
-                                                            }`}
-                                                        >
-                                                            <div className={`p-1.5 rounded-lg ${isActive ? 'bg-white shadow-sm' : ''}`}>
-                                                                <TypeIcon typeName={typeKey} size={16} />
-                                                            </div>
-                                                            <span>{tDef.label}</span>
-                                                            {isActive && (
-                                                                <svg className="ml-auto text-gray-900" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                                                    <polyline points="20 6 9 17 4 12" />
-                                                                </svg>
-                                                            )}
-                                                        </button>
-                                                    );
-                                                })}
+                                                    {cat.types.map(typeKey => {
+                                                        const tDef = FIELD_TYPES[typeKey];
+                                                        const isActive = field.type === typeKey;
+                                                        return (
+                                                            <button
+                                                                key={typeKey}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    const defaults = tDef.defaults || {};
+                                                                    onUpdate({ type: typeKey, ...defaults });
+                                                                    setIsTypeSelectorOpen(false);
+                                                                }}
+                                                                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm transition-all ${isActive
+                                                                        ? 'bg-gray-100 text-gray-900 font-bold'
+                                                                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 font-medium'
+                                                                    }`}
+                                                            >
+                                                                <div className={`p-1.5 rounded-lg ${isActive ? 'bg-white shadow-sm' : ''}`}>
+                                                                    <TypeIcon typeName={typeKey} size={16} />
+                                                                </div>
+                                                                <span>{tDef.label}</span>
+                                                                {isActive && (
+                                                                    <svg className="ml-auto text-gray-900" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                                                        <polyline points="20 6 9 17 4 12" />
+                                                                    </svg>
+                                                                )}
+                                                            </button>
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
                                         ))}
@@ -203,7 +200,7 @@ const FieldCard = ({
                             {field.type === 'select' && (
                                 <div className="h-10 bg-gray-50/50 border border-gray-200 rounded-xl w-full max-w-md flex items-center px-4 justify-between">
                                     <span className="text-gray-400 text-[13px]">Select an option...</span>
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.5"><path d="M6 9l6 6 6-6"/></svg>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.5"><path d="M6 9l6 6 6-6" /></svg>
                                 </div>
                             )}
                             {['radio', 'checkbox'].includes(field.type) && (
@@ -372,9 +369,8 @@ const FieldCard = ({
 
                     {/* Bottom Toolbar */}
                     {!isHeading && (
-                        <div className={`flex items-center justify-between border-t border-gray-100 pt-4 mt-2 ${
-                            isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                        } transition-opacity duration-300`}>
+                        <div className={`flex items-center justify-between border-t border-gray-100 pt-4 mt-2 ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                            } transition-opacity duration-300`}>
                             {/* Required Toggle */}
                             <label className="flex items-center gap-3 cursor-pointer select-none group/req">
                                 <span className="text-[13px] text-gray-500 font-bold group-hover/req:text-gray-700 transition-colors">Required</span>
@@ -383,14 +379,12 @@ const FieldCard = ({
                                     role="switch"
                                     aria-checked={field.required}
                                     onClick={(e) => { e.stopPropagation(); onUpdate({ required: !field.required }); }}
-                                    className={`relative w-10 h-6 rounded-full transition-all duration-300 border-2 ${
-                                        field.required ? 'border-transparent' : 'bg-gray-100 border-gray-200 group-hover/req:bg-gray-200'
-                                    }`}
+                                    className={`relative w-10 h-6 rounded-full transition-all duration-300 border-2 ${field.required ? 'border-transparent' : 'bg-gray-100 border-gray-200 group-hover/req:bg-gray-200'
+                                        }`}
                                     style={field.required ? { backgroundColor: accentColor } : {}}
                                 >
-                                    <span className={`absolute top-[2px] left-[2px] w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ${
-                                        field.required ? 'translate-x-4 scale-110' : ''
-                                    }`} />
+                                    <span className={`absolute top-[2px] left-[2px] w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ${field.required ? 'translate-x-4 scale-110' : ''
+                                        }`} />
                                 </button>
                             </label>
 

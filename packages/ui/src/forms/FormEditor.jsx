@@ -2,20 +2,13 @@ import React, { useState, useRef } from 'react';
 import FieldCard from './fields/FieldCard';
 import { FIELD_TYPES, getTypesByCategory, createField } from './fields/fieldTypes';
 
+import { useClickOutside } from './hooks/useClickOutside';
+import TypeIcon from './fields/TypeIcon';
+
 /**
  * FormEditor — the design-mode editor view.
  * Redesigned with premium header card, glassmorphism UI, and animated add button.
  */
-
-const TypeIcon = ({ typeName, size = 15 }) => {
-    const def = FIELD_TYPES[typeName];
-    if (!def) return null;
-    return (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d={def.icon} />
-        </svg>
-    );
-};
 
 const FormEditor = ({
     form,
@@ -32,16 +25,7 @@ const FormEditor = ({
     const addMenuRef = useRef(null);
     const dragIndexRef = useRef(null);
 
-    React.useEffect(() => {
-        if (!showAddMenu) return;
-        const handler = (e) => {
-            if (addMenuRef.current && !addMenuRef.current.contains(e.target)) {
-                setShowAddMenu(false);
-            }
-        };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, [showAddMenu]);
+    useClickOutside(addMenuRef, showAddMenu, () => setShowAddMenu(false));
 
     const handleDragStart = (index) => (e) => {
         dragIndexRef.current = index;
@@ -88,14 +72,14 @@ const FormEditor = ({
                         value={form.title}
                         onChange={e => onUpdateForm({ title: e.target.value })}
                         placeholder="Form Title"
-                        className="text-3xl font-extrabold text-gray-900 bg-transparent border-b-2 border-transparent hover:border-gray-100 focus:border-gray-300 focus:outline-none py-1.5 transition-all w-full placeholder:text-gray-300 tracking-tight"
+                        className="text-3xl font-extrabold text-gray-900 bg-transparent border-b-2 border-transparent hover:border-gray-200 focus:border-gray-400 focus:outline-none py-1.5 transition-all w-full placeholder:text-gray-400 tracking-tight"
                     />
                     <textarea
                         value={form.description || ''}
                         onChange={e => onUpdateForm({ description: e.target.value })}
                         placeholder="Add a description to explain the purpose of this form..."
                         rows={2}
-                        className="text-[15px] font-medium text-gray-500 bg-transparent border-b-2 border-transparent hover:border-gray-100 focus:border-gray-300 focus:outline-none py-1.5 transition-all w-full resize-none leading-relaxed placeholder:text-gray-400"
+                        className="text-[15px] font-medium text-gray-600 bg-transparent border-b-2 border-transparent hover:border-gray-200 focus:border-gray-400 focus:outline-none py-1.5 transition-all w-full resize-none leading-relaxed placeholder:text-gray-500"
                     />
                 </div>
             </div>

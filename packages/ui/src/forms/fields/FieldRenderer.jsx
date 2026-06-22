@@ -4,7 +4,7 @@ import React, { useState } from 'react';
  * FieldRenderer — renders a single form field in preview/fill mode.
  * Handles all 15 field types with proper HTML inputs and premium styling.
  */
-const inputClasses = 'w-full bg-white/80 backdrop-blur-sm border border-gray-200 hover:border-gray-300 rounded-xl px-4 py-3 text-[15px] font-medium text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:bg-white shadow-sm transition-all duration-300';
+const inputClasses = 'w-full bg-white/90 backdrop-blur-sm border-2 border-gray-200 hover:border-gray-300 rounded-xl px-4 py-3 text-[15px] font-medium text-gray-800 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:bg-white shadow-sm transition-all duration-300';
 const focusRing = `focus:border-transparent`;
 
 const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
@@ -18,10 +18,10 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
 
     if (field.type === 'heading') {
         return (
-            <div className="py-4 border-b border-gray-100/50 mb-2">
+            <div className="py-4 border-b-2 border-gray-200 mb-2">
                 <h3 className="text-2xl font-bold text-gray-900 tracking-tight">{field.label || 'Section Title'}</h3>
                 {field.subtext && (
-                    <p className="text-base text-gray-500 mt-2 leading-relaxed">{field.subtext}</p>
+                    <p className="text-base text-gray-600 mt-2 leading-relaxed">{field.subtext}</p>
                 )}
             </div>
         );
@@ -83,7 +83,7 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
                         {(field.choices || []).map((choice, idx) => {
                             const isChecked = value === choice;
                             return (
-                                <label key={idx} className={`flex items-center gap-3.5 px-4 py-3 rounded-xl border-2 cursor-pointer transition-all duration-300 group ${isChecked ? 'bg-white shadow-md' : 'bg-white/50 border-gray-100 hover:border-gray-200 hover:bg-white shadow-sm'}`} style={isChecked ? { borderColor: accentColor } : {}}>
+                                <label key={idx} className={`flex items-center gap-3.5 px-4 py-3 rounded-xl border-2 cursor-pointer transition-all duration-300 group ${isChecked ? 'bg-white shadow-md' : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50 shadow-sm'}`} style={isChecked ? { borderColor: accentColor } : {}}>
                                     <div className="relative flex items-center justify-center shrink-0">
                                         <input
                                             type="radio"
@@ -93,7 +93,7 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
                                             onChange={() => onChange?.(choice)}
                                             className="sr-only peer"
                                         />
-                                        <div className="w-5 h-5 rounded-full border-2 border-gray-300 peer-checked:border-transparent transition-all duration-300 shadow-inner bg-white" 
+                                        <div className="w-5 h-5 rounded-full border-2 border-gray-400 peer-checked:border-transparent transition-all duration-300 shadow-inner bg-white" 
                                              style={isChecked ? { borderColor: accentColor } : {}} />
                                         {isChecked && (
                                             <div className="absolute w-2.5 h-2.5 rounded-full scale-in-center animate-bounce-in" style={{ backgroundColor: accentColor }} />
@@ -115,7 +115,7 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
                         {(field.choices || []).map((choice, idx) => {
                             const isChecked = Array.isArray(value) && value.includes(choice);
                             return (
-                                <label key={idx} className={`flex items-center gap-3.5 px-4 py-3 rounded-xl border-2 cursor-pointer transition-all duration-300 group ${isChecked ? 'bg-white shadow-md' : 'bg-white/50 border-gray-100 hover:border-gray-200 hover:bg-white shadow-sm'}`} style={isChecked ? { borderColor: accentColor } : {}}>
+                                <label key={idx} className={`flex items-center gap-3.5 px-4 py-3 rounded-xl border-2 cursor-pointer transition-all duration-300 group ${isChecked ? 'bg-white shadow-md' : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50 shadow-sm'}`} style={isChecked ? { borderColor: accentColor } : {}}>
                                     <div className="relative flex items-center justify-center shrink-0">
                                         <input
                                             type="checkbox"
@@ -133,7 +133,7 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
                                         />
                                         <div
                                             className="w-5 h-5 rounded-md flex items-center justify-center border-2 transition-all duration-300 shadow-inner bg-white"
-                                            style={isChecked ? { backgroundColor: accentColor, borderColor: accentColor } : { borderColor: '#d1d5db' }}
+                                            style={isChecked ? { backgroundColor: accentColor, borderColor: accentColor } : { borderColor: '#9ca3af' }}
                                         >
                                             <svg className={`transition-transform duration-300 ${isChecked ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
                                                 <polyline points="20 6 9 17 4 12" />
@@ -148,39 +148,11 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
                 </div>
             );
 
-        case 'date':
-            return (
-                <div className="animate-slide-up-fade">
-                    {labelEl}
-                    <input
-                        type="date"
-                        className={`${inputClasses} ${focusRing} cursor-pointer`}
-                        style={inputStyle}
-                        value={value || ''}
-                        onChange={e => onChange?.(e.target.value)}
-                    />
-                </div>
-            );
-
-        case 'time':
-            return (
-                <div className="animate-slide-up-fade">
-                    {labelEl}
-                    <input
-                        type="time"
-                        className={`${inputClasses} ${focusRing} cursor-pointer`}
-                        style={inputStyle}
-                        value={value || ''}
-                        onChange={e => onChange?.(e.target.value)}
-                    />
-                </div>
-            );
-
         case 'file':
             return (
                 <div className="animate-slide-up-fade">
                     {labelEl}
-                    <div className="border-2 border-dashed border-gray-300 bg-gray-50/50 rounded-2xl p-8 text-center hover:bg-gray-50 hover:border-gray-400 transition-all duration-300 cursor-pointer group">
+                    <div className="border-2 border-dashed border-gray-300 bg-white rounded-2xl p-8 text-center hover:bg-gray-50 hover:border-gray-400 transition-all duration-300 cursor-pointer group">
                         <div className="w-14 h-14 rounded-full bg-white shadow-sm border border-gray-100 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
                             <svg className="text-gray-400 group-hover:text-gray-600 transition-colors" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
@@ -232,14 +204,30 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
             );
         }
 
-        case 'number':
+        default: {
+            const isDateOrTime = field.type === 'date' || field.type === 'time';
+            let inputType = 'text';
+            if (['email', 'number', 'url', 'date', 'time'].includes(field.type)) {
+                inputType = field.type;
+            } else if (field.type === 'phone') {
+                inputType = 'tel';
+            }
+
+            let placeholder = field.placeholder || 'Type your answer...';
+            if (!field.placeholder) {
+                if (field.type === 'email') placeholder = 'name@example.com';
+                if (field.type === 'phone') placeholder = '+1 (555) 000-0000';
+                if (field.type === 'url') placeholder = 'https://example.com';
+                if (field.type === 'number') placeholder = 'Enter a number';
+            }
+
             return (
                 <div className="animate-slide-up-fade">
                     {labelEl}
                     <input
-                        type="number"
-                        className={`${inputClasses} ${focusRing}`}
-                        placeholder={field.placeholder || 'Enter a number'}
+                        type={inputType}
+                        className={`${inputClasses} ${focusRing} ${isDateOrTime ? 'cursor-pointer' : ''}`}
+                        placeholder={placeholder}
                         min={field.min || undefined}
                         max={field.max || undefined}
                         style={inputStyle}
@@ -248,52 +236,7 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
                     />
                 </div>
             );
-
-        case 'phone':
-            return (
-                <div className="animate-slide-up-fade">
-                    {labelEl}
-                    <input
-                        type="tel"
-                        className={`${inputClasses} ${focusRing}`}
-                        placeholder={field.placeholder || '+1 (555) 000-0000'}
-                        style={inputStyle}
-                        value={value || ''}
-                        onChange={e => onChange?.(e.target.value)}
-                    />
-                </div>
-            );
-
-        case 'url':
-            return (
-                <div className="animate-slide-up-fade">
-                    {labelEl}
-                    <input
-                        type="url"
-                        className={`${inputClasses} ${focusRing}`}
-                        placeholder={field.placeholder || 'https://example.com'}
-                        style={inputStyle}
-                        value={value || ''}
-                        onChange={e => onChange?.(e.target.value)}
-                    />
-                </div>
-            );
-
-        // text, email, and any fallback
-        default:
-            return (
-                <div className="animate-slide-up-fade">
-                    {labelEl}
-                    <input
-                        type={field.type === 'email' ? 'email' : 'text'}
-                        className={`${inputClasses} ${focusRing}`}
-                        placeholder={field.placeholder || (field.type === 'email' ? 'name@example.com' : 'Type your answer...')}
-                        style={inputStyle}
-                        value={value || ''}
-                        onChange={e => onChange?.(e.target.value)}
-                    />
-                </div>
-            );
+        }
     }
 };
 

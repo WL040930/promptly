@@ -47,7 +47,7 @@ const FormPreview = ({ form, accentColor = '#4f46e5' }) => {
     const confirmationMsg = form.settings?.confirmationMessage || 'Your response has been recorded. Thank you!';
 
     return (
-        <div 
+        <div
             className="w-full min-h-full rounded-3xl p-6 md:p-12 transition-colors duration-500 flex flex-col items-center justify-start"
             style={{ backgroundColor: accentColor + '10' }} // very light tint of the accent color
         >
