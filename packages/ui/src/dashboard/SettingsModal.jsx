@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
+import { useToast } from '../components/ToastContext.jsx';
 
 const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
     const [activeTab, setActiveTab] = useState('general');
     const [selectedRole, setSelectedRole] = useState(user?.experienceLevel || 'chat');
     const [isSaving, setIsSaving] = useState(false);
     const modalRef = useRef(null);
+    const toast = useToast();
 
     useGSAP(() => {
         gsap.from('.modal-backdrop', { opacity: 0, duration: 0.3, ease: 'power2.inOut' });
@@ -186,10 +188,14 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
                                         headers: { 'Authorization': `Bearer ${token}` }
                                     });
                                     if (res.ok) {
-                                        window.location.reload();
+                                        toast.success('Successfully disconnected Google account.');
+                                        setTimeout(() => window.location.reload(), 1000);
+                                    } else {
+                                        toast.error('Failed to disconnect Google account.');
                                     }
                                 } catch (err) {
                                     console.error('Failed to disconnect Google account', err);
+                                    toast.error('An error occurred while disconnecting.');
                                 }
                             }}
                             className="px-4 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm font-bold text-slate-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all shadow-sm"
@@ -207,9 +213,12 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
                                     const data = await res.json();
                                     if (data.url) {
                                         window.location.href = data.url;
+                                    } else {
+                                        toast.error('Failed to initialize Google connection.');
                                     }
                                 } catch (err) {
                                     console.error('Failed to init Google connect', err);
+                                    toast.error('An error occurred while connecting.');
                                 }
                             }}
                             className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm"

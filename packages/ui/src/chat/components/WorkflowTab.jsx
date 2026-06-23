@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
+import { useToast } from '../../components/ToastContext.jsx';
 
 const WORKFLOWS = [
     { id: 1, name: 'Lead Capture to CRM', trigger: 'Webhook', status: 'Active', runs: 412 },
@@ -10,7 +11,7 @@ const WORKFLOWS = [
 ];
 
 const WorkflowTab = () => {
-    const [toast, setToast] = useState(null);
+    const toast = useToast();
     const container = useRef(null);
 
     useGSAP(() => {
@@ -18,17 +19,11 @@ const WorkflowTab = () => {
     }, { scope: container });
 
     const handleRunNow = (name) => {
-        setToast(`Workflow "${name}" triggered successfully!`);
-        setTimeout(() => setToast(null), 3000);
+        toast.success(`Workflow "${name}" triggered successfully!`);
     };
 
     return (
         <div ref={container} className="tab-content flex-1 overflow-y-auto bg-slate-50/50 font-sans relative p-6 md:p-8">
-            {/* Toast Notification */}
-            <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-3 bg-slate-900 text-white font-medium text-sm rounded-full shadow-2xl transition-all duration-300 z-50 ${toast ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0 pointer-events-none'}`}>
-                {toast}
-            </div>
-
             <div className="max-w-6xl mx-auto flex flex-col gap-8">
                 <div className="flex items-center justify-between">
                     <div>

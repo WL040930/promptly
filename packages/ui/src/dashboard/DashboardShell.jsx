@@ -3,6 +3,7 @@ import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { clearAuthToken, clearAuthUser } from '../utils/storage.js';
 import { apiRequest } from '../api/client.js';
+import { useToast } from '../components/ToastContext.jsx';
 import SettingsModal from './SettingsModal';
 import { DashboardIcon, WorkflowIcon, LogsIcon } from '../chat/components/Icons';
 import { navigate, parsePath, buildPath } from '../utils/router.js';
@@ -40,6 +41,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [hoveredTab, setHoveredTab] = useState(null);
     const container = useRef(null);
+    const toast = useToast();
 
     useGSAP(() => {
         gsap.from('.dashboard-sidebar', {
@@ -103,7 +105,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
             }
         } catch (err) {
             console.error('Failed to update experience level:', err);
-            alert('Failed to save settings. Please try again.');
+            toast.error('Failed to save settings. Please try again.');
         }
     };
 
