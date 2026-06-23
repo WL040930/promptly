@@ -1,4 +1,6 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState, useRef } from 'react';
+import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
 import OverviewModal from './OverviewModal';
 import StatsCards from './components/StatsCards';
 import FolderNode from './components/FolderNode';
@@ -63,6 +65,11 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
     const [modal, setModal] = useState({ isOpen: false, type: null, data: null, inputValue: '' });
     const [dragInfo, setDragInfo] = useState({ type: null, id: null });
     const [dragOverFolderId, setDragOverFolderId] = useState(null);
+    const container = useRef(null);
+
+    useGSAP(() => {
+        gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
+    }, { scope: container });
 
     const searchValue = searchQuery.trim().toLowerCase();
     const hasSearch = searchValue.length > 0;
@@ -255,7 +262,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
     }, [dragInfo, setFolders]);
 
     return (
-        <div className="flex-1 overflow-y-auto bg-slate-50 font-sans relative p-6 md:p-8">
+        <div ref={container} className="tab-content flex-1 overflow-y-auto bg-slate-50 font-sans relative p-6 md:p-8">
             <div className="max-w-6xl mx-auto flex flex-col gap-8">
                 <div className="flex items-center justify-between">
                     <div>

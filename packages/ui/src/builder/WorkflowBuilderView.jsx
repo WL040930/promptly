@@ -1,4 +1,6 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
 import WorkflowCanvas from './components/WorkflowCanvas';
 import PropertyInspector from './components/PropertyInspector';
 import AICopilotChat from './components/AICopilotChat';
@@ -245,6 +247,14 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     // Track dragged node for canvas live preview
     const [draggedNode, setDraggedNode] = useState(null);
 
+    const builderContainer = useRef(null);
+
+    useGSAP(() => {
+        if (viewMode === 'builder') {
+            gsap.from(builderContainer.current, { opacity: 0, duration: 0.3, ease: 'power2.out' });
+        }
+    }, { scope: builderContainer, dependencies: [viewMode] });
+
     const activeWorkflow = useMemo(() => workflows[activeWorkflowId] || Object.values(workflows)[0], [workflows, activeWorkflowId]);
     const nodes = activeWorkflow.nodes;
     const activeNode = useMemo(() => nodes.find(n => n.id === activeNodeId), [nodes, activeNodeId]);
@@ -395,7 +405,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     }
 
     return (
-        <div className="flex-1 flex w-full h-full bg-slate-50 overflow-hidden font-sans">
+        <div ref={builderContainer} className="flex-1 flex w-full h-full bg-slate-50 overflow-hidden font-sans">
             
             {/* 1. LEFT SIDEBAR: Node Library */}
             <aside 

@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
 import { clearAuthToken, clearAuthUser } from '../utils/storage.js';
 import { apiRequest } from '../api/client.js';
 import SettingsModal from './SettingsModal';
@@ -37,6 +39,16 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [hoveredTab, setHoveredTab] = useState(null);
+    const container = useRef(null);
+
+    useGSAP(() => {
+        gsap.from('.dashboard-sidebar', {
+            x: -50,
+            opacity: 0,
+            duration: 0.6,
+            ease: 'power3.out'
+        });
+    }, { scope: container });
 
     // ── URL-driven active tab ────────────────────────────────────────────────
     const getTabFromUrl = useCallback(() => {
@@ -97,10 +109,10 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
 
 
     return (
-        <div className="flex h-screen bg-[#f7f9fc] text-slate-900 font-sans overflow-hidden">
+        <div ref={container} className="flex h-screen bg-[#f7f9fc] text-slate-900 font-sans overflow-hidden">
             
             {/* Global Sidebar */}
-            <aside className={`bg-slate-50 border-r border-slate-200 flex flex-col transition-all duration-300 relative z-20 ${isCollapsed ? 'w-[70px]' : 'w-[260px]'}`}>
+            <aside className={`dashboard-sidebar bg-slate-50 border-r border-slate-200 flex flex-col transition-all duration-300 relative z-20 ${isCollapsed ? 'w-[70px]' : 'w-[260px]'}`}>
                 
                 {/* Brand & Toggle */}
                 <div className={`h-16 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between px-4'} border-b border-transparent`}>
@@ -262,7 +274,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
             </aside>
 
             {/* Main Application Area */}
-            <main className="flex-1 flex flex-col relative w-full h-full overflow-hidden bg-white">
+            <main className="dashboard-main flex-1 flex flex-col relative w-full h-full overflow-hidden bg-white">
                 {React.Children.map(children, child => {
                     if (React.isValidElement(child)) {
                         return React.cloneElement(child, {

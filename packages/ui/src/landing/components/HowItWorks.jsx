@@ -1,4 +1,9 @@
-import React from 'react'
+import React, { useRef } from 'react'
+import { gsap } from 'gsap'
+import { useGSAP } from '@gsap/react'
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
+
+gsap.registerPlugin(useGSAP, ScrollTrigger)
 
 const STEPS = [
   {
@@ -32,8 +37,38 @@ const STEPS = [
 ]
 
 function HowItWorks() {
+  const container = useRef(null)
+
+  useGSAP(() => {
+    gsap.from('.how-step', {
+      scrollTrigger: {
+        trigger: '.how-steps-container',
+        start: 'top 80%',
+        toggleActions: 'play none none none'
+      },
+      y: 40,
+      opacity: 0,
+      duration: 0.8,
+      stagger: 0.2,
+      ease: 'power3.out'
+    })
+
+    gsap.from('.how-feature', {
+      scrollTrigger: {
+        trigger: '.how-features-container',
+        start: 'top 85%',
+        toggleActions: 'play none none none'
+      },
+      x: -30,
+      opacity: 0,
+      duration: 0.6,
+      stagger: 0.1,
+      ease: 'power2.out'
+    })
+  }, { scope: container })
+
   return (
-    <section id="how-it-works" className="py-24 bg-slate-900 text-white overflow-hidden relative scroll-mt-24">
+    <section ref={container} id="how-it-works" className="py-24 bg-slate-900 text-white overflow-hidden relative scroll-mt-24">
       <div className="absolute top-0 right-0 w-1/3 h-full bg-blue-500/5 blur-[120px] rounded-full pointer-events-none"></div>
       <div className="absolute bottom-0 left-0 w-1/4 h-1/2 bg-indigo-500/5 blur-[100px] rounded-full pointer-events-none"></div>
       
@@ -45,9 +80,9 @@ function HowItWorks() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-y-16 gap-x-12">
+        <div className="how-steps-container grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-y-16 gap-x-12">
           {STEPS.map((step, idx) => (
-            <div key={idx} className="relative group flex flex-col items-center text-center">
+            <div key={idx} className="how-step relative group flex flex-col items-center text-center">
               {idx < STEPS.length - 1 && (
                 <>
                   <div className="hidden lg:block absolute top-10 left-1/2 w-full h-[2px] bg-slate-800 z-0">
@@ -88,14 +123,14 @@ function HowItWorks() {
               <p className="text-slate-300 mb-8 text-lg">
                 We use an "Agentic Sandbox" approach. Every automation generated is reviewed against safety protocols before execution.
               </p>
-              <ul className="space-y-4">
+              <ul className="how-features-container space-y-4">
                 {[
                   'Enterprise-grade API encryption',
                   'Human-in-the-loop validation for financial tasks',
                   'Comprehensive audit logs for every prompt',
                   'Role-based access control (RBAC)'
                 ].map((item, i) => (
-                  <li key={item} className="flex items-center text-slate-400 group">
+                  <li key={item} className="how-feature flex items-center text-slate-400 group">
                     <div className="w-8 h-8 rounded-lg bg-teal-500/10 flex items-center justify-center mr-4 group-hover:bg-teal-500/20 transition-colors">
                       <svg className="w-5 h-5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />

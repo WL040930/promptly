@@ -1,4 +1,6 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
+import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
 import FormEditor from '../../forms/FormEditor';
 import FormPreview from '../../forms/FormPreview';
 import FormResponses from '../../forms/FormResponses';
@@ -64,6 +66,11 @@ const FormsTab = () => {
     const [isPreviewMode, setIsPreviewMode] = useState(false);
     const [isShareOpen, setIsShareOpen] = useState(false);
     const [sidebarSearch, setSidebarSearch] = useState('');
+    const container = useRef(null);
+
+    useGSAP(() => {
+        gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
+    }, { scope: container });
 
     const activeForm = forms.find(f => f.id === activeFormId) || forms[0];
     const accentColor = activeForm?.settings?.accentColor || '#4f46e5';
@@ -189,7 +196,7 @@ const FormsTab = () => {
     ];
 
     return (
-        <div className="flex-1 flex overflow-hidden bg-[#f4f7f9] font-sans h-full">
+        <div ref={container} className="tab-content flex-1 flex overflow-hidden bg-[#f4f7f9] font-sans h-full">
 
             {/* ═══ LEFT SIDEBAR ═══ */}
             <aside className="w-[280px] border-r border-gray-200/60 bg-white/60 backdrop-blur-md flex flex-col shrink-0 z-20">

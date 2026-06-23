@@ -1,9 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
 
 const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
     const [activeTab, setActiveTab] = useState('general');
     const [selectedRole, setSelectedRole] = useState(user?.experienceLevel || 'chat');
     const [isSaving, setIsSaving] = useState(false);
+    const modalRef = useRef(null);
+
+    useGSAP(() => {
+        gsap.from('.modal-backdrop', { opacity: 0, duration: 0.3, ease: 'power2.inOut' });
+        gsap.from('.modal-content', { scale: 0.9, opacity: 0, y: 20, duration: 0.4, ease: 'back.out(1.7)', delay: 0.1 });
+    }, { scope: modalRef });
 
     // Reset selected role if user prop changes externally
     useEffect(() => {
@@ -46,7 +54,7 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
     );
 
     const renderGeneral = () => (
-        <div className="p-6 flex flex-col gap-8 animate-fade-in relative pb-20">
+        <div className="p-6 flex flex-col gap-8 relative pb-20">
             <div className="flex flex-col gap-4">
                 <div>
                     <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Experience Level</h3>
@@ -134,7 +142,7 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
     );
 
     const renderConnections = () => (
-        <div className="p-6 flex flex-col gap-6 animate-fade-in relative pb-20">
+        <div className="p-6 flex flex-col gap-6 relative pb-20">
             <div className="flex flex-col gap-2">
                 <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Primary Account</h3>
                 <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
@@ -215,8 +223,8 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
     );
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div ref={modalRef} className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm">
+            <div className="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
                 <div className="p-4 px-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-blue-100 text-blue-600 rounded-lg shadow-sm">

@@ -1,4 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
+import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
 
 const RECENT_ACTIVITIES = [
     { id: 1, action: 'Workflow Run Success', detail: 'Welcome Email Sequence executed successfully for customer lim@gmail.com', time: '5 mins ago', type: 'success', latency: '412ms' },
@@ -88,9 +90,14 @@ const KPI_CARDS = [
 const DashboardTab = ({ activeWorkflowCount, onNavigateTab }) => {
 
     const maxRuns = useMemo(() => Math.max(...WEEKLY_DATA.map(d => d.runs)), []);
+    const container = useRef(null);
+
+    useGSAP(() => {
+        gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
+    }, { scope: container });
 
     return (
-        <div className="flex-1 overflow-y-auto bg-slate-50 font-sans p-6 md:p-8">
+        <div ref={container} className="tab-content flex-1 overflow-y-auto bg-slate-50 font-sans p-6 md:p-8">
             <div className="max-w-6xl mx-auto flex flex-col gap-8">
 
                 {/* ─── Section 1: Page Header ─── */}

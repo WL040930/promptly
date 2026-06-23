@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
 import { BotIcon, UserIcon, SendIcon, PlusIcon, MessageSquareIcon } from './Icons';
 
 const BOT_RESPONSES = {
@@ -28,6 +30,11 @@ const ChatTab = () => {
     const [inputText, setInputText] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const messagesEndRef = useRef(null);
+    const container = useRef(null);
+
+    useGSAP(() => {
+        gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
+    }, { scope: container });
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -68,7 +75,7 @@ const ChatTab = () => {
     };
 
     return (
-        <div className="flex w-full h-full bg-white relative font-sans overflow-hidden">
+        <div ref={container} className="tab-content flex w-full h-full bg-white relative font-sans overflow-hidden">
             
             {/* Chat History Internal Sidebar */}
             <div className="w-64 border-r border-slate-100 bg-slate-50/50 flex flex-col h-full hidden md:flex shrink-0">

@@ -1,4 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
+import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
 
 const LOGS_DATA = [
     { 
@@ -78,6 +80,11 @@ const LogsTab = () => {
     const [selectedLog, setSelectedLog] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('All'); // 'All' | 'Success' | 'Failed'
+    const container = useRef(null);
+
+    useGSAP(() => {
+        gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
+    }, { scope: container });
 
     // Filter logs
     const filteredLogs = useMemo(() => {
@@ -89,7 +96,7 @@ const LogsTab = () => {
     }, [searchQuery, statusFilter]);
 
     return (
-        <div className="flex-1 flex overflow-hidden bg-slate-50/50 font-sans h-full animate-fade-in">
+        <div ref={container} className="tab-content flex-1 flex overflow-hidden bg-slate-50/50 font-sans h-full">
             
             {/* Logs List Pane */}
             <div className={`flex-1 p-6 md:p-8 overflow-y-auto flex flex-col gap-8 ${selectedLog ? 'hidden lg:flex lg:w-1/2' : 'w-full'}`}>

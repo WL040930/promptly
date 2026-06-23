@@ -1,4 +1,9 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
+import { gsap } from 'gsap'
+import { useGSAP } from '@gsap/react'
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
+
+gsap.registerPlugin(useGSAP, ScrollTrigger)
 
 const FEATURES = [
   {
@@ -81,9 +86,25 @@ const COLOR_CLASS = {
 
 function Features() {
   const [activeId, setActiveId] = useState(null)
+  const container = useRef(null)
+
+  useGSAP(() => {
+    gsap.from('.feature-card', {
+      y: 50,
+      opacity: 0,
+      duration: 0.8,
+      stagger: 0.2,
+      ease: 'power3.out',
+      scrollTrigger: {
+        trigger: container.current,
+        start: 'top 80%',
+        toggleActions: 'play none none none'
+      }
+    })
+  }, { scope: container })
 
   return (
-    <section id="features" className="py-24 bg-white relative scroll-mt-24">
+    <section ref={container} id="features" className="py-24 bg-white relative scroll-mt-24">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
           <h2 className="text-3xl md:text-5xl font-bold text-slate-900 mb-6">Built for Modern Administration</h2>
@@ -100,7 +121,7 @@ function Features() {
                 key={feature.id}
                 onMouseEnter={() => setActiveId(feature.id)}
                 onMouseLeave={() => setActiveId(null)}
-                className={`group p-8 rounded-3xl border transition-all duration-300 h-full flex flex-col ${
+                className={`feature-card group p-8 rounded-3xl border transition-all duration-300 h-full flex flex-col ${
                   activeId === feature.id ? 'bg-slate-900 border-slate-900 shadow-2xl scale-105' : 'bg-slate-50 border-slate-100'
                 }`}
               >
