@@ -29,12 +29,18 @@ const ChatTab = () => {
     ]);
     const [inputText, setInputText] = useState('');
     const [isTyping, setIsTyping] = useState(false);
+    const [sidebarSearch, setSidebarSearch] = useState('');
+    const [activeChatId, setActiveChatId] = useState(null);
     const messagesEndRef = useRef(null);
     const container = useRef(null);
 
     useGSAP(() => {
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
     }, { scope: container });
+
+    const filteredChats = sidebarSearch
+        ? PAST_CHATS.filter(c => c.title.toLowerCase().includes(sidebarSearch.toLowerCase()) || c.preview.toLowerCase().includes(sidebarSearch.toLowerCase()))
+        : PAST_CHATS;
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -59,6 +65,7 @@ const ChatTab = () => {
     };
 
     const handleNewChat = () => {
+        setActiveChatId(null);
         setMessages([
             {
                 sender: 'bot',
@@ -67,7 +74,8 @@ const ChatTab = () => {
         ]);
     };
 
-    const loadPastChat = (title) => {
+    const loadPastChat = (id, title) => {
+        setActiveChatId(id);
         setMessages([
             { sender: 'user', text: `Can you help me with: ${title}?` },
             { sender: 'bot', text: `Sure! I have loaded the context for "${title}". How can we proceed?` }
@@ -78,36 +86,75 @@ const ChatTab = () => {
         <div ref={container} className="tab-content flex w-full h-full bg-white relative font-sans overflow-hidden">
             
             {/* Chat History Internal Sidebar */}
-            <div className="w-64 border-r border-slate-100 bg-slate-50/50 flex flex-col h-full hidden md:flex shrink-0">
-                <div className="p-4 border-b border-slate-100">
-                    <button 
+            <aside className="w-[280px] border-r border-gray-200/60 bg-white/60 backdrop-blur-md flex flex-col shrink-0 z-20 hidden md:flex">
+                {/* Sidebar Header */}
+                <div className="p-4 flex items-center justify-between shrink-0">
+                    <h3 className="font-extrabold text-gray-900 text-[15px] tracking-tight pl-1">Chats</h3>
+                    <button
                         onClick={handleNewChat}
-                        className="w-full py-2.5 px-4 bg-white border border-slate-200 rounded-xl shadow-sm text-sm font-bold text-slate-700 hover:border-blue-300 hover:text-blue-600 hover:shadow-md transition-all flex items-center justify-center gap-2"
+                        className="p-1.5 rounded-xl text-gray-400 hover:text-gray-900 hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-100 transition-all"
+                        title="New Chat"
                     >
-                        <PlusIcon />
-                        New Chat
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
                     </button>
                 </div>
-                <div className="p-4 flex-1 overflow-y-auto">
-                    <h4 className="text-xs font-semibold text-slate-500 mb-3 px-1">Past Chats</h4>
-                    <div className="flex flex-col gap-1">
-                        {PAST_CHATS.map(chat => (
-                            <button 
-                                key={chat.id}
-                                onClick={() => loadPastChat(chat.title)}
-                                className="w-full text-left p-3 rounded-xl hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-200 transition-all group"
-                            >
-                                <div className="text-sm font-medium text-slate-700 truncate group-hover:text-blue-600 transition-colors">
-                                    {chat.title}
-                                </div>
-                                <div className="text-xs font-normal text-slate-500 truncate mt-1">
-                                    {chat.preview}
-                                </div>
-                            </button>
-                        ))}
+
+                {/* Search */}
+                <div className="px-4 pb-3">
+                    <div className="relative group">
+                        <input
+                            type="text"
+                            value={sidebarSearch}
+                            onChange={e => setSidebarSearch(e.target.value)}
+                            placeholder="Search chats..."
+                            className="w-full bg-white/50 backdrop-blur-sm border border-gray-200/80 hover:border-gray-300 rounded-xl pl-9 pr-3 py-2 text-[13px] font-medium text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all shadow-inner"
+                        />
+                        <svg className="absolute left-3 top-2.5 text-gray-400 group-focus-within:text-blue-500 transition-colors" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                        </svg>
                     </div>
                 </div>
-            </div>
+
+                {/* Chat List */}
+                <div className="flex-1 overflow-y-auto px-3 pb-4 flex flex-col gap-1">
+                    {filteredChats.map(chat => {
+                        const isActive = activeChatId === chat.id;
+                        return (
+                            <div 
+                                key={chat.id}
+                                onClick={() => loadPastChat(chat.id, chat.title)}
+                                className={`flex flex-col gap-1 px-3.5 py-3 rounded-xl cursor-pointer transition-all duration-300 group ${
+                                    isActive
+                                        ? 'bg-white shadow-md shadow-gray-200/40 border border-gray-100 scale-[1.02]'
+                                        : 'hover:bg-white/50 border border-transparent'
+                                }`}
+                            >
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className={`truncate text-[14px] ${isActive ? 'font-bold text-gray-900' : 'font-medium text-gray-700 group-hover:text-blue-600'}`}>
+                                        {chat.title}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between mt-0.5 gap-2">
+                                    <span className="text-xs font-normal text-gray-500 truncate flex-1">
+                                        {chat.preview}
+                                    </span>
+                                    <span className="text-[10px] font-medium text-gray-400 shrink-0">
+                                        {chat.date}
+                                    </span>
+                                </div>
+                            </div>
+                        );
+                    })}
+
+                    {filteredChats.length === 0 && sidebarSearch && (
+                        <div className="text-center py-10">
+                            <p className="text-[13px] font-bold text-gray-400">No chats match "{sidebarSearch}"</p>
+                        </div>
+                    )}
+                </div>
+            </aside>
 
             {/* Main Chat Area */}
             <div className="flex-1 flex flex-col h-full relative">
