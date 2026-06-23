@@ -77,7 +77,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
 
     const handleSwitchRole = async (newRole) => {
         try {
-            const data = await apiRequest('/api/auth/experience-level', {
+            const data = await apiRequest('/api/auth/mode', {
                 method: 'PUT',
                 body: JSON.stringify({ experienceLevel: newRole })
             });

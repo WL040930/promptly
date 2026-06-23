@@ -165,12 +165,50 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
                         </div>
                         <div className="flex flex-col">
                             <span className="font-bold text-slate-800">Google Account</span>
-                            <span className="text-xs text-slate-500">Not connected</span>
+                            <span className="text-xs text-slate-500">{user?.googleEmail ? `Connected as ${user.googleEmail}` : 'Not connected'}</span>
                         </div>
                     </div>
-                    <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm">
-                        Connect
-                    </button>
+                    {user?.googleId ? (
+                        <button 
+                            onClick={async () => {
+                                try {
+                                    const token = localStorage.getItem('auth_token');
+                                    const res = await fetch('http://localhost:3000/api/auth/google/disconnect', {
+                                        method: 'POST',
+                                        headers: { 'Authorization': `Bearer ${token}` }
+                                    });
+                                    if (res.ok) {
+                                        window.location.reload();
+                                    }
+                                } catch (err) {
+                                    console.error('Failed to disconnect Google account', err);
+                                }
+                            }}
+                            className="px-4 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm font-bold text-slate-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all shadow-sm"
+                        >
+                            Disconnect
+                        </button>
+                    ) : (
+                        <button 
+                            onClick={async () => {
+                                try {
+                                    const token = localStorage.getItem('auth_token');
+                                    const res = await fetch('http://localhost:3000/api/auth/google/connect', {
+                                        headers: { 'Authorization': `Bearer ${token}` }
+                                    });
+                                    const data = await res.json();
+                                    if (data.url) {
+                                        window.location.href = data.url;
+                                    }
+                                } catch (err) {
+                                    console.error('Failed to init Google connect', err);
+                                }
+                            }}
+                            className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm"
+                        >
+                            Connect
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

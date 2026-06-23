@@ -1,8 +1,8 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import User from '../models/User.js';
-import env from '../config/env.js';
-import { normalizeEmail, emailPattern, passwordPattern } from '../utils/validators.js';
+import User from '../../models/User.js';
+import env from '../../config/env.js';
+import { normalizeEmail, emailPattern, passwordPattern } from '../../utils/validators.js';
 
 const createAuthToken = (user) =>
     jwt.sign({ sub: user.id, email: user.email }, env.jwt.secret, {
@@ -71,7 +71,7 @@ const login = async (req, res) => {
     });
 };
 
-const updateExperienceLevel = async (req, res) => {
+const updateMode = async (req, res) => {
     const { experienceLevel } = req.body;
 
     if (!['chat', 'builder'].includes(experienceLevel)) {
@@ -87,7 +87,7 @@ const updateExperienceLevel = async (req, res) => {
     await user.save();
 
     return res.json({
-        message: 'Experience level saved successfully.',
+        message: 'Mode saved successfully.',
         user: {
             id: user.id,
             email: user.email,
@@ -105,9 +105,11 @@ const getMe = async (req, res) => {
         user: {
             id: user.id,
             email: user.email,
-            experienceLevel: user.experienceLevel
+            experienceLevel: user.experienceLevel,
+            googleEmail: user.googleEmail,
+            googleId: user.googleId
         }
     });
 };
 
-export { register, login, updateExperienceLevel, getMe };
+export { register, login, updateMode, getMe };

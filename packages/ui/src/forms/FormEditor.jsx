@@ -22,6 +22,8 @@ const FormEditor = ({
 }) => {
     const [selectedFieldId, setSelectedFieldId] = useState(null);
     const [showAddMenu, setShowAddMenu] = useState(false);
+    const [draggedIndex, setDraggedIndex] = useState(null);
+    const [dragOverIndex, setDragOverIndex] = useState(null);
     const addMenuRef = useRef(null);
     const dragIndexRef = useRef(null);
 
@@ -29,20 +31,34 @@ const FormEditor = ({
 
     const handleDragStart = (index) => (e) => {
         dragIndexRef.current = index;
+        setDraggedIndex(index);
         e.dataTransfer.effectAllowed = 'move';
-        const img = new Image();
-        img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-        e.dataTransfer.setDragImage(img, 0, 0);
+        // Let the browser generate the default ghost image
     };
 
     const handleDragOver = (index) => (e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
+        if (dragOverIndex !== index) {
+            setDragOverIndex(index);
+        }
+    };
+
+    const handleDragLeave = () => {
+        setDragOverIndex(null);
+    };
+
+    const handleDragEnd = () => {
+        setDraggedIndex(null);
+        setDragOverIndex(null);
+        dragIndexRef.current = null;
     };
 
     const handleDrop = (targetIndex) => (e) => {
         e.preventDefault();
         const fromIndex = dragIndexRef.current;
+        setDraggedIndex(null);
+        setDragOverIndex(null);
         if (fromIndex === null || fromIndex === targetIndex) return;
         onReorderFields(fromIndex, targetIndex);
         dragIndexRef.current = null;
@@ -86,21 +102,36 @@ const FormEditor = ({
 
             {/* Field Cards */}
             <div className="flex flex-col gap-4">
-                {form.fields.map((field, index) => (
-                    <FieldCard
-                        key={field.id}
-                        field={field}
-                        isSelected={selectedFieldId === field.id}
-                        onSelect={() => setSelectedFieldId(field.id)}
-                        onUpdate={(updates) => onUpdateField(field.id, updates)}
-                        onDelete={() => onDeleteField(field.id)}
-                        onDuplicate={() => onDuplicateField(field.id)}
-                        onDragStart={handleDragStart(index)}
-                        onDragOver={handleDragOver(index)}
-                        onDrop={handleDrop(index)}
-                        accentColor={accentColor}
-                    />
-                ))}
+                {form.fields.map((field, index) => {
+                    const isDragged = draggedIndex === index;
+                    const isDragOver = dragOverIndex === index && draggedIndex !== index;
+                    
+                    return (
+                        <div 
+                            key={field.id}
+                            onDragOver={handleDragOver(index)}
+                            onDrop={handleDrop(index)}
+                            onDragLeave={handleDragLeave}
+                            onDragEnd={handleDragEnd}
+                            className={`transition-all duration-300 ease-in-out ${
+                                isDragged ? 'opacity-40 scale-95 grayscale' : 'opacity-100'
+                            } ${
+                                isDragOver ? (dragIndexRef.current < index ? 'pb-24' : 'pt-24') : ''
+                            }`}
+                        >
+                            <FieldCard
+                                field={field}
+                                isSelected={selectedFieldId === field.id}
+                                onSelect={() => setSelectedFieldId(field.id)}
+                                onUpdate={(updates) => onUpdateField(field.id, updates)}
+                                onDelete={() => onDeleteField(field.id)}
+                                onDuplicate={() => onDuplicateField(field.id)}
+                                onDragStart={handleDragStart(index)}
+                                accentColor={accentColor}
+                            />
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Add Question Button */}

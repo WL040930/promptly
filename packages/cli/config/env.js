@@ -37,6 +37,11 @@ const env = {
     jwt: {
         secret: getJwtSecret(),
         expiresIn: process.env.JWT_EXPIRES_IN || '90d'
+    },
+    google: {
+        clientId: requireEnv('GOOGLE_CLIENT_ID'),
+        clientSecret: requireEnv('GOOGLE_CLIENT_SECRET'),
+        redirectUri: requireEnv('GOOGLE_REDIRECT_URI')
     }
 };
 

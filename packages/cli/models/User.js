@@ -25,6 +25,23 @@ const User = sequelize.define(
             type: DataTypes.STRING(30),
             allowNull: true,
             defaultValue: null
+        },
+        googleId: {
+            type: DataTypes.STRING(255),
+            allowNull: true,
+            unique: true
+        },
+        googleEmail: {
+            type: DataTypes.STRING(255),
+            allowNull: true
+        },
+        googleAccessToken: {
+            type: DataTypes.TEXT,
+            allowNull: true
+        },
+        googleRefreshToken: {
+            type: DataTypes.TEXT,
+            allowNull: true
         }
     },
     {

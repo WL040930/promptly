@@ -1,0 +1,79 @@
+import { OAuth2Client } from 'google-auth-library';
+import User from '../../models/User.js';
+import env from '../../config/env.js';
+
+const oauth2Client = new OAuth2Client(
+    env.google.clientId,
+    env.google.clientSecret,
+    env.google.redirectUri
+);
+
+const googleConnect = async (req, res) => {
+    const url = oauth2Client.generateAuthUrl({
+        access_type: 'offline',
+        prompt: 'consent',
+        scope: [
+            'https://www.googleapis.com/auth/userinfo.profile',
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/drive.file'
+        ],
+        state: req.userId
+    });
+    
+    return res.json({ url });
+};
+
+const googleCallback = async (req, res) => {
+    const { code, state } = req.query;
+    
+    if (!code || !state) {
+        return res.redirect('http://localhost:5173/dashboard?settings=connections&error=missing_code_or_state');
+    }
+    
+    const userId = state;
+    
+    try {
+        const { tokens } = await oauth2Client.getToken(code);
+        oauth2Client.setCredentials(tokens);
+        
+        const response = await oauth2Client.request({ url: 'https://www.googleapis.com/oauth2/v2/userinfo' });
+        const googleEmail = response.data.email;
+        const googleId = response.data.id;
+        
+        const user = await User.findByPk(userId);
+        if (user) {
+            user.googleId = googleId;
+            user.googleEmail = googleEmail;
+            user.googleAccessToken = tokens.access_token;
+            if (tokens.refresh_token) {
+                user.googleRefreshToken = tokens.refresh_token;
+            }
+            await user.save();
+        }
+        
+        return res.redirect('http://localhost:5173/dashboard?settings=connections&success=true');
+    } catch (err) {
+        console.error('Google OAuth Error:', err);
+        return res.redirect('http://localhost:5173/dashboard?settings=connections&error=oauth_failed');
+    }
+};
+
+const googleDisconnect = async (req, res) => {
+    const userId = req.userId;
+    try {
+        const user = await User.findByPk(userId);
+        if (user) {
+            user.googleId = null;
+            user.googleEmail = null;
+            user.googleAccessToken = null;
+            user.googleRefreshToken = null;
+            await user.save();
+        }
+        return res.json({ success: true });
+    } catch (err) {
+        console.error('Google OAuth Disconnect Error:', err);
+        return res.status(500).json({ error: 'Failed to disconnect Google account' });
+    }
+};
+
+export { googleConnect, googleCallback, googleDisconnect };
