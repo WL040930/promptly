@@ -293,7 +293,14 @@ const FormsTab = () => {
                 <div className="h-16 bg-white/80 backdrop-blur-md border-b border-gray-200/60 px-6 flex items-center justify-between shrink-0 z-10 shadow-sm">
                     {/* Left: Form name + sub-tabs */}
                     <div className="flex items-center gap-8 min-w-0 flex-1">
-                        <h2 className="text-[15px] font-extrabold text-gray-900 truncate max-w-[250px] tracking-tight">{activeForm.title}</h2>
+                        <input
+                            type="text"
+                            value={activeForm.title}
+                            onChange={(e) => updateForm({ title: e.target.value })}
+                            placeholder="Untitled Form"
+                            title="Click to rename"
+                            className="text-[15px] font-extrabold text-gray-900 truncate min-w-0 max-w-[250px] tracking-tight bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 rounded hover:bg-gray-100 transition-colors px-2 py-1 -ml-2"
+                        />
 
                         {/* Sub-tabs */}
                         <div className="flex items-center gap-1 border-l-2 border-gray-100 pl-6 h-8">

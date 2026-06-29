@@ -143,14 +143,14 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                     <div className="mb-4 px-1">
                         <button 
                             onClick={() => setActiveTab(isChatMode ? 'chat' : 'workflows')}
-                            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5 transition-all bg-gradient-to-r from-blue-600 to-indigo-600"
+                            className={`flex items-center justify-center gap-2 rounded-xl text-sm font-bold text-white shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5 transition-all bg-gradient-to-r from-blue-600 to-indigo-600 ${isCollapsed ? 'w-10 h-10 mx-auto p-0 shrink-0' : 'w-full py-2.5'}`}
                             title={isChatMode ? 'Create Chat' : 'Create Workflow'}
                         >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <svg className="shrink-0 transition-all duration-300" width={isCollapsed ? "24" : "18"} height={isCollapsed ? "24" : "18"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                 <line x1="12" y1="5" x2="12" y2="19"></line>
                                 <line x1="5" y1="12" x2="19" y2="12"></line>
                             </svg>
-                            {!isCollapsed && <span>{isChatMode ? 'Create Chat' : 'Create Workflow'}</span>}
+                            {!isCollapsed && <span className="whitespace-nowrap">{isChatMode ? 'Create Chat' : 'Create Workflow'}</span>}
                         </button>
                     </div>
 
