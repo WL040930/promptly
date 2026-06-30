@@ -5,7 +5,8 @@ const WorkspaceSelectionStep = ({ selectedRole, onSelectRole, onNext }) => {
         <div className="w-full max-w-[840px] flex flex-col items-center animate-fade-in z-10">
             {/* Header */}
             <div className="mb-10 w-full max-w-2xl mx-auto text-center">
-                <div className="inline-flex px-4 py-1.5 rounded-full bg-indigo-50 text-indigo-600 text-sm font-bold uppercase tracking-widest border border-indigo-100 mb-6 shadow-sm">
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-50 text-indigo-600 text-sm font-bold uppercase tracking-widest border border-indigo-100 mb-6 shadow-sm">
+                    <img src="/logo.png" alt="Promptly Logo" className="w-5 h-5 object-contain rounded-md overflow-hidden" />
                     Welcome to Promptly
                 </div>
                 <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 mb-4">

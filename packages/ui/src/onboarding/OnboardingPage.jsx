@@ -38,9 +38,7 @@ const OnboardingPage = ({ user, onOnboardingComplete }) => {
             
             {/* Logo - Top Left */}
             <div className="absolute top-6 left-6 z-10 flex items-center gap-2">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-cyan-400 grid place-items-center font-extrabold text-white shadow-sm">
-                    P
-                </div>
+                <img src="/logo.png" alt="Promptly Logo" className="w-10 h-10 object-contain rounded-xl overflow-hidden shadow-sm" />
                 <span className="text-xl font-bold tracking-tight text-slate-800">
                     Promptly
                 </span>

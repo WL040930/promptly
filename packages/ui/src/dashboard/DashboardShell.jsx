@@ -57,7 +57,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
         const parsed = parsePath(window.location.pathname);
         if (isChatMode) {
             // Chat mode: tab is the chat sub-page
-            return parsed.tab || 'chat';
+            return parsed.tab || 'dashboard';
         }
         // Workflow mode: map to sidebar tab ids
         if (parsed.tab === 'workflows') return 'workflows';
@@ -120,9 +120,11 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                 <div className={`h-16 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between px-4'} border-b border-transparent`}>
                     {!isCollapsed && (
                         <div className="flex items-center gap-2 overflow-hidden">
-                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-600 to-cyan-400 grid place-items-center font-extrabold text-sm text-white shadow-sm shrink-0">
-                                P
-                            </div>
+                            <img 
+                                src="/logo.png" 
+                                alt="Promptly Logo" 
+                                className="w-8 h-8 rounded-lg overflow-hidden object-contain shadow-sm shrink-0" 
+                            />
                             <span className="text-lg font-bold tracking-tight bg-gradient-to-r from-indigo-600 to-cyan-400 bg-clip-text text-transparent truncate">
                                 Promptly
                             </span>

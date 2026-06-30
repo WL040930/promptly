@@ -58,7 +58,7 @@ function App() {
         const isPublicFormPath = path.startsWith('/f/');
         
         if (user && !isAppPath && !isResetPasswordPath && !isPublicFormPath) {
-            goTo(user.experienceLevel === 'chat' ? '/chat/chat' : '/workflow/dashboard')
+            goTo(user.experienceLevel === 'chat' ? '/chat/dashboard' : '/workflow/dashboard')
         } else if (!user && isAppPath) {
             goTo('/login')
         }
@@ -73,7 +73,7 @@ function App() {
         if (payload?.user) {
             setAuthUser(payload.user)
             setUser(payload.user)
-            goTo(payload.user.experienceLevel === 'chat' ? '/chat/chat' : '/workflow/dashboard')
+            goTo(payload.user.experienceLevel === 'chat' ? '/chat/dashboard' : '/workflow/dashboard')
         }
     }
 
