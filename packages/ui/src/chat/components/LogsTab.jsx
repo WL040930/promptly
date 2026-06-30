@@ -1,99 +1,49 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
-
-const LOGS_DATA = [
-    { 
-        id: 'run-8b7a9f2d', 
-        time: '2026-06-17 15:30:00', 
-        workflow: 'Sales Lead Sync', 
-        duration: '422ms', 
-        status: 'Success',
-        trigger: 'Stripe Webhook',
-        tags: ['Stripe', 'OpenAI', 'Slack'],
-        steps: [
-            { name: 'Stripe Payment Webhook', type: 'trigger', status: 'success', time: '12ms', details: 'Event: invoice.payment_succeeded. Customer: lim@gmail.com' },
-            { name: 'Extract Sentiment & Details', type: 'ai', status: 'success', time: '340ms', details: 'Model: prompty-ultra-v3. Intent: Upgrade subscription' },
-            { name: 'Post Slack Notification', type: 'action', status: 'success', time: '70ms', details: 'Posted message to #sales-leads. Msg ID: sl-8802' }
-        ]
-    },
-    { 
-        id: 'run-7c6d5e4b', 
-        time: '2026-06-17 15:15:22', 
-        workflow: 'Auto-invoice PDF Generator', 
-        duration: '1.5s', 
-        status: 'Success',
-        trigger: 'Weekly Schedule',
-        tags: ['Cron', 'Postgres', 'Resend'],
-        steps: [
-            { name: 'Weekly Schedule Trigger', type: 'trigger', status: 'success', time: '1ms', details: 'Cron expression: 0 0 * * FRI' },
-            { name: 'Fetch Postgres Customers', type: 'action', status: 'success', time: '210ms', details: 'Returned 42 active unpaid accounts' },
-            { name: 'Batch SMTP Invoice Mails', type: 'action', status: 'success', time: '1.29s', details: 'Dispatched 42 PDF files via Resend SMTP server' }
-        ]
-    },
-    { 
-        id: 'run-6a5b4c3d', 
-        time: '2026-06-17 14:02:10', 
-        workflow: 'Support Ticket Automation', 
-        duration: '1.2s', 
-        status: 'Success',
-        trigger: 'Support Email Intake',
-        tags: ['Gmail', 'OpenAI', 'Jira'],
-        steps: [
-            { name: 'Email Received Inbox', type: 'trigger', status: 'success', time: '5ms', details: 'From: client@support.com. Subject: API downtime' },
-            { name: 'AI Urgent Sentiment Filter', type: 'ai', status: 'success', time: '820ms', details: 'Model: prompty-fast-v3. Result: Critical Urgency' },
-            { name: 'Create Jira Service Ticket', type: 'action', status: 'success', time: '375ms', details: 'Ticket created: SRV-102. Assigned to dev-ops' }
-        ]
-    },
-    { 
-        id: 'run-5f4e3d2c', 
-        time: '2026-06-17 12:45:00', 
-        workflow: 'Weekly Analytics Engine', 
-        duration: '12.4s', 
-        status: 'Failed',
-        trigger: 'Weekly Schedule',
-        tags: ['Cron', 'Postgres', 'Slack'],
-        error: 'PostgreSQL Connection Timeout (ERR_CONN_TIMEOUT)',
-        steps: [
-            { name: 'Weekly Schedule Trigger', type: 'trigger', status: 'success', time: '2ms', details: 'Cron expression: 0 17 * * FRI' },
-            { name: 'Fetch Database Metrics', type: 'action', status: 'failed', time: '12.4s', details: 'TCP Connection timed out on port 5432. Server failed to respond.' },
-            { name: 'Slack Summary Report', type: 'action', status: 'skipped', time: '0ms', details: 'Skipped due to upstream node execution failure.' }
-        ]
-    },
-    { 
-        id: 'run-4c3b2a10', 
-        time: '2026-06-17 09:30:00', 
-        workflow: 'Sales Lead Sync', 
-        duration: '390ms', 
-        status: 'Success',
-        trigger: 'Stripe Webhook',
-        tags: ['Stripe', 'OpenAI', 'Slack'],
-        steps: [
-            { name: 'Stripe Payment Webhook', type: 'trigger', status: 'success', time: '10ms', details: 'Event: invoice.payment_succeeded. Customer: tan@sales.co' },
-            { name: 'Extract Sentiment & Details', type: 'ai', status: 'success', time: '310ms', details: 'Model: prompty-ultra-v3. Intent: Consultation setup' },
-            { name: 'Post Slack Notification', type: 'action', status: 'success', time: '70ms', details: 'Posted message to #sales-leads. Msg ID: sl-8801' }
-        ]
-    }
-];
+import { getExecutionLogs } from '../../api/backend.js';
 
 const LogsTab = () => {
     const [selectedLog, setSelectedLog] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('All'); // 'All' | 'Success' | 'Failed'
+    const [logs, setLogs] = useState([]);
+    const [loading, setLoading] = useState(true);
     const container = useRef(null);
 
     useGSAP(() => {
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
     }, { scope: container });
 
-    // Filter logs
-    const filteredLogs = useMemo(() => {
-        return LOGS_DATA.filter(log => {
-            const matchesSearch = log.workflow.toLowerCase().includes(searchQuery.toLowerCase()) || log.id.toLowerCase().includes(searchQuery.toLowerCase());
-            const matchesStatus = statusFilter === 'All' || log.status === statusFilter;
-            return matchesSearch && matchesStatus;
-        });
+    useEffect(() => {
+        setLoading(true);
+        // Debounce simple fetch for now
+        const timer = setTimeout(() => {
+            getExecutionLogs(searchQuery, statusFilter).then(data => {
+                setLogs(data);
+                setLoading(false);
+            }).catch(err => {
+                console.error(err);
+                setLoading(false);
+            });
+        }, 300);
+        return () => clearTimeout(timer);
     }, [searchQuery, statusFilter]);
+
+    // Format for UI rendering
+    const filteredLogs = useMemo(() => {
+        return logs.map(log => ({
+            id: log.id,
+            time: new Date(log.time).toLocaleString(),
+            workflow: log.workflowId, // Real app would join workflow name here
+            duration: log.durationMs ? `${log.durationMs}ms` : 'N/A',
+            status: log.status,
+            trigger: log.trigger,
+            tags: log.tags || [],
+            steps: log.steps || [],
+            error: log.error
+        }));
+    }, [logs]);
 
     return (
         <div ref={container} className="tab-content flex-1 flex overflow-hidden bg-slate-50/50 font-sans h-full">

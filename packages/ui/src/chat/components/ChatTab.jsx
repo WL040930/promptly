@@ -2,23 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { BotIcon, UserIcon, SendIcon, PlusIcon, MessageSquareIcon } from './Icons';
-
-const BOT_RESPONSES = {
-    default: `That is an excellent question! As an AI assistant, I can easily automate that for you. 
-
-Here's what we can do:
-1. **Identify the sources**: Map out where your data currently sits.
-2. **Setup triggers**: Trigger automations instantly.
-3. **Format output**: Deliver results directly to dashboards.
-
-Let me know if you would like me to generate a step-by-step workflow guide tailored for this task!`
-};
-
-const PAST_CHATS = [
-    { id: 1, title: 'Drafting Follow-up Email', preview: 'Can you help me draft a follow up...', date: 'Today' },
-    { id: 2, title: 'Sync Notion with Google Sheets', preview: 'I want to sync a database...', date: 'Yesterday' },
-    { id: 3, title: 'Slack Notification Setup', preview: 'When a new lead arrives...', date: '3 days ago' },
-];
+import { getChatSessions, getChatSession, sendChatMessage } from '../../api/backend.js';
 
 const ChatTab = () => {
     const [messages, setMessages] = useState([
@@ -27,10 +11,12 @@ const ChatTab = () => {
             text: `Hi there! I am your friendly Prompty Assistant. I am here to help you automate your tasks without writing a single line of code!\n\nType a question to get started.`
         }
     ]);
+    const [pastChats, setPastChats] = useState([]);
     const [inputText, setInputText] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [sidebarSearch, setSidebarSearch] = useState('');
     const [activeChatId, setActiveChatId] = useState(null);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const messagesEndRef = useRef(null);
     const container = useRef(null);
 
@@ -38,9 +24,22 @@ const ChatTab = () => {
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
     }, { scope: container });
 
+    const fetchSessions = async () => {
+        try {
+            const data = await getChatSessions();
+            setPastChats(data || []);
+        } catch (error) {
+            console.error('Failed to fetch chat sessions:', error);
+        }
+    };
+
+    useEffect(() => {
+        fetchSessions();
+    }, []);
+
     const filteredChats = sidebarSearch
-        ? PAST_CHATS.filter(c => c.title.toLowerCase().includes(sidebarSearch.toLowerCase()) || c.preview.toLowerCase().includes(sidebarSearch.toLowerCase()))
-        : PAST_CHATS;
+        ? pastChats.filter(c => c.title?.toLowerCase().includes(sidebarSearch.toLowerCase()))
+        : pastChats;
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -50,22 +49,33 @@ const ChatTab = () => {
         scrollToBottom();
     }, [messages, isTyping]);
 
-    const handleSendMessage = (text) => {
+    const handleSendMessage = async (text) => {
         if (!text.trim()) return;
 
         setMessages(prev => [...prev, { sender: 'user', text }]);
         setInputText('');
         setIsTyping(true);
 
-        setTimeout(() => {
+        try {
+            const res = await sendChatMessage(activeChatId, text);
+            if (res?.reply) {
+                setMessages(prev => [...prev, res.reply]);
+            }
+            if (res?.sessionId && activeChatId !== res.sessionId) {
+                setActiveChatId(res.sessionId);
+                fetchSessions(); // refresh the list to show the new chat
+            }
+        } catch (error) {
+            console.error('Failed to send message:', error);
+            setMessages(prev => [...prev, { sender: 'bot', text: 'Sorry, I encountered an error. Please try again.' }]);
+        } finally {
             setIsTyping(false);
-            const botReply = BOT_RESPONSES[text] || BOT_RESPONSES.default;
-            setMessages(prev => [...prev, { sender: 'bot', text: botReply }]);
-        }, 1500);
+        }
     };
 
     const handleNewChat = () => {
         setActiveChatId(null);
+        setIsSidebarOpen(false);
         setMessages([
             {
                 sender: 'bot',
@@ -74,19 +84,35 @@ const ChatTab = () => {
         ]);
     };
 
-    const loadPastChat = (id, title) => {
+    const loadPastChat = async (id, title) => {
         setActiveChatId(id);
-        setMessages([
-            { sender: 'user', text: `Can you help me with: ${title}?` },
-            { sender: 'bot', text: `Sure! I have loaded the context for "${title}". How can we proceed?` }
-        ]);
+        setIsSidebarOpen(false);
+        setIsTyping(true);
+        setMessages([]); // clear current
+        
+        try {
+            const sessionData = await getChatSession(id);
+            setMessages(sessionData?.messages || []);
+        } catch (error) {
+            console.error('Failed to load chat:', error);
+            setMessages([
+                { sender: 'bot', text: `Sorry, I failed to load this session.` }
+            ]);
+        } finally {
+            setIsTyping(false);
+        }
     };
 
     return (
         <div ref={container} className="tab-content flex w-full h-full bg-white relative font-sans overflow-hidden">
             
+            {/* Mobile Overlay */}
+            {isSidebarOpen && (
+                <div className="absolute inset-0 bg-black/20 z-20 md:hidden" onClick={() => setIsSidebarOpen(false)}></div>
+            )}
+
             {/* Chat History Internal Sidebar */}
-            <aside className="w-[280px] border-r border-gray-200/60 bg-white/60 backdrop-blur-md flex flex-col shrink-0 z-20 hidden md:flex">
+            <aside className={`w-[280px] border-r border-gray-200/60 bg-white/95 backdrop-blur-md flex flex-col shrink-0 z-30 absolute md:relative h-full transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}`}>
                 {/* Sidebar Header */}
                 <div className="p-4 flex items-center justify-between shrink-0">
                     <h3 className="font-extrabold text-gray-900 text-[15px] tracking-tight pl-1">Chats</h3>
@@ -138,10 +164,11 @@ const ChatTab = () => {
                                 </div>
                                 <div className="flex items-center justify-between mt-0.5 gap-2">
                                     <span className="text-xs font-normal text-gray-500 truncate flex-1">
-                                        {chat.preview}
+                                        {/* No preview text on the API list right now, so we can omit it or show a placeholder */}
+                                        Click to view chat...
                                     </span>
                                     <span className="text-[10px] font-medium text-gray-400 shrink-0">
-                                        {chat.date}
+                                        {new Date(chat.updatedAt).toLocaleDateString()}
                                     </span>
                                 </div>
                             </div>
@@ -159,8 +186,12 @@ const ChatTab = () => {
             {/* Main Chat Area */}
             <div className="flex-1 flex flex-col h-full relative">
                 {/* Header */}
-                <div className="w-full flex justify-center py-4 border-b border-slate-100 shadow-sm bg-white/90 backdrop-blur z-10 shrink-0">
-                    <span className="text-sm font-semibold text-slate-500">Prompty Assistant</span>
+                <div className="w-full flex items-center justify-between py-4 px-4 border-b border-slate-100 shadow-sm bg-white/90 backdrop-blur z-10 shrink-0">
+                    <button onClick={() => setIsSidebarOpen(true)} className="md:hidden text-slate-500 hover:text-slate-800 p-1">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                    </button>
+                    <span className="text-sm font-semibold text-slate-500 absolute left-1/2 -translate-x-1/2">Prompty Assistant</span>
+                    <div className="w-7 md:hidden"></div>
                 </div>
 
                 {/* Message Log */}

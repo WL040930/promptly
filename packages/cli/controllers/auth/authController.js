@@ -82,7 +82,7 @@ const updateMode = async (req, res) => {
         return res.status(400).json({ error: 'Invalid mode selection.' });
     }
 
-    const user = await User.findByPk(req.userId);
+    const user = await User.findByPk(req.user.id);
     if (!user) {
         return res.status(404).json({ error: 'User not found.' });
     }
@@ -101,7 +101,7 @@ const updateMode = async (req, res) => {
 };
 
 const getMe = async (req, res) => {
-    const user = await User.findByPk(req.userId);
+    const user = await User.findByPk(req.user.id);
     if (!user) {
         return res.status(404).json({ error: 'User not found.' });
     }

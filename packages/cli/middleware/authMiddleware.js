@@ -10,7 +10,7 @@ export const requireAuth = (req, res, next) => {
     const token = authHeader.split(' ')[1];
     try {
         const decoded = jwt.verify(token, env.jwt.secret);
-        req.userId = decoded.sub;
+        req.user = { id: decoded.sub };
         next();
     } catch (err) {
         return res.status(401).json({ error: 'Invalid or expired authorization token.' });

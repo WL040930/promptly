@@ -1,5 +1,5 @@
 import React from 'react';
-import DashboardTab from './components/DashboardTab';
+import DashboardTab from '../builder/components/DashboardTab';
 import ChatTab from './components/ChatTab';
 import WorkflowTab from './components/WorkflowTab';
 import LogsTab from './components/LogsTab';
@@ -9,7 +9,7 @@ const ChatView = ({ user, activeTab = 'chat' }) => {
     const renderActiveTab = () => {
         switch (activeTab) {
             case 'dashboard':
-                return <DashboardTab />;
+                return <DashboardTab simplified={true} />;
             case 'workflow':
                 return <WorkflowTab />;
             case 'forms':

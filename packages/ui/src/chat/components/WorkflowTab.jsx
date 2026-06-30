@@ -1,22 +1,33 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useToast } from '../../components/ToastContext.jsx';
-
-const WORKFLOWS = [
-    { id: 1, name: 'Lead Capture to CRM', trigger: 'Webhook', status: 'Active', runs: 412 },
-    { id: 2, name: 'Monthly Invoice Generator', trigger: 'Schedule (Monthly)', status: 'Active', runs: 12 },
-    { id: 3, name: 'GitHub Star to Slack', trigger: 'GitHub Event', status: 'Draft', runs: 0 },
-    { id: 4, name: 'PDF Text Extractor', trigger: 'New File in Drive', status: 'Active', runs: 84 },
-];
+import { getWorkflows } from '../../api/backend.js';
 
 const WorkflowTab = () => {
     const toast = useToast();
     const container = useRef(null);
+    const [workflows, setWorkflows] = useState([]);
+    const [loading, setLoading] = useState(true);
 
     useGSAP(() => {
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
     }, { scope: container });
+
+    useEffect(() => {
+        const fetchWorkflows = async () => {
+            try {
+                const data = await getWorkflows();
+                if (data) setWorkflows(data);
+            } catch (err) {
+                console.error('Failed to fetch workflows:', err);
+                toast.error('Failed to load workflows.');
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchWorkflows();
+    }, [toast]);
 
     const handleRunNow = (name) => {
         toast.success(`Workflow "${name}" triggered successfully!`);
@@ -36,47 +47,63 @@ const WorkflowTab = () => {
                 </div>
 
                 <div className="grid grid-cols-1 gap-4">
-                    {WORKFLOWS.map(wf => (
-                        <div key={wf.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex items-center justify-between flex-wrap gap-4">
-                            <div className="flex items-center gap-5">
-                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${wf.status === 'Active' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                                    </svg>
-                                </div>
-                                <div>
-                                    <h3 className="font-semibold text-slate-800 text-lg">{wf.name}</h3>
-                                    <div className="flex items-center gap-3 mt-1 text-xs font-medium">
-                                        <span className="text-slate-500 flex items-center gap-1">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                                            {wf.trigger}
-                                        </span>
-                                        <span className={`px-2 py-0.5 rounded border ${wf.status === 'Active' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
-                                            {wf.status}
-                                        </span>
-                                        <span className="text-slate-400">
-                                            {wf.runs} runs
-                                        </span>
+                    {loading ? (
+                        [1, 2, 3].map(i => (
+                            <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-5">
+                                    <div className="w-12 h-12 rounded-xl bg-slate-200 animate-pulse shrink-0"></div>
+                                    <div>
+                                        <div className="h-5 w-40 bg-slate-200 animate-pulse rounded mb-2"></div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-4 w-20 bg-slate-200 animate-pulse rounded"></div>
+                                            <div className="h-4 w-16 bg-slate-200 animate-pulse rounded"></div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                            
-                            <div className="flex items-center gap-2">
-                                <button 
-                                    onClick={() => handleRunNow(wf.name)}
-                                    className="px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium text-sm rounded-lg transition-colors border border-blue-200"
-                                >
-                                    Run Now
-                                </button>
-                                <button className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                                </button>
-                                <button className="p-2 text-red-400 hover:text-red-650 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                                </button>
+                        ))
+                    ) : workflows.length > 0 ? (
+                        workflows.map(wf => (
+                            <div key={wf.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex items-center justify-between flex-wrap gap-4">
+                                <div className="flex items-center gap-5">
+                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${wf.status === 'Active' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold text-slate-800 text-lg">{wf.name}</h3>
+                                        <div className="flex items-center gap-3 mt-1 text-xs font-medium">
+                                            <span className="text-slate-500 flex items-center gap-1">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                                                {wf.triggerType || 'Manual'}
+                                            </span>
+                                            <span className={`px-2 py-0.5 rounded border ${wf.status === 'Active' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                                                {wf.status || 'Draft'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex items-center gap-2">
+                                    <button 
+                                        onClick={() => handleRunNow(wf.name)}
+                                        className="px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium text-sm rounded-lg transition-colors border border-blue-200"
+                                    >
+                                        Run Now
+                                    </button>
+                                    <button className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                    </button>
+                                    <button className="p-2 text-red-400 hover:text-red-650 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                    ))}
+                        ))
+                    ) : (
+                        <div className="p-10 text-center text-slate-500 font-medium">No workflows found.</div>
+                    )}
                 </div>
             </div>
         </div>

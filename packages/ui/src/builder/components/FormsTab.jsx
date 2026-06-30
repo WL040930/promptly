@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import FormEditor from '../../forms/FormEditor';
@@ -7,66 +7,36 @@ import FormResponses from '../../forms/FormResponses';
 import FormSettings from '../../forms/FormSettings';
 import FormShareModal from '../../forms/FormShareModal';
 import { createField } from '../../forms/fields/fieldTypes';
+import { getForms, createForm, updateForm as apiUpdateForm, deleteForm } from '../../api/backend.js';
 
 /**
  * FormsTab — main orchestrator for the form builder module.
  * Redesigned sidebar and top bar for a premium workspace feel.
  */
 
-const INITIAL_FORMS = [
-    {
-        id: 'form_1',
-        title: 'Customer Feedback Survey',
-        description: 'Collect feedback from customers regarding their onboarding experience.',
-        settings: { accentColor: '#4f46e5', acceptingResponses: true },
-        fields: [
-            { id: 'f_1', label: 'Full Name', type: 'text', required: true, placeholder: 'Enter your full name' },
-            { id: 'f_2', label: 'Email Address', type: 'email', required: true, placeholder: 'name@company.com' },
-            { id: 'f_3', label: 'Onboarding Rating', type: 'rating', required: true, maxRating: 5 },
-            { id: 'f_4', label: 'What did you enjoy most?', type: 'radio', required: false, choices: ['Easy setup', 'Clean interface', 'Fast performance', 'Great documentation'] },
-            { id: 'f_5', label: 'Any specific suggestions?', type: 'textarea', required: false, placeholder: 'Share your thoughts...', rows: 4 },
-        ],
-    },
-    {
-        id: 'form_2',
-        title: 'Support Request Intake',
-        description: 'Ticket collection form for customer support inquiries.',
-        settings: { accentColor: '#2563eb', acceptingResponses: true },
-        fields: [
-            { id: 'f_6', label: 'Contact Information', type: 'heading', subtext: 'Please provide your contact details so we can reach you.' },
-            { id: 'f_7', label: 'Email Address', type: 'email', required: true, placeholder: 'your@email.com' },
-            { id: 'f_8', label: 'Phone Number', type: 'phone', required: false, placeholder: '+1 (555) 000-0000' },
-            { id: 'f_9', label: 'Issue Details', type: 'heading', subtext: '' },
-            { id: 'f_10', label: 'Urgency Level', type: 'select', required: true, choices: ['Critical — System down', 'High — Major feature broken', 'Medium — Minor issue', 'Low — Question or feedback'] },
-            { id: 'f_11', label: 'Issue Description', type: 'textarea', required: true, placeholder: 'Describe the issue in detail...', rows: 5 },
-            { id: 'f_12', label: 'Attachment', type: 'file', required: false, accept: '.pdf,.png,.jpg,.zip' },
-        ],
-    },
-    {
-        id: 'form_3',
-        title: 'Event Registration',
-        description: 'Register for our upcoming product launch event.',
-        settings: { accentColor: '#059669', acceptingResponses: true, hasResponseLimit: true, responseLimit: 200 },
-        fields: [
-            { id: 'f_13', label: 'Full Name', type: 'text', required: true, placeholder: 'John Doe' },
-            { id: 'f_14', label: 'Email', type: 'email', required: true, placeholder: 'john@company.com' },
-            { id: 'f_15', label: 'Company', type: 'text', required: false, placeholder: 'Company name' },
-            { id: 'f_16', label: 'Role', type: 'select', required: true, choices: ['Developer', 'Designer', 'Product Manager', 'Executive', 'Other'] },
-            { id: 'f_17', label: 'Sessions you want to attend', type: 'checkbox', required: false, choices: ['Keynote', 'Product Deep-dive', 'Hands-on Workshop', 'Networking Lunch', 'Q&A Panel'] },
-            { id: 'f_18', label: 'Preferred Date', type: 'date', required: true },
-            { id: 'f_19', label: 'Dietary Requirements', type: 'radio', required: false, choices: ['None', 'Vegetarian', 'Vegan', 'Gluten-free', 'Other'] },
-        ],
-    },
-];
-
 const FormsTab = () => {
-    const [forms, setForms] = useState(INITIAL_FORMS);
-    const [activeFormId, setActiveFormId] = useState('form_1');
+    const [forms, setForms] = useState([]);
+    const [activeFormId, setActiveFormId] = useState(null);
     const [activeSubTab, setActiveSubTab] = useState('questions'); // 'questions' | 'responses' | 'settings'
     const [isPreviewMode, setIsPreviewMode] = useState(false);
     const [isShareOpen, setIsShareOpen] = useState(false);
     const [sidebarSearch, setSidebarSearch] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const container = useRef(null);
+
+    useEffect(() => {
+        getForms().then(data => {
+            setForms(data);
+            if (data.length > 0) {
+                setActiveFormId(data[0].id);
+            }
+            setLoading(false);
+        }).catch(err => {
+            console.error(err);
+            setLoading(false);
+        });
+    }, []);
 
     useGSAP(() => {
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
@@ -77,55 +47,75 @@ const FormsTab = () => {
 
     // ── Form CRUD ──────────────────────────────────────────────────────────────
 
-    const updateForm = useCallback((updates) => {
-        setForms(prev => prev.map(f => {
-            if (f.id === activeFormId) {
-                return { ...f, ...updates };
-            }
-            return f;
-        }));
+    const updateForm = useCallback(async (updates) => {
+        try {
+            // Optimistic update
+            setForms(prev => prev.map(f => {
+                if (f.id === activeFormId) {
+                    return { ...f, ...updates };
+                }
+                return f;
+            }));
+            
+            // Sync with backend
+            await apiUpdateForm(activeFormId, updates);
+        } catch (e) {
+            console.error('Failed to update form', e);
+        }
     }, [activeFormId]);
 
-    const handleCreateForm = () => {
-        const newFormId = `form_${Date.now()}`;
-        const newForm = {
-            id: newFormId,
-            title: 'Untitled Form',
-            description: '',
-            settings: { accentColor: '#4f46e5', acceptingResponses: true },
-            fields: [createField('text')],
-        };
-        setForms(prev => [...prev, newForm]);
-        setActiveFormId(newFormId);
-        setActiveSubTab('questions');
-        setIsPreviewMode(false);
+    const handleCreateForm = async () => {
+        try {
+            const newFormPayload = {
+                title: 'Untitled Form',
+                description: '',
+                settings: { accentColor: '#4f46e5', acceptingResponses: true },
+                fields: [createField('text')],
+            };
+            const newForm = await createForm(newFormPayload);
+            setForms(prev => [...prev, newForm]);
+            setActiveFormId(newForm.id);
+            setActiveSubTab('questions');
+            setIsSidebarOpen(false);
+        } catch (e) {
+            console.error('Failed to create form', e);
+        }
+    };
+    const handleDuplicateForm = async (formId) => {
+        try {
+            const source = forms.find(f => f.id === formId);
+            if (!source) return;
+            
+            const duplicated = {
+                title: `${source.title} (copy)`,
+                description: source.description,
+                settings: source.settings,
+                fields: source.fields.map(field => ({
+                    ...field,
+                    id: `f_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                }))
+            };
+            
+            const newForm = await createForm(duplicated);
+            setForms(prev => [...prev, newForm]);
+            setActiveFormId(newForm.id);
+        } catch (e) {
+            console.error('Failed to duplicate form', e);
+        }
     };
 
-    const handleDuplicateForm = (formId) => {
-        const source = forms.find(f => f.id === formId);
-        if (!source) return;
-        const newFormId = `form_${Date.now()}`;
-        const duplicated = {
-            ...JSON.parse(JSON.stringify(source)),
-            id: newFormId,
-            title: `${source.title} (copy)`,
-        };
-        // Re-generate field IDs
-        duplicated.fields = duplicated.fields.map(field => ({
-            ...field,
-            id: `f_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        }));
-        setForms(prev => [...prev, duplicated]);
-        setActiveFormId(newFormId);
-    };
-
-    const handleDeleteForm = (e, formId) => {
+    const handleDeleteForm = async (e, formId) => {
         e.stopPropagation();
-        if (forms.length === 1) return;
-        setForms(prev => prev.filter(f => f.id !== formId));
-        if (activeFormId === formId) {
-            const remaining = forms.filter(f => f.id !== formId);
-            setActiveFormId(remaining[0].id);
+        
+        try {
+            await deleteForm(formId);
+            setForms(prev => prev.filter(f => f.id !== formId));
+            if (activeFormId === formId) {
+                const remaining = forms.filter(f => f.id !== formId);
+                setActiveFormId(remaining.length > 0 ? remaining[0].id : null);
+            }
+        } catch (e) {
+            console.error('Failed to delete form', e);
         }
     };
 
@@ -196,10 +186,15 @@ const FormsTab = () => {
     ];
 
     return (
-        <div ref={container} className="tab-content flex-1 flex overflow-hidden bg-[#f4f7f9] font-sans h-full">
+        <div ref={container} className="tab-content flex-1 flex overflow-hidden bg-[#f4f7f9] font-sans h-full relative">
+
+            {/* Mobile Overlay */}
+            {isSidebarOpen && (
+                <div className="absolute inset-0 bg-black/20 z-20 md:hidden" onClick={() => setIsSidebarOpen(false)}></div>
+            )}
 
             {/* ═══ LEFT SIDEBAR ═══ */}
-            <aside className="w-[280px] border-r border-gray-200/60 bg-white/60 backdrop-blur-md flex flex-col shrink-0 z-20">
+            <aside className={`w-[280px] border-r border-gray-200/60 bg-white/95 backdrop-blur-md flex flex-col shrink-0 z-30 absolute md:relative h-full transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}`}>
                 {/* Sidebar Header */}
                 <div className="p-4 flex items-center justify-between shrink-0">
                     <h3 className="font-extrabold text-gray-900 text-[15px] tracking-tight pl-1">Forms</h3>
@@ -238,7 +233,7 @@ const FormsTab = () => {
                         return (
                             <div
                                 key={form.id}
-                                onClick={() => { setActiveFormId(form.id); setIsPreviewMode(false); setActiveSubTab('questions'); }}
+                                onClick={() => { setActiveFormId(form.id); setIsPreviewMode(false); setActiveSubTab('questions'); setIsSidebarOpen(false); }}
                                 className={`flex items-center gap-3 px-3.5 py-3 rounded-xl cursor-pointer transition-all duration-300 group ${
                                     isActive
                                         ? 'bg-white shadow-md shadow-gray-200/40 border border-gray-100 scale-[1.02]'
@@ -262,18 +257,16 @@ const FormsTab = () => {
                                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                                         </svg>
                                     </button>
-                                    {forms.length > 1 && (
-                                        <button
-                                            onClick={(e) => handleDeleteForm(e, form.id)}
-                                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                            title="Delete"
-                                        >
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                                <polyline points="3 6 5 6 21 6" />
-                                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                            </svg>
-                                        </button>
-                                    )}
+                                    <button
+                                        onClick={(e) => handleDeleteForm(e, form.id)}
+                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                        title="Delete"
+                                    >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                            <polyline points="3 6 5 6 21 6" />
+                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                        </svg>
+                                    </button>
                                 </div>
                             </div>
                         );
@@ -289,28 +282,51 @@ const FormsTab = () => {
 
             {/* ═══ MAIN CONTENT ═══ */}
             <main className="flex-1 flex flex-col h-full overflow-hidden bg-transparent">
-                {/* Top Bar */}
-                <div className="h-16 bg-white/80 backdrop-blur-md border-b border-gray-200/60 px-6 flex items-center justify-between shrink-0 z-10 shadow-sm">
-                    {/* Left: Form name + sub-tabs */}
-                    <div className="flex items-center gap-8 min-w-0 flex-1">
-                        <input
-                            type="text"
-                            value={activeForm.title}
-                            onChange={(e) => updateForm({ title: e.target.value })}
-                            placeholder="Untitled Form"
-                            title="Click to rename"
-                            className="text-[15px] font-extrabold text-gray-900 truncate min-w-0 max-w-[250px] tracking-tight bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 rounded hover:bg-gray-100 transition-colors px-2 py-1 -ml-2"
-                        />
+                {!activeForm ? (
+                    <div className="flex-1 flex items-center justify-center">
+                        <div className="text-center">
+                            <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-gray-200 flex items-center justify-center mx-auto mb-4">
+                                <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900 mb-1">No Forms Found</h3>
+                            <p className="text-sm text-gray-500 mb-6">Create a new form to get started.</p>
+                            <button
+                                onClick={handleCreateForm}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm"
+                            >
+                                + Create New Form
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        {/* Top Bar */}
+                        <div className="h-16 bg-white/80 backdrop-blur-md border-b border-gray-200/60 px-3 md:px-6 flex items-center justify-between shrink-0 z-10 shadow-sm">
+                            {/* Left: Form name + sub-tabs */}
+                            <div className="flex items-center gap-2 md:gap-6 min-w-0 flex-1">
+                                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden text-slate-500 hover:text-slate-800 p-1 shrink-0">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                                </button>
+                                    <input
+                                        type="text"
+                                        value={activeForm.title}
+                                        onChange={(e) => updateForm({ title: e.target.value })}
+                                        placeholder="Untitled Form"
+                                        title="Click to rename"
+                                        className="text-[15px] font-extrabold text-gray-900 truncate min-w-0 max-w-[100px] md:max-w-[150px] xl:max-w-[250px] tracking-tight bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 rounded hover:bg-gray-100 transition-colors px-2 py-1 -ml-2"
+                                    />
 
                         {/* Sub-tabs */}
-                        <div className="flex items-center gap-1 border-l-2 border-gray-100 pl-6 h-8">
+                        <div className="flex items-center gap-1 border-l-2 border-gray-100 pl-4 md:pl-6 h-8">
                             {subTabs.map(tab => {
                                 const isActive = activeSubTab === tab.id && !isPreviewMode;
                                 return (
                                     <button
                                         key={tab.id}
                                         onClick={() => { setActiveSubTab(tab.id); setIsPreviewMode(false); }}
-                                        className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[13px] font-bold transition-all duration-300 ${
+                                        className={`flex items-center gap-2 px-2.5 md:px-3.5 py-2 rounded-xl text-[13px] font-bold transition-all duration-300 ${
                                             isActive
                                                 ? 'bg-gray-100 text-gray-900 shadow-sm'
                                                 : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50/80'
@@ -319,7 +335,7 @@ const FormsTab = () => {
                                         <span className={isActive ? 'text-gray-800' : 'text-gray-400'}>
                                             {tab.icon}
                                         </span>
-                                        {tab.label}
+                                        <span className="hidden xl:inline">{tab.label}</span>
                                     </button>
                                 );
                             })}
@@ -327,11 +343,11 @@ const FormsTab = () => {
                     </div>
 
                     {/* Right: Actions */}
-                    <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex items-center gap-2 md:gap-3 shrink-0">
                         {/* Preview Toggle */}
                         <button
                             onClick={() => setIsPreviewMode(!isPreviewMode)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-bold border-2 transition-all duration-300 ${
+                            className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl text-[13px] font-bold border-2 transition-all duration-300 ${
                                 isPreviewMode
                                     ? 'bg-gray-900 text-white border-gray-900 shadow-md scale-105'
                                     : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 hover:shadow-sm'
@@ -341,20 +357,20 @@ const FormsTab = () => {
                                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                                 <circle cx="12" cy="12" r="3" />
                             </svg>
-                            Preview
+                            <span className="hidden xl:inline">Preview</span>
                         </button>
 
                         {/* Share Button */}
                         <button
                             onClick={() => setIsShareOpen(true)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-bold text-white transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5"
+                            className="flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl text-[13px] font-bold text-white transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5"
                             style={{ backgroundColor: accentColor, boxShadow: `0 4px 14px ${accentColor}40` }}
                         >
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                                 <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
                                 <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
                             </svg>
-                            Share
+                            <span className="hidden xl:inline">Share</span>
                         </button>
                     </div>
                 </div>
@@ -382,14 +398,18 @@ const FormsTab = () => {
                         )}
                     </div>
                 </div>
+                    </>
+                )}
             </main>
 
             {/* Share Modal */}
-            <FormShareModal
-                form={activeForm}
-                isOpen={isShareOpen}
-                onClose={() => setIsShareOpen(false)}
-            />
+            {activeForm && (
+                <FormShareModal
+                    form={activeForm}
+                    isOpen={isShareOpen}
+                    onClose={() => setIsShareOpen(false)}
+                />
+            )}
         </div>
     );
 };

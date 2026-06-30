@@ -1,13 +1,7 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
-
-const RECENT_ACTIVITIES = [
-    { id: 1, action: 'Workflow Run Success', detail: 'Welcome Email Sequence executed successfully for customer lim@gmail.com', time: '5 mins ago', type: 'success', latency: '412ms' },
-    { id: 2, action: 'Jira Ticket Created', detail: 'Support Ticket Automation created ticket PR-401 for urgency high email', time: '1 hour ago', type: 'success', latency: '1.2s' },
-    { id: 3, action: 'Postgres Metric Fetched', detail: 'Weekly Analytics Engine completed query, returned 4,812 active users', time: '3 hours ago', type: 'success', latency: '240ms' },
-    { id: 4, action: 'Workflow Trigger Failed', detail: 'Weekly Analytics Engine database connection timeout. Retrying in 1 hour', time: 'yesterday', type: 'error', latency: '12.0s' }
-];
+import { getDashboardMetrics } from '../../api/backend.js';
 
 const INTEGRATIONS = [
     { name: 'OpenAI GPT-4o', category: 'Language Model', status: 'Healthy', uptime: '99.9%', color: 'indigo' },
@@ -15,16 +9,6 @@ const INTEGRATIONS = [
     { name: 'Slack Bot API', category: 'Chat Platform', status: 'Healthy', uptime: '100%', color: 'orange' },
     { name: 'Resend SMTP', category: 'Email Service', status: 'Healthy', uptime: '99.7%', color: 'blue' },
     { name: 'PostgreSQL DB', category: 'Database Storage', status: 'Healthy', uptime: '100%', color: 'cyan' }
-];
-
-const WEEKLY_DATA = [
-    { day: 'Mon', runs: 320, successRate: '100%' },
-    { day: 'Tue', runs: 410, successRate: '99.8%' },
-    { day: 'Wed', runs: 580, successRate: '99.5%' },
-    { day: 'Thu', runs: 390, successRate: '100%' },
-    { day: 'Fri', runs: 640, successRate: '99.8%' },
-    { day: 'Sat', runs: 120, successRate: '100%' },
-    { day: 'Sun', runs: 150, successRate: '100%' }
 ];
 
 const KPI_CARDS = [
@@ -45,10 +29,10 @@ const KPI_CARDS = [
     },
     {
         label: 'Avg Success Rate',
-        value: '99.8%',
+        valueKey: 'successRate',
         badge: 'Target Met',
         badgeClass: 'bg-blue-50 text-blue-600 border-blue-100',
-        subtitle: '1 fail in 15.2k execution cycles',
+        subtitle: 'Based on recent execution cycles',
         accentColor: 'from-emerald-500 to-teal-500',
         icon: (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -59,7 +43,7 @@ const KPI_CARDS = [
     },
     {
         label: 'Total Run Volume',
-        value: '2,785',
+        valueKey: 'totalRuns',
         badge: '+12% MoM',
         badgeClass: 'bg-slate-100 text-slate-600 border-slate-200',
         subtitle: 'Calculated run cycles past 30 days',
@@ -74,7 +58,7 @@ const KPI_CARDS = [
     },
     {
         label: 'AI Tokens Saved',
-        value: '14.2M',
+        valueKey: 'aiTokensSaved',
         badge: 'Optimal',
         badgeClass: 'bg-cyan-50 text-cyan-600 border-cyan-100',
         subtitle: 'Saved via cached query templates',
@@ -87,14 +71,35 @@ const KPI_CARDS = [
     }
 ];
 
-const DashboardTab = ({ activeWorkflowCount, onNavigateTab }) => {
+const DashboardTab = ({ activeWorkflowCount, onNavigateTab, simplified }) => {
+    const [metrics, setMetrics] = useState({
+        activeWorkflowCount: activeWorkflowCount || 0,
+        totalRuns: 0,
+        successRate: '0%',
+        aiTokensSaved: '0',
+        weeklyData: [],
+        recentActivities: []
+    });
+    const [loading, setLoading] = useState(true);
 
-    const maxRuns = useMemo(() => Math.max(...WEEKLY_DATA.map(d => d.runs)), []);
+    useEffect(() => {
+        getDashboardMetrics().then(data => {
+            setMetrics({ ...data, activeWorkflowCount: activeWorkflowCount || data.activeWorkflowCount });
+            setLoading(false);
+        }).catch(err => {
+            console.error(err);
+            setLoading(false);
+        });
+    }, [activeWorkflowCount]);
+
+    const maxRuns = useMemo(() => Math.max(1, ...metrics.weeklyData.map(d => d.runs)), [metrics.weeklyData]);
     const container = useRef(null);
 
     useGSAP(() => {
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
     }, { scope: container });
+
+
 
     return (
         <div ref={container} className="tab-content flex-1 overflow-y-auto bg-slate-50 font-sans p-6 md:p-8">
@@ -128,12 +133,18 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab }) => {
                                     </span>
                                 </div>
                                 <div className="flex items-baseline gap-2.5">
-                                    <span className="text-3xl font-semibold text-slate-900 tracking-tight">
-                                        {kpi.valueKey ? activeWorkflowCount : kpi.value}
-                                    </span>
-                                    <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${kpi.badgeClass}`}>
-                                        {kpi.badge}
-                                    </span>
+                                    {loading ? (
+                                        <div className="h-9 w-20 bg-slate-200 animate-pulse rounded-md mt-1"></div>
+                                    ) : (
+                                        <>
+                                            <span className="text-3xl font-semibold text-slate-900 tracking-tight">
+                                                {metrics[kpi.valueKey] || 0}
+                                            </span>
+                                            <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${kpi.badgeClass}`}>
+                                                {kpi.badge}
+                                            </span>
+                                        </>
+                                    )}
                                 </div>
                                 <p className="text-xs text-slate-400 mt-2.5">{kpi.subtitle}</p>
                             </div>
@@ -145,7 +156,7 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab }) => {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
                     {/* Bar Chart */}
-                    <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                    <div className={`${simplified ? 'lg:col-span-3' : 'lg:col-span-2'} bg-white border border-slate-200 rounded-2xl p-6 shadow-sm`}>
                         <div className="flex items-center justify-between mb-6">
                             <div>
                                 <h2 className="text-base font-semibold text-slate-900">Execution Volume</h2>
@@ -157,7 +168,14 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab }) => {
                         </div>
 
                         <div className="w-full h-[180px] flex items-end gap-3 px-1">
-                            {WEEKLY_DATA.map((data, index) => {
+                            {loading ? (
+                                Array.from({ length: 7 }).map((_, i) => (
+                                    <div key={i} className="flex-1 flex flex-col items-center gap-2">
+                                        <div className="w-full max-w-[40px] bg-slate-200 animate-pulse rounded-lg" style={{ height: `${20 + Math.random() * 60}%` }}></div>
+                                        <div className="h-3 w-6 bg-slate-200 animate-pulse rounded"></div>
+                                    </div>
+                                ))
+                            ) : metrics.weeklyData.map((data, index) => {
                                 const heightPct = (data.runs / maxRuns) * 100;
                                 const isHighest = data.runs === maxRuns;
                                 return (
@@ -183,6 +201,7 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab }) => {
                     </div>
 
                     {/* Quick Actions */}
+                    {!simplified && (
                     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col">
                         <div className="mb-5">
                             <h2 className="text-base font-semibold text-slate-900">Quick Actions</h2>
@@ -223,12 +242,14 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab }) => {
                             </button>
                         </div>
                     </div>
+                    )}
                 </div>
 
                 {/* ─── Section 4: Integrations + Activity Feed ─── */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
                     {/* Integrations Health */}
+                    {!simplified && (
                     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
                         <div className="mb-5">
                             <h2 className="text-base font-semibold text-slate-900">Integrations</h2>
@@ -252,9 +273,10 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab }) => {
                             ))}
                         </div>
                     </div>
+                    )}
 
                     {/* Activity Feed */}
-                    <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                    <div className={`${simplified ? 'lg:col-span-3' : 'lg:col-span-2'} bg-white border border-slate-200 rounded-2xl p-6 shadow-sm`}>
                         <div className="flex items-center justify-between mb-5">
                             <div>
                                 <h2 className="text-base font-semibold text-slate-900">Recent Activity</h2>
@@ -269,37 +291,60 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab }) => {
                         </div>
 
                         <div className="flex flex-col">
-                            {RECENT_ACTIVITIES.map((activity, index) => (
-                                <div key={activity.id} className={`flex gap-4 items-start py-3.5 ${
-                                    index < RECENT_ACTIVITIES.length - 1 ? 'border-b border-slate-100' : ''
-                                }`}>
-                                    {/* Status icon */}
-                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                                        activity.type === 'success'
-                                            ? 'bg-emerald-50 text-emerald-500'
-                                            : 'bg-red-50 text-red-500'
-                                    }`}>
-                                        {activity.type === 'success' ? (
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                        ) : (
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
-                                        )}
-                                    </div>
-
-                                    {/* Content */}
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-baseline justify-between gap-3">
-                                            <h4 className="text-sm font-medium text-slate-800">{activity.action}</h4>
-                                            <div className="flex items-center gap-2 shrink-0 text-xs text-slate-400">
-                                                <span className="font-mono text-[11px]">{activity.latency}</span>
-                                                <span className="text-slate-200">·</span>
-                                                <span>{activity.time}</span>
-                                            </div>
+                            {loading ? (
+                                Array.from({ length: 4 }).map((_, i) => (
+                                    <div key={i} className={`flex gap-4 items-start py-3.5 ${i < 3 ? 'border-b border-slate-100' : ''}`}>
+                                        <div className="w-8 h-8 rounded-lg bg-slate-200 animate-pulse shrink-0"></div>
+                                        <div className="flex-1 space-y-2 mt-1">
+                                            <div className="h-4 bg-slate-200 animate-pulse rounded w-1/3"></div>
+                                            <div className="h-3 bg-slate-200 animate-pulse rounded w-2/3"></div>
                                         </div>
-                                        <p className="text-xs text-slate-400 mt-1 leading-relaxed truncate">{activity.detail}</p>
                                     </div>
+                                ))
+                            ) : metrics.recentActivities && metrics.recentActivities.length > 0 ? (
+                                metrics.recentActivities.map((activity, index) => (
+                                    <div key={activity.id} className={`flex gap-4 items-start py-3.5 ${
+                                        index < metrics.recentActivities.length - 1 ? 'border-b border-slate-100' : ''
+                                    }`}>
+                                        {/* Status icon */}
+                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                            activity.type === 'success'
+                                                ? 'bg-emerald-50 text-emerald-500'
+                                                : 'bg-red-50 text-red-500'
+                                        }`}>
+                                            {activity.type === 'success' ? (
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                            ) : (
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                                            )}
+                                        </div>
+
+                                        {/* Content */}
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-baseline justify-between gap-3">
+                                                <h4 className="text-sm font-medium text-slate-800">{activity.action}</h4>
+                                                <div className="flex items-center gap-2 shrink-0 text-xs text-slate-400">
+                                                    <span className="font-mono text-[11px]">{activity.latency}</span>
+                                                    <span className="text-slate-200">·</span>
+                                                    <span>{activity.time}</span>
+                                                </div>
+                                            </div>
+                                            <p className="text-xs text-slate-400 mt-1 leading-relaxed truncate">{activity.detail}</p>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+                                    <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 mb-3 border border-slate-100 shadow-sm">
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                            <circle cx="12" cy="12" r="10"></circle>
+                                            <polyline points="12 6 12 12 16 14"></polyline>
+                                        </svg>
+                                    </div>
+                                    <h4 className="text-sm font-medium text-slate-800">No recent activity</h4>
+                                    <p className="text-xs text-slate-400 mt-1">Your workflow executions will appear here.</p>
                                 </div>
-                            ))}
+                            )}
                         </div>
                     </div>
                 </div>

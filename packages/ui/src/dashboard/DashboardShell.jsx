@@ -192,32 +192,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                                         {!isCollapsed && <span className="truncate">{item.label}</span>}
                                     </button>
 
-                                    {/* Hover Popup for Chat History */}
-                                    {item.id === 'chat' && hoveredTab === 'chat' && (
-                                        <div className="absolute left-[calc(100%+12px)] top-0 w-[260px] bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 z-50 animate-fade-in pointer-events-auto">
-                                            <div className="absolute left-[-6px] top-4 w-3 h-3 bg-white border-b border-l border-slate-100 rotate-45"></div>
-                                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 px-1">Recent Chats</h4>
-                                            <div className="flex flex-col gap-1">
-                                                {RECENT_CHATS_PREVIEW.map((chatTitle, idx) => (
-                                                    <button 
-                                                        key={idx}
-                                                        onClick={() => setActiveTab('chat')} 
-                                                        className="text-left px-3 py-2 rounded-lg hover:bg-slate-50 transition-colors text-sm font-bold text-slate-700 truncate hover:text-blue-600"
-                                                    >
-                                                        {chatTitle}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                            <div className="mt-3 pt-3 border-t border-slate-100">
-                                                <button 
-                                                    onClick={() => setActiveTab('chat')}
-                                                    className="w-full text-center text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors"
-                                                >
-                                                    View all chats &rarr;
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
+
                                 </div>
                             ))}
                             

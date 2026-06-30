@@ -3,64 +3,13 @@ import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import WorkflowCanvas from './components/WorkflowCanvas';
 import PropertyInspector from './components/PropertyInspector';
-import AICopilotChat from './components/AICopilotChat';
+import AIAgentChat from './components/AIAgentChat';
 import WorkflowOverview from './overview/WorkflowOverview';
 import DashboardTab from './components/DashboardTab';
 import FormsTab from './components/FormsTab';
 import LogsTab from '../chat/components/LogsTab';
 import { navigate, parsePath } from '../utils/router.js';
-
-const INITIAL_WORKFLOWS = {
-    'w1': {
-        id: 'w1',
-        name: 'Welcome Email Sequence',
-        folderId: 'f1',
-        status: 'Active',
-        lastEdited: '2 hours ago',
-        iconColor: 'text-green-600',
-        iconBg: 'bg-green-100',
-        nodes: [
-            { id: 'w1-1', type: 'trigger', title: 'New Customer Subscription', description: 'Triggers when a payment is received in Stripe.' },
-            { id: 'w1-2', type: 'ai', title: 'Draft Welcome Email', description: 'Generates a personalized onboarding message using GPT.' },
-            { id: 'w1-3', type: 'action', title: 'Send Welcome Email', description: 'Sends the email via SMTP/Resend.' },
-        ]
-    },
-    'w2': {
-        id: 'w2',
-        name: 'Support Ticket Automation',
-        folderId: 'f1',
-        status: 'Draft',
-        lastEdited: '2 mins ago',
-        iconColor: 'text-blue-600',
-        iconBg: 'bg-blue-100',
-        nodes: [
-            { id: 'w2-1', type: 'trigger', title: 'Incoming Email', description: 'Triggers when a new email arrives at support@company.com' },
-            { id: 'w2-2', type: 'ai', title: 'Extract Intent', description: 'Uses AI to parse the email and extract client intent and urgency.' },
-            { id: 'w2-3', type: 'action', title: 'Create Jira Ticket', description: 'Creates a ticket in the engineering board if urgency is high.' },
-        ]
-    },
-    'w3': {
-        id: 'w3',
-        name: 'Weekly Analytics Engine',
-        folderId: 'f3',
-        status: 'Active',
-        lastEdited: '3 days ago',
-        iconColor: 'text-orange-600',
-        iconBg: 'bg-orange-100',
-        nodes: [
-            { id: 'w3-1', type: 'trigger', title: 'Weekly Schedule', description: 'Triggers every Friday at 5:00 PM.' },
-            { id: 'w3-2', type: 'action', title: 'Fetch Database Metrics', description: 'Executes a Postgres query counting active weekly users.' },
-            { id: 'w3-3', type: 'ai', title: 'Summarize Insights', description: 'AI highlights trends, anomalies, and key milestones.' },
-            { id: 'w3-4', type: 'action', title: 'Slack Summary Report', description: 'Sends summary markdown blocks to #analytics-channel.' },
-        ]
-    }
-};
-
-const INITIAL_FOLDERS = [
-    { id: 'f1', parentId: null, name: 'Client Onboarding', isExpanded: true },
-    { id: 'f2', parentId: null, name: 'Internal Operations', isExpanded: true },
-    { id: 'f3', parentId: 'f2', name: 'Weekly Reports', isExpanded: true }
-];
+import { getWorkflows, createWorkflow, updateWorkflow, getFolders, createFolder } from '../api/backend.js';
 
 const SYSTEM_NODES = {
     'Triggers': [
@@ -117,37 +66,30 @@ const CARD_STYLES = {
 };
 
 const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) => {
-    const [folders, setFolders] = useState(() => {
-        const saved = localStorage.getItem('promptly_folders');
-        if (saved) {
-            try {
-                return JSON.parse(saved);
-            } catch (e) {
-                console.error('Failed to parse saved folders', e);
-            }
-        }
-        return INITIAL_FOLDERS;
-    });
+    const [folders, setFolders] = useState([]);
+    const [workflows, setWorkflows] = useState({});
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        localStorage.setItem('promptly_folders', JSON.stringify(folders));
-    }, [folders]);
-
-    const [workflows, setWorkflows] = useState(() => {
-        const saved = localStorage.getItem('promptly_workflows');
-        if (saved) {
+        const fetchData = async () => {
             try {
-                return JSON.parse(saved);
-            } catch (e) {
-                console.error('Failed to parse saved workflows', e);
+                const [workflowsData, foldersData] = await Promise.all([
+                    getWorkflows(),
+                    getFolders()
+                ]);
+                
+                const workflowsMap = {};
+                workflowsData.forEach(w => { workflowsMap[w.id] = w; });
+                setWorkflows(workflowsMap);
+                setFolders(foldersData);
+            } catch (err) {
+                console.error("Failed to fetch data:", err);
+            } finally {
+                setLoading(false);
             }
-        }
-        return INITIAL_WORKFLOWS;
-    });
-
-    useEffect(() => {
-        localStorage.setItem('promptly_workflows', JSON.stringify(workflows));
-    }, [workflows]);
+        };
+        fetchData();
+    }, []);
 
     // ── URL-driven view mode ─────────────────────────────────────────────────
     const getViewStateFromUrl = () => {
@@ -194,43 +136,31 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     };
 
     // Select workflow from overview folder tree
-    const handleSelectWorkflow = (wfId, name, folderName) => {
-        setWorkflows(prev => {
-            if (prev[wfId]) return prev;
-            return {
-                ...prev,
-                [wfId]: {
-                    id: wfId,
-                    name: name || 'Untitled Workflow',
-                    folderId: null,
-                    status: 'Draft',
-                    lastEdited: 'Just now',
-                    iconColor: 'text-blue-600',
-                    iconBg: 'bg-blue-100',
-                    nodes: []
-                }
-            };
-        });
+    const handleSelectWorkflow = (wfId) => {
         navigateToBuilder(wfId);
     };
 
     // Create workflow from overview header
-    const handleCreateWorkflow = () => {
-        const newWfId = `w${Date.now()}`;
-        setWorkflows(prev => ({
-            ...prev,
-            [newWfId]: {
-                id: newWfId,
+    const handleCreateWorkflow = async () => {
+        try {
+            const wfData = {
                 name: 'New Sequence Automation',
-                folderId: 'f1',
+                folderId: folders.length > 0 ? folders[0].id : null,
                 status: 'Draft',
                 lastEdited: 'Just now',
                 iconColor: 'text-blue-600',
                 iconBg: 'bg-blue-100',
                 nodes: []
-            }
-        }));
-        navigateToBuilder(newWfId);
+            };
+            const newWorkflow = await createWorkflow(wfData);
+            setWorkflows(prev => ({
+                ...prev,
+                [newWorkflow.id]: newWorkflow
+            }));
+            navigateToBuilder(newWorkflow.id);
+        } catch (e) {
+            console.error("Failed to create workflow:", e);
+        }
     };
 
     
@@ -255,9 +185,9 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         }
     }, { scope: builderContainer, dependencies: [viewMode] });
 
-    const activeWorkflow = useMemo(() => workflows[activeWorkflowId] || Object.values(workflows)[0], [workflows, activeWorkflowId]);
-    const nodes = activeWorkflow.nodes;
-    const activeNode = useMemo(() => nodes.find(n => n.id === activeNodeId), [nodes, activeNodeId]);
+    const activeWorkflow = useMemo(() => workflows[activeWorkflowId] || Object.values(workflows)[0] || null, [workflows, activeWorkflowId]);
+    const nodes = activeWorkflow?.nodes || [];
+    const activeNode = useMemo(() => nodes.find(n => n.id === activeNodeId) || null, [nodes, activeNodeId]);
 
     const activeFolder = useMemo(() => {
         if (!activeWorkflow || !activeWorkflow.folderId) return null;
@@ -273,7 +203,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         setIsRightSidebarOpen(true);
     };
 
-    // Callback when Copilot AI actions are approved
+    // Callback when Agent AI actions are approved
     const handleApplyAction = (proposal) => {
         const newNodeId = `${activeWorkflowId}-${Date.now()}`;
         const newNode = {
@@ -285,16 +215,10 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
 
         setWorkflows(prev => {
             const currentWf = prev[activeWorkflowId];
-            return {
-                ...prev,
-                [activeWorkflowId]: {
-                    ...currentWf,
-                    nodes: [...currentWf.nodes, newNode]
-                }
-            };
+            const updatedNodes = [...currentWf.nodes, newNode];
+            updateWorkflow(activeWorkflowId, { nodes: updatedNodes }).catch(e => console.error(e));
+            return { ...prev, [activeWorkflowId]: { ...currentWf, nodes: updatedNodes } };
         });
-
-        // Set the newly created node as active and view its properties
         setActiveNodeId(newNodeId);
     };
 
@@ -311,13 +235,9 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
 
         setWorkflows(prev => {
             const currentWf = prev[activeWorkflowId];
-            return {
-                ...prev,
-                [activeWorkflowId]: {
-                    ...currentWf,
-                    nodes: [...currentWf.nodes, newNode]
-                }
-            };
+            const updatedNodes = [...currentWf.nodes, newNode];
+            updateWorkflow(activeWorkflowId, { nodes: updatedNodes }).catch(e => console.error(e));
+            return { ...prev, [activeWorkflowId]: { ...currentWf, nodes: updatedNodes } };
         });
         setActiveNodeId(newNodeId);
     };
@@ -336,6 +256,9 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                 }
                 return node;
             });
+
+            // Async save to backend
+            updateWorkflow(activeWorkflowId, { nodes: updatedNodes }).catch(e => console.error(e));
 
             return {
                 ...prev,
@@ -377,6 +300,12 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     const activeWorkflowCount = useMemo(() => {
         return Object.values(workflows).filter(w => w.status === 'Active').length;
     }, [workflows]);
+
+    if (loading) {
+        return <div className="flex-1 flex items-center justify-center bg-slate-50">
+            <div className="text-slate-400 font-medium">Loading workspace...</div>
+        </div>;
+    }
 
     // Sidebar tab-based routing
     if (activeTab === 'dashboard') {
@@ -532,11 +461,11 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                         <div className="flex items-center gap-1.5 flex-1 min-w-0">
                             <span className="text-slate-500 text-sm font-medium truncate hidden sm:block">{activeFolderName}</span>
                             <span className="text-slate-300 text-sm hidden sm:block">/</span>
-                            <h2 className="text-base font-semibold text-slate-900 truncate">{activeWorkflow.name}</h2>
+                            <h2 className="text-base font-semibold text-slate-900 truncate">{activeWorkflow?.name || 'Untitled'}</h2>
                             <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded ml-2 ${
-                                activeWorkflow.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
+                                activeWorkflow?.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
                             }`}>
-                                {activeWorkflow.status}
+                                {activeWorkflow?.status || 'Draft'}
                             </span>
                         </div>
                     </div>
@@ -545,7 +474,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                         <button className="ghost text-sm py-1.5 px-3.5 rounded-lg font-medium border-slate-200 shadow-sm hover:shadow whitespace-nowrap">Test Run</button>
                         <button className="solid text-sm py-1.5 px-4 rounded-lg shadow bg-blue-600 text-white font-medium hover:bg-blue-700 whitespace-nowrap">Deploy</button>
                         
-                        {/* Copilot toggle button */}
+                        {/* Agent toggle button */}
                         <button
                             onClick={() => setIsRightSidebarOpen(!isRightSidebarOpen)}
                             className={`shrink-0 p-1.5 rounded-lg border transition-colors ${
@@ -563,7 +492,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                 {/* Breadcrumbs / Last edited subheader */}
                 <div className="px-6 py-2 bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-500 flex items-center justify-between shrink-0">
                     <span>Active nodes: {nodes.length}</span>
-                    <span>Last edit: {activeWorkflow.lastEdited}</span>
+                    <span>Last edit: {activeWorkflow?.lastEdited || 'Never'}</span>
                 </div>
 
                 {/* Workflow Canvas Workspace */}
@@ -619,7 +548,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                 {/* Tab Contents */}
                 <div className="flex-1 overflow-hidden">
                     {rightTab === 'chat' ? (
-                        <AICopilotChat onApplyAction={handleApplyAction} />
+                        <AIAgentChat onApplyAction={handleApplyAction} />
                     ) : (
                         <PropertyInspector activeNode={activeNode} onUpdateNode={handleUpdateNode} />
                     )}

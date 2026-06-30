@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { sendChatMessage } from '../../api/backend.js';
 
 const SUGGESTIONS = [
     "Add a Slack notification step",
@@ -7,7 +8,7 @@ const SUGGESTIONS = [
     "Store results in database"
 ];
 
-const AICopilotChat = ({ onApplyAction }) => {
+const AIAgentChat = ({ onApplyAction }) => {
     const [messages, setMessages] = useState([
         {
             id: 'init',
@@ -23,7 +24,7 @@ const AICopilotChat = ({ onApplyAction }) => {
         scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, isTyping]);
 
-    const handleSend = (text) => {
+    const handleSend = async (text) => {
         if (!text.trim()) return;
 
         // Add user message
@@ -32,71 +33,30 @@ const AICopilotChat = ({ onApplyAction }) => {
         setInput('');
         setIsTyping(true);
 
-        // Simulate AI response with a delay
-        setTimeout(() => {
+        try {
+            const botResponse = await sendChatMessage(text, { workflowContext: true });
             setIsTyping(false);
-            const lowerText = text.toLowerCase();
-            let botReply = {};
 
-            if (lowerText.includes('slack') || lowerText.includes('notification')) {
-                botReply = {
-                    id: Date.now().toString(),
-                    sender: 'bot',
-                    text: "I've drafted a Slack notification action node for you. Would you like to add it to your canvas?",
-                    proposal: {
-                        type: 'action',
-                        title: 'Slack Notification',
-                        description: 'Posts a message to the #support channel with ticket details.'
-                    }
-                };
-            } else if (lowerText.includes('filter') || lowerText.includes('urgency') || lowerText.includes('condition')) {
-                botReply = {
-                    id: Date.now().toString(),
-                    sender: 'bot',
-                    text: "I can insert a conditional routing step to classify urgency levels. Does this structure look good?",
-                    proposal: {
-                        type: 'ai',
-                        title: 'Filter Urgency',
-                        description: 'Filters the workflow path to execute only if urgency is "high".'
-                    }
-                };
-            } else if (lowerText.includes('gpt') || lowerText.includes('email') || lowerText.includes('summarize')) {
-                botReply = {
-                    id: Date.now().toString(),
-                    sender: 'bot',
-                    text: "I've generated an AI step using GPT to draft response drafts. Let's preview this before inserting:",
-                    proposal: {
-                        type: 'ai',
-                        title: 'Draft Support Response',
-                        description: 'Uses LLM to write a personalized reply based on intent and company docs.'
-                    }
-                };
-            } else if (lowerText.includes('database') || lowerText.includes('postgres') || lowerText.includes('store')) {
-                botReply = {
-                    id: Date.now().toString(),
-                    sender: 'bot',
-                    text: "I can append a database action node to log the transaction. Let me know if you approve this:",
-                    proposal: {
-                        type: 'action',
-                        title: 'Insert DB Record',
-                        description: 'Inserts ticket_id, sentiment_score, and customer_email into support_logs.'
-                    }
-                };
-            } else {
-                botReply = {
-                    id: Date.now().toString(),
-                    sender: 'bot',
-                    text: "I understand. I can generate a node for that. Here is a proposed step to add to the workflow:",
-                    proposal: {
-                        type: 'ai',
-                        title: text.length > 25 ? text.substring(0, 25) + '...' : text,
-                        description: `Custom action node configured for: "${text}"`
-                    }
-                };
+            let botReply = {
+                id: Date.now().toString(),
+                sender: 'bot',
+                text: botResponse.message || 'I have processed your request.'
+            };
+
+            if (botResponse.proposal) {
+                botReply.proposal = botResponse.proposal;
             }
 
             setMessages(prev => [...prev, botReply]);
-        }, 1200);
+        } catch (err) {
+            console.error("Chat error:", err);
+            setIsTyping(false);
+            setMessages(prev => [...prev, {
+                id: Date.now().toString(),
+                sender: 'bot',
+                text: "Sorry, I encountered an error communicating with the agent. Please try again."
+            }]);
+        }
     };
 
     const handleAcceptProposal = (msgId, proposal) => {
@@ -265,4 +225,4 @@ const AICopilotChat = ({ onApplyAction }) => {
     );
 };
 
-export default AICopilotChat;
+export default AIAgentChat;
