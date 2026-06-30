@@ -111,24 +111,24 @@ const FormSettings = ({ form, onUpdateForm }) => {
                     </button>
                 </div>
 
-                {/* Require Sign-in */}
+                {/* Limit 1 per Browser */}
                 <div className="p-4 flex items-center justify-between">
                     <div>
-                        <h3 className="text-[16px] font-extrabold text-gray-900">Require Sign-in</h3>
-                        <p className="text-[13px] font-medium text-gray-500 mt-1">Respondents must be logged in to submit.</p>
+                        <h3 className="text-[16px] font-extrabold text-gray-900">Limit to 1 response per browser</h3>
+                        <p className="text-[13px] font-medium text-gray-500 mt-1">Respondents can only submit this form once per browser.</p>
                     </div>
                     <button
                         type="button"
                         role="switch"
-                        aria-checked={settings.requireSignIn || false}
-                        onClick={() => updateSetting('requireSignIn', !settings.requireSignIn)}
+                        aria-checked={settings.limitOnePerBrowser || false}
+                        onClick={() => updateSetting('limitOnePerBrowser', !settings.limitOnePerBrowser)}
                         className={`relative inline-flex items-center px-0.5 w-14 h-8 rounded-full transition-colors duration-300 border-2 shrink-0 ${
-                            settings.requireSignIn ? 'border-transparent' : 'bg-gray-100 border-gray-200'
+                            settings.limitOnePerBrowser ? 'border-transparent' : 'bg-gray-100 border-gray-200'
                         }`}
-                        style={settings.requireSignIn ? { backgroundColor: settings.accentColor || '#4f46e5' } : {}}
+                        style={settings.limitOnePerBrowser ? { backgroundColor: settings.accentColor || '#4f46e5' } : {}}
                     >
                         <span className={`w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-300 ${
-                            settings.requireSignIn ? 'translate-x-6' : 'translate-x-0'
+                            settings.limitOnePerBrowser ? 'translate-x-6' : 'translate-x-0'
                         }`} />
                     </button>
                 </div>

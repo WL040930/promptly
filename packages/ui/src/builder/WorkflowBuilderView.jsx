@@ -163,6 +163,11 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         }
     };
 
+    useEffect(() => {
+        window.addEventListener('create-workflow', handleCreateWorkflow);
+        return () => window.removeEventListener('create-workflow', handleCreateWorkflow);
+    }, [folders]);
+
     
     // Sidebar visibility state (left and right sidebars default to closed)
     const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);

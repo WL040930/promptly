@@ -144,7 +144,10 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                     {/* Primary Action Button */}
                     <div className="mb-4 px-1">
                         <button 
-                            onClick={() => setActiveTab(isChatMode ? 'chat' : 'workflows')}
+                            onClick={() => {
+                                setActiveTab(isChatMode ? 'chat' : 'workflows');
+                                window.dispatchEvent(new CustomEvent(isChatMode ? 'create-chat' : 'create-workflow'));
+                            }}
                             className={`flex items-center justify-center gap-2 rounded-xl text-sm font-bold text-white shadow-md shadow-indigo-500/20 hover:shadow-lg hover:shadow-indigo-500/30 hover:-translate-y-0.5 transition-all bg-gradient-to-r from-indigo-600 to-indigo-600 ${isCollapsed ? 'w-10 h-10 mx-auto p-0 shrink-0' : 'w-full py-2.5'}`}
                             title={isChatMode ? 'Create Chat' : 'Create Workflow'}
                         >

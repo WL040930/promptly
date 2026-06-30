@@ -90,6 +90,11 @@ const ChatTab = () => {
         ]);
     };
 
+    useEffect(() => {
+        window.addEventListener('create-chat', handleNewChat);
+        return () => window.removeEventListener('create-chat', handleNewChat);
+    }, []);
+
     const loadPastChat = async (id, title) => {
         if (editingChatId === id) return; // Don't navigate while editing
         setActiveChatId(id);

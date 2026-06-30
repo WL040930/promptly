@@ -38,6 +38,16 @@ export const getPublicForm = async (req, res) => {
         attributes: ['id', 'title', 'description', 'settings', 'fields']
     });
     if (!form) return res.status(404).json({ message: 'Form not found' });
+
+    // If there is a limit, check if it's reached. If so, override acceptingResponses for the client.
+    if (form.settings && form.settings.hasResponseLimit && form.settings.responseLimit) {
+        const count = await FormResponse.count({ where: { formId: id } });
+        if (count >= parseInt(form.settings.responseLimit, 10)) {
+            const updatedSettings = { ...form.settings, acceptingResponses: false };
+            form.settings = updatedSettings;
+        }
+    }
+
     res.json(form);
 };
 
@@ -49,6 +59,19 @@ export const submitFormResponse = async (req, res) => {
     // We don't check for req.user here because responses are likely anonymous/public
     const form = await Form.findByPk(formId);
     if (!form) return res.status(404).json({ message: 'Form not found' });
+
+    // Check acceptingResponses
+    if (form.settings && form.settings.acceptingResponses === false) {
+        return res.status(400).json({ message: 'This form is no longer accepting responses' });
+    }
+
+    // Check responseLimit
+    if (form.settings && form.settings.hasResponseLimit && form.settings.responseLimit) {
+        const count = await FormResponse.count({ where: { formId } });
+        if (count >= parseInt(form.settings.responseLimit, 10)) {
+            return res.status(400).json({ message: 'This form has reached its response limit' });
+        }
+    }
 
     const response = await FormResponse.create({ formId, responseData });
     res.status(201).json(response);

@@ -143,6 +143,14 @@ const FormPreview = ({ form, accentColor = '#4f46e5', onSubmitCallback }) => {
                                         Clear form
                                     </button>
                                 </div>
+                                {form.settings?.limitOnePerBrowser && (
+                                    <div className="mt-2 text-center">
+                                        <p className="text-[12px] font-medium text-slate-400">
+                                            No sign-in is required to submit this form.<br/>
+                                            <span className="text-slate-500 font-semibold">Note: You may only submit this form once per browser.</span>
+                                        </p>
+                                    </div>
+                                )}
                             </form>
                         </div>
                     </div>
