@@ -18,7 +18,7 @@ const FormShareModal = ({ form, isOpen, onClose }) => {
 
     if (!isOpen) return null;
 
-    const formUrl = `${window.location.origin}/forms/${form.id}`;
+    const formUrl = `${window.location.origin}/f/${form.id}`;
     const embedCode = `<iframe src="${formUrl}" width="100%" height="600" frameborder="0" style="border:none;border-radius:24px;"></iframe>`;
     const accentColor = form?.settings?.accentColor || '#4f46e5';
 

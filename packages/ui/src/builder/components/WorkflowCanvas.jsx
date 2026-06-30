@@ -236,7 +236,7 @@ const WorkflowCanvasInner = ({ initialNodes, activeNodeId, onNodeClick, onNodesC
           type: draggedNode.type,
           position: dragPosition,
           data: { ...draggedNode, isActive: false },
-          className: 'opacity-60 pointer-events-none drop-shadow-2xl z-50 ring-2 ring-blue-500/50 rounded-2xl'
+          className: 'opacity-60 pointer-events-none drop-shadow-2xl z-50 ring-2 ring-indigo-500/50 rounded-2xl'
         }
       ];
     }
@@ -283,8 +283,8 @@ const WorkflowCanvasInner = ({ initialNodes, activeNodeId, onNodeClick, onNodesC
         <Controls />
         <MiniMap zoomable pannable nodeClassName={(n) => {
             if (n.type === 'trigger') return 'bg-indigo-500';
-            if (n.type === 'ai') return 'bg-purple-500';
-            return 'bg-blue-500';
+            if (n.type === 'ai') return 'bg-indigo-500';
+            return 'bg-indigo-500';
         }} />
         <Background color="#cbd5e1" gap={24} size={2} />
       </ReactFlow>

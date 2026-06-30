@@ -120,10 +120,10 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                 <div className={`h-16 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between px-4'} border-b border-transparent`}>
                     {!isCollapsed && (
                         <div className="flex items-center gap-2 overflow-hidden">
-                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-cyan-400 grid place-items-center font-extrabold text-sm text-white shadow-sm shrink-0">
+                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-600 to-cyan-400 grid place-items-center font-extrabold text-sm text-white shadow-sm shrink-0">
                                 P
                             </div>
-                            <span className="text-lg font-bold tracking-tight bg-gradient-to-r from-blue-600 to-cyan-400 bg-clip-text text-transparent truncate">
+                            <span className="text-lg font-bold tracking-tight bg-gradient-to-r from-indigo-600 to-cyan-400 bg-clip-text text-transparent truncate">
                                 Promptly
                             </span>
                         </div>
@@ -143,7 +143,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                     <div className="mb-4 px-1">
                         <button 
                             onClick={() => setActiveTab(isChatMode ? 'chat' : 'workflows')}
-                            className={`flex items-center justify-center gap-2 rounded-xl text-sm font-bold text-white shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5 transition-all bg-gradient-to-r from-blue-600 to-indigo-600 ${isCollapsed ? 'w-10 h-10 mx-auto p-0 shrink-0' : 'w-full py-2.5'}`}
+                            className={`flex items-center justify-center gap-2 rounded-xl text-sm font-bold text-white shadow-md shadow-indigo-500/20 hover:shadow-lg hover:shadow-indigo-500/30 hover:-translate-y-0.5 transition-all bg-gradient-to-r from-indigo-600 to-indigo-600 ${isCollapsed ? 'w-10 h-10 mx-auto p-0 shrink-0' : 'w-full py-2.5'}`}
                             title={isChatMode ? 'Create Chat' : 'Create Workflow'}
                         >
                             <svg className="shrink-0 transition-all duration-300" width={isCollapsed ? "24" : "18"} height={isCollapsed ? "24" : "18"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -184,7 +184,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                                         onClick={() => setActiveTab(item.id)}
                                         className={`flex items-center gap-3 w-full p-2.5 rounded-xl font-semibold transition-colors ${
                                             activeTab === item.id 
-                                                ? 'bg-white border border-slate-200 text-blue-600 shadow-sm' 
+                                                ? 'bg-white border border-slate-200 text-indigo-600 shadow-sm' 
                                                 : 'text-slate-600 hover:bg-slate-100 border border-transparent'
                                         }`}
                                     >
@@ -229,7 +229,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                                     onClick={() => setActiveTab(item.id)}
                                     className={`flex items-center gap-3 w-full p-2.5 rounded-xl font-semibold transition-colors ${
                                         activeTab === item.id 
-                                            ? 'bg-white border border-slate-200 text-blue-600 shadow-sm' 
+                                            ? 'bg-white border border-slate-200 text-indigo-600 shadow-sm' 
                                             : 'text-slate-600 hover:bg-slate-100 border border-transparent'
                                     }`}
                                 >

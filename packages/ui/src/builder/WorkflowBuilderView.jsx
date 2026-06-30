@@ -148,8 +148,8 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                 folderId: folders.length > 0 ? folders[0].id : null,
                 status: 'Draft',
                 lastEdited: 'Just now',
-                iconColor: 'text-blue-600',
-                iconBg: 'bg-blue-100',
+                iconColor: 'text-indigo-600',
+                iconBg: 'bg-indigo-100',
                 nodes: []
             };
             const newWorkflow = await createWorkflow(wfData);
@@ -351,7 +351,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             placeholder="Find nodes..."
-                            className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm font-medium text-slate-800 placeholder:text-slate-400 outline-none focus:border-blue-400 transition-all shadow-inner"
+                            className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm font-medium text-slate-800 placeholder:text-slate-400 outline-none focus:border-indigo-400 transition-all shadow-inner"
                         />
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="absolute left-2.5 top-2.5 text-slate-400"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                     </div>
@@ -433,7 +433,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                             onClick={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)}
                             className={`shrink-0 p-1.5 rounded-lg border transition-colors ${
                                 isLeftSidebarOpen 
-                                    ? 'border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100'
+                                    ? 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
                                     : 'border-slate-200 text-slate-500 hover:bg-slate-100' 
                             }`}
                             title="Toggle Node Library"
@@ -472,14 +472,14 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
 
                     <div className="flex items-center gap-3 shrink-0">
                         <button className="ghost text-sm py-1.5 px-3.5 rounded-lg font-medium border-slate-200 shadow-sm hover:shadow whitespace-nowrap">Test Run</button>
-                        <button className="solid text-sm py-1.5 px-4 rounded-lg shadow bg-blue-600 text-white font-medium hover:bg-blue-700 whitespace-nowrap">Deploy</button>
+                        <button className="solid text-sm py-1.5 px-4 rounded-lg shadow bg-indigo-600 text-white font-medium hover:bg-indigo-700 whitespace-nowrap">Deploy</button>
                         
                         {/* Agent toggle button */}
                         <button
                             onClick={() => setIsRightSidebarOpen(!isRightSidebarOpen)}
                             className={`shrink-0 p-1.5 rounded-lg border transition-colors ${
                                 isRightSidebarOpen 
-                                    ? 'border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100'
+                                    ? 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
                                     : 'border-slate-200 text-slate-500 hover:bg-slate-100' 
                             }`}
                             title="Toggle Promptly Agent / Inspector"
@@ -520,7 +520,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                         onClick={() => setRightTab('chat')}
                         className={`flex-1 py-3 px-1 text-center text-sm truncate font-medium transition-all border-b-2 ${
                             rightTab === 'chat'
-                                ? 'border-blue-600 text-blue-600 bg-blue-50/30'
+                                ? 'border-indigo-600 text-indigo-600 bg-indigo-50/30'
                                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
                         }`}
                     >
@@ -530,7 +530,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                         onClick={() => setRightTab('properties')}
                         className={`flex-1 py-3 px-1 text-center text-sm truncate font-medium transition-all border-b-2 ${
                             rightTab === 'properties'
-                                ? 'border-blue-600 text-blue-600 bg-blue-50/30'
+                                ? 'border-indigo-600 text-indigo-600 bg-indigo-50/30'
                                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
                         }`}
                     >

@@ -135,9 +135,9 @@ const ChatTab = () => {
                             value={sidebarSearch}
                             onChange={e => setSidebarSearch(e.target.value)}
                             placeholder="Search chats..."
-                            className="w-full bg-white/50 backdrop-blur-sm border border-gray-200/80 hover:border-gray-300 rounded-xl pl-9 pr-3 py-2 text-[13px] font-medium text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all shadow-inner"
+                            className="w-full bg-white/50 backdrop-blur-sm border border-gray-200/80 hover:border-gray-300 rounded-xl pl-9 pr-3 py-2 text-[13px] font-medium text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white transition-all shadow-inner"
                         />
-                        <svg className="absolute left-3 top-2.5 text-gray-400 group-focus-within:text-blue-500 transition-colors" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <svg className="absolute left-3 top-2.5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                             <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                         </svg>
                     </div>
@@ -158,7 +158,7 @@ const ChatTab = () => {
                                 }`}
                             >
                                 <div className="flex items-center justify-between gap-2">
-                                    <span className={`truncate text-[14px] ${isActive ? 'font-bold text-gray-900' : 'font-medium text-gray-700 group-hover:text-blue-600'}`}>
+                                    <span className={`truncate text-[14px] ${isActive ? 'font-bold text-gray-900' : 'font-medium text-gray-700 group-hover:text-indigo-600'}`}>
                                         {chat.title}
                                     </span>
                                 </div>
@@ -202,14 +202,14 @@ const ChatTab = () => {
                                 {/* Avatar */}
                                 <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
                                     msg.sender === 'user' 
-                                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' 
+                                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20' 
                                         : 'bg-slate-50 text-slate-700 shadow-sm border border-slate-200'
                                 }`}>
                                     {msg.sender === 'user' ? <UserIcon /> : <BotIcon />}
                                 </div>
 
                                 {/* Bubble */}
-                                <div className={`bubble ${msg.sender === 'user' ? 'user !bg-blue-600 !text-white !border-blue-700 !rounded-tl-2xl !rounded-bl-2xl !rounded-tr-none !rounded-br-2xl' : 'bot highlight !rounded-tl-none !rounded-tr-2xl !rounded-bl-2xl !rounded-br-2xl'} whitespace-pre-wrap leading-relaxed shadow-sm`}>
+                                <div className={`bubble ${msg.sender === 'user' ? 'user !bg-indigo-600 !text-white !border-indigo-700 !rounded-tl-2xl !rounded-bl-2xl !rounded-tr-none !rounded-br-2xl' : 'bot highlight !rounded-tl-none !rounded-tr-2xl !rounded-bl-2xl !rounded-br-2xl'} whitespace-pre-wrap leading-relaxed shadow-sm`}>
                                     {msg.text}
                                 </div>
                             </div>
@@ -238,7 +238,7 @@ const ChatTab = () => {
                 <div className="w-full bg-white border-t border-slate-100 p-4 pb-6 lg:px-[10%] shrink-0">
                     <form
                         onSubmit={(e) => { e.preventDefault(); handleSendMessage(inputText); }}
-                        className="flex gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-2 shadow-sm focus-within:border-blue-400 focus-within:ring-4 focus-within:ring-blue-500/10 transition-all max-w-4xl mx-auto"
+                        className="flex gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-2 shadow-sm focus-within:border-indigo-400 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all max-w-4xl mx-auto"
                     >
                         <input
                             type="text"
@@ -252,7 +252,7 @@ const ChatTab = () => {
                             disabled={!inputText.trim() || isTyping}
                             className={`w-12 h-12 rounded-xl grid place-items-center transition-all ${
                                 inputText.trim() && !isTyping 
-                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20 hover:bg-blue-700 hover:-translate-y-0.5 cursor-pointer' 
+                                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 hover:-translate-y-0.5 cursor-pointer' 
                                     : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                             }`}
                         >

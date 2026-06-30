@@ -42,13 +42,13 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
         <div className="flex items-center gap-6 px-6 border-b border-slate-100 bg-slate-50/30">
             <button 
                 onClick={() => setActiveTab('general')}
-                className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'general' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'general' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
             >
                 General
             </button>
             <button 
                 onClick={() => setActiveTab('connections')}
-                className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'connections' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'connections' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
             >
                 Account Connections
             </button>
@@ -67,18 +67,18 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
                     {/* Chat Card */}
                     <button 
                         onClick={() => setSelectedRole('chat')}
-                        className={`text-left p-4 rounded-xl border-2 transition-all duration-200 flex flex-col gap-2 ${selectedRole === 'chat' ? 'border-blue-500 bg-blue-50/50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`}
+                        className={`text-left p-4 rounded-xl border-2 transition-all duration-200 flex flex-col gap-2 ${selectedRole === 'chat' ? 'border-indigo-500 bg-indigo-50/50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`}
                     >
                         <div className="flex items-center justify-between w-full">
-                            <div className={`p-2 rounded-lg shrink-0 ${selectedRole === 'chat' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
+                            <div className={`p-2 rounded-lg shrink-0 ${selectedRole === 'chat' ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'}`}>
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
                             </div>
-                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${selectedRole === 'chat' ? 'border-blue-500' : 'border-slate-300'}`}>
-                                {selectedRole === 'chat' && <div className="w-2.5 h-2.5 rounded-full bg-blue-500"></div>}
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${selectedRole === 'chat' ? 'border-indigo-500' : 'border-slate-300'}`}>
+                                {selectedRole === 'chat' && <div className="w-2.5 h-2.5 rounded-full bg-indigo-500"></div>}
                             </div>
                         </div>
                         <div className="mt-2 flex-1">
-                            <h4 className={`font-bold ${selectedRole === 'chat' ? 'text-blue-900' : 'text-slate-700'}`}>Chat Mode</h4>
+                            <h4 className={`font-bold ${selectedRole === 'chat' ? 'text-indigo-900' : 'text-slate-700'}`}>Chat Mode</h4>
                             <p className="text-xs text-slate-500 mt-1 leading-relaxed">A streamlined chat-based interface perfect for quick prompting and easy generation.</p>
                             <div className="mt-3 inline-block px-2 py-1 bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-wider rounded">Recommended for everyone</div>
                         </div>
@@ -87,18 +87,18 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
                     {/* Builder Card */}
                     <button 
                         onClick={() => setSelectedRole('builder')}
-                        className={`text-left p-4 rounded-xl border-2 transition-all duration-200 flex flex-col gap-2 ${selectedRole === 'builder' ? 'border-blue-500 bg-blue-50/50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`}
+                        className={`text-left p-4 rounded-xl border-2 transition-all duration-200 flex flex-col gap-2 ${selectedRole === 'builder' ? 'border-indigo-500 bg-indigo-50/50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`}
                     >
                         <div className="flex items-center justify-between w-full">
-                            <div className={`p-2 rounded-lg shrink-0 ${selectedRole === 'builder' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
+                            <div className={`p-2 rounded-lg shrink-0 ${selectedRole === 'builder' ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'}`}>
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
                             </div>
-                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${selectedRole === 'builder' ? 'border-blue-500' : 'border-slate-300'}`}>
-                                {selectedRole === 'builder' && <div className="w-2.5 h-2.5 rounded-full bg-blue-500"></div>}
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${selectedRole === 'builder' ? 'border-indigo-500' : 'border-slate-300'}`}>
+                                {selectedRole === 'builder' && <div className="w-2.5 h-2.5 rounded-full bg-indigo-500"></div>}
                             </div>
                         </div>
                         <div className="mt-2 flex-1">
-                            <h4 className={`font-bold ${selectedRole === 'builder' ? 'text-blue-900' : 'text-slate-700'}`}>Workflow Builder Mode</h4>
+                            <h4 className={`font-bold ${selectedRole === 'builder' ? 'text-indigo-900' : 'text-slate-700'}`}>Workflow Builder Mode</h4>
                             <p className="text-xs text-slate-500 mt-1 leading-relaxed">Advanced node-based workflow builder for complex prompt chaining and logic.</p>
                             <div className="mt-3 inline-block px-2 py-1 bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-wider rounded">Recommended for power users</div>
                         </div>
@@ -125,7 +125,7 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
                 <button 
                     onClick={handleSave}
                     disabled={!isDirty || isSaving}
-                    className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl transition-colors shadow-md shadow-blue-600/20 flex items-center gap-2"
+                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl transition-colors shadow-md shadow-indigo-600/20 flex items-center gap-2"
                 >
                     {isSaving ? (
                         <>
@@ -236,7 +236,7 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
             <div className="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
                 <div className="p-4 px-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-100 text-blue-600 rounded-lg shadow-sm">
+                        <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg shadow-sm">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                         </div>
                         <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">Settings</h2>

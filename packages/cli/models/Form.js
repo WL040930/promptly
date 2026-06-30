@@ -1,5 +1,6 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../db/index.js';
+import crypto from 'crypto';
 
 const Form = sequelize.define(
     'Form',
@@ -7,7 +8,7 @@ const Form = sequelize.define(
         id: {
             type: DataTypes.STRING(100),
             primaryKey: true,
-            defaultValue: () => `form_${Date.now()}`
+            defaultValue: () => `form_${crypto.randomUUID().replace(/-/g, '')}`
         },
         title: {
             type: DataTypes.STRING(255),

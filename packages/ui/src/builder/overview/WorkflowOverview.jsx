@@ -131,8 +131,8 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                             name: value,
                             status: 'Draft',
                             lastEdited: 'Just now',
-                            iconColor: 'text-blue-600',
-                            iconBg: 'bg-blue-100',
+                            iconColor: 'text-indigo-600',
+                            iconBg: 'bg-indigo-100',
                             nodes: []
                         }
                     }));
@@ -272,7 +272,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
 
                     <button
                         onClick={onCreateWorkflow}
-                        className="bg-blue-600 text-white font-medium text-sm py-2.5 px-5 rounded-xl shadow-sm hover:bg-blue-700 hover:shadow transition-all flex items-center gap-2"
+                        className="bg-indigo-600 text-white font-medium text-sm py-2.5 px-5 rounded-xl shadow-sm hover:bg-indigo-700 hover:shadow transition-all flex items-center gap-2"
                     >
                         Create workflow
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -284,7 +284,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                 <div className="flex flex-col gap-3 mt-2">
                     <div className="flex items-center justify-between">
                         <div className="relative group">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-blue-500">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-indigo-500">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                             </div>
                             <input
@@ -292,7 +292,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                                 value={searchQuery}
                                 onChange={(event) => setSearchQuery(event.target.value)}
                                 placeholder="Search workflows..."
-                                className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-800 placeholder:text-slate-400 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/10 transition-all w-72 shadow-sm"
+                                className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-800 placeholder:text-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 transition-all w-72 shadow-sm"
                             />
                         </div>
 

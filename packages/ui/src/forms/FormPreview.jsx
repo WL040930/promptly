@@ -6,9 +6,10 @@ import FieldRenderer from './fields/FieldRenderer';
  * Overhauled to look like a premium standalone form (Typeform/Google Forms style),
  * with a themed background based on the accent color.
  */
-const FormPreview = ({ form, accentColor = '#4f46e5' }) => {
+const FormPreview = ({ form, accentColor = '#4f46e5', onSubmitCallback }) => {
     const [values, setValues] = useState({});
     const [submitted, setSubmitted] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [errors, setErrors] = useState({});
 
     const handleChange = (fieldId, value) => {
@@ -22,7 +23,7 @@ const FormPreview = ({ form, accentColor = '#4f46e5' }) => {
         }
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
 
         const newErrors = {};
@@ -40,8 +41,21 @@ const FormPreview = ({ form, accentColor = '#4f46e5' }) => {
             return;
         }
 
-        setSubmitted(true);
-        setTimeout(() => setSubmitted(false), 4000);
+        if (onSubmitCallback) {
+            setIsSubmitting(true);
+            try {
+                await onSubmitCallback(values);
+                setSubmitted(true);
+            } catch (err) {
+                console.error(err);
+                alert('An error occurred submitting your response. Please try again.');
+            } finally {
+                setIsSubmitting(false);
+            }
+        } else {
+            setSubmitted(true);
+            setTimeout(() => setSubmitted(false), 4000);
+        }
     };
 
     const confirmationMsg = form.settings?.confirmationMessage || 'Your response has been recorded. Thank you!';
@@ -115,10 +129,11 @@ const FormPreview = ({ form, accentColor = '#4f46e5' }) => {
                                 <div className="flex items-center justify-between pt-6 border-t border-gray-100/50 mt-4">
                                     <button
                                         type="submit"
-                                        className="px-8 py-3.5 text-white text-[15px] font-bold rounded-xl shadow-[0_8px_20px_rgba(0,0,0,0.12)] transition-all duration-300 hover:shadow-[0_12px_25px_rgba(0,0,0,0.18)] hover:-translate-y-0.5 active:translate-y-0 active:shadow-md"
-                                        style={{ backgroundColor: accentColor, boxShadow: `0 8px 20px ${accentColor}40` }}
+                                        disabled={isSubmitting}
+                                        className="px-8 py-3.5 rounded-2xl text-[15px] font-bold text-white transition-all duration-300 hover:opacity-90 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                        style={{ backgroundColor: accentColor }}
                                     >
-                                        Submit
+                                        {isSubmitting ? 'Submitting...' : 'Submit'}
                                     </button>
                                     <button
                                         type="button"

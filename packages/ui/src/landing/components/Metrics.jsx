@@ -19,9 +19,9 @@ function Metrics() {
               Our research indicates that administrative personnel save up to 85% of their time when switching from manual workflows to conversational AI agents.
             </p>
             <div className="grid grid-cols-2 gap-6">
-              <div className="p-6 rounded-2xl bg-blue-50 border border-blue-100">
-                <span className="block text-4xl font-bold text-blue-600 mb-2">12x</span>
-                <span className="text-sm font-medium text-blue-800 uppercase tracking-wider">Speed Increase</span>
+              <div className="p-6 rounded-2xl bg-indigo-50 border border-indigo-100">
+                <span className="block text-4xl font-bold text-indigo-600 mb-2">12x</span>
+                <span className="text-sm font-medium text-indigo-800 uppercase tracking-wider">Speed Increase</span>
               </div>
               <div className="p-6 rounded-2xl bg-teal-50 border border-teal-100">
                 <span className="block text-4xl font-bold text-teal-600 mb-2">99%</span>

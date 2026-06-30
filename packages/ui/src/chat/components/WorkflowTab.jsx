@@ -41,7 +41,7 @@ const WorkflowTab = () => {
                         <h2 className="text-2xl font-semibold text-slate-900 tracking-tight">Your Workflows</h2>
                         <p className="text-sm text-slate-500 mt-1">Manage and execute your designed automation flows.</p>
                     </div>
-                    <button className="px-5 py-2.5 bg-blue-600 hover:bg-blue-750 text-white font-medium text-sm rounded-xl transition-all shadow-md shadow-blue-500/10">
+                    <button className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-750 text-white font-medium text-sm rounded-xl transition-all shadow-md shadow-indigo-500/10">
                         Create New
                     </button>
                 </div>
@@ -88,7 +88,7 @@ const WorkflowTab = () => {
                                 <div className="flex items-center gap-2">
                                     <button 
                                         onClick={() => handleRunNow(wf.name)}
-                                        className="px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium text-sm rounded-lg transition-colors border border-blue-200"
+                                        className="px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-medium text-sm rounded-lg transition-colors border border-indigo-200"
                                     >
                                         Run Now
                                     </button>

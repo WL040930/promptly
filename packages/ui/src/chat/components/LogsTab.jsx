@@ -65,7 +65,7 @@ const LogsTab = () => {
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 placeholder="Search by run ID or workflow name..."
-                                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-2 text-sm font-medium text-slate-800 placeholder:text-slate-400 outline-none focus:border-blue-400 transition-all shadow-inner"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-2 text-sm font-medium text-slate-800 placeholder:text-slate-400 outline-none focus:border-indigo-400 transition-all shadow-inner"
                             />
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="absolute left-2.5 top-3 text-slate-400"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                         </div>
@@ -99,7 +99,7 @@ const LogsTab = () => {
                                     key={log.id}
                                     onClick={() => setSelectedLog(log)}
                                     className={`p-4 flex items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/50 transition-colors select-none border-t border-slate-100 first:border-t-0 ${
-                                        selectedLog?.id === log.id ? 'bg-blue-50/20 border-l-4 border-l-blue-600' : 'border-l-4 border-l-transparent'
+                                        selectedLog?.id === log.id ? 'bg-indigo-50/20 border-l-4 border-l-blue-600' : 'border-l-4 border-l-transparent'
                                     }`}
                                 >
                                     <div className="flex flex-col gap-1.5 min-w-0 flex-1">

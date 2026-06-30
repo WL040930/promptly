@@ -78,7 +78,7 @@ const FEATURES = [
 ]
 
 const COLOR_CLASS = {
-  blue: 'text-blue-600',
+  blue: 'text-indigo-600',
   teal: 'text-teal-600',
   indigo: 'text-indigo-600',
   rose: 'text-rose-600'
@@ -89,12 +89,26 @@ function Features() {
   const container = useRef(null)
 
   useGSAP(() => {
+    gsap.from('.features-heading', {
+      y: 30,
+      opacity: 0,
+      duration: 0.8,
+      ease: 'power3.out',
+      immediateRender: false,
+      scrollTrigger: {
+        trigger: container.current,
+        start: 'top 80%',
+        toggleActions: 'play none none none'
+      }
+    })
+
     gsap.from('.feature-card', {
       y: 50,
       opacity: 0,
       duration: 0.8,
       stagger: 0.2,
       ease: 'power3.out',
+      immediateRender: false,
       scrollTrigger: {
         trigger: container.current,
         start: 'top 80%',
@@ -106,7 +120,7 @@ function Features() {
   return (
     <section ref={container} id="features" className="py-24 bg-white relative scroll-mt-24">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
+        <div className="features-heading text-center mb-16">
           <h2 className="text-3xl md:text-5xl font-bold text-slate-900 mb-6">Built for Modern Administration</h2>
           <p className="text-xl text-slate-600 max-w-3xl mx-auto">
             Traditional RPA is brittle and hard to set up. Promptly uses Large Language Models to create flexible, resilient automations that anyone can manage.
@@ -115,7 +129,7 @@ function Features() {
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
           {FEATURES.map((feature) => {
-            const colorClass = COLOR_CLASS[feature.color] || 'text-blue-600'
+            const colorClass = COLOR_CLASS[feature.color] || 'text-indigo-600'
             return (
               <div
                 key={feature.id}
@@ -151,7 +165,7 @@ function Features() {
 
                 {activeId === feature.id && (
                   <div className="mt-auto animate-fade-in">
-                    <p className="text-sm text-blue-400 font-medium border-t border-slate-700 pt-4">{feature.details}</p>
+                    <p className="text-sm text-indigo-400 font-medium border-t border-slate-700 pt-4">{feature.details}</p>
                   </div>
                 )}
               </div>
@@ -159,14 +173,14 @@ function Features() {
           })}
         </div>
 
-        <div className="mt-20 p-8 rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-700 text-white flex flex-col md:flex-row items-center justify-between shadow-xl">
+        <div className="mt-20 p-8 rounded-3xl bg-gradient-to-r from-indigo-600 to-indigo-700 text-white flex flex-col md:flex-row items-center justify-between shadow-xl">
           <div className="mb-6 md:mb-0">
             <h4 className="text-2xl font-bold mb-2">Want to see a specific feature in action?</h4>
-            <p className="text-blue-100">Our live demo includes real-time workflow generation for all modules.</p>
+            <p className="text-indigo-100">Our live demo includes real-time workflow generation for all modules.</p>
           </div>
           <a
             href="#demo"
-            className="px-8 py-4 bg-white text-blue-600 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-lg active:scale-95 whitespace-nowrap"
+            className="px-8 py-4 bg-white text-indigo-600 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-lg active:scale-95 whitespace-nowrap"
           >
             Launch Sandbox
           </a>

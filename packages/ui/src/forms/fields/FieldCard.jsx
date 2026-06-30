@@ -379,11 +379,11 @@ const FieldCard = ({
                                     role="switch"
                                     aria-checked={field.required}
                                     onClick={(e) => { e.stopPropagation(); onUpdate({ required: !field.required }); }}
-                                    className={`relative w-10 h-6 rounded-full transition-all duration-300 border-2 ${field.required ? 'border-transparent' : 'bg-gray-100 border-gray-200 group-hover/req:bg-gray-200'
+                                    className={`relative shrink-0 w-10 h-6 rounded-full transition-all duration-300 border-2 p-0 flex items-center ${field.required ? 'border-transparent' : 'bg-gray-100 border-gray-200 group-hover/req:bg-gray-200'
                                         }`}
                                     style={field.required ? { backgroundColor: accentColor } : {}}
                                 >
-                                    <span className={`absolute top-[2px] left-[2px] w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ${field.required ? 'translate-x-4 scale-110' : ''
+                                    <span className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ml-[2px] ${field.required ? 'translate-x-4 scale-110' : 'translate-x-0'
                                         }`} />
                                 </button>
                             </label>

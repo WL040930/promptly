@@ -11,7 +11,7 @@ const STEPS = [
     title: 'Converse',
     description: 'Speak or type your requirement. Promptly understands nuance, jargon, and complex instructions.',
     visual: '🗣️',
-    color: 'from-blue-500 to-blue-400'
+    color: 'from-indigo-500 to-indigo-400'
   },
   {
     number: '02',
@@ -69,7 +69,7 @@ function HowItWorks() {
 
   return (
     <section ref={container} id="how-it-works" className="py-24 bg-slate-900 text-white overflow-hidden relative scroll-mt-24">
-      <div className="absolute top-0 right-0 w-1/3 h-full bg-blue-500/5 blur-[120px] rounded-full pointer-events-none"></div>
+      <div className="absolute top-0 right-0 w-1/3 h-full bg-indigo-500/5 blur-[120px] rounded-full pointer-events-none"></div>
       <div className="absolute bottom-0 left-0 w-1/4 h-1/2 bg-indigo-500/5 blur-[100px] rounded-full pointer-events-none"></div>
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -86,17 +86,17 @@ function HowItWorks() {
               {idx < STEPS.length - 1 && (
                 <>
                   <div className="hidden lg:block absolute top-10 left-1/2 w-full h-[2px] bg-slate-800 z-0">
-                    <div className="h-full bg-blue-500 w-0 group-hover:w-full transition-all duration-700 ease-in-out"></div>
+                    <div className="h-full bg-indigo-500 w-0 group-hover:w-full transition-all duration-700 ease-in-out"></div>
                   </div>
                   {idx % 2 === 0 && (
                     <div className="hidden md:block lg:hidden absolute top-10 left-1/2 w-full h-[2px] bg-slate-800 z-0">
-                      <div className="h-full bg-blue-500 w-0 group-hover:w-full transition-all duration-700 ease-in-out"></div>
+                      <div className="h-full bg-indigo-500 w-0 group-hover:w-full transition-all duration-700 ease-in-out"></div>
                     </div>
                   )}
                   <div
                     className={`block ${idx % 2 !== 0 ? 'md:block' : 'md:hidden'} lg:hidden absolute top-10 left-1/2 w-[2px] h-[calc(100%+4rem)] bg-slate-800 z-0`}
                   >
-                    <div className="w-full bg-blue-500 h-0 group-hover:h-full transition-all duration-700 ease-in-out"></div>
+                    <div className="w-full bg-indigo-500 h-0 group-hover:h-full transition-all duration-700 ease-in-out"></div>
                   </div>
                 </>
               )}
@@ -106,8 +106,8 @@ function HowItWorks() {
                   {step.visual}
                 </div>
                 
-                <div className="text-blue-500 font-mono font-bold text-sm mb-2 tracking-widest">{step.number}</div>
-                <h3 className="text-2xl font-bold mb-4 group-hover:text-blue-400 transition-colors">{step.title}</h3>
+                <div className="text-indigo-500 font-mono font-bold text-sm mb-2 tracking-widest">{step.number}</div>
+                <h3 className="text-2xl font-bold mb-4 group-hover:text-indigo-400 transition-colors">{step.title}</h3>
                 <p className="text-slate-400 leading-relaxed max-w-[250px]">{step.description}</p>
               </div>
             </div>
@@ -115,7 +115,7 @@ function HowItWorks() {
         </div>
 
         <div className="mt-32 p-1 md:p-12 rounded-[40px] bg-white/5 backdrop-blur-sm border border-white/10 overflow-hidden relative">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent opacity-50"></div>
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500 to-transparent opacity-50"></div>
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div className="p-6 md:p-0">
@@ -142,7 +142,7 @@ function HowItWorks() {
               </ul>
             </div>
 
-            <div className="bg-slate-950/80 rounded-3xl p-6 md:p-8 font-mono text-xs md:text-sm text-blue-300 border border-white/10 shadow-2xl">
+            <div className="bg-slate-950/80 rounded-3xl p-6 md:p-8 font-mono text-xs md:text-sm text-indigo-300 border border-white/10 shadow-2xl">
               <div className="flex items-center space-x-2 mb-6 border-b border-white/5 pb-4">
                 <div className="flex space-x-1.5">
                   <div className="w-3 h-3 rounded-full bg-rose-500/80"></div>
@@ -159,7 +159,7 @@ function HowItWorks() {
                   <p className="text-slate-500">2. Querying rows where [Status] == "Pending"</p>
                   <p className="text-slate-500">3. Sanitizing 14 records for PII safety...</p>
                 </div>
-                <p className="flex items-center animate-pulse"><span className="text-blue-400 mr-3">ACTION:</span> <span className="text-blue-200">Generating Outlook Sandbox Drafts...</span></p>
+                <p className="flex items-center animate-pulse"><span className="text-indigo-400 mr-3">ACTION:</span> <span className="text-indigo-200">Generating Outlook Sandbox Drafts...</span></p>
                 <div className="mt-4 pt-4 border-t border-white/5">
                   <p className="text-emerald-400 font-bold flex items-center">
                     <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>

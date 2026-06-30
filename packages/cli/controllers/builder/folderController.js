@@ -1,4 +1,4 @@
-import { Folder } from '../models/index.js';
+import { Folder } from '../../models/index.js';
 
 export const getFolders = async (req, res) => {
     const folders = await Folder.findAll({ where: { userId: req.user.id } });

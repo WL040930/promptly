@@ -1,4 +1,4 @@
-import { ExecutionLog, Workflow } from '../models/index.js';
+import { ExecutionLog, Workflow } from '../../models/index.js';
 import { Op } from 'sequelize';
 
 export const getDashboardMetrics = async (req, res) => {

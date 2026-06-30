@@ -1,4 +1,4 @@
-import { Form, FormResponse } from '../models/index.js';
+import { Form, FormResponse } from '../../models/index.js';
 
 export const getForms = async (req, res) => {
     const forms = await Form.findAll({ where: { userId: req.user.id } });
@@ -29,6 +29,16 @@ export const deleteForm = async (req, res) => {
     
     await form.destroy();
     res.json({ message: 'Form deleted' });
+};
+
+// Public Form view
+export const getPublicForm = async (req, res) => {
+    const { id } = req.params;
+    const form = await Form.findByPk(id, {
+        attributes: ['id', 'title', 'description', 'settings', 'fields']
+    });
+    if (!form) return res.status(404).json({ message: 'Form not found' });
+    res.json(form);
 };
 
 // Form Responses

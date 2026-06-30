@@ -1,13 +1,14 @@
 import { Router } from 'express';
-import asyncHandler from '../utils/asyncHandler.js';
-import { requireAuth } from '../middleware/authMiddleware.js';
+import asyncHandler from '../../utils/asyncHandler.js';
+import { requireAuth } from '../../middleware/authMiddleware.js';
 import { 
-    getForms, createForm, updateForm, deleteForm, submitFormResponse, getFormResponses 
-} from '../controllers/formController.js';
+    getForms, createForm, updateForm, deleteForm, submitFormResponse, getFormResponses, getPublicForm 
+} from '../../controllers/forms/formController.js';
 
 const router = Router();
 
-// Public route for submitting form responses
+// Public routes
+router.get('/public/:id', asyncHandler(getPublicForm));
 router.post('/:formId/responses', asyncHandler(submitFormResponse));
 
 // Protected routes

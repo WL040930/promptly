@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 const labelClassName = 'text-xs font-semibold text-slate-500';
-const inputClassName = 'w-full bg-slate-50 border border-slate-200 rounded-lg text-slate-800 px-3 py-2 outline-none text-sm font-medium focus:border-blue-400 focus:ring-2 focus:ring-blue-500/10 transition-all shadow-inner';
+const inputClassName = 'w-full bg-slate-50 border border-slate-200 rounded-lg text-slate-800 px-3 py-2 outline-none text-sm font-medium focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 transition-all shadow-inner';
 const sectionClassName = 'flex flex-col gap-1.5';
 
 const PropertyInspector = ({ activeNode, onUpdateNode }) => {
@@ -56,7 +56,7 @@ const PropertyInspector = ({ activeNode, onUpdateNode }) => {
         >
             <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <h3 className="font-semibold text-slate-900 text-sm">Node Configuration</h3>
-                <span className="text-xs font-semibold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                <span className="text-xs font-semibold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
                     {activeNode.type}
                 </span>
             </div>
@@ -89,13 +89,13 @@ const PropertyInspector = ({ activeNode, onUpdateNode }) => {
                         <div className={sectionClassName}>
                             <label className={`${labelClassName} flex justify-between`}>
                                 Prompt Template
-                                <span className="text-blue-500 cursor-pointer hover:underline">Variables</span>
+                                <span className="text-indigo-500 cursor-pointer hover:underline">Variables</span>
                             </label>
                             <textarea
                                 value={prompt}
                                 onChange={handlePromptChange}
                                 rows="4"
-                                className="w-full bg-slate-900 border border-slate-800 rounded-lg text-blue-100 px-3 py-3 outline-none font-mono text-xs focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all shadow-inner resize-none leading-relaxed"
+                                className="w-full bg-slate-900 border border-slate-800 rounded-lg text-indigo-100 px-3 py-3 outline-none font-mono text-xs focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all shadow-inner resize-none leading-relaxed"
                             />
                         </div>
                         <div className={sectionClassName}>

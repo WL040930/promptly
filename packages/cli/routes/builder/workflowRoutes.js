@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import asyncHandler from '../utils/asyncHandler.js';
-import { requireAuth } from '../middleware/authMiddleware.js';
+import asyncHandler from '../../utils/asyncHandler.js';
+import { requireAuth } from '../../middleware/authMiddleware.js';
 import { 
     getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, triggerWorkflow 
-} from '../controllers/workflowController.js';
+} from '../../controllers/builder/workflowController.js';
 
 const router = Router();
 

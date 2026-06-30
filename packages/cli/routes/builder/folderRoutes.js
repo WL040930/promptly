@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import asyncHandler from '../utils/asyncHandler.js';
-import { requireAuth } from '../middleware/authMiddleware.js';
+import asyncHandler from '../../utils/asyncHandler.js';
+import { requireAuth } from '../../middleware/authMiddleware.js';
 import { 
     getFolders, createFolder, updateFolder, deleteFolder 
-} from '../controllers/folderController.js';
+} from '../../controllers/builder/folderController.js';
 
 const router = Router();
 

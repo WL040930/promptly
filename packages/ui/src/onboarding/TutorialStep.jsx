@@ -45,7 +45,7 @@ const TutorialStep = ({ selectedRole, tutorialStepIndex, onNext, onBack, onSubmi
 
     return (
         <div className="w-full max-w-6xl flex flex-col items-center animate-fade-in z-10 h-full py-8">
-            <div className="w-full flex-1 bg-white rounded-[2rem] p-8 md:p-12 shadow-2xl shadow-blue-900/5 border border-slate-100 mb-8 flex flex-col md:flex-row items-center gap-12 min-h-[500px]">
+            <div className="w-full flex-1 bg-white rounded-[2rem] p-8 md:p-12 shadow-2xl shadow-indigo-900/5 border border-slate-100 mb-8 flex flex-col md:flex-row items-center gap-12 min-h-[500px]">
                 
                 {/* Left: Screenshot Placeholder */}
                 <div className="flex-[1.2] w-full bg-slate-50 border-4 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center text-slate-400 h-full min-h-[350px] transition-all hover:bg-slate-100 group">
@@ -56,7 +56,7 @@ const TutorialStep = ({ selectedRole, tutorialStepIndex, onNext, onBack, onSubmi
 
                 {/* Right: Text Content */}
                 <div className="flex-1 flex flex-col items-start text-left py-4">
-                    <div className="inline-flex px-4 py-1.5 rounded-full bg-blue-50 text-blue-600 text-sm font-bold uppercase tracking-widest border border-blue-100 mb-6 shadow-sm">
+                    <div className="inline-flex px-4 py-1.5 rounded-full bg-indigo-50 text-indigo-600 text-sm font-bold uppercase tracking-widest border border-indigo-100 mb-6 shadow-sm">
                         {currentFeature.tag}
                     </div>
                     <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 mb-6 leading-tight">
@@ -69,7 +69,7 @@ const TutorialStep = ({ selectedRole, tutorialStepIndex, onNext, onBack, onSubmi
                     {/* Visual Progress Steps (Optional context indicator) */}
                     <div className="mt-auto flex gap-3 w-full max-w-[200px]">
                         {[1, 2, 3].map((step) => (
-                            <div key={step} className={`h-1.5 flex-1 rounded-full transition-colors ${step <= tutorialStepIndex ? 'bg-blue-600' : 'bg-slate-200'}`}></div>
+                            <div key={step} className={`h-1.5 flex-1 rounded-full transition-colors ${step <= tutorialStepIndex ? 'bg-indigo-600' : 'bg-slate-200'}`}></div>
                         ))}
                     </div>
                 </div>
@@ -97,7 +97,7 @@ const TutorialStep = ({ selectedRole, tutorialStepIndex, onNext, onBack, onSubmi
                         disabled={isSubmitting}
                         className={`flex-1 px-8 py-4 rounded-xl text-lg font-bold transition-all duration-300 ${
                             !isSubmitting
-                                ? 'bg-blue-600 text-white shadow-xl hover:bg-blue-700 hover:shadow-2xl hover:-translate-y-1 cursor-pointer'
+                                ? 'bg-indigo-600 text-white shadow-xl hover:bg-indigo-700 hover:shadow-2xl hover:-translate-y-1 cursor-pointer'
                                 : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                         }`}
                     >
@@ -106,7 +106,7 @@ const TutorialStep = ({ selectedRole, tutorialStepIndex, onNext, onBack, onSubmi
                 ) : (
                     <button
                         onClick={onNext}
-                        className="flex-1 px-8 py-4 rounded-xl text-lg font-bold bg-blue-600 text-white shadow-xl hover:bg-blue-700 hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 cursor-pointer text-center flex justify-center items-center"
+                        className="flex-1 px-8 py-4 rounded-xl text-lg font-bold bg-indigo-600 text-white shadow-xl hover:bg-indigo-700 hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 cursor-pointer text-center flex justify-center items-center"
                     >
                         Next Step
                     </button>

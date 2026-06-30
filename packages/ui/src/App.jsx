@@ -11,6 +11,7 @@ import OnboardingPage from './onboarding/OnboardingPage'
 import ChatView from './chat/ChatView'
 import WorkflowBuilderView from './builder/WorkflowBuilderView'
 import SecurityPage from './landing/SecurityPage.jsx'
+import PublicFormView from './forms/PublicFormView.jsx'
 
 function App() {
     const [path, setPath] = useState(typeof window !== 'undefined' ? window.location.pathname : '/')
@@ -53,8 +54,9 @@ function App() {
         // Recover session and redirect to dashboard if authenticated
         const isAppPath = path.startsWith('/workflow') || path.startsWith('/chat');
         const isResetPasswordPath = path.startsWith('/reset-password/');
+        const isPublicFormPath = path.startsWith('/f/');
         
-        if (user && !isAppPath && !isResetPasswordPath) {
+        if (user && !isAppPath && !isResetPasswordPath && !isPublicFormPath) {
             goTo(user.experienceLevel === 'chat' ? '/chat/chat' : '/workflow/dashboard')
         } else if (!user && isAppPath) {
             goTo('/login')
@@ -83,13 +85,18 @@ function App() {
     const isRegister = path === '/register'
     const isForgotPassword = path === '/forgot-password'
     const isResetPassword = path.startsWith('/reset-password/')
+    const isPublicForm = path.startsWith('/f/')
     const isDashboard = path.startsWith('/workflow') || path.startsWith('/chat')
     const isSecurity = path === '/landing/security' || path === '/security'
+
+    if (isPublicForm) {
+        return <PublicFormView />
+    }
 
     if (isLoading) {
         return (
             <div className="min-h-screen bg-[#f7f9fc] flex items-center justify-center">
-                <div className="w-8 h-8 rounded-full border-4 border-blue-600 border-t-transparent animate-spin"></div>
+                <div className="w-8 h-8 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin"></div>
             </div>
         )
     }

@@ -315,7 +315,7 @@ const FormsTab = () => {
                                         onChange={(e) => updateForm({ title: e.target.value })}
                                         placeholder="Untitled Form"
                                         title="Click to rename"
-                                        className="text-[15px] font-extrabold text-gray-900 truncate min-w-0 max-w-[100px] md:max-w-[150px] xl:max-w-[250px] tracking-tight bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 rounded hover:bg-gray-100 transition-colors px-2 py-1 -ml-2"
+                                        className="text-[15px] font-extrabold text-gray-900 truncate min-w-0 max-w-[100px] md:max-w-[150px] 2xl:max-w-[250px] tracking-tight bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 rounded hover:bg-gray-100 transition-colors px-2 py-1 -ml-2"
                                     />
 
                         {/* Sub-tabs */}
@@ -335,7 +335,7 @@ const FormsTab = () => {
                                         <span className={isActive ? 'text-gray-800' : 'text-gray-400'}>
                                             {tab.icon}
                                         </span>
-                                        <span className="hidden xl:inline">{tab.label}</span>
+                                        <span className="hidden 2xl:inline">{tab.label}</span>
                                     </button>
                                 );
                             })}
@@ -357,7 +357,7 @@ const FormsTab = () => {
                                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                                 <circle cx="12" cy="12" r="3" />
                             </svg>
-                            <span className="hidden xl:inline">Preview</span>
+                            <span className="hidden 2xl:inline">Preview</span>
                         </button>
 
                         {/* Share Button */}
@@ -370,7 +370,7 @@ const FormsTab = () => {
                                 <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
                                 <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
                             </svg>
-                            <span className="hidden xl:inline">Share</span>
+                            <span className="hidden 2xl:inline">Share</span>
                         </button>
                     </div>
                 </div>

@@ -1,17 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { getFormResponses } from '../api/backend.js';
 
 /**
  * FormResponses — table view of form responses with summary stats.
  * Upgraded with premium design.
  */
-
-const MOCK_RESPONSES = [
-    { id: 'r1', submittedAt: '2026-06-18 09:15', values: { 'Full Name': 'Alice Johnson', 'Onboarding Rating': 'Excellent', 'Any specific suggestions?': 'Great onboarding flow!' } },
-    { id: 'r2', submittedAt: '2026-06-17 14:32', values: { 'Full Name': 'Bob Chen', 'Onboarding Rating': 'Good', 'Any specific suggestions?': 'Could use more tutorials' } },
-    { id: 'r3', submittedAt: '2026-06-17 11:05', values: { 'Full Name': 'Carla Reyes', 'Onboarding Rating': 'Average', 'Any specific suggestions?': '' } },
-    { id: 'r4', submittedAt: '2026-06-16 16:48', values: { 'Full Name': 'David Kim', 'Onboarding Rating': 'Excellent', 'Any specific suggestions?': 'Love the clean UI design' } },
-    { id: 'r5', submittedAt: '2026-06-15 08:20', values: { 'Full Name': 'Emma Foster', 'Onboarding Rating': 'Good', 'Any specific suggestions?': 'Add dark mode please' } },
-];
 
 const renderValue = (val) => {
     if (val === undefined || val === null || val === '') return <span className="text-gray-300">—</span>;
@@ -21,19 +14,57 @@ const renderValue = (val) => {
 };
 
 const FormResponses = ({ form }) => {
+    const [responses, setResponses] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        const fetchResponses = async () => {
+            if (!form || !form.id) return;
+            setLoading(true);
+            try {
+                const data = await getFormResponses(form.id);
+                setResponses(data || []);
+                setError(null);
+            } catch (err) {
+                console.error('Failed to fetch form responses', err);
+                setError('Failed to load responses');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchResponses();
+    }, [form]);
+
     const columns = useMemo(() => {
         return form.fields
             .filter(f => f.type !== 'heading' && f.type !== 'hidden')
             .map(f => f.label);
     }, [form.fields]);
 
-    const responses = useMemo(() => {
-        if (form.fields.length === 0) return [];
-        return MOCK_RESPONSES.slice(0, Math.min(5, MOCK_RESPONSES.length));
-    }, [form.fields]);
-
     const responseCount = responses.length;
-    const avgCompletionRate = 87;
+    
+    // Calculate latest submission date
+    let latestSubmission = '—';
+    if (responses.length > 0) {
+        const latestDate = new Date(Math.max(...responses.map(r => new Date(r.submittedAt).getTime())));
+        
+        // Format nicely: Today, Yesterday, or actual date
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        
+        if (latestDate.toDateString() === today.toDateString()) {
+            latestSubmission = 'Today';
+        } else if (latestDate.toDateString() === yesterday.toDateString()) {
+            latestSubmission = 'Yesterday';
+        } else {
+            latestSubmission = latestDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        }
+    }
+
+    const questionCount = columns.length;
 
     return (
         <div className="flex flex-col gap-6 animate-slide-up-fade pb-16">
@@ -44,17 +75,25 @@ const FormResponses = ({ form }) => {
                     <div className="text-[13px] text-gray-500 mt-1 font-bold tracking-wide uppercase">Total responses</div>
                 </div>
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-                    <div className="text-3xl font-extrabold text-gray-900 tracking-tight">{avgCompletionRate}%</div>
-                    <div className="text-[13px] text-gray-500 mt-1 font-bold tracking-wide uppercase">Completion rate</div>
+                    <div className="text-3xl font-extrabold text-gray-900 tracking-tight">{latestSubmission}</div>
+                    <div className="text-[13px] text-gray-500 mt-1 font-bold tracking-wide uppercase">Latest Response</div>
                 </div>
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-                    <div className="text-3xl font-extrabold text-gray-900 tracking-tight">2m 15s</div>
-                    <div className="text-[13px] text-gray-500 mt-1 font-bold tracking-wide uppercase">Avg. time to complete</div>
+                    <div className="text-3xl font-extrabold text-gray-900 tracking-tight">{questionCount}</div>
+                    <div className="text-[13px] text-gray-500 mt-1 font-bold tracking-wide uppercase">Active Questions</div>
                 </div>
             </div>
 
-            {/* Responses Table */}
-            {responses.length > 0 ? (
+            {/* Loading / Error States */}
+            {loading ? (
+                <div className="flex items-center justify-center p-12 bg-white rounded-3xl shadow-sm border border-gray-100">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                </div>
+            ) : error ? (
+                <div className="bg-red-50 text-red-600 p-6 rounded-3xl text-center shadow-sm border border-red-100">
+                    <p className="font-bold">{error}</p>
+                </div>
+            ) : responses.length > 0 ? (
                 <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100">
                     {/* Table Header */}
                     <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gray-50/50">
@@ -85,10 +124,14 @@ const FormResponses = ({ form }) => {
                                 {responses.map((response, rIdx) => (
                                     <tr key={response.id} className="border-b border-gray-50 hover:bg-gray-50/80 transition-colors group">
                                         <td className="px-6 py-4 text-gray-400 text-[13px] font-medium">{rIdx + 1}</td>
-                                        <td className="px-6 py-4 text-gray-500 text-[13px] font-medium whitespace-nowrap">{response.submittedAt}</td>
+                                        <td className="px-6 py-4 text-gray-500 text-[13px] font-medium whitespace-nowrap">
+                                            {new Date(response.submittedAt).toLocaleString(undefined, { 
+                                                year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+                                            })}
+                                        </td>
                                         {columns.map((col, cIdx) => (
                                             <td key={cIdx} className="px-6 py-4 text-gray-800 text-[14px] font-medium max-w-[250px] truncate">
-                                                {renderValue(response.values[col])}
+                                                {renderValue(response.responseData ? response.responseData[col] : null)}
                                             </td>
                                         ))}
                                     </tr>

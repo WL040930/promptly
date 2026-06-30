@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import asyncHandler from '../utils/asyncHandler.js';
-import { requireAuth } from '../middleware/authMiddleware.js';
-import { sendMessage, getSession, getSessions } from '../controllers/chatController.js';
+import asyncHandler from '../../utils/asyncHandler.js';
+import { requireAuth } from '../../middleware/authMiddleware.js';
+import { sendMessage, getSession, getSessions } from '../../controllers/chat/chatController.js';
 
 const router = Router();
 

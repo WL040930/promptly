@@ -93,7 +93,7 @@ const AIAgentChat = ({ onApplyAction }) => {
             {/* Header */}
             <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
                 <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-pulse"></div>
+                    <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-pulse"></div>
                     <h3 className="font-semibold text-slate-800 text-sm">Promptly Agent</h3>
                 </div>
             </div>
@@ -108,7 +108,7 @@ const AIAgentChat = ({ onApplyAction }) => {
                         
                         <div className={`max-w-[90%] rounded-2xl p-3 text-sm leading-relaxed ${
                             msg.sender === 'user'
-                                ? 'bg-blue-600 text-white font-medium rounded-tr-none shadow-sm'
+                                ? 'bg-indigo-600 text-white font-medium rounded-tr-none shadow-sm'
                                 : 'bg-slate-100 text-slate-800 rounded-tl-none border border-slate-200/50 shadow-sm'
                         }`}>
                             {msg.text}
@@ -121,7 +121,7 @@ const AIAgentChat = ({ onApplyAction }) => {
                                     <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Proposed Node</span>
                                     <span className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${
                                         msg.proposal.type === 'trigger' ? 'bg-indigo-100 text-indigo-700' :
-                                        msg.proposal.type === 'ai' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                                        msg.proposal.type === 'ai' ? 'bg-indigo-100 text-indigo-700' : 'bg-indigo-100 text-indigo-700'
                                     }`}>
                                         {msg.proposal.type}
                                     </span>
@@ -146,7 +146,7 @@ const AIAgentChat = ({ onApplyAction }) => {
                                     <div className="flex gap-2">
                                         <button
                                             onClick={() => handleAcceptProposal(msg.id, msg.proposal)}
-                                            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs py-2 rounded-lg shadow-sm hover:shadow active:scale-98 transition-all"
+                                            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs py-2 rounded-lg shadow-sm hover:shadow active:scale-98 transition-all"
                                         >
                                             Accept & Add
                                         </button>
@@ -186,7 +186,7 @@ const AIAgentChat = ({ onApplyAction }) => {
                             <button
                                 key={idx}
                                 onClick={() => handleSend(s)}
-                                className="text-left bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2.5 text-xs font-medium text-slate-600 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 transition-colors"
+                                className="text-left bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2.5 text-xs font-medium text-slate-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600 transition-colors"
                             >
                                 {s}
                             </button>
@@ -199,7 +199,7 @@ const AIAgentChat = ({ onApplyAction }) => {
             <div className="p-3 border-t border-slate-150 bg-white shrink-0">
                 <form
                     onSubmit={(e) => { e.preventDefault(); handleSend(input); }}
-                    className="flex gap-2 bg-slate-50 border border-slate-200 rounded-xl p-1.5 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/10 transition-all"
+                    className="flex gap-2 bg-slate-50 border border-slate-200 rounded-xl p-1.5 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all"
                 >
                     <input
                         type="text"
@@ -213,7 +213,7 @@ const AIAgentChat = ({ onApplyAction }) => {
                         disabled={!input.trim() || isTyping}
                         className={`w-8 h-8 rounded-lg grid place-items-center transition-all ${
                             input.trim() && !isTyping
-                                ? 'bg-blue-600 text-white shadow hover:bg-blue-700'
+                                ? 'bg-indigo-600 text-white shadow hover:bg-indigo-700'
                                 : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                         }`}
                     >

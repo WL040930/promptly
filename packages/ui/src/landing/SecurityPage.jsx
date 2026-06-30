@@ -39,7 +39,7 @@ const SECURITY_FEATURES = [
 ]
 
 const COLOR_CLASS = {
-  blue: 'text-blue-600',
+  blue: 'text-indigo-600',
   teal: 'text-teal-600',
   indigo: 'text-indigo-600'
 }
@@ -51,12 +51,12 @@ function SecurityPage({ onHome, onLogin }) {
       <main>
         <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full -z-10">
-            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-200/40 rounded-full blur-[120px]"></div>
+            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-200/40 rounded-full blur-[120px]"></div>
             <div className="absolute bottom-[10%] right-[-10%] w-[40%] h-[40%] bg-teal-200/40 rounded-full blur-[120px]"></div>
           </div>
           
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-sm font-medium mb-6 animate-fade-in">
+            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 text-sm font-medium mb-6 animate-fade-in">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
@@ -77,7 +77,7 @@ function SecurityPage({ onHome, onLogin }) {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               {SECURITY_FEATURES.map((feature) => {
-                const colorClass = COLOR_CLASS[feature.color] || 'text-blue-600'
+                const colorClass = COLOR_CLASS[feature.color] || 'text-indigo-600'
                 return (
                   <div
                     key={feature.id}
@@ -101,19 +101,19 @@ function SecurityPage({ onHome, onLogin }) {
           </div>
         </section>
 
-        <section className="py-24 bg-blue-600 relative overflow-hidden">
+        <section className="py-24 bg-indigo-600 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2"></div>
           <div className="absolute bottom-0 left-0 w-96 h-96 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2"></div>
 
           <div className="max-w-4xl mx-auto px-4 text-center relative z-10">
             <h2 className="text-4xl md:text-5xl font-bold text-white mb-6 leading-tight">Ready to build securely?</h2>
-            <p className="text-xl text-blue-100 mb-10 max-w-2xl mx-auto">
+            <p className="text-xl text-indigo-100 mb-10 max-w-2xl mx-auto">
               Join Promptly today and start creating complex AI workflows with the peace of mind that your data is protected.
             </p>
             <div className="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-6">
               <button 
                 onClick={onHome}
-                className="w-full sm:w-auto bg-white text-blue-600 px-10 py-4 rounded-xl font-bold text-lg hover:bg-slate-50 transition-all shadow-2xl hover:scale-105 active:scale-95"
+                className="w-full sm:w-auto bg-white text-indigo-600 px-10 py-4 rounded-xl font-bold text-lg hover:bg-slate-50 transition-all shadow-2xl hover:scale-105 active:scale-95"
               >
                 Get Started
               </button>

@@ -14,7 +14,7 @@ const NODE_STYLES = {
         ),
     },
     ai: {
-        themeColor: 'from-indigo-500 to-purple-600',
+        themeColor: 'from-indigo-500 to-indigo-600',
         badge: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20',
         glow: 'shadow-[0_0_20px_rgba(99,102,241,0.15)]',
         bgGradient: 'from-indigo-50/20 to-transparent',
@@ -57,7 +57,7 @@ const BaseNode = ({
             onClick={onClick}
             className={`w-[290px] bg-white rounded-2xl border transition-all duration-500 flex flex-col relative overflow-visible ${
                 isActive
-                    ? 'border-blue-600 shadow-[0_0_30px_rgba(59,130,246,0.3)] ring-2 ring-blue-600/20 scale-[1.03] z-20'
+                    ? 'border-indigo-600 shadow-[0_0_30px_rgba(59,130,246,0.3)] ring-2 ring-indigo-600/20 scale-[1.03] z-20'
                     : 'border-slate-200/80 hover:border-slate-300 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_12px_30px_rgba(0,0,0,0.06)] hover:-translate-y-1 z-10'
             }`}
         >
@@ -86,7 +86,7 @@ const BaseNode = ({
                     type="target"
                     position={Position.Top}
                     isConnectable={isConnectable}
-                    className="!w-3 !h-3 !bg-white !border-2 !border-slate-300 hover:!border-blue-500 hover:!scale-125 !transition-all !shadow-sm"
+                    className="!w-3 !h-3 !bg-white !border-2 !border-slate-300 hover:!border-indigo-500 hover:!scale-125 !transition-all !shadow-sm"
                     style={{ top: '0px' }}
                 />
             )}
@@ -109,7 +109,7 @@ const BaseNode = ({
                     type="source"
                     position={Position.Bottom}
                     isConnectable={isConnectable}
-                    className="!w-3 !h-3 !bg-white !border-2 !border-blue-500 hover:!scale-125 hover:!bg-blue-50 !transition-all !shadow-[0_2px_6px_rgba(59,130,246,0.3)]"
+                    className="!w-3 !h-3 !bg-white !border-2 !border-indigo-500 hover:!scale-125 hover:!bg-indigo-50 !transition-all !shadow-[0_2px_6px_rgba(59,130,246,0.3)]"
                     style={{ bottom: '0px' }}
                 />
             )}

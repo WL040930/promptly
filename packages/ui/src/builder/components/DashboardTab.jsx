@@ -18,7 +18,7 @@ const KPI_CARDS = [
         badge: 'Syncing',
         badgeClass: 'bg-emerald-50 text-emerald-600 border-emerald-100',
         subtitle: 'Active triggers polling live data',
-        accentColor: 'from-indigo-500 to-blue-500',
+        accentColor: 'from-indigo-500 to-indigo-500',
         icon: (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
@@ -31,7 +31,7 @@ const KPI_CARDS = [
         label: 'Avg Success Rate',
         valueKey: 'successRate',
         badge: 'Target Met',
-        badgeClass: 'bg-blue-50 text-blue-600 border-blue-100',
+        badgeClass: 'bg-indigo-50 text-indigo-600 border-indigo-100',
         subtitle: 'Based on recent execution cycles',
         accentColor: 'from-emerald-500 to-teal-500',
         icon: (
@@ -188,8 +188,8 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, simplified }) => {
                                         <div className="w-full max-w-[40px] relative" style={{ height: `${heightPct}%`, minHeight: '16px' }}>
                                             <div className={`w-full h-full rounded-lg transition-all duration-300 ${
                                                 isHighest
-                                                    ? 'bg-blue-500 group-hover:bg-blue-600'
-                                                    : 'bg-blue-200 group-hover:bg-blue-400'
+                                                    ? 'bg-indigo-500 group-hover:bg-indigo-600'
+                                                    : 'bg-indigo-200 group-hover:bg-indigo-400'
                                             }`}></div>
                                         </div>
                                         {/* Label */}
@@ -210,7 +210,7 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, simplified }) => {
                         <div className="flex flex-col gap-3 flex-1 justify-center">
                             <button
                                 onClick={() => onNavigateTab?.('workflows')}
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm py-3 px-4 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all flex items-center justify-center gap-2.5"
+                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm py-3 px-4 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all flex items-center justify-center gap-2.5"
                             >
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                                     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
@@ -284,7 +284,7 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, simplified }) => {
                             </div>
                             <button
                                 onClick={() => onNavigateTab?.('logs')}
-                                className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+                                className="text-sm font-medium text-indigo-600 hover:text-indigo-700 hover:underline transition-colors"
                             >
                                 View all &rarr;
                             </button>

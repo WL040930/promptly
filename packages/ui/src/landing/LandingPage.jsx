@@ -36,7 +36,7 @@ function LandingPage({ onLogin, onSecurity }) {
               {BRANDS.map((brand, i) => (
                 <span
                   key={`b1-${i}`}
-                  className="text-xl font-bold text-slate-300 hover:text-blue-500 transition-colors cursor-default select-none uppercase tracking-widest"
+                  className="text-xl font-bold text-slate-300 hover:text-indigo-500 transition-colors cursor-default select-none uppercase tracking-widest"
                 >
                   {brand}
                 </span>
@@ -46,7 +46,7 @@ function LandingPage({ onLogin, onSecurity }) {
               {BRANDS.map((brand, i) => (
                 <span
                   key={`b2-${i}`}
-                  className="text-xl font-bold text-slate-300 hover:text-blue-500 transition-colors cursor-default select-none uppercase tracking-widest"
+                  className="text-xl font-bold text-slate-300 hover:text-indigo-500 transition-colors cursor-default select-none uppercase tracking-widest"
                 >
                   {brand}
                 </span>
@@ -60,20 +60,20 @@ function LandingPage({ onLogin, onSecurity }) {
         <InteractiveDemo />
         <Metrics />
 
-        <section className="py-24 bg-blue-600 relative overflow-hidden">
+        <section className="py-24 bg-indigo-600 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2"></div>
           <div className="absolute bottom-0 left-0 w-96 h-96 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2"></div>
 
           <div className="max-w-4xl mx-auto px-4 text-center relative z-10">
             <h2 className="text-4xl md:text-5xl font-bold text-white mb-6 leading-tight">Ready to Automate Your Admin Future?</h2>
-            <p className="text-xl text-blue-100 mb-10 max-w-2xl mx-auto">
+            <p className="text-xl text-indigo-100 mb-10 max-w-2xl mx-auto">
               Join dozens of administrative departments that are already redefining productivity with Promptly. Get started in minutes.
             </p>
             <div className="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-6">
-              <button className="w-full sm:w-auto bg-white text-blue-600 px-10 py-4 rounded-xl font-bold text-lg hover:bg-slate-50 transition-all shadow-2xl hover:scale-105 active:scale-95">
+              <button className="w-full sm:w-auto bg-white text-indigo-600 px-10 py-4 rounded-xl font-bold text-lg hover:bg-slate-50 transition-all shadow-2xl hover:scale-105 active:scale-95">
                 Start Free Trial
               </button>
-              <button className="w-full sm:w-auto bg-blue-700 text-white border border-white/20 px-10 py-4 rounded-xl font-bold text-lg hover:bg-blue-800 transition-all active:scale-95">
+              <button className="w-full sm:w-auto bg-indigo-700 text-white border border-white/20 px-10 py-4 rounded-xl font-bold text-lg hover:bg-indigo-800 transition-all active:scale-95">
                 Talk to Sales
               </button>
             </div>
