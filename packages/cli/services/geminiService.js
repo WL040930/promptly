@@ -3,7 +3,7 @@ import env from '../config/env.js';
 
 // Initialize the Gemini client
 const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY || 'dummy_key'
+    apiKey: env.gemini.apiKey
 });
 
 /**
@@ -12,7 +12,7 @@ const ai = new GoogleGenAI({
 export const executeNodePrompt = async (prompt, systemInstruction = '') => {
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-pro',
+            model: 'gemini-3.5-flash',
             contents: prompt,
             config: {
                 systemInstruction: systemInstruction || 'You are a helpful AI assistant.',
@@ -41,7 +41,7 @@ export const chatWithAgent = async (messages) => {
         `;
 
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-pro',
+            model: 'gemini-3.5-flash',
             contents: chatPrompt,
             config: {
                 systemInstruction: systemInstruction,

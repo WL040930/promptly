@@ -49,6 +49,9 @@ const env = {
         user: requireEnv('SMTP_USER'),
         pass: requireEnv('SMTP_PASS'),
         from: requireEnv('SMTP_FROM')
+    },
+    gemini: {
+        apiKey: requireEnv('GEMINI_API_KEY')
     }
 };
 
