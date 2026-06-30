@@ -26,8 +26,11 @@ export const sendMessage = async (req, res) => {
         // Append bot reply
         updatedMessages.push(botReply);
         
+        // Cap DB storage to last 100 messages to prevent JSONB bloat
+        const cappedMessages = updatedMessages.slice(-100);
+        
         // Save session
-        await session.update({ messages: updatedMessages });
+        await session.update({ messages: cappedMessages });
         
         res.json({ sessionId: session.id, reply: botReply });
     } catch (error) {
@@ -47,7 +50,27 @@ export const getSessions = async (req, res) => {
     const sessions = await ChatSession.findAll({
         where: { userId: req.user.id },
         order: [['updatedAt', 'DESC']],
-        attributes: ['id', 'title', 'updatedAt']
+        attributes: ['id', 'title', 'updatedAt'],
+        limit: 50
     });
     res.json(sessions);
+};
+
+export const updateSession = async (req, res) => {
+    const { sessionId } = req.params;
+    const { title } = req.body;
+    const session = await ChatSession.findOne({ where: { id: sessionId, userId: req.user.id } });
+    if (!session) return res.status(404).json({ message: 'Session not found' });
+    
+    await session.update({ title });
+    res.json(session);
+};
+
+export const deleteSession = async (req, res) => {
+    const { sessionId } = req.params;
+    const session = await ChatSession.findOne({ where: { id: sessionId, userId: req.user.id } });
+    if (!session) return res.status(404).json({ message: 'Session not found' });
+    
+    await session.destroy();
+    res.json({ message: 'Session deleted' });
 };

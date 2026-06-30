@@ -30,7 +30,8 @@ export const executeNodePrompt = async (prompt, systemInstruction = '') => {
  */
 export const chatWithAgent = async (messages) => {
     try {
-        const chatPrompt = messages.map(m => `${m.sender}: ${m.text}`).join('\n') + '\nbot:';
+        const recentMessages = messages.slice(-20);
+        const chatPrompt = recentMessages.map(m => `${m.sender}: ${m.text}`).join('\n') + '\nbot:';
         
         const systemInstruction = `
         You are Promptly Agent, an AI assistant helping users build automation workflows.

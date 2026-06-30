@@ -38,3 +38,5 @@ export const getDashboardMetrics = () => apiRequest('/api/dashboard/metrics');
 export const getChatSessions = () => apiRequest('/api/chat/sessions');
 export const sendChatMessage = (sessionId, message) => apiRequest('/api/chat/message', { method: 'POST', body: JSON.stringify({ sessionId, message }) });
 export const getChatSession = (sessionId) => apiRequest(`/api/chat/session/${sessionId}`);
+export const updateChatSession = (sessionId, title) => apiRequest(`/api/chat/session/${sessionId}`, { method: 'PUT', body: JSON.stringify({ title }) });
+export const deleteChatSession = (sessionId) => apiRequest(`/api/chat/session/${sessionId}`, { method: 'DELETE' });

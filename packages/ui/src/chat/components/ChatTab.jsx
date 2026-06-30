@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { BotIcon, UserIcon, SendIcon, PlusIcon, MessageSquareIcon } from './Icons';
-import { getChatSessions, getChatSession, sendChatMessage } from '../../api/backend.js';
+import { getChatSessions, getChatSession, sendChatMessage, updateChatSession, deleteChatSession } from '../../api/backend.js';
+import { useToast } from '../../components/ToastContext.jsx';
 
 const ChatTab = () => {
     const [messages, setMessages] = useState([
@@ -17,6 +18,9 @@ const ChatTab = () => {
     const [sidebarSearch, setSidebarSearch] = useState('');
     const [activeChatId, setActiveChatId] = useState(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [editingChatId, setEditingChatId] = useState(null);
+    const [editingTitle, setEditingTitle] = useState('');
+    const toast = useToast();
     const messagesEndRef = useRef(null);
     const container = useRef(null);
 
@@ -85,6 +89,7 @@ const ChatTab = () => {
     };
 
     const loadPastChat = async (id, title) => {
+        if (editingChatId === id) return; // Don't navigate while editing
         setActiveChatId(id);
         setIsSidebarOpen(false);
         setIsTyping(true);
@@ -100,6 +105,38 @@ const ChatTab = () => {
             ]);
         } finally {
             setIsTyping(false);
+        }
+    };
+
+    const handleRenameSubmit = async (e, chatId) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!editingTitle.trim()) {
+            setEditingChatId(null);
+            return;
+        }
+        try {
+            await updateChatSession(chatId, editingTitle);
+            toast.success('Chat renamed successfully!');
+            setEditingChatId(null);
+            fetchSessions();
+        } catch (error) {
+            toast.error('Failed to rename chat.');
+        }
+    };
+
+    const handleDeleteChat = async (e, chatId) => {
+        e.stopPropagation();
+        if (!confirm('Are you sure you want to delete this chat?')) return;
+        try {
+            await deleteChatSession(chatId);
+            toast.success('Chat deleted successfully!');
+            if (activeChatId === chatId) {
+                handleNewChat();
+            }
+            fetchSessions();
+        } catch (error) {
+            toast.error('Failed to delete chat.');
         }
     };
 
@@ -158,13 +195,52 @@ const ChatTab = () => {
                                 }`}
                             >
                                 <div className="flex items-center justify-between gap-2">
-                                    <span className={`truncate text-[14px] ${isActive ? 'font-bold text-gray-900' : 'font-medium text-gray-700 group-hover:text-indigo-600'}`}>
-                                        {chat.title}
-                                    </span>
+                                    {editingChatId === chat.id ? (
+                                        <form 
+                                            onSubmit={(e) => handleRenameSubmit(e, chat.id)}
+                                            className="flex-1 mr-2"
+                                        >
+                                            <input
+                                                autoFocus
+                                                type="text"
+                                                value={editingTitle}
+                                                onChange={(e) => setEditingTitle(e.target.value)}
+                                                onBlur={(e) => handleRenameSubmit(e, chat.id)}
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="w-full bg-slate-50 border border-slate-300 rounded px-2 py-0.5 text-[14px] text-gray-900 focus:outline-none focus:border-indigo-500"
+                                            />
+                                        </form>
+                                    ) : (
+                                        <span className={`truncate text-[14px] ${isActive ? 'font-bold text-gray-900' : 'font-medium text-gray-700 group-hover:text-indigo-600'}`}>
+                                            {chat.title}
+                                        </span>
+                                    )}
+                                    
+                                    {!editingChatId && (
+                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setEditingTitle(chat.title);
+                                                    setEditingChatId(chat.id);
+                                                }}
+                                                className="p-1 text-gray-400 hover:text-indigo-600 transition-colors"
+                                                title="Rename Chat"
+                                            >
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                                            </button>
+                                            <button
+                                                onClick={(e) => handleDeleteChat(e, chat.id)}
+                                                className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                                                title="Delete Chat"
+                                            >
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="flex items-center justify-between mt-0.5 gap-2">
                                     <span className="text-xs font-normal text-gray-500 truncate flex-1">
-                                        {/* No preview text on the API list right now, so we can omit it or show a placeholder */}
                                         Click to view chat...
                                     </span>
                                     <span className="text-[10px] font-medium text-gray-400 shrink-0">

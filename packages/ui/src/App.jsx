@@ -1,17 +1,18 @@
-import React, { useEffect, useState } from 'react'
-import LandingPage from './landing/LandingPage.jsx'
-import LoginPage from './auth/LoginPage.jsx'
-import RegisterPage from './auth/RegisterPage.jsx'
-import ForgotPasswordPage from './auth/ForgotPasswordPage.jsx'
-import ResetPasswordPage from './auth/ResetPasswordPage.jsx'
+import React, { useEffect, useState, Suspense } from 'react'
 import { getAuthUser, setAuthUser, getAuthToken, clearAuthUser, clearAuthToken } from './utils/storage.js'
 import { apiRequest } from './api/client.js'
-import DashboardShell from './dashboard/DashboardShell'
-import OnboardingPage from './onboarding/OnboardingPage'
-import ChatView from './chat/ChatView'
-import WorkflowBuilderView from './builder/WorkflowBuilderView'
-import SecurityPage from './landing/SecurityPage.jsx'
-import PublicFormView from './forms/PublicFormView.jsx'
+
+const LandingPage = React.lazy(() => import('./landing/LandingPage.jsx'))
+const LoginPage = React.lazy(() => import('./auth/LoginPage.jsx'))
+const RegisterPage = React.lazy(() => import('./auth/RegisterPage.jsx'))
+const ForgotPasswordPage = React.lazy(() => import('./auth/ForgotPasswordPage.jsx'))
+const ResetPasswordPage = React.lazy(() => import('./auth/ResetPasswordPage.jsx'))
+const DashboardShell = React.lazy(() => import('./dashboard/DashboardShell'))
+const OnboardingPage = React.lazy(() => import('./onboarding/OnboardingPage'))
+const ChatView = React.lazy(() => import('./chat/ChatView'))
+const WorkflowBuilderView = React.lazy(() => import('./builder/WorkflowBuilderView'))
+const SecurityPage = React.lazy(() => import('./landing/SecurityPage.jsx'))
+const PublicFormView = React.lazy(() => import('./forms/PublicFormView.jsx'))
 
 function App() {
     const [path, setPath] = useState(typeof window !== 'undefined' ? window.location.pathname : '/')
@@ -168,4 +169,14 @@ function App() {
     return <LandingPage onLogin={() => goTo('/login')} onSecurity={() => goTo('/landing/security')} />
 }
 
-export default App
+export default function RootApp() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen bg-[#f7f9fc] flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin"></div>
+            </div>
+        }>
+            <App />
+        </Suspense>
+    )
+}

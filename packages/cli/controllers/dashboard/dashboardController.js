@@ -4,14 +4,23 @@ import { Op } from 'sequelize';
 export const getDashboardMetrics = async (req, res) => {
     const userId = req.user.id;
     
-    // Total Workflows
-    const activeWorkflowCount = await Workflow.count({ 
-        where: { userId, status: 'Active' } 
-    });
-    
-    // Logs stats
-    const totalRuns = await ExecutionLog.count({ where: { userId } });
-    const successRuns = await ExecutionLog.count({ where: { userId, status: 'Success' } });
+    // Run queries concurrently for better performance
+    const [
+        activeWorkflowCount,
+        totalRuns,
+        successRuns,
+        recentActivities
+    ] = await Promise.all([
+        Workflow.count({ where: { userId, status: 'Active' } }),
+        ExecutionLog.count({ where: { userId } }),
+        ExecutionLog.count({ where: { userId, status: 'Success' } }),
+        ExecutionLog.findAll({
+            where: { userId },
+            order: [['time', 'DESC']],
+            limit: 5,
+            include: [{ model: Workflow, as: 'workflow', attributes: ['name'] }]
+        })
+    ]);
     
     const successRate = totalRuns === 0 ? '100%' : `${((successRuns / totalRuns) * 100).toFixed(1)}%`;
     
@@ -22,14 +31,6 @@ export const getDashboardMetrics = async (req, res) => {
         runs: Math.floor(Math.random() * 500) + 100, // mock data for visual chart
         successRate: '99.5%'
     }));
-    
-    // Recent activities (limit 5)
-    const recentActivities = await ExecutionLog.findAll({
-        where: { userId },
-        order: [['time', 'DESC']],
-        limit: 5,
-        include: [{ model: Workflow, as: 'workflow', attributes: ['name'] }]
-    });
 
     res.json({
         activeWorkflowCount,

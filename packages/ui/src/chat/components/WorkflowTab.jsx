@@ -27,7 +27,7 @@ const WorkflowTab = () => {
             }
         };
         fetchWorkflows();
-    }, [toast]);
+    }, []);
 
     const handleRunNow = (name) => {
         toast.success(`Workflow "${name}" triggered successfully!`);

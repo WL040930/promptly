@@ -28,8 +28,10 @@ export const ToastProvider = ({ children }) => {
         setToasts(prev => prev.filter(toast => toast.id !== id));
     }, []);
 
+    const value = React.useMemo(() => ({ success, error, info }), [success, error, info]);
+
     return (
-        <ToastContext.Provider value={{ success, error, info }}>
+        <ToastContext.Provider value={value}>
             {children}
             <ToastContainer toasts={toasts} removeToast={removeToast} />
         </ToastContext.Provider>
