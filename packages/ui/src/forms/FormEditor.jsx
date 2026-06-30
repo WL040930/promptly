@@ -4,6 +4,7 @@ import { FIELD_TYPES, getTypesByCategory, createField } from './fields/fieldType
 
 import { useClickOutside } from './hooks/useClickOutside';
 import TypeIcon from './fields/TypeIcon';
+import { useToast } from '../components/ToastContext.jsx';
 
 /**
  * FormEditor — the design-mode editor view.
@@ -24,6 +25,8 @@ const FormEditor = ({
     const [showAddMenu, setShowAddMenu] = useState(false);
     const [draggedIndex, setDraggedIndex] = useState(null);
     const [dragOverIndex, setDragOverIndex] = useState(null);
+    const toast = useToast();
+
     const addMenuRef = useRef(null);
     const dragIndexRef = useRef(null);
 
@@ -103,7 +106,7 @@ const FormEditor = ({
 
             {/* Field Cards */}
             <div className="flex flex-col gap-4">
-                {form.fields.map((field, index) => {
+                {form.fields.filter(f => !f.deleted).map((field, index) => {
                     const isDragged = draggedIndex === index;
                     const isDragOver = dragOverIndex === index && draggedIndex !== index;
                     
@@ -136,18 +139,20 @@ const FormEditor = ({
             </div>
 
             {/* Add Question Button */}
-            <div className="relative flex justify-center mt-4" ref={addMenuRef}>
-                <button
-                    onClick={() => setShowAddMenu(!showAddMenu)}
-                    className="flex items-center gap-2.5 px-6 py-3.5 bg-white border border-gray-200 hover:border-gray-300 hover:shadow-lg rounded-full text-[15px] font-bold text-gray-700 transition-all duration-300 transform hover:-translate-y-1 group"
-                >
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center transition-colors" style={{ backgroundColor: accentColor + '20', color: accentColor }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                        </svg>
-                    </div>
-                    Add Question
-                </button>
+            <div className="relative flex flex-col items-center justify-center gap-4 mt-4">
+                <div className="flex gap-3" ref={addMenuRef}>
+                    <button
+                        onClick={() => setShowAddMenu(!showAddMenu)}
+                        className="flex items-center gap-2.5 px-6 py-3.5 bg-white border border-gray-200 hover:border-gray-300 hover:shadow-lg rounded-full text-[15px] font-bold text-gray-700 transition-all duration-300 transform hover:-translate-y-1 group"
+                    >
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center transition-colors" style={{ backgroundColor: accentColor + '20', color: accentColor }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                            </svg>
+                        </div>
+                        Add Question
+                    </button>
+                </div>
 
                 {/* Add Question Type Picker Popover */}
                 {showAddMenu && (

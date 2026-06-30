@@ -13,6 +13,11 @@ const FormResponse = sequelize.define(
             type: DataTypes.JSONB,
             defaultValue: {}
         },
+        snapshot: {
+            type: DataTypes.JSONB,
+            allowNull: true,
+            comment: 'Snapshot of the form fields at the time of submission'
+        },
         submittedAt: {
             type: DataTypes.DATE,
             defaultValue: DataTypes.NOW

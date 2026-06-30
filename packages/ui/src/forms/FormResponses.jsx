@@ -37,11 +37,69 @@ const FormResponses = ({ form }) => {
         fetchResponses();
     }, [form]);
 
-    const columns = useMemo(() => {
-        return form.fields
-            .filter(f => f.type !== 'heading' && f.type !== 'hidden')
-            .map(f => f.label);
-    }, [form.fields]);
+    /**
+     * Option A — Snapshot-aware column union.
+     *
+     * Columns = current active fields  UNION  any fields that appear in
+     * old response snapshots (or responseData keys) but have since been
+     * removed from the form.
+     * Each entry: { id, label, removed: bool }
+     *
+     * Layer 1: snapshot array (preferred — has real labels).
+     * Layer 2: responseData keys fallback when snapshot is null/sparse
+     *          (handles responses submitted before snapshot was introduced,
+     *           or any edge case where snapshot is missing).
+     */
+    const allColumns = useMemo(() => {
+        // Start from current active (non-deleted) fields, preserving their order
+        const seenIds = new Set();
+        const columns = [];
+
+        // Build a lookup of ALL form.fields (including soft-deleted) for label recovery
+        const allFormFieldsById = Object.fromEntries((form?.fields || []).map(f => [f.id, f]));
+
+        (form?.fields || [])
+            .filter(f => !f.deleted && f.type !== 'heading' && f.type !== 'hidden')
+            .forEach(f => {
+                seenIds.add(f.id);
+                columns.push({ id: f.id, label: f.label, removed: false });
+            });
+
+        // Layer 1: walk each response's snapshot for removed fields (best label source)
+        responses.forEach(response => {
+            const snapshot = response.snapshot;
+            if (Array.isArray(snapshot)) {
+                snapshot
+                    .filter(f => f.type !== 'heading' && f.type !== 'hidden' && !f.deleted)
+                    .forEach(f => {
+                        if (!seenIds.has(f.id)) {
+                            seenIds.add(f.id);
+                            columns.push({ id: f.id, label: f.label || allFormFieldsById[f.id]?.label || f.id, removed: true });
+                        }
+                    });
+            }
+        });
+
+        // Layer 2: scan responseData keys as fallback for responses with null snapshots.
+        // Cross-reference with form.fields (soft-deleted entries still live there with deleted:true)
+        // so we can recover the label.
+        responses.forEach(response => {
+            if (!response.responseData) return;
+            Object.keys(response.responseData).forEach(id => {
+                if (!seenIds.has(id)) {
+                    seenIds.add(id);
+                    const label = allFormFieldsById[id]?.label || `Removed question (${id.slice(0, 6)})`;
+                    columns.push({ id, label, removed: true });
+                }
+            });
+        });
+
+        return columns;
+    }, [form?.fields, responses]);
+
+    // Keep activeFields as a subset (used for the stat card count)
+    const activeFields = useMemo(() => allColumns.filter(c => !c.removed), [allColumns]);
+    const removedColumnCount = allColumns.filter(c => c.removed).length;
 
     const responseCount = responses.length;
     
@@ -64,7 +122,48 @@ const FormResponses = ({ form }) => {
         }
     }
 
-    const questionCount = columns.length;
+    const questionCount = activeFields.length;
+
+    const handleExportCsv = () => {
+        if (!responses.length) return;
+
+        // Headers: prefix removed columns with [removed] so analysts immediately know
+        const headers = [
+            'Response ID',
+            'Submitted At',
+            ...allColumns.map(col => {
+                const label = col.label.replace(/"/g, '""');
+                return col.removed ? `[removed] ${label}` : label;
+            }),
+        ];
+        
+        // Rows: iterate allColumns so removed-field data is included
+        const rows = responses.map(response => {
+            const submitted = new Date(response.submittedAt).toLocaleString();
+            
+            const fieldValues = allColumns.map(col => {
+                let val = response.responseData ? response.responseData[col.id] : '';
+                if (val === undefined || val === null) val = '';
+                if (Array.isArray(val)) val = val.join(', ');
+                if (typeof val === 'boolean') val = val ? 'Yes' : 'No';
+                const stringVal = String(val).replace(/"/g, '""');
+                return `"${stringVal}"`;
+            });
+            
+            return [`"${response.id}"`, `"${submitted}"`, ...fieldValues].join(',');
+        });
+        
+        const csvContent = [headers.map(h => `"${h}"`).join(','), ...rows].join('\n');
+        
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `${form.title || 'Form_Responses'}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
     return (
         <div className="flex flex-col gap-6 animate-slide-up-fade pb-16">
@@ -97,8 +196,24 @@ const FormResponses = ({ form }) => {
                 <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100">
                     {/* Table Header */}
                     <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gray-50/50">
-                        <h3 className="text-lg font-extrabold text-gray-900 tracking-tight">All Responses</h3>
-                        <button className="text-[13px] font-bold text-gray-600 hover:text-gray-900 flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-gray-200 hover:border-gray-300 hover:bg-white transition-all shadow-sm">
+                        <div className="flex items-center gap-3">
+                            <h3 className="text-lg font-extrabold text-gray-900 tracking-tight">All Responses</h3>
+                            {removedColumnCount > 0 && (
+                                <span
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200"
+                                    title={`${removedColumnCount} question(s) were removed from this form after some responses were already collected. Their historical data is still shown in the table.`}
+                                >
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                                    </svg>
+                                    {removedColumnCount} removed question{removedColumnCount > 1 ? 's' : ''}
+                                </span>
+                            )}
+                        </div>
+                        <button 
+                            onClick={handleExportCsv}
+                            className="text-[13px] font-bold text-gray-600 hover:text-gray-900 flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-gray-200 hover:border-gray-300 hover:bg-white transition-all shadow-sm"
+                        >
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
                             </svg>
@@ -113,9 +228,20 @@ const FormResponses = ({ form }) => {
                                 <tr>
                                     <th className="px-6 py-4 font-bold text-gray-400 text-[11px] uppercase tracking-widest border-b border-gray-100 bg-white">#</th>
                                     <th className="px-6 py-4 font-bold text-gray-400 text-[11px] uppercase tracking-widest border-b border-gray-100 bg-white whitespace-nowrap">Submitted</th>
-                                    {columns.map((col, idx) => (
-                                        <th key={idx} className="px-6 py-4 font-bold text-gray-400 text-[11px] uppercase tracking-widest border-b border-gray-100 bg-white max-w-[200px] truncate">
-                                            {col}
+                                    {allColumns.map((col) => (
+                                        <th
+                                            key={col.id}
+                                            className="px-6 py-4 font-bold text-[11px] uppercase tracking-widest border-b border-gray-100 bg-white max-w-[220px]"
+                                            title={col.removed ? `"${col.label}" was removed from this form` : col.label}
+                                        >
+                                            {col.removed ? (
+                                                <span className="flex items-center gap-1.5 flex-nowrap">
+                                                    <span className="line-through text-gray-300 truncate max-w-[110px] tracking-normal normal-case font-semibold">{col.label}</span>
+                                                    <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-extrabold bg-amber-100 text-amber-600 border border-amber-200 normal-case tracking-normal">removed</span>
+                                                </span>
+                                            ) : (
+                                                <span className="text-gray-400 truncate block max-w-[160px]">{col.label}</span>
+                                            )}
                                         </th>
                                     ))}
                                 </tr>
@@ -129,11 +255,22 @@ const FormResponses = ({ form }) => {
                                                 year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
                                             })}
                                         </td>
-                                        {columns.map((col, cIdx) => (
-                                            <td key={cIdx} className="px-6 py-4 text-gray-800 text-[14px] font-medium max-w-[250px] truncate">
-                                                {renderValue(response.responseData ? response.responseData[col] : null)}
-                                            </td>
-                                        ))}
+                                        {allColumns.map((col) => {
+                                            const val = response.responseData ? response.responseData[col.id] : null;
+                                            return (
+                                                <td
+                                                    key={col.id}
+                                                    className={`px-6 py-4 text-[14px] font-medium max-w-[250px] truncate ${
+                                                        col.removed
+                                                            ? 'text-amber-600/60 bg-amber-50/40'
+                                                            : 'text-gray-800'
+                                                    }`}
+                                                    title={String(val ?? '')}
+                                                >
+                                                    {renderValue(val)}
+                                                </td>
+                                            );
+                                        })}
                                     </tr>
                                 ))}
                             </tbody>

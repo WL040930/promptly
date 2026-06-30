@@ -276,31 +276,36 @@ const ChatTab = () => {
 
             {/* Main Chat Area */}
             <div className="flex-1 flex flex-col h-full relative">
-                {/* Header */}
-                <div className="w-full flex items-center justify-between py-4 px-4 border-b border-slate-100 shadow-sm bg-white/90 backdrop-blur z-10 shrink-0">
-                    <button onClick={() => setIsSidebarOpen(true)} className="md:hidden text-slate-500 hover:text-slate-800 p-1">
+                {/* Header (Mobile Only) */}
+                <div className="w-full flex items-center py-4 px-4 border-b border-slate-100 shadow-sm bg-white/90 backdrop-blur z-10 shrink-0 md:hidden">
+                    <button onClick={() => setIsSidebarOpen(true)} className="text-slate-500 hover:text-slate-800 p-1">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
                     </button>
-                    <span className="text-sm font-semibold text-slate-500 absolute left-1/2 -translate-x-1/2">Prompty Assistant</span>
-                    <div className="w-7 md:hidden"></div>
                 </div>
 
                 {/* Message Log */}
                 <div className="flex-1 p-6 md:p-10 lg:px-[10%] overflow-y-auto flex flex-col gap-6 scroll-smooth bg-white">
                     {messages.map((msg, i) => (
-                        <div key={i} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-                            <div className={`max-w-[90%] md:max-w-[80%] flex gap-3 ${msg.sender === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                                {/* Avatar */}
-                                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
-                                    msg.sender === 'user' 
-                                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20' 
-                                        : 'bg-slate-50 text-slate-700 shadow-sm border border-slate-200'
-                                }`}>
-                                    {msg.sender === 'user' ? <UserIcon /> : <BotIcon />}
+                        <div key={i} className={`flex w-full ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+                            {/* Bot Avatar */}
+                            {msg.sender === 'bot' && (
+                                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-4 mr-2.5 shadow-sm border border-indigo-200/50">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="m12 3-1.9 5.8a2 2 0 0 1-1.29 1.29L3 12l5.8 1.9a2 2 0 0 1 1.29 1.29L12 21l1.9-5.8a2 2 0 0 1 1.29-1.29L21 12l-5.8-1.9a2 2 0 0 1-1.29-1.29L12 3Z"></path>
+                                    </svg>
                                 </div>
+                            )}
 
-                                {/* Bubble */}
-                                <div className={`bubble ${msg.sender === 'user' ? 'user !bg-indigo-600 !text-white !border-indigo-700 !rounded-tl-2xl !rounded-bl-2xl !rounded-tr-none !rounded-br-2xl' : 'bot highlight !rounded-tl-none !rounded-tr-2xl !rounded-bl-2xl !rounded-br-2xl'} whitespace-pre-wrap leading-relaxed shadow-sm`}>
+                            <div className={`flex flex-col gap-1 ${msg.sender === 'user' ? 'items-end' : 'items-start'} max-w-[85%]`}>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
+                                    {msg.sender === 'user' ? 'You' : 'AI Assistant'}
+                                </span>
+                                
+                                <div className={`w-full rounded-2xl p-3.5 text-sm leading-relaxed whitespace-pre-wrap ${
+                                    msg.sender === 'user'
+                                        ? 'bg-indigo-600 text-white font-medium rounded-tr-none shadow-sm'
+                                        : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'
+                                }`}>
                                     {msg.text}
                                 </div>
                             </div>
@@ -309,15 +314,20 @@ const ChatTab = () => {
 
                     {/* Typing Indicator */}
                     {isTyping && (
-                        <div className="flex justify-start">
-                            <div className="flex gap-3 items-center">
-                                <div className="w-9 h-9 rounded-full bg-slate-50 text-slate-700 border border-slate-200 shadow-sm flex items-center justify-center text-xl shrink-0">
-                                    <BotIcon />
-                                </div>
-                                <div className="bubble bot flex items-center gap-1.5 !rounded-tl-none !rounded-tr-2xl !rounded-bl-2xl !rounded-br-2xl py-3 shadow-sm">
-                                    <span className="w-2 h-2 bg-slate-400 rounded-full animate-pulse"></span>
-                                    <span className="w-2 h-2 bg-slate-400 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></span>
-                                    <span className="w-2 h-2 bg-slate-400 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></span>
+                        <div className="flex w-full justify-start animate-fade-in">
+                            <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-4 mr-2.5 shadow-sm border border-indigo-200/50">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="m12 3-1.9 5.8a2 2 0 0 1-1.29 1.29L3 12l5.8 1.9a2 2 0 0 1 1.29 1.29L12 21l1.9-5.8a2 2 0 0 1 1.29-1.29L21 12l-5.8-1.9a2 2 0 0 1-1.29-1.29L12 3Z"></path>
+                                </svg>
+                            </div>
+                            <div className="flex flex-col gap-1 items-start max-w-[85%]">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
+                                    AI Assistant
+                                </span>
+                                <div className="bg-white border border-slate-200/60 rounded-2xl rounded-tl-none p-3.5 shadow-sm flex items-center gap-1.5 h-12">
+                                    <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></span>
+                                    <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
+                                    <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></span>
                                 </div>
                             </div>
                         </div>
@@ -326,32 +336,37 @@ const ChatTab = () => {
                 </div>
 
                 {/* Footer Input Area */}
-                <div className="w-full bg-white border-t border-slate-100 p-4 pb-6 lg:px-[10%] shrink-0">
-                    <form
+                <div className="p-4 bg-white border-t border-slate-100 shrink-0 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.05)] z-10 relative lg:px-[10%]">
+                    <form 
                         onSubmit={(e) => { e.preventDefault(); handleSendMessage(inputText); }}
-                        className="flex gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-2 shadow-sm focus-within:border-indigo-400 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all max-w-4xl mx-auto"
+                        className="relative flex items-center w-full max-w-4xl mx-auto"
                     >
                         <input
                             type="text"
                             value={inputText}
                             onChange={(e) => setInputText(e.target.value)}
                             placeholder="Ask me anything: e.g. 'Can you draft a follow-up mail?'..."
-                            className="flex-1 bg-transparent border-none outline-none text-slate-900 placeholder:text-slate-400 px-4 py-2 font-medium"
+                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-full pl-5 pr-14 py-3.5 text-sm text-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 transition-all shadow-sm disabled:opacity-60"
+                            disabled={isTyping}
+                            autoFocus
                         />
                         <button
                             type="submit"
                             disabled={!inputText.trim() || isTyping}
-                            className={`w-12 h-12 rounded-xl grid place-items-center transition-all ${
-                                inputText.trim() && !isTyping 
-                                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 hover:-translate-y-0.5 cursor-pointer' 
-                                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                            className={`absolute right-1.5 w-10 h-10 rounded-full grid place-items-center transition-all ${
+                                inputText.trim() && !isTyping
+                                    ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-700 hover:scale-105 active:scale-95'
+                                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                             }`}
                         >
-                            <SendIcon />
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="22" y1="2" x2="11" y2="13" />
+                                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                            </svg>
                         </button>
                     </form>
-                    <div className="text-center mt-3 text-[0.7rem] font-medium text-slate-400">
-                        Prompty can make mistakes. Consider verifying important information.
+                    <div className="text-center mt-2.5">
+                        <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">AI can make mistakes. Please verify.</span>
                     </div>
                 </div>
             </div>

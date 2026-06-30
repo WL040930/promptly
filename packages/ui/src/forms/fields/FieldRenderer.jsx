@@ -4,7 +4,7 @@ import React, { useState } from 'react';
  * FieldRenderer — renders a single form field in preview/fill mode.
  * Handles all 15 field types with proper HTML inputs and premium styling.
  */
-const inputClasses = 'w-full bg-white/90 backdrop-blur-sm border-2 border-gray-200 hover:border-gray-300 rounded-xl px-4 py-3 text-[15px] font-medium text-gray-800 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:bg-white shadow-sm transition-all duration-300';
+const inputClasses = 'w-full bg-white border-2 border-slate-200 hover:border-slate-300 rounded-xl px-4 py-3.5 text-[15px] font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:bg-white shadow-sm hover:shadow-md transition-all duration-300 focus:-translate-y-0.5';
 const focusRing = `focus:border-transparent`;
 
 const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
@@ -18,10 +18,13 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
 
     if (field.type === 'heading') {
         return (
-            <div className="py-4 border-b-2 border-gray-200 mb-2">
-                <h3 className="text-2xl font-bold text-gray-900 tracking-tight">{field.label || 'Section Title'}</h3>
+            <div className="pt-2 pb-6 border-b border-slate-100">
+                <div className="flex items-center gap-4 mb-3">
+                    <div className="w-1.5 h-8 rounded-full shrink-0" style={{ backgroundColor: accentColor }}></div>
+                    <h3 className="text-3xl font-black text-slate-900 tracking-tight">{field.label || 'Section Title'}</h3>
+                </div>
                 {field.subtext && (
-                    <p className="text-base text-gray-600 mt-2 leading-relaxed">{field.subtext}</p>
+                    <p className="text-[16px] font-medium text-slate-500 leading-relaxed pl-5.5 ml-5">{field.subtext}</p>
                 )}
             </div>
         );
@@ -83,7 +86,11 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
                         {(field.choices || []).map((choice, idx) => {
                             const isChecked = value === choice;
                             return (
-                                <label key={idx} className={`flex items-center gap-3.5 px-4 py-3 rounded-xl border-2 cursor-pointer transition-all duration-300 group ${isChecked ? 'bg-white shadow-md' : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50 shadow-sm'}`} style={isChecked ? { borderColor: accentColor } : {}}>
+                                <label 
+                                    key={idx} 
+                                    className={`flex items-center gap-4 px-5 py-4 rounded-xl border-2 cursor-pointer transition-all duration-300 group ${isChecked ? 'shadow-md' : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 shadow-sm'}`} 
+                                    style={isChecked ? { borderColor: accentColor, backgroundColor: accentColor + '08' } : {}}
+                                >
                                     <div className="relative flex items-center justify-center shrink-0">
                                         <input
                                             type="radio"
@@ -93,13 +100,13 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
                                             onChange={() => onChange?.(choice)}
                                             className="sr-only peer"
                                         />
-                                        <div className="w-5 h-5 rounded-full border-2 border-gray-400 peer-checked:border-transparent transition-all duration-300 shadow-inner bg-white" 
+                                        <div className="w-5 h-5 rounded-full border-2 border-slate-300 peer-checked:border-transparent transition-all duration-300 shadow-inner bg-white" 
                                              style={isChecked ? { borderColor: accentColor } : {}} />
                                         {isChecked && (
                                             <div className="absolute w-2.5 h-2.5 rounded-full scale-in-center animate-bounce-in" style={{ backgroundColor: accentColor }} />
                                         )}
                                     </div>
-                                    <span className={`text-[15px] font-medium transition-colors ${isChecked ? 'text-gray-900' : 'text-gray-700'}`}>{choice}</span>
+                                    <span className={`text-[15px] transition-colors ${isChecked ? 'font-bold text-slate-900' : 'font-medium text-slate-700'}`}>{choice}</span>
                                 </label>
                             );
                         })}
@@ -115,7 +122,11 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
                         {(field.choices || []).map((choice, idx) => {
                             const isChecked = Array.isArray(value) && value.includes(choice);
                             return (
-                                <label key={idx} className={`flex items-center gap-3.5 px-4 py-3 rounded-xl border-2 cursor-pointer transition-all duration-300 group ${isChecked ? 'bg-white shadow-md' : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50 shadow-sm'}`} style={isChecked ? { borderColor: accentColor } : {}}>
+                                <label 
+                                    key={idx} 
+                                    className={`flex items-center gap-4 px-5 py-4 rounded-xl border-2 cursor-pointer transition-all duration-300 group ${isChecked ? 'shadow-md' : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 shadow-sm'}`} 
+                                    style={isChecked ? { borderColor: accentColor, backgroundColor: accentColor + '08' } : {}}
+                                >
                                     <div className="relative flex items-center justify-center shrink-0">
                                         <input
                                             type="checkbox"
@@ -133,14 +144,14 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
                                         />
                                         <div
                                             className="w-5 h-5 rounded-md flex items-center justify-center border-2 transition-all duration-300 shadow-inner bg-white"
-                                            style={isChecked ? { backgroundColor: accentColor, borderColor: accentColor } : { borderColor: '#9ca3af' }}
+                                            style={isChecked ? { backgroundColor: accentColor, borderColor: accentColor } : { borderColor: '#cbd5e1' }}
                                         >
                                             <svg className={`transition-transform duration-300 ${isChecked ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
                                                 <polyline points="20 6 9 17 4 12" />
                                             </svg>
                                         </div>
                                     </div>
-                                    <span className={`text-[15px] font-medium transition-colors ${isChecked ? 'text-gray-900' : 'text-gray-700'}`}>{choice}</span>
+                                    <span className={`text-[15px] transition-colors ${isChecked ? 'font-bold text-slate-900' : 'font-medium text-slate-700'}`}>{choice}</span>
                                 </label>
                             );
                         })}

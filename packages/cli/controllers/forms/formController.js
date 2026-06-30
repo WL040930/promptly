@@ -1,4 +1,5 @@
 import { Form, FormResponse } from '../../models/index.js';
+import { generateFormFromPrompt } from '../../services/aiFormsService.js';
 
 export const getForms = async (req, res) => {
     const forms = await Form.findAll({ where: { userId: req.user.id } });
@@ -9,6 +10,20 @@ export const createForm = async (req, res) => {
     const { title, description, settings, fields } = req.body;
     const form = await Form.create({ title, description, settings, fields, userId: req.user.id });
     res.status(201).json(form);
+};
+
+export const generateForm = async (req, res) => {
+    try {
+        const { prompt } = req.body;
+        if (!prompt) {
+            return res.status(400).json({ message: 'Prompt is required' });
+        }
+        const generatedForm = await generateFormFromPrompt(prompt);
+        res.json(generatedForm);
+    } catch (error) {
+        console.error('Error in generateForm:', error);
+        res.status(500).json({ message: 'Failed to generate form schema' });
+    }
 };
 
 export const updateForm = async (req, res) => {
@@ -73,7 +88,10 @@ export const submitFormResponse = async (req, res) => {
         }
     }
 
-    const response = await FormResponse.create({ formId, responseData });
+    // Save a snapshot of the current fields to prevent schema drift issues
+    const snapshot = form.fields;
+
+    const response = await FormResponse.create({ formId, responseData, snapshot });
     res.status(201).json(response);
 };
 

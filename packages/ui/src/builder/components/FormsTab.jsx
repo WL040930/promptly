@@ -3,6 +3,7 @@ import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import FormEditor from '../../forms/FormEditor';
 import FormPreview from '../../forms/FormPreview';
+import FormAIAssistant from '../../forms/FormAIAssistant';
 import FormResponses from '../../forms/FormResponses';
 import FormSettings from '../../forms/FormSettings';
 import FormShareModal from '../../forms/FormShareModal';
@@ -26,6 +27,7 @@ const FormsTab = () => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [formToDelete, setFormToDelete] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    
     const toast = useToast();
     const container = useRef(null);
 
@@ -115,15 +117,14 @@ const FormsTab = () => {
 
     const confirmDeleteForm = async () => {
         if (!formToDelete) return;
-        setIsDeleting(true);
         try {
+            setIsDeleting(true);
             await deleteForm(formToDelete);
-            toast.success('Form deleted successfully!');
             setForms(prev => prev.filter(f => f.id !== formToDelete));
             if (activeFormId === formToDelete) {
-                const remaining = forms.filter(f => f.id !== formToDelete);
-                setActiveFormId(remaining.length > 0 ? remaining[0].id : null);
+                setActiveFormId(forms.find(f => f.id !== formToDelete)?.id || null);
             }
+            toast.success('Form deleted successfully.');
         } catch (e) {
             console.error('Failed to delete form', e);
             toast.error('Failed to delete form.');
@@ -132,6 +133,7 @@ const FormsTab = () => {
             setFormToDelete(null);
         }
     };
+
 
     // ── Field CRUD ─────────────────────────────────────────────────────────────
 
@@ -149,7 +151,7 @@ const FormsTab = () => {
 
     const handleDeleteField = (fieldId) => {
         updateForm({
-            fields: activeForm.fields.filter(f => f.id !== fieldId),
+            fields: activeForm.fields.map(f => f.id === fieldId ? { ...f, deleted: true } : f)
         });
     };
 
@@ -186,6 +188,11 @@ const FormsTab = () => {
             id: 'questions',
             label: 'Questions',
             icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>,
+        },
+        {
+            id: 'ai',
+            label: 'AI Builder',
+            icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.29 1.29L3 12l5.8 1.9a2 2 0 0 1 1.29 1.29L12 21l1.9-5.8a2 2 0 0 1 1.29-1.29L21 12l-5.8-1.9a2 2 0 0 1-1.29-1.29L12 3Z"></path></svg>,
         },
         {
             id: 'responses',
@@ -394,26 +401,46 @@ const FormsTab = () => {
                 </div>
 
                 {/* Body Container */}
-                <div className="flex-1 overflow-y-auto p-6 md:p-10 relative">
-                    <div className="w-full max-w-3xl mx-auto animate-slide-up-fade">
+                <div className="flex-1 overflow-hidden relative">
+                    <div className="w-full h-full animate-slide-up-fade">
                         {isPreviewMode ? (
-                            <FormPreview form={activeForm} accentColor={accentColor} />
+                            <div className="h-full overflow-y-auto p-6 md:p-10 max-w-3xl mx-auto">
+                                <FormPreview form={activeForm} accentColor={accentColor} />
+                            </div>
                         ) : activeSubTab === 'questions' ? (
-                            <FormEditor
-                                form={activeForm}
-                                onUpdateForm={updateForm}
-                                onUpdateField={handleUpdateField}
-                                onDeleteField={handleDeleteField}
-                                onDuplicateField={handleDuplicateField}
-                                onAddField={handleAddField}
-                                onReorderFields={handleReorderFields}
-                                accentColor={accentColor}
-                            />
+                            <div className="h-full overflow-y-auto p-6 md:p-10 max-w-3xl mx-auto">
+                                <FormEditor
+                                    form={activeForm}
+                                    onUpdateForm={updateForm}
+                                    onUpdateField={(fieldId, updates) => {
+                                        updateForm({ fields: activeForm.fields.map(f => f.id === fieldId ? { ...f, ...updates } : f) });
+                                    }}
+                                    onDeleteField={(fieldId) => {
+                                        updateForm({ fields: activeForm.fields.map(f => f.id === fieldId ? { ...f, deleted: true } : f) });
+                                    }}
+                                    onDuplicateField={handleDuplicateField}
+                                    onAddField={handleAddField}
+                                    onReorderFields={handleReorderFields}
+                                    accentColor={accentColor}
+                                />
+                            </div>
+                        ) : activeSubTab === 'ai' ? (
+                            <div className="h-full">
+                                <FormAIAssistant 
+                                    form={activeForm} 
+                                    onUpdateForm={updateForm} 
+                                    accentColor={accentColor} 
+                                />
+                            </div>
                         ) : activeSubTab === 'responses' ? (
-                            <FormResponses form={activeForm} />
-                        ) : (
-                            <FormSettings form={activeForm} onUpdateForm={updateForm} />
-                        )}
+                            <div className="h-full overflow-y-auto p-6 md:p-10 max-w-3xl mx-auto">
+                                <FormResponses form={activeForm} />
+                            </div>
+                        ) : activeSubTab === 'settings' ? (
+                            <div className="h-full overflow-y-auto p-6 md:p-10 max-w-3xl mx-auto">
+                                <FormSettings form={activeForm} onUpdateForm={updateForm} />
+                            </div>
+                        ) : null}
                     </div>
                 </div>
                     </>
