@@ -6,6 +6,7 @@ import User from '../../models/User.js';
 import env from '../../config/env.js';
 import { normalizeEmail, emailPattern, passwordPattern } from '../../utils/validators.js';
 import { sendEmail } from '../../utils/email.js';
+import { getResetPasswordHtml } from '../../utils/emailTemplates.js';
 
 const createAuthToken = (user) =>
     jwt.sign({ sub: user.id, email: user.email }, env.jwt.secret, {
@@ -140,11 +141,14 @@ export const forgotPassword = async (req, res) => {
         + `${resetUrl}\n\n`
         + `If you did not request this, please ignore this email and your password will remain unchanged.\n`;
 
-    await sendEmail({
+    const htmlMessage = getResetPasswordHtml(resetUrl);
+
+    sendEmail({
         to: user.email,
-        subject: 'Password Reset',
-        text: message
-    });
+        subject: 'Reset Your Promptly Password',
+        text: message,
+        html: htmlMessage
+    }).catch(err => console.error('Failed to send password reset email:', err));
 
     res.json({ message: 'If that email address is in our database, we will send you an email to reset your password.' });
 };

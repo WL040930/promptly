@@ -81,9 +81,22 @@ const LoginPage = ({ onRegister, onLoginSuccess }) => {
                     </div>
 
                     <div>
-                        <label htmlFor="password" style={{ display: 'block', marginBottom: '0.6rem', fontWeight: '700', fontSize: '0.9rem', color: '#334155' }}>
-                            Password
-                        </label>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+                            <label htmlFor="password" style={{ fontWeight: '700', fontSize: '0.9rem', color: '#334155' }}>
+                                Password
+                            </label>
+                            <button type="button" onClick={() => window.history.pushState({}, '', '/forgot-password') || window.dispatchEvent(new Event('popstate'))} style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#3b82f6',
+                                fontSize: '0.85rem',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                padding: 0
+                            }}>
+                                Forgot Password?
+                            </button>
+                        </div>
                         <input
                             type="password"
                             id="password"
@@ -131,27 +144,21 @@ const LoginPage = ({ onRegister, onLoginSuccess }) => {
                     </button>
                 </form>
 
-                <div style={{ marginTop: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    <button onClick={() => window.history.pushState({}, '', '/forgot-password') || window.dispatchEvent(new Event('popstate'))} className="ghost full" style={{
-                        padding: '0.75rem',
-                        borderRadius: '12px',
-                        color: '#3b82f6',
-                        borderColor: 'transparent',
-                        background: 'transparent',
-                        fontWeight: '600'
-                    }}>
-                        Forgot Password?
-                    </button>
-
-                    <button onClick={onRegister} className="ghost full" style={{
-                        padding: '0.75rem',
-                        borderRadius: '12px',
-                        color: '#64748b',
-                        borderColor: 'transparent',
-                        background: 'transparent'
-                    }}>
-                        Don't have an account? Sign Up
-                    </button>
+                <div style={{ marginTop: '2rem', textAlign: 'center' }}>
+                    <p style={{ color: '#64748b', fontSize: '0.95rem' }}>
+                        Don't have an account?{' '}
+                        <button type="button" onClick={onRegister} style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#3b82f6',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            padding: 0,
+                            fontSize: '0.95rem'
+                        }}>
+                            Sign Up
+                        </button>
+                    </p>
                 </div>
             </div>
         </div>

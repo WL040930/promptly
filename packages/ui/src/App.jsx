@@ -52,12 +52,14 @@ function App() {
     useEffect(() => {
         // Recover session and redirect to dashboard if authenticated
         const isAppPath = path.startsWith('/workflow') || path.startsWith('/chat');
-        if (user && !isAppPath) {
+        const isResetPasswordPath = path.startsWith('/reset-password/');
+        
+        if (user && !isAppPath && !isResetPasswordPath) {
             goTo(user.experienceLevel === 'chat' ? '/chat/chat' : '/workflow/dashboard')
         } else if (!user && isAppPath) {
             goTo('/login')
         }
-    }, [user])
+    }, [user, path])
 
     const goTo = (nextPath) => {
         window.history.pushState({}, '', nextPath)
