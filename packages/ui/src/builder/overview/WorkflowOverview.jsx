@@ -5,6 +5,7 @@ import OverviewModal from './OverviewModal';
 import StatsCards from './components/StatsCards';
 import FolderNode from './components/FolderNode';
 import { buildFoldersByParent, buildWorkflowsByFolder, collectDescendantIds } from '../utils/treeUtils';
+import { createFolder, updateFolder, deleteFolder, createWorkflow, updateWorkflow, deleteWorkflow } from '../../api/backend.js';
 
 const MODAL_TYPES = {
     NEW_FOLDER: 'NEW_FOLDER',
@@ -108,25 +109,23 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
         setModal({ isOpen: false, type: null, data: null, inputValue: '' });
     }, []);
 
-    const handleModalSubmit = useCallback(() => {
+    const handleModalSubmit = useCallback(async () => {
         const value = modal.inputValue.trim();
 
-        switch (modal.type) {
-            case MODAL_TYPES.NEW_FOLDER:
-                if (value) {
-                    setFolders((prev) => ([
-                        ...prev,
-                        { id: `f${Date.now()}`, parentId: null, name: value, isExpanded: true }
-                    ]));
-                }
-                break;
-            case MODAL_TYPES.NEW_WORKFLOW:
-                if (value && modal.data?.folderId) {
-                    const newWfId = `w${Date.now()}`;
-                    setWorkflows((prev) => ({
-                        ...prev,
-                        [newWfId]: {
-                            id: newWfId,
+        try {
+            switch (modal.type) {
+                case MODAL_TYPES.NEW_FOLDER:
+                    if (value) {
+                        const newFolder = await createFolder({ name: value, parentId: null });
+                        setFolders((prev) => ([
+                            ...prev,
+                            { ...newFolder, isExpanded: true }
+                        ]));
+                    }
+                    break;
+                case MODAL_TYPES.NEW_WORKFLOW:
+                    if (value && modal.data?.folderId) {
+                        const wfData = {
                             folderId: modal.data.folderId,
                             name: value,
                             status: 'Draft',
@@ -134,55 +133,66 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                             iconColor: 'text-indigo-600',
                             iconBg: 'bg-indigo-100',
                             nodes: []
-                        }
-                    }));
-                }
-                break;
-            case MODAL_TYPES.RENAME_FOLDER:
-                if (value && modal.data?.folderId) {
-                    setFolders((prev) => prev.map((folder) => (
-                        folder.id === modal.data.folderId ? { ...folder, name: value } : folder
-                    )));
-                }
-                break;
-            case MODAL_TYPES.RENAME_WORKFLOW:
-                if (value && modal.data?.workflowId) {
-                    setWorkflows((prev) => ({
-                        ...prev,
-                        [modal.data.workflowId]: {
-                            ...prev[modal.data.workflowId],
-                            name: value
-                        }
-                    }));
-                }
-                break;
-            case MODAL_TYPES.DELETE_FOLDER: {
-                if (!modal.data?.folderId) break;
-
-                const deleteIds = new Set(collectDescendantIds(folders, modal.data.folderId));
-                setFolders((prev) => prev.filter((folder) => !deleteIds.has(folder.id)));
-                setWorkflows((prev) => {
-                    const next = { ...prev };
-                    Object.keys(next).forEach((wfId) => {
-                        if (deleteIds.has(next[wfId].folderId)) {
-                            delete next[wfId];
-                        }
-                    });
-                    return next;
-                });
-                break;
-            }
-            case MODAL_TYPES.DELETE_WORKFLOW:
-                if (modal.data?.workflowId) {
+                        };
+                        const newWf = await createWorkflow(wfData);
+                        setWorkflows((prev) => ({
+                            ...prev,
+                            [newWf.id]: newWf
+                        }));
+                    }
+                    break;
+                case MODAL_TYPES.RENAME_FOLDER:
+                    if (value && modal.data?.folderId) {
+                        await updateFolder(modal.data.folderId, { name: value });
+                        setFolders((prev) => prev.map((folder) => (
+                            folder.id === modal.data.folderId ? { ...folder, name: value } : folder
+                        )));
+                    }
+                    break;
+                case MODAL_TYPES.RENAME_WORKFLOW:
+                    if (value && modal.data?.workflowId) {
+                        await updateWorkflow(modal.data.workflowId, { name: value });
+                        setWorkflows((prev) => ({
+                            ...prev,
+                            [modal.data.workflowId]: {
+                                ...prev[modal.data.workflowId],
+                                name: value
+                            }
+                        }));
+                    }
+                    break;
+                case MODAL_TYPES.DELETE_FOLDER: {
+                    if (!modal.data?.folderId) break;
+                    
+                    await deleteFolder(modal.data.folderId);
+                    const deleteIds = new Set(collectDescendantIds(folders, modal.data.folderId));
+                    setFolders((prev) => prev.filter((folder) => !deleteIds.has(folder.id)));
                     setWorkflows((prev) => {
                         const next = { ...prev };
-                        delete next[modal.data.workflowId];
+                        Object.keys(next).forEach((wfId) => {
+                            if (deleteIds.has(next[wfId].folderId)) {
+                                delete next[wfId];
+                            }
+                        });
                         return next;
                     });
+                    break;
                 }
-                break;
-            default:
-                break;
+                case MODAL_TYPES.DELETE_WORKFLOW:
+                    if (modal.data?.workflowId) {
+                        await deleteWorkflow(modal.data.workflowId);
+                        setWorkflows((prev) => {
+                            const next = { ...prev };
+                            delete next[modal.data.workflowId];
+                            return next;
+                        });
+                    }
+                    break;
+                default:
+                    break;
+            }
+        } catch (error) {
+            console.error("Failed to perform action", error);
         }
 
         closeModal();
@@ -220,25 +230,31 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
         return false;
     }, [folderById]);
 
-    const onDrop = useCallback((event, folderId) => {
+    const onDrop = useCallback(async (event, folderId) => {
         event.preventDefault();
         event.stopPropagation();
         setDragOverFolderId(null);
 
-        if (dragInfo.type === 'WORKFLOW') {
-            setWorkflows((prev) => ({
-                ...prev,
-                [dragInfo.id]: {
-                    ...prev[dragInfo.id],
-                    folderId
+        try {
+            if (dragInfo.type === 'WORKFLOW') {
+                await updateWorkflow(dragInfo.id, { folderId });
+                setWorkflows((prev) => ({
+                    ...prev,
+                    [dragInfo.id]: {
+                        ...prev[dragInfo.id],
+                        folderId
+                    }
+                }));
+            } else if (dragInfo.type === 'FOLDER') {
+                if (!isDescendant(folderId, dragInfo.id)) {
+                    await updateFolder(dragInfo.id, { parentId: folderId });
+                    setFolders((prev) => prev.map((folder) => (
+                        folder.id === dragInfo.id ? { ...folder, parentId: folderId } : folder
+                    )));
                 }
-            }));
-        } else if (dragInfo.type === 'FOLDER') {
-            if (!isDescendant(folderId, dragInfo.id)) {
-                setFolders((prev) => prev.map((folder) => (
-                    folder.id === dragInfo.id ? { ...folder, parentId: folderId } : folder
-                )));
             }
+        } catch (e) {
+            console.error("Failed to move item", e);
         }
 
         setDragInfo({ type: null, id: null });
@@ -249,12 +265,17 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
         setDragOverFolderId(null);
     }, []);
 
-    const handleRootDrop = useCallback((event) => {
+    const handleRootDrop = useCallback(async (event) => {
         event.preventDefault();
-        if (dragInfo.type === 'FOLDER') {
-            setFolders((prev) => prev.map((folder) => (
-                folder.id === dragInfo.id ? { ...folder, parentId: null } : folder
-            )));
+        try {
+            if (dragInfo.type === 'FOLDER') {
+                await updateFolder(dragInfo.id, { parentId: null });
+                setFolders((prev) => prev.map((folder) => (
+                    folder.id === dragInfo.id ? { ...folder, parentId: null } : folder
+                )));
+            }
+        } catch (e) {
+            console.error("Failed to move to root", e);
         }
 
         setDragInfo({ type: null, id: null });
