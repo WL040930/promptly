@@ -20,6 +20,8 @@ const ChatTab = () => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [editingChatId, setEditingChatId] = useState(null);
     const [editingTitle, setEditingTitle] = useState('');
+    const [chatToDelete, setChatToDelete] = useState(null);
+    const [isDeleting, setIsDeleting] = useState(false);
     const toast = useToast();
     const messagesEndRef = useRef(null);
     const container = useRef(null);
@@ -125,18 +127,26 @@ const ChatTab = () => {
         }
     };
 
-    const handleDeleteChat = async (e, chatId) => {
+    const handleDeleteChat = (e, chatId) => {
         e.stopPropagation();
-        if (!confirm('Are you sure you want to delete this chat?')) return;
+        setChatToDelete(chatId);
+    };
+
+    const confirmDelete = async () => {
+        if (!chatToDelete) return;
+        setIsDeleting(true);
         try {
-            await deleteChatSession(chatId);
+            await deleteChatSession(chatToDelete);
             toast.success('Chat deleted successfully!');
-            if (activeChatId === chatId) {
+            if (activeChatId === chatToDelete) {
                 handleNewChat();
             }
             fetchSessions();
         } catch (error) {
             toast.error('Failed to delete chat.');
+        } finally {
+            setIsDeleting(false);
+            setChatToDelete(null);
         }
     };
 
@@ -340,6 +350,46 @@ const ChatTab = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Custom Delete Confirmation Modal */}
+            {chatToDelete && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl shadow-xl border border-slate-100 max-w-sm w-full p-6 animate-fade-in">
+                        <div className="flex flex-col items-center text-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center text-red-500 mb-2">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-900">Delete Chat?</h3>
+                            <p className="text-sm text-slate-500">
+                                This action cannot be undone. Are you sure you want to permanently delete this conversation?
+                            </p>
+                        </div>
+                        <div className="flex gap-3 mt-8">
+                            <button
+                                disabled={isDeleting}
+                                onClick={() => setChatToDelete(null)}
+                                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                disabled={isDeleting}
+                                onClick={confirmDelete}
+                                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 shadow-md shadow-red-500/20 transition-all flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed"
+                            >
+                                {isDeleting ? (
+                                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                ) : (
+                                    'Delete'
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
