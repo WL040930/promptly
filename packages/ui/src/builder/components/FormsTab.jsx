@@ -283,15 +283,19 @@ const FormsTab = () => {
             {/* ═══ MAIN CONTENT ═══ */}
             <main className="flex-1 flex flex-col h-full overflow-hidden bg-transparent">
                 {!activeForm ? (
-                    <div className="flex-1 flex items-center justify-center">
-                        <div className="text-center">
-                            <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-gray-200 flex items-center justify-center mx-auto mb-4">
-                                <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    <div className="flex-1 flex items-center justify-center p-8">
+                        <div className="p-12 text-center border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center bg-white/50 max-w-md w-full mx-auto">
+                            <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center mb-4">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                                    <polyline points="10 9 9 9 8 9"></polyline>
                                 </svg>
                             </div>
-                            <h3 className="text-lg font-semibold text-gray-900 mb-1">No Forms Found</h3>
-                            <p className="text-sm text-gray-500 mb-6">Create a new form to get started.</p>
+                            <div className="text-slate-600 font-semibold mb-1">No forms found</div>
+                            <div className="text-slate-400 text-sm mb-6">Create a new form to get started.</div>
                             <button
                                 onClick={handleCreateForm}
                                 className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm"

@@ -102,7 +102,17 @@ const WorkflowTab = () => {
                             </div>
                         ))
                     ) : (
-                        <div className="p-10 text-center text-slate-500 font-medium">No workflows found.</div>
+                        <div className="p-12 text-center border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center bg-white/50">
+                            <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center mb-4">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                                </svg>
+                            </div>
+                            <div className="text-slate-600 font-semibold mb-1">No workflows found</div>
+                            <div className="text-slate-400 text-sm">Create a new workflow to automate your tasks.</div>
+                        </div>
                     )}
                 </div>
             </div>

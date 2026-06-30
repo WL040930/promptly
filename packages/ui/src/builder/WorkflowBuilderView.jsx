@@ -302,9 +302,44 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     }, [workflows]);
 
     if (loading) {
-        return <div className="flex-1 flex items-center justify-center bg-slate-50">
-            <div className="text-slate-400 font-medium">Loading workspace...</div>
-        </div>;
+        return (
+            <div className="flex-1 flex w-full h-full bg-slate-50 overflow-hidden font-sans">
+                {/* Skeleton Sidebar */}
+                <aside className="w-72 bg-slate-50/90 border-r border-slate-200/60 flex flex-col h-full z-20 shrink-0">
+                    <div className="p-4 border-b border-slate-200 shrink-0">
+                        <div className="h-4 w-24 bg-slate-200 animate-pulse rounded mb-4"></div>
+                        <div className="h-10 w-full bg-slate-200 animate-pulse rounded-lg"></div>
+                    </div>
+                    <div className="flex-1 p-3 flex flex-col gap-4">
+                        {[1, 2, 3].map(i => (
+                            <div key={i}>
+                                <div className="h-4 w-20 bg-slate-200 animate-pulse rounded mb-2"></div>
+                                <div className="h-20 w-full bg-slate-200 animate-pulse rounded-r-xl"></div>
+                            </div>
+                        ))}
+                    </div>
+                </aside>
+
+                {/* Skeleton Main Area */}
+                <main className="flex-1 flex flex-col h-full bg-slate-50/50 relative overflow-hidden">
+                    <div className="w-full h-14 bg-white/80 border-b border-slate-200/60 flex items-center px-4 z-10 shrink-0 gap-4">
+                        <div className="h-8 w-8 bg-slate-200 animate-pulse rounded-lg"></div>
+                        <div className="h-8 w-32 bg-slate-200 animate-pulse rounded-lg"></div>
+                        <div className="ml-auto flex gap-2">
+                            <div className="h-8 w-24 bg-slate-200 animate-pulse rounded-lg"></div>
+                            <div className="h-8 w-24 bg-slate-200 animate-pulse rounded-lg"></div>
+                        </div>
+                    </div>
+                    <div className="flex-1 relative">
+                        {/* Background pattern */}
+                        <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#94a3b8 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
+                        {/* Skeleton Nodes */}
+                        <div className="absolute top-32 left-1/4 w-64 h-32 bg-white border border-slate-200 rounded-xl shadow-sm animate-pulse"></div>
+                        <div className="absolute top-64 left-1/2 w-64 h-32 bg-white border border-slate-200 rounded-xl shadow-sm animate-pulse"></div>
+                    </div>
+                </main>
+            </div>
+        );
     }
 
     // Sidebar tab-based routing

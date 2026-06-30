@@ -88,13 +88,19 @@ const LogsTab = () => {
                     </div>
 
                     {/* Developer Log Console List */}
-                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                        {filteredLogs.length === 0 ? (
-                            <div className="p-12 text-center text-slate-500 font-medium text-sm">
-                                No logs found matching query filters.
+                    {filteredLogs.length === 0 ? (
+                        <div className="p-12 text-center border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center bg-white/50">
+                            <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center mb-4">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                                </svg>
                             </div>
-                        ) : (
-                            filteredLogs.map(log => (
+                            <div className="text-slate-600 font-semibold mb-1">No logs found</div>
+                            <div className="text-slate-400 text-sm">No logs match your current filters.</div>
+                        </div>
+                    ) : (
+                        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                            {filteredLogs.map(log => (
                                 <div
                                     key={log.id}
                                     onClick={() => setSelectedLog(log)}
@@ -141,9 +147,9 @@ const LogsTab = () => {
                                         </div>
                                     </div>
                                 </div>
-                            ))
-                        )}
-                    </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
 

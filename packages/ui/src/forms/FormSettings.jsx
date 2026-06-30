@@ -100,13 +100,13 @@ const FormSettings = ({ form, onUpdateForm }) => {
                         role="switch"
                         aria-checked={settings.acceptingResponses !== false}
                         onClick={() => updateSetting('acceptingResponses', settings.acceptingResponses === false)}
-                        className={`relative w-14 h-8 rounded-full transition-colors duration-300 border-2 ${
+                        className={`relative inline-flex items-center px-0.5 w-14 h-8 rounded-full transition-colors duration-300 border-2 shrink-0 ${
                             settings.acceptingResponses !== false ? 'border-transparent bg-emerald-500' : 'bg-gray-100 border-gray-200'
                         }`}
                         style={settings.acceptingResponses !== false ? { backgroundColor: settings.accentColor || '#4f46e5' } : {}}
                     >
-                        <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-300 ${
-                            settings.acceptingResponses !== false ? 'translate-x-6' : ''
+                        <span className={`w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-300 ${
+                            settings.acceptingResponses !== false ? 'translate-x-6' : 'translate-x-0'
                         }`} />
                     </button>
                 </div>
@@ -122,13 +122,13 @@ const FormSettings = ({ form, onUpdateForm }) => {
                         role="switch"
                         aria-checked={settings.requireSignIn || false}
                         onClick={() => updateSetting('requireSignIn', !settings.requireSignIn)}
-                        className={`relative w-14 h-8 rounded-full transition-colors duration-300 border-2 ${
+                        className={`relative inline-flex items-center px-0.5 w-14 h-8 rounded-full transition-colors duration-300 border-2 shrink-0 ${
                             settings.requireSignIn ? 'border-transparent' : 'bg-gray-100 border-gray-200'
                         }`}
                         style={settings.requireSignIn ? { backgroundColor: settings.accentColor || '#4f46e5' } : {}}
                     >
-                        <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-300 ${
-                            settings.requireSignIn ? 'translate-x-6' : ''
+                        <span className={`w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-300 ${
+                            settings.requireSignIn ? 'translate-x-6' : 'translate-x-0'
                         }`} />
                     </button>
                 </div>
@@ -145,13 +145,13 @@ const FormSettings = ({ form, onUpdateForm }) => {
                             role="switch"
                             aria-checked={settings.hasResponseLimit || false}
                             onClick={() => updateSetting('hasResponseLimit', !settings.hasResponseLimit)}
-                            className={`relative w-14 h-8 rounded-full transition-colors duration-300 border-2 ${
+                            className={`relative inline-flex items-center px-0.5 w-14 h-8 rounded-full transition-colors duration-300 border-2 shrink-0 ${
                                 settings.hasResponseLimit ? 'border-transparent' : 'bg-gray-100 border-gray-200'
                             }`}
                             style={settings.hasResponseLimit ? { backgroundColor: settings.accentColor || '#4f46e5' } : {}}
                         >
-                            <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-300 ${
-                                settings.hasResponseLimit ? 'translate-x-6' : ''
+                            <span className={`w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-300 ${
+                                settings.hasResponseLimit ? 'translate-x-6' : 'translate-x-0'
                             }`} />
                         </button>
                     </div>
