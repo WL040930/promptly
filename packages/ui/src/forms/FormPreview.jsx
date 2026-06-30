@@ -29,7 +29,7 @@ const FormPreview = ({ form, accentColor = '#4f46e5' }) => {
         form.fields.forEach(field => {
             if (field.required && field.type !== 'heading' && field.type !== 'hidden') {
                 const val = values[field.id];
-                if (!val || (Array.isArray(val) && val.length === 0)) {
+                if (val === undefined || val === null || val === '' || (Array.isArray(val) && val.length === 0)) {
                     newErrors[field.id] = 'This field is required';
                 }
             }

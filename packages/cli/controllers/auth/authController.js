@@ -1,8 +1,11 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import { Op } from 'sequelize';
 import User from '../../models/User.js';
 import env from '../../config/env.js';
 import { normalizeEmail, emailPattern, passwordPattern } from '../../utils/validators.js';
+import { sendEmail } from '../../utils/email.js';
 
 const createAuthToken = (user) =>
     jwt.sign({ sub: user.id, email: user.email }, env.jwt.secret, {
@@ -110,6 +113,69 @@ const getMe = async (req, res) => {
             googleId: user.googleId
         }
     });
+};
+
+export const forgotPassword = async (req, res) => {
+    const email = normalizeEmail(req.body.email);
+    if (!email) {
+        return res.status(400).json({ error: 'Email is required.' });
+    }
+
+    const user = await User.findOne({ where: { email } });
+    if (!user) {
+        // Return 200 to prevent email enumeration
+        return res.json({ message: 'If that email address is in our database, we will send you an email to reset your password.' });
+    }
+
+    const resetToken = crypto.randomBytes(20).toString('hex');
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpires = new Date(Date.now() + 3600000); // 1 hour from now
+    await user.save();
+
+    // Use frontend URL for the link (assuming the app serves from the same domain or use an environment variable)
+    const resetUrl = `${req.protocol}://${req.get('host')}/reset-password/${resetToken}`;
+
+    const message = `You are receiving this because you (or someone else) have requested the reset of the password for your account.\n\n`
+        + `Please click on the following link, or paste this into your browser to complete the process:\n\n`
+        + `${resetUrl}\n\n`
+        + `If you did not request this, please ignore this email and your password will remain unchanged.\n`;
+
+    await sendEmail({
+        to: user.email,
+        subject: 'Password Reset',
+        text: message
+    });
+
+    res.json({ message: 'If that email address is in our database, we will send you an email to reset your password.' });
+};
+
+export const resetPassword = async (req, res) => {
+    const { token } = req.params;
+    const password = String(req.body.password || '');
+
+    if (!passwordPattern.test(password)) {
+        return res.status(400).json({
+            error: 'Password must be at least 12 characters and include uppercase, lowercase, number, and symbol.'
+        });
+    }
+
+    const user = await User.findOne({
+        where: {
+            resetPasswordToken: token,
+            resetPasswordExpires: { [Op.gt]: new Date() }
+        }
+    });
+
+    if (!user) {
+        return res.status(400).json({ error: 'Password reset token is invalid or has expired.' });
+    }
+
+    user.passwordHash = await bcrypt.hash(password, 10);
+    user.resetPasswordToken = null;
+    user.resetPasswordExpires = null;
+    await user.save();
+
+    res.json({ message: 'Your password has been successfully reset.' });
 };
 
 export { register, login, updateMode, getMe };

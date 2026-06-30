@@ -27,4 +27,18 @@ const register = async (details) => {
     return payload;
 };
 
-export { login, register };
+const forgotPassword = async (email) => {
+    return await apiRequest('/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+    });
+};
+
+const resetPassword = async (token, password) => {
+    return await apiRequest(`/api/auth/reset-password/${token}`, {
+        method: 'POST',
+        body: JSON.stringify({ password })
+    });
+};
+
+export { login, register, forgotPassword, resetPassword };

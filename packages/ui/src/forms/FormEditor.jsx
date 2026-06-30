@@ -33,6 +33,7 @@ const FormEditor = ({
         dragIndexRef.current = index;
         setDraggedIndex(index);
         e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', index.toString());
         // Let the browser generate the default ghost image
     };
 

@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react'
 import LandingPage from './landing/LandingPage.jsx'
 import LoginPage from './auth/LoginPage.jsx'
 import RegisterPage from './auth/RegisterPage.jsx'
+import ForgotPasswordPage from './auth/ForgotPasswordPage.jsx'
+import ResetPasswordPage from './auth/ResetPasswordPage.jsx'
 import { getAuthUser, setAuthUser, getAuthToken, clearAuthUser, clearAuthToken } from './utils/storage.js'
 import { apiRequest } from './api/client.js'
 import DashboardShell from './dashboard/DashboardShell'
@@ -77,6 +79,8 @@ function App() {
 
     const isLogin = path === '/login'
     const isRegister = path === '/register'
+    const isForgotPassword = path === '/forgot-password'
+    const isResetPassword = path.startsWith('/reset-password/')
     const isDashboard = path.startsWith('/workflow') || path.startsWith('/chat')
     const isSecurity = path === '/landing/security' || path === '/security'
 
@@ -137,6 +141,15 @@ function App() {
                 onLoginSuccess={handleLoginSuccess}
             />
         )
+    }
+
+    if (isForgotPassword) {
+        return <ForgotPasswordPage onLogin={() => goTo('/login')} />
+    }
+
+    if (isResetPassword) {
+        const token = path.split('/').pop()
+        return <ResetPasswordPage token={token} onLogin={() => goTo('/login')} />
     }
 
     if (isSecurity) {

@@ -13,6 +13,13 @@ const MOCK_RESPONSES = [
     { id: 'r5', submittedAt: '2026-06-15 08:20', values: { 'Full Name': 'Emma Foster', 'Onboarding Rating': 'Good', 'Any specific suggestions?': 'Add dark mode please' } },
 ];
 
+const renderValue = (val) => {
+    if (val === undefined || val === null || val === '') return <span className="text-gray-300">—</span>;
+    if (Array.isArray(val)) return val.join(', ');
+    if (typeof val === 'boolean') return val ? 'Yes' : 'No';
+    return String(val);
+};
+
 const FormResponses = ({ form }) => {
     const columns = useMemo(() => {
         return form.fields
@@ -81,7 +88,7 @@ const FormResponses = ({ form }) => {
                                         <td className="px-6 py-4 text-gray-500 text-[13px] font-medium whitespace-nowrap">{response.submittedAt}</td>
                                         {columns.map((col, cIdx) => (
                                             <td key={cIdx} className="px-6 py-4 text-gray-800 text-[14px] font-medium max-w-[250px] truncate">
-                                                {response.values[col] || <span className="text-gray-300">—</span>}
+                                                {renderValue(response.values[col])}
                                             </td>
                                         ))}
                                     </tr>

@@ -42,6 +42,14 @@ const User = sequelize.define(
         googleRefreshToken: {
             type: DataTypes.TEXT,
             allowNull: true
+        },
+        resetPasswordToken: {
+            type: DataTypes.STRING(255),
+            allowNull: true
+        },
+        resetPasswordExpires: {
+            type: DataTypes.DATE,
+            allowNull: true
         }
     },
     {

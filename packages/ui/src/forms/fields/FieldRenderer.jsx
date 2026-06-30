@@ -8,8 +8,8 @@ const inputClasses = 'w-full bg-white/90 backdrop-blur-sm border-2 border-gray-2
 const focusRing = `focus:border-transparent`;
 
 const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
-    const [rating, setRating] = useState(value || 0);
     const [hoveredStar, setHoveredStar] = useState(0);
+    const currentValue = value || 0;
 
     const inputStyle = {
         '--tw-ring-color': accentColor + '40',
@@ -171,7 +171,7 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
                     {labelEl}
                     <div className="flex gap-1.5 mt-2">
                         {Array.from({ length: max }, (_, i) => i + 1).map(star => {
-                            const isFilled = (hoveredStar || rating) >= star;
+                            const isFilled = (hoveredStar || currentValue) >= star;
                             return (
                                 <button
                                     key={star}
@@ -179,8 +179,7 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
                                     onMouseEnter={() => setHoveredStar(star)}
                                     onMouseLeave={() => setHoveredStar(0)}
                                     onClick={() => {
-                                        const newVal = rating === star ? 0 : star;
-                                        setRating(newVal);
+                                        const newVal = currentValue === star ? 0 : star;
                                         onChange?.(newVal);
                                     }}
                                     className={`p-1.5 transition-all duration-300 rounded-full ${isFilled ? 'scale-110' : 'hover:scale-110'} ${hoveredStar === star ? 'scale-125' : ''}`}

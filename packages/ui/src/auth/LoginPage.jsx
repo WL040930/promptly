@@ -131,7 +131,17 @@ const LoginPage = ({ onRegister, onLoginSuccess }) => {
                     </button>
                 </form>
 
-                <div style={{ marginTop: '2rem', textAlign: 'center' }}>
+                <div style={{ marginTop: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <button onClick={() => window.history.pushState({}, '', '/forgot-password') || window.dispatchEvent(new Event('popstate'))} className="ghost full" style={{
+                        padding: '0.75rem',
+                        borderRadius: '12px',
+                        color: '#3b82f6',
+                        borderColor: 'transparent',
+                        background: 'transparent',
+                        fontWeight: '600'
+                    }}>
+                        Forgot Password?
+                    </button>
 
                     <button onClick={onRegister} className="ghost full" style={{
                         padding: '0.75rem',

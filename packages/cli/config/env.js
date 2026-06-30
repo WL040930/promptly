@@ -42,6 +42,13 @@ const env = {
         clientId: requireEnv('GOOGLE_CLIENT_ID'),
         clientSecret: requireEnv('GOOGLE_CLIENT_SECRET'),
         redirectUri: requireEnv('GOOGLE_REDIRECT_URI')
+    },
+    smtp: {
+        host: requireEnv('SMTP_HOST'),
+        port: Number(requireEnv('SMTP_PORT')),
+        user: requireEnv('SMTP_USER'),
+        pass: requireEnv('SMTP_PASS'),
+        from: requireEnv('SMTP_FROM')
     }
 };
 
