@@ -26,6 +26,14 @@ const FormChatMessage = sequelize.define(
             type: DataTypes.JSONB,
             allowNull: true
         },
+        options: {
+            type: DataTypes.JSONB,
+            allowNull: true
+        },
+        tokenUsage: {
+            type: DataTypes.JSONB,
+            allowNull: true
+        },
         isError: {
             type: DataTypes.BOOLEAN,
             defaultValue: false

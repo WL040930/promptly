@@ -14,11 +14,23 @@ export const createForm = async (req, res) => {
 
 export const generateForm = async (req, res) => {
     try {
-        const { prompt, currentSchema } = req.body;
+        const { prompt, currentSchema, formId } = req.body;
         if (!prompt) {
             return res.status(400).json({ message: 'Prompt is required' });
         }
-        const generatedForm = await generateFormFromPrompt(prompt, currentSchema);
+        
+        let chatHistory = [];
+        if (formId) {
+            const rawHistory = await FormChatMessage.findAll({
+                where: { formId },
+                order: [['createdAt', 'DESC']],
+                limit: 4 // Reduced from 12 to save tokens and speed up generation
+            });
+            // Reverse so they are in chronological order for the AI
+            chatHistory = rawHistory.reverse();
+        }
+
+        const generatedForm = await generateFormFromPrompt(prompt, currentSchema, chatHistory);
         res.json(generatedForm);
     } catch (error) {
         console.error('Error in generateForm:', error);
@@ -41,6 +53,10 @@ export const deleteForm = async (req, res) => {
     const { id } = req.params;
     const form = await Form.findOne({ where: { id, userId: req.user.id } });
     if (!form) return res.status(404).json({ message: 'Form not found' });
+    
+    // Manually cascade delete to avoid postgres constraint errors if the DB schema wasn't updated
+    await FormChatMessage.destroy({ where: { formId: id } });
+    await FormResponse.destroy({ where: { formId: id } });
     
     await form.destroy();
     res.json({ message: 'Form deleted' });
@@ -126,7 +142,7 @@ export const getFormChatHistory = async (req, res) => {
 
 export const addFormChatMessage = async (req, res) => {
     const { formId } = req.params;
-    const { sender, text, proposal, isError } = req.body;
+    const { sender, text, proposal, options, tokenUsage, isError } = req.body;
 
     const form = await Form.findOne({ where: { id: formId, userId: req.user.id } });
     if (!form) return res.status(404).json({ message: 'Form not found' });
@@ -136,6 +152,8 @@ export const addFormChatMessage = async (req, res) => {
         sender,
         text,
         proposal,
+        options,
+        tokenUsage,
         isError
     });
 

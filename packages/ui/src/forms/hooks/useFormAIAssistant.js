@@ -97,17 +97,28 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
             setMessages(prev => prev.map(m => m.id === optimisticUserId ? savedUserMsg : m));
 
             // Generate AI response
-            const schema = await generateFormFromPrompt(text, form);
+            const result = await generateFormFromPrompt(text, form, form.id);
             
             // Save bot message to DB
-            const botMsgData = {
+            let botMsgData = {
                 sender: 'bot',
-                text: "I've drafted a form schema based on your request. Review it below and click 'Accept & Add' to apply it to your canvas.",
-                proposal: {
-                    schema: schema,
-                    status: 'pending' 
-                }
+                text: result.message
             };
+
+            if (result.type === 'proposal') {
+                botMsgData.proposal = {
+                    schema: result.schema,
+                    patches: result.patches,
+                    status: 'pending' 
+                };
+            } else if (result.type === 'message' && result.options) {
+                botMsgData.options = result.options;
+            }
+
+            if (result.tokenUsage) {
+                botMsgData.tokenUsage = result.tokenUsage;
+            }
+
             const savedBotMsg = await addFormChatMessage(form.id, botMsgData);
             
             // Add bot message to UI

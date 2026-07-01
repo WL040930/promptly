@@ -1,5 +1,7 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { useFormAIAssistant } from './hooks/useFormAIAssistant';
+import FormDiffPreviewModal from './FormDiffPreviewModal';
+
 const SUGGESTIONS = [
     "A customer satisfaction survey",
     "An event registration form",
@@ -22,16 +24,22 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
     } = useFormAIAssistant(form, onUpdateForm);
 
     const scrollRef = useRef(null);
+    const initialScrollDone = useRef(false);
+    const [previewProposal, setPreviewProposal] = useState(null);
 
-    // Auto-scroll to bottom of chat only when new messages are added at the bottom
+    // Auto-scroll to bottom of chat
     useEffect(() => {
         if (scrollRef.current && !isLoadingHistory) {
-            // Very simple approach: if user is near bottom, keep them at bottom.
-            // If they just loaded more history, we should ideally preserve scroll position, 
-            // but for simplicity we just avoid forcing them to bottom if they are loading.
-            const isNearBottom = scrollRef.current.scrollHeight - scrollRef.current.scrollTop <= scrollRef.current.clientHeight + 100;
-            if (isNearBottom || isTyping) {
+            if (!initialScrollDone.current) {
+                // Force scroll to bottom on initial load
                 scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+                initialScrollDone.current = true;
+            } else {
+                // Only auto-scroll if near bottom or AI is typing
+                const isNearBottom = scrollRef.current.scrollHeight - scrollRef.current.scrollTop <= scrollRef.current.clientHeight + 100;
+                if (isNearBottom || isTyping) {
+                    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+                }
             }
         }
     }, [messages, isTyping, isLoadingHistory]);
@@ -79,7 +87,36 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
                                         : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'
                             }`}>
                             {msg.text}
+
+                            {/* Token Usage Indicator */}
+                            {msg.tokenUsage && (
+                                <div 
+                                    className="mt-2 text-[10px] text-slate-400 font-medium flex items-center justify-end cursor-help" 
+                                    title={`Prompt: ${msg.tokenUsage.promptTokens} | Output: ${msg.tokenUsage.completionTokens}`}
+                                >
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="mr-1 text-yellow-500">
+                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                                    </svg>
+                                    {msg.tokenUsage.totalTokens?.toLocaleString()} tokens
+                                </div>
+                            )}
                         </div>
+
+                        {/* Quick Reply Options */}
+                        {msg.options && msg.options.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2 w-full max-w-[90%]">
+                                {msg.options.map((option, idx) => (
+                                    <button
+                                        key={idx}
+                                        onClick={() => handleSend(option)}
+                                        disabled={isTyping}
+                                        className="text-xs font-medium bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 py-1.5 px-3 rounded-full transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed text-left"
+                                    >
+                                        {option}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
 
                         {/* Proposal Confirmation Box */}
                         {msg.proposal && (
@@ -93,8 +130,61 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
                                 
                                 <div>
                                     <h4 className="text-sm font-semibold text-slate-800">{msg.proposal.schema?.title || "Form Update"}</h4>
-                                    <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">Adds {msg.proposal.schema?.fields?.length || 0} fields to your canvas.</p>
+                                    
+                                    {/* Dynamic Summary */}
+                                    {(() => {
+                                        if (!msg.proposal.patches) {
+                                            return <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">Adds {msg.proposal.schema?.fields?.length || 0} fields to your canvas.</p>;
+                                        }
+                                        const adds = msg.proposal.patches.filter(p => p.op === 'add').length;
+                                        const removes = msg.proposal.patches.filter(p => p.op === 'remove').length;
+                                        const updates = msg.proposal.patches.filter(p => p.op === 'update' || p.op === 'update_meta').length;
+                                        
+                                        const parts = [];
+                                        if (adds > 0) parts.push(`Added ${adds}`);
+                                        if (removes > 0) parts.push(`Removed ${removes}`);
+                                        if (updates > 0) parts.push(`Modified ${updates}`);
+                                        
+                                        return <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">{parts.length > 0 ? parts.join(', ') + ' fields.' : 'No field changes.'}</p>;
+                                    })()}
                                 </div>
+                                
+                                {/* Visual Diff List */}
+                                {msg.proposal.patches && msg.proposal.patches.length > 0 && (
+                                    <div className="flex flex-col gap-1.5 mt-1 border border-slate-100 rounded-lg p-2 bg-white">
+                                        {msg.proposal.patches.map((patch, idx) => {
+                                            if (patch.op === 'add') {
+                                                return (
+                                                    <div key={idx} className="flex items-start gap-2 text-xs font-medium text-emerald-700 bg-emerald-50/50 px-2 py-1.5 rounded border border-emerald-100">
+                                                        <span className="font-bold text-emerald-600">+</span> Added: {patch.field?.label || patch.field?.title || 'Field'}
+                                                    </div>
+                                                );
+                                            }
+                                            if (patch.op === 'remove') {
+                                                return (
+                                                    <div key={idx} className="flex items-start gap-2 text-xs font-medium text-red-700 bg-red-50/50 px-2 py-1.5 rounded border border-red-100">
+                                                        <span className="font-bold text-red-600">-</span> Removed: {patch.label || 'Field'}
+                                                    </div>
+                                                );
+                                            }
+                                            if (patch.op === 'update') {
+                                                return (
+                                                    <div key={idx} className="flex items-start gap-2 text-xs font-medium text-amber-700 bg-amber-50/50 px-2 py-1.5 rounded border border-amber-100">
+                                                        <span className="font-bold text-amber-600">~</span> Modified: {patch.label || 'Field'}
+                                                    </div>
+                                                );
+                                            }
+                                            if (patch.op === 'update_meta') {
+                                                return (
+                                                    <div key={idx} className="flex items-start gap-2 text-xs font-medium text-amber-700 bg-amber-50/50 px-2 py-1.5 rounded border border-amber-100">
+                                                        <span className="font-bold text-amber-600">~</span> Modified Form Properties
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
+                                        })}
+                                    </div>
+                                )}
 
                                 {msg.proposal.status === 'accepted' ? (
                                     <div className="flex items-center gap-1.5 justify-center py-1.5 px-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-xs font-semibold">
@@ -113,6 +203,12 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
                                             className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs py-2 rounded-lg shadow-sm hover:shadow active:scale-98 transition-all"
                                         >
                                             Accept & Add
+                                        </button>
+                                        <button
+                                            onClick={() => setPreviewProposal(msg.proposal)}
+                                            className="flex-1 bg-white hover:bg-slate-50 text-indigo-600 border border-indigo-200 font-semibold text-xs py-2 rounded-lg transition-all"
+                                        >
+                                            Preview
                                         </button>
                                         <button
                                             onClick={() => handleRejectProposal(msg.id)}
@@ -202,6 +298,14 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
                 <div className="text-center mt-2.5">
                     <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">AI can make mistakes. Please verify.</span>
                 </div>
+
+                {/* Diff Preview Modal */}
+                <FormDiffPreviewModal 
+                    isOpen={!!previewProposal}
+                    onClose={() => setPreviewProposal(null)}
+                    currentForm={form}
+                    proposal={previewProposal}
+                />
             </div>
         </div>
     );
