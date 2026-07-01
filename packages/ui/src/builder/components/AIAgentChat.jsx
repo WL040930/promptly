@@ -18,6 +18,7 @@ const AIAgentChat = ({ onApplyAction }) => {
     ]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
+    const [sessionId, setSessionId] = useState(null);
     const scrollRef = useRef(null);
 
     useEffect(() => {
@@ -34,16 +35,21 @@ const AIAgentChat = ({ onApplyAction }) => {
         setIsTyping(true);
 
         try {
-            const botResponse = await sendChatMessage(text, { workflowContext: true });
+            const botResponse = await sendChatMessage(sessionId, text);
+            if (botResponse.sessionId && !sessionId) {
+                setSessionId(botResponse.sessionId);
+            }
             setIsTyping(false);
 
             let botReply = {
                 id: Date.now().toString(),
                 sender: 'bot',
-                text: botResponse.message || 'I have processed your request.'
+                text: botResponse.reply?.text || botResponse.message || 'I have processed your request.'
             };
 
-            if (botResponse.proposal) {
+            if (botResponse.reply?.proposal) {
+                botReply.proposal = botResponse.reply.proposal;
+            } else if (botResponse.proposal) {
                 botReply.proposal = botResponse.proposal;
             }
 
