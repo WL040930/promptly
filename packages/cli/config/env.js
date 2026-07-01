@@ -52,6 +52,10 @@ const env = {
     },
     gemini: {
         apiKey: requireEnv('GEMINI_API_KEY')
+    },
+    supabase: {
+        url: requireEnv('SUPABASE_URL'),
+        anonKey: requireEnv('SUPABASE_ANON_KEY')
     }
 };
 

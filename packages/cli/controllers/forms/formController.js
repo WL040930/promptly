@@ -1,4 +1,4 @@
-import { Form, FormResponse } from '../../models/index.js';
+import { Form, FormResponse, FormChatMessage } from '../../models/index.js';
 import { generateFormFromPrompt } from '../../services/aiFormsService.js';
 
 export const getForms = async (req, res) => {
@@ -103,4 +103,60 @@ export const getFormResponses = async (req, res) => {
 
     const responses = await FormResponse.findAll({ where: { formId } });
     res.json(responses);
+};
+
+// Form Chat History
+export const getFormChatHistory = async (req, res) => {
+    const { formId } = req.params;
+    const { limit = 50, offset = 0 } = req.query;
+
+    const form = await Form.findOne({ where: { id: formId, userId: req.user.id } });
+    if (!form) return res.status(404).json({ message: 'Form not found' });
+
+    const messages = await FormChatMessage.findAll({
+        where: { formId },
+        order: [['createdAt', 'DESC']],
+        limit: parseInt(limit, 10),
+        offset: parseInt(offset, 10)
+    });
+
+    // Return messages in chronological order for the frontend
+    res.json(messages.reverse());
+};
+
+export const addFormChatMessage = async (req, res) => {
+    const { formId } = req.params;
+    const { sender, text, proposal, isError } = req.body;
+
+    const form = await Form.findOne({ where: { id: formId, userId: req.user.id } });
+    if (!form) return res.status(404).json({ message: 'Form not found' });
+
+    const message = await FormChatMessage.create({
+        formId,
+        sender,
+        text,
+        proposal,
+        isError
+    });
+
+    res.status(201).json(message);
+};
+
+export const updateFormChatMessage = async (req, res) => {
+    const { messageId } = req.params;
+    const { proposal } = req.body;
+
+    const message = await FormChatMessage.findOne({
+        where: { id: messageId },
+        include: [{
+            model: Form,
+            as: 'form',
+            where: { userId: req.user.id }
+        }]
+    });
+
+    if (!message) return res.status(404).json({ message: 'Message not found' });
+
+    await message.update({ proposal });
+    res.json(message);
 };

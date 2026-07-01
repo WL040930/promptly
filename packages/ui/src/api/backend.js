@@ -22,6 +22,9 @@ export const submitFormResponse = (formId, responseData) => apiRequest(`/api/for
 export const getFormResponses = (formId) => apiRequest(`/api/forms/${formId}/responses`);
 export const getPublicForm = (id) => apiRequest(`/api/forms/public/${id}`);
 export const generateFormFromPrompt = (prompt, currentSchema) => apiRequest('/api/forms/generate', { method: 'POST', body: JSON.stringify({ prompt, currentSchema }) });
+export const getFormChatHistory = (formId, limit = 50, offset = 0) => apiRequest(`/api/forms/${formId}/chat?limit=${limit}&offset=${offset}`);
+export const addFormChatMessage = (formId, messageData) => apiRequest(`/api/forms/${formId}/chat`, { method: 'POST', body: JSON.stringify(messageData) });
+export const updateFormChatMessage = (messageId, updates) => apiRequest(`/api/forms/chat/${messageId}`, { method: 'PUT', body: JSON.stringify(updates) });
 
 // --- Logs ---
 export const getExecutionLogs = (search = '', status = 'All') => {

@@ -1,51 +1,136 @@
-import { useState } from 'react';
-import { generateFormFromPrompt } from '../../api/backend.js';
+import { useState, useEffect, useCallback } from 'react';
+import { generateFormFromPrompt, getFormChatHistory, addFormChatMessage, updateFormChatMessage } from '../../api/backend.js';
 import { useToast } from '../../components/ToastContext.jsx';
 
 export const useFormAIAssistant = (form, onUpdateForm) => {
-    const [messages, setMessages] = useState([
-        {
-            id: 'init',
-            sender: 'bot',
-            text: "Hi! I'm your AI form designer. Describe what kind of form you want to build, or ask me to add specific fields.",
-        }
-    ]);
+    const defaultMessage = {
+        id: 'init',
+        sender: 'bot',
+        text: "Hi! I'm your AI form designer. Describe what kind of form you want to build, or ask me to add specific fields.",
+    };
+
+    const [messages, setMessages] = useState([defaultMessage]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
+    const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+    const [offset, setOffset] = useState(0);
+    const [hasMore, setHasMore] = useState(true);
+    const limit = 50;
     const toast = useToast();
 
-    const handleSend = async (text) => {
-        if (!text.trim() || isTyping) return;
+    // Fetch history when form changes
+    useEffect(() => {
+        if (!form?.id) return;
+        
+        let isMounted = true;
+        const loadInitialHistory = async () => {
+            setIsLoadingHistory(true);
+            try {
+                const history = await getFormChatHistory(form.id, limit, 0);
+                if (isMounted) {
+                    if (history && history.length > 0) {
+                        setMessages(history);
+                        if (history.length < limit) {
+                            setHasMore(false);
+                        }
+                    } else {
+                        setMessages([defaultMessage]);
+                        setHasMore(false);
+                    }
+                    setOffset(history.length || 0);
+                }
+            } catch (error) {
+                console.error("Failed to load chat history:", error);
+                if (isMounted) {
+                    setMessages([defaultMessage]);
+                    toast.error("Failed to load chat history");
+                }
+            } finally {
+                if (isMounted) setIsLoadingHistory(false);
+            }
+        };
 
-        // Add user message
-        const newMsgId = Date.now().toString();
-        setMessages(prev => [...prev, { id: newMsgId, sender: 'user', text }]);
-        setInput('');
+        loadInitialHistory();
+
+        return () => { isMounted = false; };
+    }, [form?.id]);
+
+    const loadMoreHistory = useCallback(async () => {
+        if (!form?.id || !hasMore || isLoadingHistory) return;
+        
+        setIsLoadingHistory(true);
+        try {
+            const history = await getFormChatHistory(form.id, limit, offset);
+            if (history && history.length > 0) {
+                setMessages(prev => [...history, ...prev]);
+                setOffset(prev => prev + history.length);
+                if (history.length < limit) {
+                    setHasMore(false);
+                }
+            } else {
+                setHasMore(false);
+            }
+        } catch (error) {
+            console.error("Failed to load older messages:", error);
+            toast.error("Failed to load older messages");
+        } finally {
+            setIsLoadingHistory(false);
+        }
+    }, [form?.id, hasMore, isLoadingHistory, offset]);
+
+
+    const handleSend = async (text) => {
+        if (!text.trim() || isTyping || !form?.id) return;
+
         setIsTyping(true);
+        
+        // Optimistic UI update for user message
+        const optimisticUserId = Date.now().toString();
+        setMessages(prev => [...prev, { id: optimisticUserId, sender: 'user', text }]);
+        setInput('');
 
         try {
-            // Call the existing backend generation endpoint, passing the current form schema
+            // Save user message to DB
+            const savedUserMsg = await addFormChatMessage(form.id, { sender: 'user', text });
+            
+            // Replace optimistic ID with real DB ID
+            setMessages(prev => prev.map(m => m.id === optimisticUserId ? savedUserMsg : m));
+
+            // Generate AI response
             const schema = await generateFormFromPrompt(text, form);
             
-            // Add bot reply with a proposal
-            setMessages(prev => [...prev, {
-                id: Date.now().toString(),
+            // Save bot message to DB
+            const botMsgData = {
                 sender: 'bot',
                 text: "I've drafted a form schema based on your request. Review it below and click 'Accept & Add' to apply it to your canvas.",
                 proposal: {
                     schema: schema,
-                    status: 'pending' // pending, accepted, rejected
+                    status: 'pending' 
                 }
-            }]);
+            };
+            const savedBotMsg = await addFormChatMessage(form.id, botMsgData);
+            
+            // Add bot message to UI
+            setMessages(prev => [...prev, savedBotMsg]);
 
         } catch (error) {
             console.error('AI Generation Error:', error);
-            setMessages(prev => [...prev, {
-                id: Date.now().toString(),
+            
+            // Save error message to DB
+            const errorMsgData = {
                 sender: 'bot',
                 text: "Sorry, I encountered an error while generating the form. Please try again.",
                 isError: true
-            }]);
+            };
+            
+            try {
+                const savedErrorMsg = await addFormChatMessage(form.id, errorMsgData);
+                setMessages(prev => [...prev, savedErrorMsg]);
+            } catch (dbErr) {
+                 // Fallback if DB save also fails
+                 setMessages(prev => [...prev, { id: Date.now().toString(), ...errorMsgData }]);
+            }
+
             toast.error('Failed to generate form with AI.');
         } finally {
             setIsTyping(false);
@@ -54,7 +139,7 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
 
     const handleAcceptProposal = async (msgId, proposalSchema) => {
         try {
-            // Ensure all fields have an ID (in case the AI forgot to generate one)
+            // Ensure all fields have an ID
             const sanitizedFields = (proposalSchema.fields || []).map(field => {
                 if (!field.id) {
                     return { ...field, id: `f_${Date.now()}_${Math.random().toString(36).slice(2, 6)}` };
@@ -62,15 +147,17 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
                 return field;
             });
 
-            // The AI now returns the fully updated form schema (title, description, fields).
-            // We just replace the current fields completely.
             await onUpdateForm({
                 title: proposalSchema.title,
                 description: proposalSchema.description,
                 fields: sanitizedFields
             });
 
-            // Mark proposal as accepted
+            // Update in DB
+            const updatedProposal = { ...proposalSchema, status: 'accepted' };
+            await updateFormChatMessage(msgId, { proposal: { schema: proposalSchema, status: 'accepted' }});
+
+            // Update in UI
             setMessages(prev => prev.map(msg => 
                 msg.id === msgId ? { ...msg, proposal: { ...msg.proposal, status: 'accepted' } } : msg
             ));
@@ -82,10 +169,20 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
         }
     };
 
-    const handleRejectProposal = (msgId) => {
-        setMessages(prev => prev.map(msg => 
-            msg.id === msgId ? { ...msg, proposal: { ...msg.proposal, status: 'rejected' } } : msg
-        ));
+    const handleRejectProposal = async (msgId) => {
+         try {
+            const message = messages.find(m => m.id === msgId);
+            if (message && message.proposal) {
+                 await updateFormChatMessage(msgId, { proposal: { ...message.proposal, status: 'rejected' }});
+            }
+             
+            setMessages(prev => prev.map(msg => 
+                msg.id === msgId ? { ...msg, proposal: { ...msg.proposal, status: 'rejected' } } : msg
+            ));
+         } catch (error) {
+            console.error('Error rejecting proposal:', error);
+            toast.error('Failed to reject proposal.');
+         }
     };
 
     return {
@@ -93,6 +190,9 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
         input,
         setInput,
         isTyping,
+        isLoadingHistory,
+        hasMore,
+        loadMoreHistory,
         handleSend,
         handleAcceptProposal,
         handleRejectProposal

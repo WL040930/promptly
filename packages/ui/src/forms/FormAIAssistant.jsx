@@ -13,6 +13,9 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
         input,
         setInput,
         isTyping,
+        isLoadingHistory,
+        hasMore,
+        loadMoreHistory,
         handleSend,
         handleAcceptProposal,
         handleRejectProposal
@@ -20,17 +23,38 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
 
     const scrollRef = useRef(null);
 
-    // Auto-scroll to bottom of chat
+    // Auto-scroll to bottom of chat only when new messages are added at the bottom
     useEffect(() => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        if (scrollRef.current && !isLoadingHistory) {
+            // Very simple approach: if user is near bottom, keep them at bottom.
+            // If they just loaded more history, we should ideally preserve scroll position, 
+            // but for simplicity we just avoid forcing them to bottom if they are loading.
+            const isNearBottom = scrollRef.current.scrollHeight - scrollRef.current.scrollTop <= scrollRef.current.clientHeight + 100;
+            if (isNearBottom || isTyping) {
+                scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+            }
         }
-    }, [messages, isTyping]);
+    }, [messages, isTyping, isLoadingHistory]);
+
+    const handleScroll = () => {
+        if (scrollRef.current && scrollRef.current.scrollTop === 0 && hasMore && !isLoadingHistory) {
+            loadMoreHistory();
+        }
+    };
 
     return (
         <div className="flex flex-col h-full bg-white relative">
             {/* Chat Body */}
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-6">
+            <div 
+                ref={scrollRef} 
+                onScroll={handleScroll}
+                className="flex-1 overflow-y-auto p-4 flex flex-col gap-6"
+            >
+                {isLoadingHistory && (
+                    <div className="text-center text-xs text-gray-400 py-2">
+                        Loading messages...
+                    </div>
+                )}
                 {messages.map((msg) => (
                     <div key={msg.id} className={`flex w-full ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
                         {/* Bot Avatar */}

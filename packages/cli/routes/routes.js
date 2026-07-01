@@ -10,7 +10,7 @@ import formRoutes from './forms/formRoutes.js';
 import logRoutes from './builder/logRoutes.js';
 import dashboardRoutes from './dashboard/dashboardRoutes.js';
 import chatRoutes from './chat/chatRoutes.js';
-import storageRoutes from './storageRoutes.js';
+import storageRoutes from './storage/storageRoutes.js';
 import rateLimit from 'express-rate-limit';
 
 const router = Router();

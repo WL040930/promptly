@@ -1,4 +1,5 @@
 import { Buffer } from 'buffer';
+import env from '../../config/env.js';
 
 export const downloadFile = async (req, res) => {
     const { filename } = req.params;
@@ -8,7 +9,7 @@ export const downloadFile = async (req, res) => {
 
     try {
         const bucket = 'form-uploads';
-        const supabaseUrl = process.env.VITE_SUPABASE_URL; 
+        const supabaseUrl = env.supabase.url; 
         
         if (!supabaseUrl) {
            return res.status(500).json({ message: 'Storage not configured on server' });
@@ -47,8 +48,8 @@ export const uploadFile = async (req, res) => {
 
     try {
         const bucket = 'form-uploads';
-        const supabaseUrl = process.env.VITE_SUPABASE_URL; 
-        const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
+        const supabaseUrl = env.supabase.url; 
+        const anonKey = env.supabase.anonKey;
         
         if (!supabaseUrl || !anonKey) {
            return res.status(500).json({ message: 'Storage not configured on server' });
