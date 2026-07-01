@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import FieldRenderer from './fields/FieldRenderer';
 import { useToast } from '../components/ToastContext.jsx';
+import { useFormEngine } from './engine/useFormEngine';
 
 /**
  * FormPreview — renders the form as respondents would see it.
@@ -8,114 +9,23 @@ import { useToast } from '../components/ToastContext.jsx';
  * with a themed background based on the accent color.
  */
 const FormPreview = ({ form, accentColor = '#4f46e5', onSubmitCallback }) => {
-    const [values, setValues] = useState({});
-    const [submitted, setSubmitted] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [errors, setErrors] = useState({});
-    const [currentPage, setCurrentPage] = useState(0);
     const toast = useToast();
-
-    // Calculate pages based on 'heading' fields
-    const pages = React.useMemo(() => {
-        const pgs = [];
-        let currentPageFields = [];
-
-        (form?.fields || []).filter(f => !f.deleted).forEach(field => {
-            if (field.type === 'heading') {
-                if (currentPageFields.length > 0) {
-                    pgs.push(currentPageFields);
-                    currentPageFields = [];
-                }
-            }
-            currentPageFields.push(field);
-        });
-        if (currentPageFields.length > 0) {
-            pgs.push(currentPageFields);
-        }
-        
-        return pgs.length > 0 ? pgs : [[]];
-    }, [form?.fields]);
-
-    const handleChange = (fieldId, value) => {
-        setValues(prev => ({ ...prev, [fieldId]: value }));
-        if (errors[fieldId]) {
-            setErrors(prev => {
-                const next = { ...prev };
-                delete next[fieldId];
-                return next;
-            });
-        }
-    };
-
-    const validateFields = (fieldsToValidate) => {
-        const newErrors = {};
-        fieldsToValidate.forEach(field => {
-            if (field.required && field.type !== 'heading' && field.type !== 'hidden') {
-                const val = values[field.id];
-                if (val === undefined || val === null || val === '' || (Array.isArray(val) && val.length === 0)) {
-                    newErrors[field.id] = 'This field is required';
-                }
-            }
-        });
-        return newErrors;
-    };
-
-    const handleNextPage = () => {
-        const currentFields = pages[currentPage];
-        const newErrors = validateFields(currentFields);
-        
-        if (Object.keys(newErrors).length > 0) {
-            setErrors(newErrors);
-            return;
-        }
-
-        setErrors({});
-        setCurrentPage(p => p + 1);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
-
-    const handleBackPage = () => {
-        setErrors({});
-        setCurrentPage(p => Math.max(0, p - 1));
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
-
-    const handleFinalSubmit = async () => {
-        // Validate the current (last) page before submitting
-        const currentFields = pages[currentPage];
-        const newErrors = validateFields(currentFields);
-
-        if (Object.keys(newErrors).length > 0) {
-            setErrors(newErrors);
-            return;
-        }
-
-        if (onSubmitCallback) {
-            setIsSubmitting(true);
-            try {
-                await onSubmitCallback(values);
-                setSubmitted(true);
-            } catch (err) {
-                console.error('Submission error:', err);
-                toast.error('An error occurred submitting your response. Please try again.');
-            } finally {
-                setIsSubmitting(false);
-            }
-        } else {
-            setSubmitted(true);
-            setTimeout(() => setSubmitted(false), 4000);
-        }
-    };
+    const {
+        values,
+        errors,
+        currentPage,
+        pages,
+        progress,
+        isSubmitting,
+        submitted,
+        handleChange,
+        handleNextPage,
+        handleBackPage,
+        handleFinalSubmit,
+        handleReset
+    } = useFormEngine(form, onSubmitCallback, toast);
 
     const confirmationMsg = form.settings?.confirmationMessage || 'Your response has been recorded. Thank you!';
-
-    // Calculate progress
-    const requiredFields = form.fields.filter(f => !f.deleted && f.required && f.type !== 'heading' && f.type !== 'hidden');
-    const filledRequiredFields = requiredFields.filter(f => {
-        const val = values[f.id];
-        return val !== undefined && val !== null && val !== '' && (!Array.isArray(val) || val.length > 0);
-    });
-    const progress = requiredFields.length === 0 ? 100 : Math.round((filledRequiredFields.length / requiredFields.length) * 100);
 
     return (
         <div
@@ -151,13 +61,15 @@ const FormPreview = ({ form, accentColor = '#4f46e5', onSubmitCallback }) => {
                         <h3 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">Success!</h3>
                         <p className="text-lg font-medium text-slate-500 leading-relaxed max-w-md mx-auto">{confirmationMsg}</p>
                         
-                        <button
-                            onClick={() => { setSubmitted(false); setValues({}); setCurrentPage(0); }}
-                            className="mt-10 px-8 py-3.5 rounded-2xl text-[15px] font-bold text-white transition-all duration-300 hover:opacity-90 hover:-translate-y-0.5 hover:shadow-lg shadow-md"
-                            style={{ backgroundColor: accentColor, boxShadow: `0 8px 20px -4px ${accentColor}60` }}
-                        >
-                            Submit another response
-                        </button>
+                        {!form.settings?.limitOnePerBrowser && (
+                            <button
+                                onClick={handleReset}
+                                className="mt-10 px-8 py-3.5 rounded-2xl text-[15px] font-bold text-white transition-all duration-300 hover:opacity-90 hover:-translate-y-0.5 hover:shadow-lg shadow-md"
+                                style={{ backgroundColor: accentColor, boxShadow: `0 8px 20px -4px ${accentColor}60` }}
+                            >
+                                Submit another response
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <div className="flex flex-col gap-6">
@@ -268,7 +180,7 @@ const FormPreview = ({ form, accentColor = '#4f46e5', onSubmitCallback }) => {
 
                                         <button
                                             type="button"
-                                            onClick={() => { setValues({}); setCurrentPage(0); }}
+                                            onClick={handleReset}
                                             className="text-[14px] font-bold text-slate-400 hover:text-slate-600 transition-colors px-6 py-3 hover:bg-slate-50 rounded-xl w-full sm:w-auto"
                                         >
                                             Clear form

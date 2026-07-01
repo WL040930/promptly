@@ -39,8 +39,8 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
         setIsTyping(true);
 
         try {
-            // Call the existing backend generation endpoint
-            const schema = await generateFormFromPrompt(text);
+            // Call the existing backend generation endpoint, passing the current form schema
+            const schema = await generateFormFromPrompt(text, form);
             
             // Add bot reply with a proposal
             setMessages(prev => [...prev, {
@@ -69,26 +69,21 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
 
     const handleAcceptProposal = async (msgId, proposalSchema) => {
         try {
-            // Check if form is in default empty state
-            const isDefaultState = form.title === 'Untitled Form' && 
-                                   form.fields.length === 1 && 
-                                   form.fields[0].type === 'text' && 
-                                   (!form.fields[0].label || form.fields[0].label === 'Question');
-            
-            if (isDefaultState) {
-                // Replace entirely
-                await onUpdateForm({
-                    title: proposalSchema.title,
-                    description: proposalSchema.description,
-                    fields: proposalSchema.fields
-                });
-            } else {
-                // Append fields to existing form
-                const currentFields = [...form.fields];
-                await onUpdateForm({
-                    fields: [...currentFields, ...proposalSchema.fields]
-                });
-            }
+            // Ensure all fields have an ID (in case the AI forgot to generate one)
+            const sanitizedFields = (proposalSchema.fields || []).map(field => {
+                if (!field.id) {
+                    return { ...field, id: `f_${Date.now()}_${Math.random().toString(36).slice(2, 6)}` };
+                }
+                return field;
+            });
+
+            // The AI now returns the fully updated form schema (title, description, fields).
+            // We just replace the current fields completely.
+            await onUpdateForm({
+                title: proposalSchema.title,
+                description: proposalSchema.description,
+                fields: sanitizedFields
+            });
 
             // Mark proposal as accepted
             setMessages(prev => prev.map(msg => 

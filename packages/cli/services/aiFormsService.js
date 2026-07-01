@@ -1,39 +1,29 @@
 import { GoogleGenAI } from '@google/genai';
 import env from '../config/env.js';
+import fs from 'fs';
+import path from 'path';
 
 // Initialize the Gemini client
 const ai = new GoogleGenAI({
     apiKey: env.gemini.apiKey
 });
 
-export const generateFormFromPrompt = async (prompt) => {
+export const generateFormFromPrompt = async (prompt, currentSchema) => {
     try {
-        const systemInstruction = `
-        You are an expert form designer. The user will provide a prompt describing the kind of form they want to create.
-        Your task is to generate a complete form schema in JSON format.
-        
-        The JSON must contain the following structure exactly:
-        {
-            "title": "String - A short, clear title for the form",
-            "description": "String - A helpful description of the form's purpose",
-            "fields": [
-                {
-                    "id": "String - A unique ID like 'f_1234_abcd'",
-                    "type": "String - MUST be one of: 'text', 'email', 'textarea', 'dropdown', 'checkbox', 'radio', 'date', 'heading'",
-                    "label": "String - The question or heading text",
-                    "required": "Boolean - Whether the field is required (usually true for main questions, false for headings/optional)",
-                    "options": "Array of strings - ONLY if type is 'dropdown', 'checkbox', or 'radio'. Otherwise, omit this property."
-                }
-            ]
+        const instructionPath = path.resolve('../ui/src/forms/instruction/instruction.md');
+        let systemInstruction = '';
+        try {
+            systemInstruction = fs.readFileSync(instructionPath, 'utf8');
+        } catch (err) {
+            console.error('Failed to read instruction.md:', err);
+            systemInstruction = 'You are an AI Form Designer. Output a full JSON form schema with title, description, and fields array.';
         }
-        
-        Ensure you generate a well-structured form with a logical flow. Do not use any types outside of the allowed list. 
-        Return ONLY valid JSON, no markdown formatting.
-        `;
+
+        const contents = `Current Schema:\n${JSON.stringify(currentSchema || {}, null, 2)}\n\nUser Request:\n${prompt}`;
 
         const response = await ai.models.generateContent({
             model: 'gemini-3.5-flash',
-            contents: prompt,
+            contents: contents,
             config: {
                 systemInstruction: systemInstruction,
                 responseMimeType: 'application/json',

@@ -25,6 +25,7 @@ const FormsTab = () => {
     const [sidebarSearch, setSidebarSearch] = useState('');
     const [loading, setLoading] = useState(true);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [isCreatingForm, setIsCreatingForm] = useState(false);
     const [formToDelete, setFormToDelete] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
     
@@ -72,6 +73,7 @@ const FormsTab = () => {
 
     const handleCreateForm = async () => {
         try {
+            setIsCreatingForm(true);
             const newFormPayload = {
                 title: 'Untitled Form',
                 description: '',
@@ -85,6 +87,8 @@ const FormsTab = () => {
             setIsSidebarOpen(false);
         } catch (e) {
             console.error('Failed to create form', e);
+        } finally {
+            setIsCreatingForm(false);
         }
     };
     const handleDuplicateForm = async (formId) => {
@@ -221,12 +225,17 @@ const FormsTab = () => {
                     <h3 className="font-extrabold text-gray-900 text-[15px] tracking-tight pl-1">Forms</h3>
                     <button
                         onClick={handleCreateForm}
-                        className="p-1.5 rounded-xl text-gray-400 hover:text-gray-900 hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-100 transition-all"
+                        disabled={isCreatingForm}
+                        className="p-1.5 rounded-xl text-gray-400 hover:text-gray-900 hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-100 transition-all disabled:opacity-50 flex items-center justify-center"
                         title="Create new form"
                     >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                        </svg>
+                        {isCreatingForm ? (
+                            <svg className="animate-spin" width="18" height="18" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        ) : (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                            </svg>
+                        )}
                     </button>
                 </div>
 
@@ -319,9 +328,17 @@ const FormsTab = () => {
                             <div className="text-slate-400 text-sm mb-6">Create a new form to get started.</div>
                             <button
                                 onClick={handleCreateForm}
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm"
+                                disabled={isCreatingForm}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
                             >
-                                + Create New Form
+                                {isCreatingForm ? (
+                                    <>
+                                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                        Creating...
+                                    </>
+                                ) : (
+                                    '+ Create New Form'
+                                )}
                             </button>
                         </div>
                     </div>

@@ -10,6 +10,7 @@ import formRoutes from './forms/formRoutes.js';
 import logRoutes from './builder/logRoutes.js';
 import dashboardRoutes from './dashboard/dashboardRoutes.js';
 import chatRoutes from './chat/chatRoutes.js';
+import storageRoutes from './storageRoutes.js';
 import rateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -23,6 +24,7 @@ const authLimiter = rateLimit({
 router.use('/health', healthRoutes);
 router.use('/prompts', promptsRoutes);
 router.use('/auth', authLimiter, authRoutes);
+router.use('/storage', storageRoutes);
 router.use('/auth', authLimiter, resetPasswordRoutes);
 router.use('/auth/google', authLimiter, googleConnectionRoutes);
 router.use('/workflows', workflowRoutes);

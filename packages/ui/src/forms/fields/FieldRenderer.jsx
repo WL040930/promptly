@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import FileUploadField from './components/FileUploadField';
 
 /**
  * FieldRenderer — renders a single form field in preview/fill mode.
@@ -9,6 +10,8 @@ const focusRing = `focus:border-transparent`;
 
 const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
     const [hoveredStar, setHoveredStar] = useState(0);
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadError, setUploadError] = useState(null);
     const currentValue = value || 0;
 
     const inputStyle = {
@@ -158,21 +161,14 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
                     </div>
                 </div>
             );
-
         case 'file':
             return (
-                <div className="animate-slide-up-fade">
-                    {labelEl}
-                    <div className="border-2 border-dashed border-gray-300 bg-white rounded-2xl p-8 text-center hover:bg-gray-50 hover:border-gray-400 transition-all duration-300 cursor-pointer group">
-                        <div className="w-14 h-14 rounded-full bg-white shadow-sm border border-gray-100 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
-                            <svg className="text-gray-400 group-hover:text-gray-600 transition-colors" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
-                            </svg>
-                        </div>
-                        <p className="text-[15px] font-semibold text-gray-700">Click to upload or drag and drop</p>
-                        <p className="text-sm font-medium text-gray-400 mt-1">{field.accept ? `Accepted: ${field.accept}` : 'Any file type'}</p>
-                    </div>
-                </div>
+                <FileUploadField 
+                    field={field} 
+                    value={value} 
+                    onChange={onChange} 
+                    labelEl={labelEl} 
+                />
             );
 
         case 'rating': {

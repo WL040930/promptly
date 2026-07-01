@@ -1,15 +1,58 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { getFormResponses } from '../api/backend.js';
+import { useToast } from '../components/ToastContext.jsx';
 
 /**
  * FormResponses — table view of form responses with summary stats.
  * Upgraded with premium design.
  */
 
-const renderValue = (val) => {
+const renderValue = (val, toast) => {
     if (val === undefined || val === null || val === '') return <span className="text-gray-300">—</span>;
     if (Array.isArray(val)) return val.join(', ');
     if (typeof val === 'boolean') return val ? 'Yes' : 'No';
+    if (typeof val === 'string' && val.startsWith('/api/storage/download/')) {
+        const ext = val.split('.').pop().toLowerCase();
+        const previewableExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'pdf', 'txt', 'csv', 'json'];
+        const isPreviewable = previewableExts.includes(ext);
+
+        const handleViewClick = (e) => {
+            if (!isPreviewable) {
+                e.preventDefault();
+                toast.error(`The browser cannot preview .${ext} files. Only images, PDFs, and text files can be viewed directly. Please use the Download button instead.`);
+            }
+        };
+
+        return (
+            <div className="flex items-center gap-2">
+                <a 
+                    href={val} 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    onClick={handleViewClick}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${isPreviewable ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : 'bg-gray-50 text-gray-400 hover:bg-gray-100 cursor-pointer'}`}
+                    title={isPreviewable ? "View file in new tab" : "Preview not available for this file type"}
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                    View
+                </a>
+                <a 
+                    href={`${val}?download=true`}
+                    download
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg text-xs font-bold transition-colors"
+                    title="Download file directly"
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                    </svg>
+                    Download
+                </a>
+            </div>
+        );
+    }
     return String(val);
 };
 
@@ -17,6 +60,7 @@ const FormResponses = ({ form }) => {
     const [responses, setResponses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const toast = useToast();
 
     useEffect(() => {
         const fetchResponses = async () => {
@@ -146,6 +190,9 @@ const FormResponses = ({ form }) => {
                 if (val === undefined || val === null) val = '';
                 if (Array.isArray(val)) val = val.join(', ');
                 if (typeof val === 'boolean') val = val ? 'Yes' : 'No';
+                if (typeof val === 'string' && val.startsWith('/api/storage/download/')) {
+                    val = window.location.origin + val;
+                }
                 const stringVal = String(val).replace(/"/g, '""');
                 return `"${stringVal}"`;
             });
@@ -267,7 +314,7 @@ const FormResponses = ({ form }) => {
                                                     }`}
                                                     title={String(val ?? '')}
                                                 >
-                                                    {renderValue(val)}
+                                                    {renderValue(val, toast)}
                                                 </td>
                                             );
                                         })}

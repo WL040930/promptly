@@ -14,11 +14,11 @@ export const createForm = async (req, res) => {
 
 export const generateForm = async (req, res) => {
     try {
-        const { prompt } = req.body;
+        const { prompt, currentSchema } = req.body;
         if (!prompt) {
             return res.status(400).json({ message: 'Prompt is required' });
         }
-        const generatedForm = await generateFormFromPrompt(prompt);
+        const generatedForm = await generateFormFromPrompt(prompt, currentSchema);
         res.json(generatedForm);
     } catch (error) {
         console.error('Error in generateForm:', error);
