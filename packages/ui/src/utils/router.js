@@ -41,7 +41,7 @@ export function parsePath(pathname) {
         case 'builder':
             return { mode: 'workflow', tab: 'workflows', viewMode: 'builder', workflowId: parts[2] || null };
         case 'forms':
-            return { mode: 'workflow', tab: 'forms' };
+            return { mode: 'workflow', tab: 'forms', formId: parts[2] || null, subTab: parts[3] || null };
         case 'logs':
             return { mode: 'workflow', tab: 'logs' };
         case 'dashboard':
@@ -53,7 +53,7 @@ export function parsePath(pathname) {
 /**
  * Produce a URL from the current routing state.
  */
-export function buildPath({ mode, tab, viewMode, workflowId } = {}) {
+export function buildPath({ mode, tab, viewMode, workflowId, formId, subTab } = {}) {
     if (mode === 'chat') {
         if (!tab || tab === 'chat') return '/chat/chat';
         return `/chat/${tab}`;
@@ -65,6 +65,8 @@ export function buildPath({ mode, tab, viewMode, workflowId } = {}) {
             if (viewMode === 'builder' && workflowId) return `/workflow/builder/${workflowId}`;
             return '/workflow/workflows';
         case 'forms':
+            if (formId && subTab) return `/workflow/forms/${formId}/${subTab}`;
+            if (formId) return `/workflow/forms/${formId}`;
             return '/workflow/forms';
         case 'logs':
             return '/workflow/logs';

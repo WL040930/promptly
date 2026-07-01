@@ -10,6 +10,7 @@ import FormShareModal from '../../forms/FormShareModal';
 import { createField } from '../../forms/fields/fieldTypes';
 import { getForms, createForm, updateForm as apiUpdateForm, deleteForm } from '../../api/backend.js';
 import { useToast } from '../../components/ToastContext.jsx';
+import { parsePath, buildPath, navigate } from '../../utils/router.js';
 
 /**
  * FormsTab — main orchestrator for the form builder module.
@@ -18,9 +19,12 @@ import { useToast } from '../../components/ToastContext.jsx';
 
 const FormsTab = () => {
     const [forms, setForms] = useState([]);
-    const [activeFormId, setActiveFormId] = useState(null);
-    const [activeSubTab, setActiveSubTab] = useState('questions'); // 'questions' | 'responses' | 'settings'
-    const [isPreviewMode, setIsPreviewMode] = useState(false);
+    const [activeFormId, setActiveFormId] = useState(() => parsePath(window.location.pathname).formId || null);
+    const [activeSubTab, setActiveSubTab] = useState(() => {
+        const urlSubTab = parsePath(window.location.pathname).subTab;
+        return (urlSubTab && urlSubTab !== 'preview') ? urlSubTab : 'questions';
+    });
+    const [isPreviewMode, setIsPreviewMode] = useState(() => parsePath(window.location.pathname).subTab === 'preview');
     const [isShareOpen, setIsShareOpen] = useState(false);
     const [sidebarSearch, setSidebarSearch] = useState('');
     const [loading, setLoading] = useState(true);
@@ -35,7 +39,10 @@ const FormsTab = () => {
     useEffect(() => {
         getForms().then(data => {
             setForms(data);
-            if (data.length > 0) {
+            const urlFormId = parsePath(window.location.pathname).formId;
+            if (urlFormId && data.find(f => f.id === urlFormId)) {
+                setActiveFormId(urlFormId);
+            } else if (data.length > 0 && !activeFormId) {
                 setActiveFormId(data[0].id);
             }
             setLoading(false);
@@ -44,6 +51,42 @@ const FormsTab = () => {
             setLoading(false);
         });
     }, []);
+
+    // Sync URL when activeFormId, activeSubTab, or isPreviewMode changes
+    useEffect(() => {
+        if (activeFormId) {
+            const currentPath = window.location.pathname;
+            const currentSubTab = isPreviewMode ? 'preview' : activeSubTab;
+            const newPath = buildPath({ mode: 'workflow', tab: 'forms', formId: activeFormId, subTab: currentSubTab });
+            if (currentPath !== newPath) {
+                window.history.replaceState({}, '', newPath);
+            }
+        }
+    }, [activeFormId, activeSubTab, isPreviewMode]);
+
+    // Handle back/forward navigation
+    useEffect(() => {
+        const handler = () => {
+            const parsed = parsePath(window.location.pathname);
+            if (parsed.tab === 'forms') {
+                if (parsed.formId && parsed.formId !== activeFormId) {
+                    setActiveFormId(parsed.formId);
+                }
+                const urlSubTab = parsed.subTab;
+                if (urlSubTab === 'preview') {
+                    setIsPreviewMode(true);
+                } else if (urlSubTab) {
+                    setIsPreviewMode(false);
+                    setActiveSubTab(urlSubTab);
+                } else {
+                    setIsPreviewMode(false);
+                    setActiveSubTab('questions');
+                }
+            }
+        };
+        window.addEventListener('popstate', handler);
+        return () => window.removeEventListener('popstate', handler);
+    }, [activeFormId, activeSubTab, isPreviewMode]);
 
     useGSAP(() => {
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
