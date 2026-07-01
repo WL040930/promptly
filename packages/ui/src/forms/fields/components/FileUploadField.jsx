@@ -66,21 +66,12 @@ const FileUploadField = ({ field, value, onChange, labelEl }) => {
             // Generate a secure UUID for the file name to prevent collisions
             const ext = file.name.split('.').pop() || 'bin';
             const secureFileName = `${crypto.randomUUID()}.${ext}`;
-            const bucket = 'form-uploads';
-            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-            const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
             
-            if (!supabaseUrl || !anonKey) {
-                throw new Error('Supabase environment variables are missing');
-            }
-
-            const url = `${supabaseUrl}/storage/v1/object/${bucket}/${secureFileName}`;
+            const url = `/api/storage/upload/${secureFileName}`;
             
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
-                    'apikey': anonKey,
-                    'Authorization': `Bearer ${anonKey}`,
                     'Content-Type': file.type || 'application/octet-stream',
                 },
                 body: file,

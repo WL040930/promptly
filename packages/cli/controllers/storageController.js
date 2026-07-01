@@ -38,3 +38,46 @@ export const downloadFile = async (req, res) => {
         res.status(500).json({ message: 'Internal server error while fetching file' });
     }
 };
+
+export const uploadFile = async (req, res) => {
+    const { filename } = req.params;
+    if (!filename) {
+        return res.status(400).json({ message: 'Filename is required' });
+    }
+
+    try {
+        const bucket = 'form-uploads';
+        const supabaseUrl = process.env.VITE_SUPABASE_URL; 
+        const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
+        
+        if (!supabaseUrl || !anonKey) {
+           return res.status(500).json({ message: 'Storage not configured on server' });
+        }
+
+        const url = `${supabaseUrl}/storage/v1/object/${bucket}/${filename}`;
+        const contentType = req.headers['content-type'] || 'application/octet-stream';
+        
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'apikey': anonKey,
+                'Authorization': `Bearer ${anonKey}`,
+                'Content-Type': contentType,
+            },
+            body: req.body, // The raw binary buffer captured by express.raw
+        });
+        
+        if (!response.ok) {
+            console.error(`Supabase returned ${response.status} for upload of ${filename}`);
+            const errorText = await response.text();
+            return res.status(response.status).json({ message: 'Upload failed to storage', details: errorText });
+        }
+
+        const data = await response.json();
+        res.status(200).json(data);
+        
+    } catch (error) {
+        console.error('Storage Upload Proxy Error:', error);
+        res.status(500).json({ message: 'Internal server error while uploading file' });
+    }
+};
