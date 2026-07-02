@@ -14,13 +14,16 @@ import TriggerNode from '../../nodes/TriggerNode';
 import AINode from '../../nodes/AINode';
 import ActionNode from '../../nodes/ActionNode';
 
+import LogicNode from '../../nodes/LogicNode';
+
 const nodeTypes = {
   trigger: TriggerNode,
   ai: AINode,
   action: ActionNode,
+  logic: LogicNode,
 };
 
-const WorkflowCanvasInner = ({ initialNodes, activeNodeId, onNodeClick, onNodesChangeCallback, onEdgesChangeCallback, onAddNode, draggedNode }) => {
+const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, onNodeClick, onNodesChangeCallback, onEdgesChangeCallback, onAddNode, draggedNode }) => {
   const reactFlowWrapper = useRef(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [dragPosition, setDragPosition] = useState(null);
@@ -34,8 +37,9 @@ const WorkflowCanvasInner = ({ initialNodes, activeNodeId, onNodeClick, onNodesC
     const rfNodes = initialNodes.map((n, i) => ({
       id: n.id,
       type: n.type,
-      position: n.position || { x: 250, y: i * 280 + 50 },
+      position: n.position || { x: i * 350 + 50, y: 150 },
       data: {
+        subType: n.subType,
         title: n.title,
         description: n.description,
         isActive: n.id === activeNodeId,
@@ -43,21 +47,16 @@ const WorkflowCanvasInner = ({ initialNodes, activeNodeId, onNodeClick, onNodesC
       }
     }));
     
-    // Automatically connect nodes sequentially for initial layout
-    const rfEdges = [];
-    for (let i = 0; i < initialNodes.length - 1; i++) {
-      rfEdges.push({
-        id: `e-${initialNodes[i].id}-${initialNodes[i+1].id}`,
-        source: initialNodes[i].id,
-        target: initialNodes[i+1].id,
+    // Use initialEdges if provided, otherwise empty
+    let rfEdges = initialEdges.map(e => ({
+        ...e,
         animated: true,
-        style: { stroke: '#3b82f6', strokeWidth: 2 }
-      });
-    }
+        style: { stroke: '#94a3b8', strokeWidth: 2 }
+    }));
 
     setNodes(rfNodes);
     setEdges(rfEdges);
-  }, [initialNodes.map(n => n.id).join(',')]); // Only re-run if node identities change
+  }, [initialNodes.map(n => n.id).join(','), initialEdges.map(e => e.id).join(',')]);
 
   // Sync active node visual state, title, and description from props
   useEffect(() => {
@@ -136,23 +135,23 @@ const WorkflowCanvasInner = ({ initialNodes, activeNodeId, onNodeClick, onNodesC
       queue = nextQueue;
     }
 
-    // 4. Calculate layout positions
-    const HORIZONTAL_GAP = 380;
-    const VERTICAL_GAP = 280;
+    // 4. Calculate layout positions (Horizontal)
+    const HORIZONTAL_GAP = 350;
+    const VERTICAL_GAP = 200;
 
     const laidOutNodes = nodes.map(node => {
       const layer = nodeLayerMap[node.id] || 0;
       const nodesInLayer = layers[layer] || [node.id];
       const indexInLayer = nodesInLayer.indexOf(node.id);
       
-      const rowWidth = (nodesInLayer.length - 1) * HORIZONTAL_GAP;
-      const xOffset = indexInLayer * HORIZONTAL_GAP - (rowWidth / 2);
+      const colHeight = (nodesInLayer.length - 1) * VERTICAL_GAP;
+      const yOffset = indexInLayer * VERTICAL_GAP - (colHeight / 2);
       
       return {
         ...node,
         position: {
-          x: 250 + xOffset,
-          y: 50 + (layer * VERTICAL_GAP)
+          x: 50 + (layer * HORIZONTAL_GAP),
+          y: 200 + yOffset
         }
       };
     });
@@ -169,7 +168,14 @@ const WorkflowCanvasInner = ({ initialNodes, activeNodeId, onNodeClick, onNodesC
     onNodesChangeCallback?.(changes);
   }, [nodes, edges, setNodes, onNodesChangeCallback]);
 
-  const onConnect = useCallback((params) => setEdges((eds) => addEdge({ ...params, animated: true, style: { stroke: '#3b82f6', strokeWidth: 2 } }, eds)), [setEdges]);
+  const onConnect = useCallback((params) => {
+      const newEdge = { ...params, id: `e-${params.source}-${params.target}`, animated: true, style: { stroke: '#94a3b8', strokeWidth: 2 } };
+      setEdges((eds) => {
+          const updatedEdges = addEdge(newEdge, eds);
+          onEdgesChangeCallback?.(updatedEdges);
+          return updatedEdges;
+      });
+  }, [setEdges, onEdgesChangeCallback]);
 
   const onDragOver = useCallback((event) => {
     event.preventDefault();
@@ -270,7 +276,21 @@ const WorkflowCanvasInner = ({ initialNodes, activeNodeId, onNodeClick, onNodesC
               onNodesChangeCallback?.(filteredChanges);
             }
         }}
-        onEdgesChange={onEdgesChange}
+        onEdgesChange={(changes) => {
+            onEdgesChange(changes);
+            
+            // Notify parent if edges were removed
+            const removed = changes.filter(c => c.type === 'remove');
+            if (removed.length > 0) {
+                // We use a timeout to let setEdges apply first, then callback with current edges
+                setTimeout(() => {
+                    setEdges(currentEdges => {
+                        onEdgesChangeCallback?.(currentEdges);
+                        return currentEdges;
+                    });
+                }, 0);
+            }
+        }}
         onConnect={onConnect}
         onInit={setReactFlowInstance}
         onDrop={onDrop}

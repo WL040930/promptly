@@ -32,6 +32,10 @@ const Workflow = sequelize.define(
         nodes: {
             type: DataTypes.JSONB,
             defaultValue: []
+        },
+        edges: {
+            type: DataTypes.JSONB,
+            defaultValue: []
         }
     },
     {

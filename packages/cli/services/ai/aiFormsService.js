@@ -85,7 +85,6 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
                 }
             }
             result.schema = updatedSchema;
-            // Retain result.patches so frontend can render diffs
         }
 
         return result;

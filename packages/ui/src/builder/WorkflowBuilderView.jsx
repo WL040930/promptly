@@ -13,19 +13,29 @@ import { getWorkflows, createWorkflow, updateWorkflow, getFolders, createFolder 
 
 const SYSTEM_NODES = {
     'Triggers': [
-        { type: 'trigger', title: 'Webhook Trigger', description: 'Trigger via HTTP POST' },
-        { type: 'trigger', title: 'Schedule', description: 'Run at specific times' },
-        { type: 'trigger', title: 'Email Received', description: 'Trigger on new email' },
+        { type: 'trigger', subType: 'webhook', title: 'Webhook Trigger', description: 'Trigger via HTTP POST' },
+        { type: 'trigger', subType: 'schedule', title: 'Schedule', description: 'Run at specific times' },
+        { type: 'trigger', subType: 'form', title: 'Form Submission', description: 'Native integration with Promptly forms' },
+        { type: 'trigger', subType: 'googleSheets', title: 'Google Sheets Trigger', description: 'Trigger on new row or cell update' },
     ],
     'AI Nodes': [
-        { type: 'ai', title: 'Extract Intent', description: 'Parse text using LLM' },
-        { type: 'ai', title: 'Summarize', description: 'Generate a summary' },
-        { type: 'ai', title: 'Generate Response', description: 'Draft a reply' },
+        { type: 'ai', subType: 'extract', title: 'Extract Intent', description: 'Parse unstructured text into JSON' },
+        { type: 'ai', subType: 'summarize', title: 'Summarize', description: 'Condense long text into summary' },
+        { type: 'ai', subType: 'generate', title: 'Generate Response', description: 'Draft emails or reports based on context' },
+        { type: 'ai', subType: 'categorize', title: 'Categorize Data', description: 'Classify text into predefined categories' },
+    ],
+    'Logic': [
+        { type: 'logic', subType: 'condition', title: 'Condition (If/Else)', description: 'Branch execution based on variables' },
+        { type: 'logic', subType: 'switch', title: 'Switch / Router', description: 'Route execution down multiple paths' },
+        { type: 'logic', subType: 'loop', title: 'Loop (ForEach)', description: 'Iterate over an array of items' },
+        { type: 'logic', subType: 'delay', title: 'Wait / Delay', description: 'Pause execution for duration' },
     ],
     'Actions': [
-        { type: 'action', title: 'Database Insert', description: 'Save to DB' },
-        { type: 'action', title: 'Send Slack', description: 'Send a Slack message' },
-        { type: 'action', title: 'Create Ticket', description: 'Create Jira ticket' },
+        { type: 'action', subType: 'http', title: 'HTTP Request', description: 'Generic REST API client' },
+        { type: 'action', subType: 'googleSheets', title: 'Google Sheets Action', description: 'Create, Read, Update, Delete rows' },
+        { type: 'action', subType: 'database', title: 'Database Insert', description: 'Save to DB' },
+        { type: 'action', subType: 'slack', title: 'Send Slack', description: 'Send a Slack message' },
+        { type: 'action', subType: 'ticket', title: 'Create Ticket', description: 'Create Jira ticket' },
     ]
 };
 
@@ -38,6 +48,12 @@ const SIDEBAR_ICONS = {
     ai: (
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-indigo-600 shrink-0">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+    ),
+    logic: (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-blue-500 shrink-0">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M12 8v4l3 3"></path>
         </svg>
     ),
     action: (
@@ -57,6 +73,11 @@ const CARD_STYLES = {
         border: 'border-l-4 border-l-indigo-500 hover:border-indigo-200 hover:bg-indigo-50/10',
         badge: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/10',
         shadow: 'hover:shadow-[0_4px_12px_rgba(99,102,241,0.08)] hover:-translate-y-0.5'
+    },
+    logic: {
+        border: 'border-l-4 border-l-blue-500 hover:border-blue-200 hover:bg-blue-50/10',
+        badge: 'bg-blue-500/10 text-blue-600 border-blue-500/10',
+        shadow: 'hover:shadow-[0_4px_12px_rgba(59,130,246,0.08)] hover:-translate-y-0.5'
     },
     action: {
         border: 'border-l-4 border-l-emerald-500 hover:border-emerald-200 hover:bg-emerald-50/10',
@@ -214,6 +235,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         const newNode = {
             id: newNodeId,
             type: proposal.type,
+            subType: proposal.subType,
             title: proposal.title,
             description: proposal.description
         };
@@ -233,6 +255,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         const newNode = {
             id: newNodeId,
             type: nodeData.type,
+            subType: nodeData.subType,
             title: nodeData.title,
             description: nodeData.description,
             position

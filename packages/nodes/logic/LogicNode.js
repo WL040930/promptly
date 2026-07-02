@@ -1,8 +1,8 @@
 import { BaseNode } from '../BaseNode.js';
 
-export class TriggerNode extends BaseNode {
+export class LogicNode extends BaseNode {
     constructor(id, subType, config = {}, position = null) {
-        super(id, 'trigger', subType, config, position);
+        super(id, 'logic', subType, config, position);
     }
 
     validate() {
@@ -10,10 +10,10 @@ export class TriggerNode extends BaseNode {
     }
 
     async execute(context) {
+        // Logic nodes evaluate conditions and return edge selection details
         return {
             ...context,
-            triggerTime: new Date().toISOString(),
-            payload: this.config.payload || {}
+            logicStatus: 'evaluated'
         };
     }
 }

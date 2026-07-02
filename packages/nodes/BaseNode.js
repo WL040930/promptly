@@ -1,7 +1,8 @@
 export class BaseNode {
-    constructor(id, type, config = {}, position = null) {
+    constructor(id, type, subType, config = {}, position = null) {
         this.id = id;
         this.type = type;
+        this.subType = subType;
         this.config = config;
         this.position = position;
     }

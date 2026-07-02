@@ -37,7 +37,9 @@ const RECENT_CHATS_PREVIEW = [
 
 const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
     const isChatMode = user?.experienceLevel === 'chat';
-    const [isCollapsed, setIsCollapsed] = useState(false);
+    const [isCollapsed, setIsCollapsed] = useState(() => {
+        return window.location.pathname.includes('/builder/');
+    });
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [hoveredTab, setHoveredTab] = useState(null);
     const container = useRef(null);
