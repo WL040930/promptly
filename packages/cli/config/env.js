@@ -51,8 +51,20 @@ const env = {
         from: requireEnv('SMTP_FROM')
     },
     gemini: {
-        apiKey: requireEnv('GEMINI_API_KEY')
+        apiKey: process.env.GEMINI_API_KEY
     },
+    openrouter: {
+        apiKey: process.env.OPENROUTER_API_KEY
+    },
+    groq: {
+        apiKey: process.env.GROQ_API_KEY
+    },
+    aiProvider: process.env.AI_PROVIDER || 'gemini',
+    aiModel: process.env.AI_MODEL || (
+        process.env.AI_PROVIDER === 'openrouter' ? 'openai/gpt-4o-mini' : 
+        process.env.AI_PROVIDER === 'groq' ? 'llama3-8b-8192' : 
+        'gemini-3.5-flash'
+    ),
     supabase: {
         url: requireEnv('SUPABASE_URL'),
         anonKey: requireEnv('SUPABASE_ANON_KEY')

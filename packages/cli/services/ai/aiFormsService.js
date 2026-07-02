@@ -1,21 +1,20 @@
-import { GoogleGenAI } from '@google/genai';
-import env from '../config/env.js';
+import { getAIProvider } from './aiService.js';
+import env from '../../config/env.js';
 import fs from 'fs';
 import path from 'path';
 
-// Initialize the Gemini client
-const ai = new GoogleGenAI({
-    apiKey: env.gemini.apiKey
-});
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory = []) => {
     try {
-        const instructionPath = path.resolve('../ui/src/forms/instruction/instruction.md');
+        const instructionPath = path.resolve(__dirname, './instruction/form_instruction.md');
         let systemInstruction = '';
         try {
             systemInstruction = fs.readFileSync(instructionPath, 'utf8');
         } catch (err) {
-            console.error('Failed to read instruction.md:', err);
+            console.error('Failed to read form_instruction.md:', err);
             systemInstruction = 'You are an AI Form Designer. Output a full JSON form schema with title, description, and fields array.';
         }
 
@@ -32,13 +31,11 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
             parts: [{ text: currentRequestText }]
         });
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-3.5-flash',
-            contents: contents,
-            config: {
-                systemInstruction: systemInstruction,
-                responseMimeType: 'application/json',
-            }
+        const provider = getAIProvider();
+        const response = await provider.generateContent(contents, {
+            systemInstruction: systemInstruction,
+            responseMimeType: 'application/json',
+            model: env.aiModel
         });
 
         const text = response.text;
@@ -93,7 +90,7 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
 
         return result;
     } catch (error) {
-        console.error('Gemini API Error (Form Generation):', error);
+        console.error('AI Service Error (Form Generation):', error);
         throw error;
     }
 };

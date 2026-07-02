@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import FieldCard from './fields/FieldCard';
-import { FIELD_TYPES, getTypesByCategory, createField } from './fields/fieldTypes';
+import { createField } from './fields/fieldTypes';
 
 import { useFieldDnD } from './hooks/useFieldDnD';
 import FormEditorHeader from './components/FormEditorHeader';

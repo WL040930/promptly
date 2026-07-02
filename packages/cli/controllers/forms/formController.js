@@ -1,5 +1,5 @@
 import { Form, FormResponse, FormChatMessage } from '../../models/index.js';
-import { generateFormFromPrompt } from '../../services/aiFormsService.js';
+import { generateFormFromPrompt } from '../../services/ai/aiFormsService.js';
 
 export const getForms = async (req, res) => {
     const forms = await Form.findAll({ where: { userId: req.user.id } });

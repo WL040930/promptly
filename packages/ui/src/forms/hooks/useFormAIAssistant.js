@@ -15,6 +15,8 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
     const [offset, setOffset] = useState(0);
     const [hasMore, setHasMore] = useState(true);
+    const [acceptingProposalId, setAcceptingProposalId] = useState(null);
+    const [rejectingProposalId, setRejectingProposalId] = useState(null);
     const limit = 50;
     const toast = useToast();
 
@@ -149,6 +151,7 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
     };
 
     const handleAcceptProposal = async (msgId, proposalSchema) => {
+        setAcceptingProposalId(msgId);
         try {
             // Ensure all fields have an ID
             const sanitizedFields = (proposalSchema.fields || []).map(field => {
@@ -177,10 +180,13 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
         } catch (error) {
             console.error('Error applying proposal:', error);
             toast.error('Failed to apply changes.');
+        } finally {
+            setAcceptingProposalId(null);
         }
     };
 
     const handleRejectProposal = async (msgId) => {
+         setRejectingProposalId(msgId);
          try {
             const message = messages.find(m => m.id === msgId);
             if (message && message.proposal) {
@@ -193,6 +199,8 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
          } catch (error) {
             console.error('Error rejecting proposal:', error);
             toast.error('Failed to reject proposal.');
+         } finally {
+            setRejectingProposalId(null);
          }
     };
 
@@ -206,6 +214,8 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
         loadMoreHistory,
         handleSend,
         handleAcceptProposal,
-        handleRejectProposal
+        handleRejectProposal,
+        acceptingProposalId,
+        rejectingProposalId
     };
 };

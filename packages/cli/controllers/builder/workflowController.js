@@ -1,5 +1,5 @@
 import { Workflow } from '../../models/index.js';
-import { executeWorkflow } from '../../services/executionEngine.js';
+import { executeWorkflow } from '../../services/engine/executionEngine.js';
 
 export const getWorkflows = async (req, res) => {
     const workflows = await Workflow.findAll({ where: { userId: req.user.id } });

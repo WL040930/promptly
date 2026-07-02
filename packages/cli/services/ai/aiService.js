@@ -1,26 +1,37 @@
-import { GoogleGenAI } from '@google/genai';
-import env from '../config/env.js';
+import env from '../../config/env.js';
+import { GeminiProvider } from './providers/geminiProvider.js';
+import { OpenRouterProvider } from './providers/openRouterProvider.js';
+import { GroqProvider } from './providers/groqProvider.js';
 
-// Initialize the Gemini client
-const ai = new GoogleGenAI({
-    apiKey: env.gemini.apiKey
-});
+let providerInstance = null;
+
+export const getAIProvider = () => {
+    if (providerInstance) return providerInstance;
+
+    const providerName = env.aiProvider || 'gemini';
+        if (env.aiProvider === 'openrouter') {
+            providerInstance = new OpenRouterProvider();
+        } else if (env.aiProvider === 'groq') {
+            providerInstance = new GroqProvider();
+        } else {
+            providerInstance = new GeminiProvider();
+        }  
+    return providerInstance;
+};
 
 /**
  * Execute an AI prompt for a workflow node.
  */
 export const executeNodePrompt = async (prompt, systemInstruction = '') => {
     try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-3.5-flash',
-            contents: prompt,
-            config: {
-                systemInstruction: systemInstruction || 'You are a helpful AI assistant.',
-            }
+        const provider = getAIProvider();
+        const response = await provider.generateContent([{ role: 'user', parts: [{ text: prompt }] }], {
+            systemInstruction: systemInstruction || 'You are a helpful AI assistant.',
+            model: env.aiModel
         });
         return response.text;
     } catch (error) {
-        console.error('Gemini API Error (Node):', error);
+        console.error('AI Service Error (Node):', error);
         throw error;
     }
 };
@@ -41,12 +52,10 @@ export const chatWithAgent = async (messages) => {
         The types can be: 'trigger', 'action', or 'ai'.
         `;
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-3.5-flash',
-            contents: chatPrompt,
-            config: {
-                systemInstruction: systemInstruction,
-            }
+        const provider = getAIProvider();
+        const response = await provider.generateContent([{ role: 'user', parts: [{ text: chatPrompt }] }], {
+            systemInstruction: systemInstruction,
+            model: env.aiModel
         });
 
         const reply = response.text;
@@ -71,7 +80,7 @@ export const chatWithAgent = async (messages) => {
             proposal: proposal
         };
     } catch (error) {
-        console.error('Gemini API Error (Chat):', error);
+        console.error('AI Service Error (Chat):', error);
         throw error;
     }
 };

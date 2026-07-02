@@ -1,0 +1,75 @@
+import { BaseAIProvider } from './baseProvider.js';
+import env from '../../../config/env.js';
+
+export class GroqProvider extends BaseAIProvider {
+    constructor() {
+        super();
+        this.apiKey = env.groq.apiKey;
+        if (!this.apiKey) {
+            console.warn('Groq API key is missing.');
+        }
+        this.baseUrl = 'https://api.groq.com/openai/v1';
+    }
+
+    async generateContent(contents, options = {}) {
+        const { systemInstruction, responseMimeType, model = 'llama3-8b-8192' } = options;
+
+        const messages = [];
+        if (systemInstruction) {
+            messages.push({ role: 'system', content: systemInstruction });
+        }
+
+        // Map Gemini style contents to OpenAI style messages
+        for (const content of contents) {
+            if (typeof content === 'string') {
+                messages.push({ role: 'user', content });
+                continue;
+            }
+            
+            const role = content.role === 'model' ? 'assistant' : 'user';
+            const text = Array.isArray(content.parts) ? content.parts.map(p => p.text).join('\n') : content.parts || '';
+            messages.push({ role, content: text });
+        }
+
+        const body = {
+            model,
+            messages,
+        };
+
+        if (responseMimeType === 'application/json') {
+            body.response_format = { type: 'json_object' };
+        }
+
+        try {
+            const response = await fetch(`${this.baseUrl}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.apiKey}`
+                },
+                body: JSON.stringify(body)
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Groq API Error: ${response.status} - ${errorText}`);
+            }
+
+            const data = await response.json();
+            const text = data.choices?.[0]?.message?.content || '';
+            const usage = data.usage;
+
+            return {
+                text,
+                usageMetadata: usage ? {
+                    promptTokenCount: usage.prompt_tokens,
+                    candidatesTokenCount: usage.completion_tokens,
+                    totalTokenCount: usage.total_tokens
+                } : null
+            };
+        } catch (error) {
+            console.error('Groq Provider Error:', error);
+            throw error;
+        }
+    }
+}

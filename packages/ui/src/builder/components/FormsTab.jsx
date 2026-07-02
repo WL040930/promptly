@@ -10,7 +10,7 @@ import FormShareModal from '../../forms/FormShareModal';
 import { createField } from '../../forms/fields/fieldTypes';
 import { getForms, createForm, updateForm as apiUpdateForm, deleteForm } from '../../api/backend.js';
 import { useToast } from '../../components/ToastContext.jsx';
-import { parsePath, buildPath, navigate } from '../../utils/router.js';
+import { parsePath, buildPath } from '../../utils/router.js';
 
 /**
  * FormsTab — main orchestrator for the form builder module.
@@ -27,7 +27,7 @@ const FormsTab = () => {
     const [isPreviewMode, setIsPreviewMode] = useState(() => parsePath(window.location.pathname).subTab === 'preview');
     const [isShareOpen, setIsShareOpen] = useState(false);
     const [sidebarSearch, setSidebarSearch] = useState('');
-    const [loading, setLoading] = useState(true);
+
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isCreatingForm, setIsCreatingForm] = useState(false);
     const [formToDelete, setFormToDelete] = useState(null);
@@ -45,10 +45,8 @@ const FormsTab = () => {
             } else if (data.length > 0 && !activeFormId) {
                 setActiveFormId(data[0].id);
             }
-            setLoading(false);
         }).catch(err => {
             console.error(err);
-            setLoading(false);
         });
     }, []);
 
@@ -188,19 +186,6 @@ const FormsTab = () => {
         updateForm({ fields: [...activeForm.fields, newField] });
     };
 
-    const handleUpdateField = (fieldId, updates) => {
-        updateForm({
-            fields: activeForm.fields.map(f =>
-                f.id === fieldId ? { ...f, ...updates } : f
-            ),
-        });
-    };
-
-    const handleDeleteField = (fieldId) => {
-        updateForm({
-            fields: activeForm.fields.map(f => f.id === fieldId ? { ...f, deleted: true } : f)
-        });
-    };
 
     const handleDuplicateField = (fieldId) => {
         const source = activeForm.fields.find(f => f.id === fieldId);

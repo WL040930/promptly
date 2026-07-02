@@ -1,6 +1,6 @@
-import Workflow from '../models/Workflow.js';
-import ExecutionLog from '../models/ExecutionLog.js';
-import { executeNodePrompt } from './geminiService.js';
+import Workflow from '../../models/Workflow.js';
+import ExecutionLog from '../../models/ExecutionLog.js';
+import { executeNodePrompt } from '../ai/aiService.js';
 
 export const executeWorkflow = async (workflowId, userId, triggerPayload = {}) => {
     const startTime = Date.now();

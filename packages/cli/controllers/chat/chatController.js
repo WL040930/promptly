@@ -1,4 +1,4 @@
-import { chatWithAgent } from '../../services/geminiService.js';
+import { chatWithAgent } from '../../services/ai/aiService.js';
 import { ChatSession } from '../../models/index.js';
 
 export const sendMessage = async (req, res) => {
