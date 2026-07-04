@@ -18,9 +18,9 @@ const Workflow = sequelize.define(
             type: DataTypes.STRING(50),
             defaultValue: 'Draft'
         },
-        lastEdited: {
-            type: DataTypes.STRING(100),
-            allowNull: true
+        icon: {
+            type: DataTypes.STRING(50),
+            defaultValue: 'default'
         },
         iconColor: {
             type: DataTypes.STRING(50),

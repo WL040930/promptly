@@ -4,6 +4,7 @@ export const MODAL_TYPES = {
     NEW_WORKFLOW: 'NEW_WORKFLOW',
     RENAME_FOLDER: 'RENAME_FOLDER',
     RENAME_WORKFLOW: 'RENAME_WORKFLOW',
+    EDIT_WORKFLOW_PROPERTIES: 'EDIT_WORKFLOW_PROPERTIES',
     DELETE_FOLDER: 'DELETE_FOLDER',
     DELETE_WORKFLOW: 'DELETE_WORKFLOW'
 };
@@ -36,6 +37,13 @@ export const MODAL_CONFIG = {
         confirmLabel: 'Save',
         placeholder: 'Workflow name',
         showInput: true,
+        isDestructive: false
+    },
+    [MODAL_TYPES.EDIT_WORKFLOW_PROPERTIES]: {
+        title: 'Edit Workflow Properties',
+        confirmLabel: 'Save Changes',
+        showInput: false,
+        showProperties: true,
         isDestructive: false
     },
     [MODAL_TYPES.DELETE_FOLDER]: {

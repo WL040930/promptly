@@ -3,6 +3,7 @@ import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useToast } from '../../components/ToastContext.jsx';
 import { getWorkflows, createWorkflow, deleteWorkflow, triggerWorkflow } from '../../api/backend.js';
+import { ICON_MAP } from '../../builder/utils/iconMap.jsx';
 
 const WorkflowTab = () => {
     const toast = useToast();
@@ -51,7 +52,6 @@ const WorkflowTab = () => {
             const wfData = {
                 name: 'New Sequence Automation',
                 status: 'Draft',
-                lastEdited: 'Just now',
                 iconColor: 'text-indigo-600',
                 iconBg: 'bg-indigo-100',
                 nodes: []
@@ -138,10 +138,14 @@ const WorkflowTab = () => {
                         workflows.map(wf => (
                             <div key={wf.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex items-center justify-between flex-wrap gap-4">
                                 <div className="flex items-center gap-5">
-                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${wf.status === 'Active' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                                        </svg>
+                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${wf.iconBg || 'bg-slate-100'} ${wf.iconColor || 'text-slate-500'}`}>
+                                        {ICON_MAP[wf.icon] ? (
+                                            React.cloneElement(ICON_MAP[wf.icon], { width: "24", height: "24" })
+                                        ) : (
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                                            </svg>
+                                        )}
                                     </div>
                                     <div>
                                         <h3 className="font-semibold text-slate-800 text-lg">{wf.name}</h3>

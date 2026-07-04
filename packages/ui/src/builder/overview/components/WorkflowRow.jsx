@@ -1,6 +1,7 @@
 import React from 'react';
 import { MODAL_TYPES } from '../constants.js';
 import { formatLastEdited } from '../../utils/timeUtils.js';
+import { ICON_MAP } from '../../utils/iconMap.jsx';
 
 /**
  * A single draggable workflow row used in both the root-level list
@@ -40,10 +41,7 @@ const WorkflowRow = ({
 
             {/* Workflow icon */}
             <div className={`w-7 h-7 rounded-lg ${workflow.iconBg || 'bg-indigo-100'} ${workflow.iconColor || 'text-indigo-600'} flex items-center justify-center shrink-0 ml-5`}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-                    <polyline points="22,6 12,13 2,6"></polyline>
-                </svg>
+                {ICON_MAP[workflow.icon] || ICON_MAP.default}
             </div>
 
             {/* Name and metadata */}
@@ -56,15 +54,21 @@ const WorkflowRow = ({
                 </span>
             </div>
 
-            {/* Actions: rename, delete */}
+            {/* Actions: edit, delete */}
             <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-0.5 shrink-0 bg-indigo-50 z-10 px-1 rounded">
                 <button
                     onClick={(event) => {
                         event.stopPropagation();
-                        openModal(MODAL_TYPES.RENAME_WORKFLOW, { workflowId: workflow.id, currentName: workflow.name });
+                        openModal(MODAL_TYPES.EDIT_WORKFLOW_PROPERTIES, { 
+                            workflowId: workflow.id, 
+                            currentName: workflow.name,
+                            icon: workflow.icon || 'default',
+                            iconColor: workflow.iconColor || 'text-indigo-600',
+                            iconBg: workflow.iconBg || 'bg-indigo-100'
+                        });
                     }}
                     className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-all"
-                    title="Rename workflow"
+                    title="Edit workflow properties"
                 >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>

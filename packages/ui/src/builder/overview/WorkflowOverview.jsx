@@ -13,7 +13,7 @@ import { useToast } from '../../components/ToastContext.jsx';
 const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCreateWorkflow, onSelectWorkflow }) => {
     // ── State & refs ────────────────────────────────────────────────────────
     const [searchQuery, setSearchQuery] = useState('');
-    const [modal, setModal] = useState({ isOpen: false, type: null, data: null, inputValue: '' });
+    const [modal, setModal] = useState({ isOpen: false, type: null, data: null, inputValue: '', formData: {} });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isCreateDropdownOpen, setIsCreateDropdownOpen] = useState(false);
     const [dragInfo, setDragInfo] = useState({ type: null, id: null });
@@ -68,11 +68,22 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
 
     // ── Modal helpers ────────────────────────────────────────────────────────
     const openModal = useCallback((type, data = null) => {
-        setModal({ isOpen: true, type, data, inputValue: data?.currentName || '' });
+        setModal({ 
+            isOpen: true, 
+            type, 
+            data, 
+            inputValue: data?.currentName || '',
+            formData: {
+                name: data?.currentName || '',
+                icon: data?.icon || 'default',
+                iconColor: data?.iconColor || 'text-indigo-600',
+                iconBg: data?.iconBg || 'bg-indigo-100'
+            }
+        });
     }, []);
 
     const closeModal = useCallback(() => {
-        setModal({ isOpen: false, type: null, data: null, inputValue: '' });
+        setModal({ isOpen: false, type: null, data: null, inputValue: '', formData: {} });
     }, []);
 
     const toggleFolder = useCallback((folderId) => {
@@ -125,6 +136,28 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                             [modal.data.workflowId]: { ...prev[modal.data.workflowId], name: value }
                         }));
                         toast.success('Workflow renamed');
+                    }
+                    break;
+
+                case MODAL_TYPES.EDIT_WORKFLOW_PROPERTIES:
+                    if (modal.formData.name && modal.data?.workflowId) {
+                        await updateWorkflow(modal.data.workflowId, { 
+                            name: modal.formData.name,
+                            icon: modal.formData.icon,
+                            iconColor: modal.formData.iconColor,
+                            iconBg: modal.formData.iconBg
+                        });
+                        setWorkflows(prev => ({
+                            ...prev,
+                            [modal.data.workflowId]: { 
+                                ...prev[modal.data.workflowId], 
+                                name: modal.formData.name,
+                                icon: modal.formData.icon,
+                                iconColor: modal.formData.iconColor,
+                                iconBg: modal.formData.iconBg
+                            }
+                        }));
+                        toast.success('Workflow properties updated');
                     }
                     break;
 
@@ -396,8 +429,10 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                 <OverviewModal
                     config={modalConfig}
                     inputValue={modal.inputValue}
+                    formData={modal.formData}
                     isSubmitting={isSubmitting}
                     onInputChange={(value) => setModal(prev => ({ ...prev, inputValue: value }))}
+                    onFormDataChange={(newFormData) => setModal(prev => ({ ...prev, formData: { ...prev.formData, ...newFormData } }))}
                     onCancel={closeModal}
                     onConfirm={handleModalSubmit}
                 />

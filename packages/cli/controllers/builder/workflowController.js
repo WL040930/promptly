@@ -8,9 +8,9 @@ export const getWorkflows = asyncHandler(async (req, res) => {
 });
 
 export const createWorkflow = asyncHandler(async (req, res) => {
-    const { name, folderId, status, lastEdited, iconColor, iconBg, nodes } = req.body;
+    const { name, folderId, status, icon, iconColor, iconBg, nodes } = req.body;
     const workflow = await Workflow.create({
-        name, folderId, status, lastEdited, iconColor, iconBg, nodes,
+        name, folderId, status, icon, iconColor, iconBg, nodes,
         userId: req.user.id
     });
     res.status(201).json(workflow);
@@ -18,12 +18,12 @@ export const createWorkflow = asyncHandler(async (req, res) => {
 
 export const updateWorkflow = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { name, folderId, status, lastEdited, iconColor, iconBg, nodes } = req.body;
+    const { name, folderId, status, icon, iconColor, iconBg, nodes } = req.body;
     
     const workflow = await Workflow.findOne({ where: { id, userId: req.user.id } });
     if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
     
-    await workflow.update({ name, folderId, status, lastEdited, iconColor, iconBg, nodes });
+    await workflow.update({ name, folderId, status, icon, iconColor, iconBg, nodes });
     res.json(workflow);
 });
 

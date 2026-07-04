@@ -1,30 +1,107 @@
 import React from 'react';
+import { ICON_MAP } from '../utils/iconMap.jsx';
 
-const OverviewModal = ({ config, inputValue, isSubmitting, onInputChange, onCancel, onConfirm }) => {
+const COLOR_PRESETS = [
+    { name: 'Indigo', bg: 'bg-indigo-100', text: 'text-indigo-600' },
+    { name: 'Emerald', bg: 'bg-emerald-100', text: 'text-emerald-600' },
+    { name: 'Rose', bg: 'bg-rose-100', text: 'text-rose-600' },
+    { name: 'Amber', bg: 'bg-amber-100', text: 'text-amber-600' },
+    { name: 'Blue', bg: 'bg-blue-100', text: 'text-blue-600' },
+    { name: 'Purple', bg: 'bg-purple-100', text: 'text-purple-600' },
+    { name: 'Slate', bg: 'bg-slate-100', text: 'text-slate-600' }
+];
+
+const OverviewModal = ({ config, inputValue, formData, isSubmitting, onInputChange, onFormDataChange, onCancel, onConfirm }) => {
     if (!config) return null;
 
     return (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl border border-slate-100 overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className={`bg-white w-full ${config.showProperties ? 'max-w-md' : 'max-w-sm'} rounded-2xl shadow-2xl border border-slate-100 overflow-hidden animate-in zoom-in-95 duration-200`}>
                 <div className="p-5">
-                    <h3 className="text-lg font-semibold text-slate-900">{config.title}</h3>
+                    <h3 className="text-lg font-semibold text-slate-900 mb-4">{config.title}</h3>
 
-                    <div className="mt-3">
-                        {config.showInput ? (
-                            <input
-                                type="text"
-                                autoFocus
-                                disabled={isSubmitting}
-                                value={inputValue}
-                                onChange={(event) => onInputChange(event.target.value)}
-                                onKeyDown={(event) => event.key === 'Enter' && !isSubmitting && onConfirm()}
-                                placeholder={config.placeholder}
-                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
-                            />
-                        ) : (
-                            <p className="text-sm font-medium text-slate-500">{config.message}</p>
-                        )}
-                    </div>
+                    {config.showProperties ? (
+                        <div className="flex flex-col gap-5">
+                            {/* Name Input */}
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Workflow Name</label>
+                                <input
+                                    type="text"
+                                    autoFocus
+                                    disabled={isSubmitting}
+                                    value={formData.name || ''}
+                                    onChange={(event) => onFormDataChange({ name: event.target.value })}
+                                    onKeyDown={(event) => event.key === 'Enter' && !isSubmitting && onConfirm()}
+                                    placeholder="e.g. Lead Qualification"
+                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
+                                />
+                            </div>
+
+                            {/* Color Picker */}
+                            <div className="flex flex-col gap-2">
+                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Color Theme</label>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    {COLOR_PRESETS.map((preset) => (
+                                        <button
+                                            key={preset.name}
+                                            disabled={isSubmitting}
+                                            onClick={() => onFormDataChange({ iconBg: preset.bg, iconColor: preset.text })}
+                                            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all disabled:opacity-50
+                                                ${preset.bg} ${preset.text}
+                                                ${formData.iconBg === preset.bg ? 'ring-2 ring-offset-2 ring-indigo-500 scale-110 shadow-md' : 'hover:scale-105 border border-transparent'}
+                                            `}
+                                            title={preset.name}
+                                        >
+                                            {formData.iconBg === preset.bg && (
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                                </svg>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Icon Picker */}
+                            <div className="flex flex-col gap-2">
+                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Icon</label>
+                                <div className="grid grid-cols-6 gap-2 max-h-[160px] overflow-y-auto p-1 -m-1">
+                                    {Object.keys(ICON_MAP).map((iconKey) => {
+                                        const isSelected = formData.icon === iconKey;
+                                        return (
+                                            <button
+                                                key={iconKey}
+                                                disabled={isSubmitting}
+                                                onClick={() => onFormDataChange({ icon: iconKey })}
+                                                className={`aspect-square flex items-center justify-center rounded-xl transition-all disabled:opacity-50
+                                                    ${isSelected 
+                                                        ? `${formData.iconBg} ${formData.iconColor} ring-1 ring-inset ring-indigo-500/30 shadow-sm scale-105` 
+                                                        : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-800 border border-slate-200/60 hover:border-slate-300'
+                                                    }
+                                                `}
+                                                title={iconKey}
+                                            >
+                                                {ICON_MAP[iconKey]}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    ) : config.showInput ? (
+                        <input
+                            type="text"
+                            autoFocus
+                            disabled={isSubmitting}
+                            value={inputValue}
+                            onChange={(event) => onInputChange(event.target.value)}
+                            onKeyDown={(event) => event.key === 'Enter' && !isSubmitting && onConfirm()}
+                            placeholder={config.placeholder}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
+                        />
+                    ) : (
+                        <p className="text-sm font-medium text-slate-500">{config.message}</p>
+                    )}
                 </div>
 
                 <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
