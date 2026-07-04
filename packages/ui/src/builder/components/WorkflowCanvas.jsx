@@ -13,8 +13,13 @@ import '@xyflow/react/dist/style.css';
 import TriggerNode from '../../nodes/TriggerNode';
 import AINode from '../../nodes/AINode';
 import ActionNode from '../../nodes/ActionNode';
-
 import LogicNode from '../../nodes/LogicNode';
+import DeletableEdge from './edges/DeletableEdge';
+import CustomConnectionLine from './edges/CustomConnectionLine';
+
+const edgeTypes = {
+  deletable: DeletableEdge,
+};
 
 const nodeTypes = {
   trigger: TriggerNode,
@@ -27,6 +32,12 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
   const reactFlowWrapper = useRef(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [dragPosition, setDragPosition] = useState(null);
+  // Click-to-connect state
+  const [pendingConnection, setPendingConnection] = useState(null);
+  const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
+  const pendingConnectionRef = useRef(null);
+  const makeEdgeRef = useRef(null);
+  const onHandleClickRef = useRef(null);
 
   // Translate simple internal nodes array into React Flow nodes and edges
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
@@ -43,15 +54,22 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
         title: n.title,
         description: n.description,
         isActive: n.id === activeNodeId,
-        onClick: () => onNodeClick(n.id)
+        onClick: () => onNodeClick(n.id),
+        onHandleClick: (e, handleId, handleType) => onHandleClickRef.current?.(e, n.id, handleId, handleType),
+        onDelete: () => {
+          if (onNodesChangeCallback) {
+            onNodesChangeCallback([{ type: 'remove', id: n.id }]);
+          }
+        }
       }
     }));
-    
+
     // Use initialEdges if provided, otherwise empty
     let rfEdges = initialEdges.map(e => ({
-        ...e,
-        animated: true,
-        style: { stroke: '#94a3b8', strokeWidth: 2 }
+      ...e,
+      type: 'deletable',
+      animated: true,
+      style: { stroke: '#818cf8', strokeWidth: 2, filter: 'drop-shadow(0px 4px 6px rgba(99, 102, 241, 0.3))' }
     }));
 
     setNodes(rfNodes);
@@ -81,12 +99,12 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
     // 1. Build adjacency list and in-degree maps
     const adj = {};
     const inDegree = {};
-    
+
     nodes.forEach(n => {
       adj[n.id] = [];
       inDegree[n.id] = 0;
     });
-    
+
     edges.forEach(e => {
       if (adj[e.source] && inDegree[e.target] !== undefined) {
         adj[e.source].push(e.target);
@@ -96,7 +114,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
 
     // 2. Queue for roots (nodes with in-degree 0)
     let queue = nodes.filter(n => inDegree[n.id] === 0).map(n => n.id);
-    
+
     // Fallback if cycles exist
     if (queue.length === 0 && nodes.length > 0) {
       queue = [nodes[0].id];
@@ -110,12 +128,12 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
     while (queue.length > 0) {
       const nextQueue = [];
       layers[currentLayer] = [];
-      
+
       queue.forEach(nodeId => {
         if (nodeLayerMap[nodeId] !== undefined) return;
         nodeLayerMap[nodeId] = currentLayer;
         layers[currentLayer].push(nodeId);
-        
+
         (adj[nodeId] || []).forEach(neighborId => {
           inDegree[neighborId]--;
           if (inDegree[neighborId] <= 0) {
@@ -123,7 +141,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
           }
         });
       });
-      
+
       if (nextQueue.length === 0 && Object.keys(nodeLayerMap).length < nodes.length) {
         const unvisited = nodes.find(n => nodeLayerMap[n.id] === undefined);
         if (unvisited) {
@@ -143,10 +161,10 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
       const layer = nodeLayerMap[node.id] || 0;
       const nodesInLayer = layers[layer] || [node.id];
       const indexInLayer = nodesInLayer.indexOf(node.id);
-      
+
       const colHeight = (nodesInLayer.length - 1) * VERTICAL_GAP;
       const yOffset = indexInLayer * VERTICAL_GAP - (colHeight / 2);
-      
+
       return {
         ...node,
         position: {
@@ -168,14 +186,77 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
     onNodesChangeCallback?.(changes);
   }, [nodes, edges, setNodes, onNodesChangeCallback]);
 
-  const onConnect = useCallback((params) => {
-      const newEdge = { ...params, id: `e-${params.source}-${params.target}`, animated: true, style: { stroke: '#94a3b8', strokeWidth: 2 } };
-      setEdges((eds) => {
-          const updatedEdges = addEdge(newEdge, eds);
-          onEdgesChangeCallback?.(updatedEdges);
-          return updatedEdges;
-      });
+  const makeEdge = useCallback((params) => {
+    const newEdge = { ...params, id: `e-${params.source}-${params.target}`, type: 'deletable', animated: true, style: { stroke: '#818cf8', strokeWidth: 2, filter: 'drop-shadow(0px 4px 6px rgba(99, 102, 241, 0.3))' } };
+    setEdges((eds) => {
+      const updatedEdges = addEdge(newEdge, eds);
+      onEdgesChangeCallback?.(updatedEdges);
+      return updatedEdges;
+    });
   }, [setEdges, onEdgesChangeCallback]);
+
+  // Keep refs stable so node data callbacks don't change
+  useEffect(() => { makeEdgeRef.current = makeEdge; }, [makeEdge]);
+
+  const onConnect = useCallback((params) => makeEdge(params), [makeEdge]);
+
+  // Click-to-connect: called when a handle is clicked
+  const onHandleClick = useCallback((e, nodeId, handleId, handleType) => {
+    e.stopPropagation();
+    const current = pendingConnectionRef.current;
+    if (!current) {
+      // Start a new connection from a source handle
+      if (handleType === 'source') {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const next = { nodeId, handleId, handleType: 'source', screenX: cx, screenY: cy };
+        pendingConnectionRef.current = next;
+        setPendingConnection(next);
+        setCursorPos({ x: cx, y: cy });
+      }
+    } else {
+      // Complete the connection if clicking a target handle on a different node
+      if (handleType === 'target' && current.nodeId !== nodeId) {
+        makeEdgeRef.current?.({
+          source: current.nodeId,
+          sourceHandle: current.handleId || null,
+          target: nodeId,
+          targetHandle: handleId || null,
+        });
+      }
+      pendingConnectionRef.current = null;
+      setPendingConnection(null);
+    }
+  }, []);
+
+  // Keep onHandleClick ref stable
+  useEffect(() => { onHandleClickRef.current = onHandleClick; }, [onHandleClick]);
+
+  // Cancel pending connection on canvas click or Escape key
+  const onPaneClick = useCallback(() => {
+    pendingConnectionRef.current = null;
+    setPendingConnection(null);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        pendingConnectionRef.current = null;
+        setPendingConnection(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Track cursor position for the ghost line
+  useEffect(() => {
+    if (!pendingConnection) return;
+    const onMouseMove = (e) => setCursorPos({ x: e.clientX, y: e.clientY });
+    window.addEventListener('mousemove', onMouseMove);
+    return () => window.removeEventListener('mousemove', onMouseMove);
+  }, [pendingConnection]);
 
   const onDragOver = useCallback((event) => {
     event.preventDefault();
@@ -251,6 +332,53 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
 
   return (
     <div className="flex-1 relative bg-[#f8fafc] overflow-hidden border border-slate-200 rounded-2xl shadow-inner min-h-[400px]" ref={reactFlowWrapper}>
+      {/* Ghost line overlay for click-to-connect */}
+      {pendingConnection && (
+        <svg
+          className="pointer-events-none fixed inset-0 z-[9999]"
+          style={{ width: '100vw', height: '100vh', position: 'fixed', top: 0, left: 0 }}
+        >
+          <defs>
+            <filter id="click-connect-glow">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feFlood floodColor="#818cf8" floodOpacity="0.7" result="color" />
+              <feComposite in="color" in2="blur" operator="in" result="shadow" />
+              <feMerge>
+                <feMergeNode in="shadow" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          {/* Glow blur behind */}
+          <line
+            x1={pendingConnection.screenX}
+            y1={pendingConnection.screenY}
+            x2={cursorPos.x}
+            y2={cursorPos.y}
+            stroke="#818cf8"
+            strokeWidth={8}
+            strokeOpacity={0.25}
+            strokeLinecap="round"
+            style={{ filter: 'blur(5px)' }}
+          />
+          {/* Main dashed line */}
+          <line
+            x1={pendingConnection.screenX}
+            y1={pendingConnection.screenY}
+            x2={cursorPos.x}
+            y2={cursorPos.y}
+            stroke="#818cf8"
+            strokeWidth={2.5}
+            strokeLinecap="round"
+            strokeDasharray="6 4"
+          />
+          {/* Source dot */}
+          <circle cx={pendingConnection.screenX} cy={pendingConnection.screenY} r={5} fill="#818cf8" stroke="white" strokeWidth={2} style={{ filter: 'drop-shadow(0 0 4px rgba(129,140,248,0.9))' }} />
+          {/* Cursor dot */}
+          <circle cx={cursorPos.x} cy={cursorPos.y} r={5} fill="#818cf8" stroke="white" strokeWidth={2} style={{ filter: 'drop-shadow(0 0 6px rgba(129,140,248,0.9))' }} />
+        </svg>
+      )}
+
       {/* Floating Auto Layout Button Overlay */}
       <div className="absolute top-4 right-4 z-10">
         <button
@@ -269,27 +397,27 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
         nodes={displayNodes}
         edges={edges}
         onNodesChange={(changes) => {
-            // Ignore changes on the preview node
-            const filteredChanges = changes.filter(c => c.id !== 'preview-drag-node');
-            if (filteredChanges.length > 0) {
-              onNodesChange(filteredChanges);
-              onNodesChangeCallback?.(filteredChanges);
-            }
+          // Ignore changes on the preview node
+          const filteredChanges = changes.filter(c => c.id !== 'preview-drag-node');
+          if (filteredChanges.length > 0) {
+            onNodesChange(filteredChanges);
+            onNodesChangeCallback?.(filteredChanges);
+          }
         }}
         onEdgesChange={(changes) => {
-            onEdgesChange(changes);
-            
-            // Notify parent if edges were removed
-            const removed = changes.filter(c => c.type === 'remove');
-            if (removed.length > 0) {
-                // We use a timeout to let setEdges apply first, then callback with current edges
-                setTimeout(() => {
-                    setEdges(currentEdges => {
-                        onEdgesChangeCallback?.(currentEdges);
-                        return currentEdges;
-                    });
-                }, 0);
-            }
+          onEdgesChange(changes);
+
+          // Notify parent if edges were removed
+          const removed = changes.filter(c => c.type === 'remove');
+          if (removed.length > 0) {
+            // We use a timeout to let setEdges apply first, then callback with current edges
+            setTimeout(() => {
+              setEdges(currentEdges => {
+                onEdgesChangeCallback?.(currentEdges);
+                return currentEdges;
+              });
+            }, 0);
+          }
         }}
         onConnect={onConnect}
         onInit={setReactFlowInstance}
@@ -297,14 +425,18 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        connectionLineComponent={CustomConnectionLine}
+        onPaneClick={onPaneClick}
         fitView
         className="bg-slate-50"
+        proOptions={{ hideAttribution: true }}
       >
         <Controls />
         <MiniMap zoomable pannable nodeClassName={(n) => {
-            if (n.type === 'trigger') return 'bg-indigo-500';
-            if (n.type === 'ai') return 'bg-indigo-500';
-            return 'bg-indigo-500';
+          if (n.type === 'trigger') return 'bg-indigo-500';
+          if (n.type === 'ai') return 'bg-indigo-500';
+          return 'bg-indigo-500';
         }} />
         <Background color="#cbd5e1" gap={24} size={2} />
       </ReactFlow>

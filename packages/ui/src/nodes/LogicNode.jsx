@@ -2,7 +2,7 @@ import React from 'react';
 import BaseNode from './BaseNode';
 
 const LogicNode = ({ data, isConnectable }) => {
-    const { title, description, isActive, onClick, subType } = data;
+    const { title, description, isActive, onClick, subType, onDelete, onHandleClick } = data;
     
     let customOutputHandles = null;
     
@@ -26,7 +26,9 @@ const LogicNode = ({ data, isConnectable }) => {
             description={description}
             isActive={isActive}
             onClick={onClick}
+            onHandleClick={onHandleClick}
             isConnectable={isConnectable}
+            onDelete={onDelete}
             showInputHandle={true}
             showOutputHandle={true}
             customOutputHandles={customOutputHandles}

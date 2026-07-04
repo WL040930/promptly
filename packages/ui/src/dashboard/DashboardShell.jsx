@@ -117,7 +117,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
         <div ref={container} className="flex h-screen bg-[#f7f9fc] text-slate-900 font-sans overflow-hidden">
             
             {/* Global Sidebar */}
-            <aside className={`dashboard-sidebar bg-slate-50 border-r border-slate-200 flex flex-col transition-all duration-300 relative z-20 ${isCollapsed ? 'w-[70px]' : 'w-[260px]'}`}>
+            <aside className={`dashboard-sidebar bg-slate-50 border-r border-slate-200 flex flex-col transition-all duration-300 relative z-20 shrink-0 ${isCollapsed ? 'w-[70px]' : 'w-[260px]'}`}>
                 
                 {/* Brand & Toggle */}
                 <div className={`h-16 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between px-4'} border-b border-transparent`}>

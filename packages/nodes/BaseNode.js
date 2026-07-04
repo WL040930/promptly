@@ -15,3 +15,8 @@ export class BaseNode {
         throw new Error("Execute method not implemented");
     }
 }
+
+export class TriggerNode extends BaseNode {}
+export class ActionNode extends BaseNode {}
+export class LogicNode extends BaseNode {}
+export class AINode extends BaseNode {}

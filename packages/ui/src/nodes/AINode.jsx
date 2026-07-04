@@ -2,7 +2,7 @@ import React from 'react';
 import BaseNode from './BaseNode';
 
 const AINode = ({ data, isConnectable }) => {
-    const { title, description, isActive, onClick } = data;
+    const { title, description, isActive, onClick, onDelete, onHandleClick } = data;
     return (
         <BaseNode
             type="ai"
@@ -10,7 +10,9 @@ const AINode = ({ data, isConnectable }) => {
             description={description}
             isActive={isActive}
             onClick={onClick}
+            onHandleClick={onHandleClick}
             isConnectable={isConnectable}
+            onDelete={onDelete}
             showInputHandle={true}
             showOutputHandle={true}
         >

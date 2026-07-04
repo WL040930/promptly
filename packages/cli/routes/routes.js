@@ -11,6 +11,7 @@ import logRoutes from './builder/logRoutes.js';
 import dashboardRoutes from './dashboard/dashboardRoutes.js';
 import chatRoutes from './chat/chatRoutes.js';
 import storageRoutes from './storage/storageRoutes.js';
+import nodeRoutes from './builder/nodeRoutes.js';
 import rateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -33,5 +34,6 @@ router.use('/forms', formRoutes);
 router.use('/logs', logRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/chat', chatRoutes);
+router.use('/nodes', nodeRoutes);
 
 export default router;

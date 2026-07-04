@@ -12,81 +12,11 @@ import LogsTab from '../chat/components/LogsTab';
 import { navigate, parsePath } from '../utils/router.js';
 import { useWorkflows, useCreateWorkflow, useUpdateWorkflow } from '../api/hooks/useWorkflows.js';
 import { useFolders } from '../api/hooks/useFolders.js';
+import { formatLastEdited } from './utils/timeUtils.js';
 
-const SYSTEM_NODES = {
-    'Triggers': [
-        { type: 'trigger', subType: 'webhook', title: 'Webhook Trigger', description: 'Trigger via HTTP POST' },
-        { type: 'trigger', subType: 'schedule', title: 'Schedule', description: 'Run at specific times' },
-        { type: 'trigger', subType: 'form', title: 'Form Submission', description: 'Native integration with Promptly forms' },
-        { type: 'trigger', subType: 'googleSheets', title: 'Google Sheets Trigger', description: 'Trigger on new row or cell update' },
-    ],
-    'AI Nodes': [
-        { type: 'ai', subType: 'extract', title: 'Extract Intent', description: 'Parse unstructured text into JSON' },
-        { type: 'ai', subType: 'summarize', title: 'Summarize', description: 'Condense long text into summary' },
-        { type: 'ai', subType: 'generate', title: 'Generate Response', description: 'Draft emails or reports based on context' },
-        { type: 'ai', subType: 'categorize', title: 'Categorize Data', description: 'Classify text into predefined categories' },
-    ],
-    'Logic': [
-        { type: 'logic', subType: 'condition', title: 'Condition (If/Else)', description: 'Branch execution based on variables' },
-        { type: 'logic', subType: 'switch', title: 'Switch / Router', description: 'Route execution down multiple paths' },
-        { type: 'logic', subType: 'loop', title: 'Loop (ForEach)', description: 'Iterate over an array of items' },
-        { type: 'logic', subType: 'delay', title: 'Wait / Delay', description: 'Pause execution for duration' },
-    ],
-    'Actions': [
-        { type: 'action', subType: 'http', title: 'HTTP Request', description: 'Generic REST API client' },
-        { type: 'action', subType: 'googleSheets', title: 'Google Sheets Action', description: 'Create, Read, Update, Delete rows' },
-        { type: 'action', subType: 'database', title: 'Database Insert', description: 'Save to DB' },
-        { type: 'action', subType: 'slack', title: 'Send Slack', description: 'Send a Slack message' },
-        { type: 'action', subType: 'ticket', title: 'Create Ticket', description: 'Create Jira ticket' },
-    ]
-};
+import { useQuery } from '@tanstack/react-query';
 
-const SIDEBAR_ICONS = {
-    trigger: (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-orange-500 shrink-0">
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-        </svg>
-    ),
-    ai: (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-indigo-600 shrink-0">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-        </svg>
-    ),
-    logic: (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-blue-500 shrink-0">
-            <circle cx="12" cy="12" r="10"></circle>
-            <path d="M12 8v4l3 3"></path>
-        </svg>
-    ),
-    action: (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-emerald-500 shrink-0">
-            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-        </svg>
-    )
-};
-
-const CARD_STYLES = {
-    trigger: {
-        border: 'border-l-4 border-l-orange-500 hover:border-orange-200 hover:bg-orange-50/10',
-        badge: 'bg-orange-500/10 text-orange-600 border-orange-500/10',
-        shadow: 'hover:shadow-[0_4px_12px_rgba(249,115,22,0.08)] hover:-translate-y-0.5'
-    },
-    ai: {
-        border: 'border-l-4 border-l-indigo-500 hover:border-indigo-200 hover:bg-indigo-50/10',
-        badge: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/10',
-        shadow: 'hover:shadow-[0_4px_12px_rgba(99,102,241,0.08)] hover:-translate-y-0.5'
-    },
-    logic: {
-        border: 'border-l-4 border-l-blue-500 hover:border-blue-200 hover:bg-blue-50/10',
-        badge: 'bg-blue-500/10 text-blue-600 border-blue-500/10',
-        shadow: 'hover:shadow-[0_4px_12px_rgba(59,130,246,0.08)] hover:-translate-y-0.5'
-    },
-    action: {
-        border: 'border-l-4 border-l-emerald-500 hover:border-emerald-200 hover:bg-emerald-50/10',
-        badge: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/10',
-        shadow: 'hover:shadow-[0_4px_12px_rgba(16,185,129,0.08)] hover:-translate-y-0.5'
-    }
-};
+import { ICON_MAP } from './utils/iconMap.jsx';
 
 const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) => {
     const { data: folders = [], isLoading: isFoldersLoading } = useFolders();
@@ -94,6 +24,15 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     const createWorkflowMutation = useCreateWorkflow();
     const updateWorkflowMutation = useUpdateWorkflow();
     const queryClient = useQueryClient();
+
+    const { data: nodeLibrary = [], isLoading: isNodeLibraryLoading } = useQuery({
+        queryKey: ['nodeLibrary'],
+        queryFn: async () => {
+            const response = await fetch('/api/nodes/library');
+            if (!response.ok) throw new Error('Network response was not ok');
+            return response.json();
+        }
+    });
 
     const setFolders = (updater) => {
         queryClient.setQueryData(['folders'], old => {
@@ -112,13 +51,22 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         });
     };
 
-    const loading = isFoldersLoading || isWorkflowsLoading;
+    // Only show skeleton on initial load (no data yet), not on background refetches
+    const loading = (isFoldersLoading && folders.length === 0) || (isWorkflowsLoading && workflowsData.length === 0);
 
     const workflows = useMemo(() => {
         const map = {};
         workflowsData.forEach(w => { map[w.id] = w; });
         return map;
     }, [workflowsData]);
+
+    // Force re-render every minute so the relative time updates in real-time
+    const [currentTime, setCurrentTime] = useState(() => Date.now());
+    
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(Date.now()), 60000);
+        return () => clearInterval(timer);
+    }, []);
 
     // ── URL-driven view mode ─────────────────────────────────────────────────
     const getViewStateFromUrl = () => {
@@ -174,7 +122,6 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
             name: 'New Sequence Automation',
             folderId: folders.length > 0 ? folders[0].id : null,
             status: 'Draft',
-            lastEdited: 'Just now',
             iconColor: 'text-indigo-600',
             iconBg: 'bg-indigo-100',
             nodes: []
@@ -208,6 +155,10 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     // Track dragged node for canvas live preview
     const [draggedNode, setDraggedNode] = useState(null);
 
+    // Title inline editing
+    const [isEditingTitle, setIsEditingTitle] = useState(false);
+    const [titleInput, setTitleInput] = useState('');
+
     const builderContainer = useRef(null);
 
     useGSAP(() => {
@@ -233,6 +184,18 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
             id: activeWorkflowId,
             data: updatedFields
         });
+    };
+
+    const handleTitleEditStart = () => {
+        setTitleInput(activeWorkflow?.name || 'Untitled');
+        setIsEditingTitle(true);
+    };
+
+    const handleTitleEditComplete = () => {
+        if (titleInput.trim() && titleInput !== activeWorkflow?.name) {
+            handleWorkflowUpdate({ name: titleInput.trim() });
+        }
+        setIsEditingTitle(false);
     };
 
     // Handle node selection
@@ -275,20 +238,42 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         setActiveNodeId(newNodeId);
     };
 
-    // Update node positions when dragged in the canvas
+    // Update node positions and handle deletions when changed in the canvas
     const handleNodesChange = (changes) => {
-        const positionChanges = changes.filter(c => c.type === 'position' && c.position);
-        if (positionChanges.length === 0) return;
+        const positionChanges = changes.filter(c => c.type === 'position' && c.position && !c.dragging);
+        const removeChanges = changes.filter(c => c.type === 'remove');
 
-        const updatedNodes = nodes.map(node => {
-            const change = positionChanges.find(c => c.id === node.id);
-            if (change) {
-                return { ...node, position: change.position };
+        if (positionChanges.length === 0 && removeChanges.length === 0) return;
+
+        let updatedNodes = [...nodes];
+        let hasChanges = false;
+
+        if (positionChanges.length > 0) {
+            updatedNodes = updatedNodes.map(node => {
+                const change = positionChanges.find(c => c.id === node.id);
+                if (change) {
+                    return { ...node, position: change.position };
+                }
+                return node;
+            });
+            hasChanges = true;
+        }
+
+        if (removeChanges.length > 0) {
+            const removeIds = removeChanges.map(c => c.id);
+            updatedNodes = updatedNodes.filter(node => !removeIds.includes(node.id));
+            hasChanges = true;
+            
+            // If active node is deleted, clear selection
+            if (removeIds.includes(activeNodeId)) {
+                setActiveNodeId(null);
+                setIsRightSidebarOpen(false);
             }
-            return node;
-        });
+        }
 
-        handleWorkflowUpdate({ nodes: updatedNodes });
+        if (hasChanges) {
+            handleWorkflowUpdate({ nodes: updatedNodes });
+        }
     };
 
     // Live update of node configuration from properties panel
@@ -383,7 +368,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
             
             {/* 1. LEFT SIDEBAR: Node Library */}
             <aside 
-                className={`bg-slate-50/90 backdrop-blur-md border-r border-slate-200/60 flex flex-col h-full transition-all duration-300 relative z-20 ${
+                className={`bg-slate-50/90 backdrop-blur-md border-r border-slate-200/60 flex flex-col h-full transition-all duration-300 relative z-20 shrink-0 ${
                     isLeftSidebarOpen ? 'w-72' : 'w-0 opacity-0 overflow-hidden border-none'
                 }`}
             >
@@ -403,67 +388,99 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                 </div>
 
                 {/* Node List */}
-                <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-4">
-                    {Object.entries(SYSTEM_NODES).map(([category, items]) => {
-                        const filteredItems = items.filter(item => 
-                            item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            item.description.toLowerCase().includes(searchQuery.toLowerCase())
-                        );
+                <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-5">
+                    {isNodeLibraryLoading ? (
+                        <div className="flex items-center justify-center h-full">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+                        </div>
+                    ) : (
+                        nodeLibrary.map((section) => {
+                            // Filter groups and items based on search
+                            const filteredGroups = section.groups.map(group => {
+                                const filteredItems = group.items.filter(item => 
+                                    item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                    item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    group.name.toLowerCase().includes(searchQuery.toLowerCase())
+                                );
+                                return { ...group, items: filteredItems };
+                            }).filter(group => group.items.length > 0);
 
-                        if (filteredItems.length === 0 && searchQuery) return null;
+                            if (filteredGroups.length === 0 && searchQuery) return null;
 
-                        return (
-                            <div key={category} className="flex flex-col gap-2">
-                                <div className="flex items-center gap-1.5 text-slate-400 px-1 select-none">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                                    <span className="text-xs font-semibold text-slate-500">{category}</span>
-                                </div>
+                            return (
+                                <div key={section.category} className="flex flex-col gap-3">
+                                    {/* Category Header */}
+                                    <div className="flex items-center gap-1.5 text-slate-400 px-1 select-none border-b border-slate-200/50 pb-1.5">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                        <span className="text-sm font-bold text-slate-700 tracking-tight">{section.category}</span>
+                                    </div>
 
-                                <div className="flex flex-col gap-2">
-                                    {filteredItems.map(node => {
-                                        const isDragging = draggedNode?.title === node.title;
-                                        const typeIcon = SIDEBAR_ICONS[node.type] || SIDEBAR_ICONS.ai;
-                                        const nodeTheme = CARD_STYLES[node.type] || CARD_STYLES.ai;
-                                        
-                                        return (
-                                            <div
-                                                key={node.title}
-                                                draggable
-                                                onDragStart={(e) => {
-                                                    setDraggedNode(node);
-                                                    e.dataTransfer.setData('application/reactflow-type', node.type);
-                                                    e.dataTransfer.setData('application/reactflow-data', JSON.stringify(node));
-                                                    e.dataTransfer.effectAllowed = 'copy';
-                                                    
-                                                    // Hide the default browser drag ghost
-                                                    const img = new Image();
-                                                    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-                                                    e.dataTransfer.setDragImage(img, 0, 0);
-                                                }}
-                                                onDragEnd={() => setDraggedNode(null)}
-                                                className={`bg-white border-t border-r border-b border-slate-200 p-3 rounded-r-xl cursor-grab active:cursor-grabbing transition-all duration-300 flex flex-col gap-1.5 ${nodeTheme.border} ${nodeTheme.shadow} ${
-                                                    isDragging 
-                                                        ? 'opacity-30 border-dashed border-slate-300' 
-                                                        : ''
-                                                }`}
-                                            >
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <span className="text-sm font-medium text-slate-800 truncate">{node.title}</span>
-                                                    <div className="flex items-center gap-1.5 shrink-0">
-                                                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border select-none ${nodeTheme.badge}`}>
-                                                            {node.type}
-                                                        </span>
-                                                        {typeIcon}
-                                                    </div>
+                                    {/* Groups */}
+                                    <div className="flex flex-col gap-4">
+                                        {filteredGroups.map(group => (
+                                            <div key={group.name} className="flex flex-col gap-2">
+                                                {/* Sub-group Header */}
+                                                <div className="px-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider select-none">
+                                                    {group.name}
                                                 </div>
-                                                <p className="text-xs font-medium text-slate-500 leading-snug line-clamp-1">{node.description}</p>
+
+                                                {/* Nodes */}
+                                                <div className="flex flex-col gap-2">
+                                                    {group.items.map(node => {
+                                                        const isDragging = draggedNode?.title === node.title;
+                                                        
+                                                        // Fallback UI if not defined
+                                                        const color = node.color || 'text-slate-500';
+                                                        const bgColor = node.bgColor || 'bg-slate-100';
+                                                        const borderColor = node.borderColor || 'border-slate-300';
+                                                        const shadow = node.shadow || 'hover:shadow-slate-200';
+                                                        const IconComponent = ICON_MAP[node.icon] || ICON_MAP.default;
+
+                                                        return (
+                                                            <div
+                                                                key={node.title}
+                                                                draggable
+                                                                onDragStart={(e) => {
+                                                                    setDraggedNode(node);
+                                                                    e.dataTransfer.setData('application/reactflow-type', node.type);
+                                                                    e.dataTransfer.setData('application/reactflow-data', JSON.stringify(node));
+                                                                    e.dataTransfer.effectAllowed = 'copy';
+                                                                    
+                                                                    const img = new Image();
+                                                                    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                                                                    e.dataTransfer.setDragImage(img, 0, 0);
+                                                                }}
+                                                                onDragEnd={() => setDraggedNode(null)}
+                                                                className={`group bg-white p-3 rounded-xl cursor-grab active:cursor-grabbing transition-all duration-300 flex items-start gap-3 border border-slate-200 hover:shadow-md hover:-translate-y-0.5 hover:border-${color.replace('text-', '').replace('500', '300')} ${
+                                                                    isDragging ? 'opacity-30 border-dashed border-slate-300' : ''
+                                                                }`}
+                                                            >
+                                                                {/* Icon Container */}
+                                                                <div className={`mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${bgColor} ${color} border border-${color.replace('text-', '').replace('500', '100')} group-hover:scale-105 transition-transform`}>
+                                                                    {IconComponent}
+                                                                </div>
+                                                                
+                                                                {/* Content */}
+                                                                <div className="flex flex-col flex-1 min-w-0">
+                                                                    <div className="flex items-center justify-between gap-2 mb-1">
+                                                                        <span className="text-[13px] font-bold text-slate-800 truncate group-hover:text-slate-900 transition-colors">{node.title}</span>
+                                                                        <span className={`text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-slate-50 text-slate-400 border border-slate-200 select-none`}>
+                                                                            {node.type}
+                                                                        </span>
+                                                                    </div>
+                                                                    <p className="text-[11px] font-medium text-slate-500 leading-snug line-clamp-2">{node.description}</p>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
-                                        );
-                                    })}
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        );
-                    })}
+                            );
+                        })
+                    )}
                 </div>
             </aside>
 
@@ -506,7 +523,31 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                         <div className="flex items-center gap-1.5 flex-1 min-w-0">
                             <span className="text-slate-500 text-sm font-medium truncate hidden sm:block">{activeFolderName}</span>
                             <span className="text-slate-300 text-sm hidden sm:block">/</span>
-                            <h2 className="text-base font-semibold text-slate-900 truncate">{activeWorkflow?.name || 'Untitled'}</h2>
+                            
+                            {isEditingTitle ? (
+                                <input
+                                    autoFocus
+                                    className="text-base font-semibold text-slate-900 bg-white border border-indigo-300 rounded px-1.5 py-0.5 outline-none focus:ring-2 focus:ring-indigo-500/20 w-48"
+                                    value={titleInput}
+                                    onChange={(e) => setTitleInput(e.target.value)}
+                                    onBlur={handleTitleEditComplete}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleTitleEditComplete();
+                                        if (e.key === 'Escape') setIsEditingTitle(false);
+                                    }}
+                                />
+                            ) : (
+                                <div 
+                                    className="flex items-center gap-1.5 group cursor-pointer hover:bg-slate-100 rounded px-1.5 py-0.5 transition-colors"
+                                    onClick={handleTitleEditStart}
+                                    title="Click to edit name"
+                                >
+                                    <h2 className="text-base font-semibold text-slate-900 truncate">
+                                        {activeWorkflow?.name || 'Untitled'}
+                                    </h2>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                                </div>
+                            )}
                             <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded ml-2 ${
                                 activeWorkflow?.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
                             }`}>
@@ -537,7 +578,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                 {/* Breadcrumbs / Last edited subheader */}
                 <div className="px-6 py-2 bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-500 flex items-center justify-between shrink-0">
                     <span>Active nodes: {nodes.length}</span>
-                    <span>Last edit: {activeWorkflow?.lastEdited || 'Never'}</span>
+                    <span>Last edit: {formatLastEdited(activeWorkflow?.updatedAt || activeWorkflow?.createdAt, currentTime)}</span>
                 </div>
 
                 {/* Workflow Canvas Workspace */}
@@ -555,7 +596,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
 
             {/* 3. RIGHT PANEL: Promptly Agent & Property Inspector */}
             <aside 
-                className={`bg-white/90 backdrop-blur-md border-l border-slate-200/60 flex flex-col h-full transition-all duration-300 relative z-20 shadow-xl ${
+                className={`bg-white/90 backdrop-blur-md border-l border-slate-200/60 flex flex-col h-full transition-all duration-300 relative z-20 shadow-xl shrink-0 ${
                     isRightSidebarOpen ? 'w-[340px]' : 'w-0 opacity-0 overflow-hidden border-none'
                 }`}
             >

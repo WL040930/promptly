@@ -2,7 +2,7 @@ import React from 'react';
 import BaseNode from './BaseNode';
 
 const TriggerNode = ({ data, isConnectable }) => {
-    const { title, description, isActive, onClick } = data;
+    const { title, description, isActive, onClick, onDelete, onHandleClick } = data;
     return (
         <BaseNode
             type="trigger"
@@ -10,6 +10,8 @@ const TriggerNode = ({ data, isConnectable }) => {
             description={description}
             isActive={isActive}
             onClick={onClick}
+            onHandleClick={onHandleClick}
+            onDelete={onDelete}
             isConnectable={isConnectable}
             showInputHandle={false}
             showOutputHandle={true}

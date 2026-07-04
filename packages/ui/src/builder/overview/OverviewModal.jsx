@@ -1,6 +1,6 @@
 import React from 'react';
 
-const OverviewModal = ({ config, inputValue, onInputChange, onCancel, onConfirm }) => {
+const OverviewModal = ({ config, inputValue, isSubmitting, onInputChange, onCancel, onConfirm }) => {
     if (!config) return null;
 
     return (
@@ -14,11 +14,12 @@ const OverviewModal = ({ config, inputValue, onInputChange, onCancel, onConfirm 
                             <input
                                 type="text"
                                 autoFocus
+                                disabled={isSubmitting}
                                 value={inputValue}
                                 onChange={(event) => onInputChange(event.target.value)}
-                                onKeyDown={(event) => event.key === 'Enter' && onConfirm()}
+                                onKeyDown={(event) => event.key === 'Enter' && !isSubmitting && onConfirm()}
                                 placeholder={config.placeholder}
-                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                             />
                         ) : (
                             <p className="text-sm font-medium text-slate-500">{config.message}</p>
@@ -29,17 +30,25 @@ const OverviewModal = ({ config, inputValue, onInputChange, onCancel, onConfirm 
                 <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
                     <button
                         onClick={onCancel}
-                        className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-colors"
+                        disabled={isSubmitting}
+                        className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         Cancel
                     </button>
                     <button
                         onClick={onConfirm}
-                        className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-all shadow-sm ${config.isDestructive
+                        disabled={isSubmitting}
+                        className={`flex items-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-lg transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${config.isDestructive
                                 ? 'bg-red-600 hover:bg-red-700 hover:shadow-red-600/20'
                                 : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-600/20'
                             }`}
                     >
+                        {isSubmitting && (
+                            <svg className="animate-spin -ml-1 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        )}
                         {config.confirmLabel}
                     </button>
                 </div>

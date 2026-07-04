@@ -47,12 +47,14 @@ const BaseNode = ({
     description,
     isActive,
     onClick,
+    onHandleClick,
     isConnectable = true,
     showInputHandle = type !== 'trigger',
     showOutputHandle = true,
     customOutputHandles,
     icon,
-    children
+    children,
+    onDelete
 }) => {
     const style = NODE_STYLES[type] || NODE_STYLES.ai;
     const nodeIcon = icon || style.icon;
@@ -73,8 +75,9 @@ const BaseNode = ({
                     type="target"
                     position={Position.Left}
                     isConnectable={isConnectable}
-                    className="!w-3 !h-3 !bg-white !border-2 !border-slate-300 hover:!border-indigo-500 hover:!scale-125 !transition-all"
+                    className="!w-3 !h-3 !bg-white !border-2 !border-slate-300 hover:!border-indigo-500 hover:!bg-indigo-50 !transition-all"
                     style={{ left: '-6px' }}
+                    onClick={(e) => onHandleClick?.(e, null, 'target')}
                 />
             )}
 
@@ -84,7 +87,23 @@ const BaseNode = ({
             </div>
 
             {/* Content Body */}
-            <div className="p-3 flex flex-col justify-center flex-1 min-w-0 bg-white rounded-r-lg relative">
+            <div className="p-3 flex flex-col justify-center flex-1 min-w-0 bg-white rounded-r-lg relative group/body">
+                {isActive && onDelete && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onDelete();
+                        }}
+                        className="absolute top-2 right-2 text-slate-400 hover:text-red-500 bg-white hover:bg-red-50 p-1 rounded transition-colors z-30 shadow-sm border border-transparent hover:border-red-200"
+                        title="Delete node"
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 6h18"></path>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                    </button>
+                )}
+                
                 <h4 className="text-[13px] font-bold text-slate-800 tracking-tight truncate pr-8">
                     {title}
                 </h4>
@@ -92,14 +111,15 @@ const BaseNode = ({
                     {description}
                 </p>
                 {children}
+
             </div>
 
             {/* Output Handles (Right) */}
             {customOutputHandles && customOutputHandles.length > 0 ? (
-                <div className="absolute -right-[6px] top-0 h-full flex flex-col justify-evenly pointer-events-none">
+                <div className="absolute -right-[6px] top-0 h-full flex flex-col justify-evenly pointer-events-none z-30">
                     {customOutputHandles.map((handle) => (
-                        <div key={handle.id} className="relative flex items-center pointer-events-auto">
-                            <span className="absolute right-3 text-[9px] font-bold text-slate-500 bg-white px-1 shadow-sm rounded-sm whitespace-nowrap">
+                        <div key={handle.id} className="group relative flex items-center pointer-events-auto">
+                            <span className="absolute left-4 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold text-white bg-slate-800 px-2 py-0.5 shadow-md rounded whitespace-nowrap pointer-events-none">
                                 {handle.label}
                             </span>
                             <Handle
@@ -107,7 +127,8 @@ const BaseNode = ({
                                 position={Position.Right}
                                 id={handle.id}
                                 isConnectable={isConnectable}
-                                className="!w-3 !h-3 !bg-white !border-2 !border-slate-300 hover:!border-indigo-500 hover:!scale-125 !transition-all !relative !transform-none !left-0 !right-0 !top-0"
+                                className="!w-3 !h-3 !bg-white !border-2 !border-slate-300 hover:!border-indigo-500 hover:!bg-indigo-50 !transition-all !relative !transform-none !left-0 !right-0 !top-0"
+                                onClick={(e) => onHandleClick?.(e, handle.id, 'source')}
                             />
                         </div>
                     ))}
@@ -117,8 +138,9 @@ const BaseNode = ({
                     type="source"
                     position={Position.Right}
                     isConnectable={isConnectable}
-                    className="!w-3 !h-3 !bg-white !border-2 !border-slate-300 hover:!border-indigo-500 hover:!scale-125 !transition-all"
+                    className="!w-3 !h-3 !bg-white !border-2 !border-slate-300 hover:!border-indigo-500 hover:!bg-indigo-50 !transition-all"
                     style={{ right: '-6px' }}
+                    onClick={(e) => onHandleClick?.(e, null, 'source')}
                 />
             ) : null}
         </div>

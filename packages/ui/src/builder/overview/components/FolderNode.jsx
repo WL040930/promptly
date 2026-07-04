@@ -18,7 +18,9 @@ const FolderNode = ({
     onDragLeave,
     onDrop,
     onSelectWorkflow,
-    MODAL_TYPES
+    MODAL_TYPES,
+    currentTime,
+    formatLastEdited
 }) => {
     const childFolders = foldersByParent.get(folder.id) || [];
     const folderWorkflows = workflowsByFolder.get(folder.id) || [];
@@ -100,6 +102,8 @@ const FolderNode = ({
                             onDrop={onDrop}
                             onSelectWorkflow={onSelectWorkflow}
                             MODAL_TYPES={MODAL_TYPES}
+                            currentTime={currentTime}
+                            formatLastEdited={formatLastEdited}
                         />
                     ))}
 
@@ -127,7 +131,7 @@ const FolderNode = ({
                                 </div>
                                 <div className="flex flex-col flex-1 min-w-0">
                                     <span className="text-sm font-medium text-slate-900 group-hover:text-indigo-700 transition-colors leading-tight truncate">{workflow.name}</span>
-                                    <span className="text-xs font-medium text-slate-500 leading-tight mt-0.5">{workflow.status || 'Draft'} • Updated {workflow.updated || 'Just now'}</span>
+                                    <span className="text-xs font-medium text-slate-500 leading-tight mt-0.5">{workflow.status || 'Draft'} • Updated {formatLastEdited ? formatLastEdited(workflow.updatedAt || workflow.createdAt, currentTime) : workflow.updated || 'Just now'}</span>
                                 </div>
                                 <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-0.5 shrink-0 bg-indigo-50 z-10 px-1 rounded">
                                     <button onClick={(event) => { event.stopPropagation(); openModal(MODAL_TYPES.RENAME_WORKFLOW, { workflowId: workflow.id, currentName: workflow.name }); }} className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-all">

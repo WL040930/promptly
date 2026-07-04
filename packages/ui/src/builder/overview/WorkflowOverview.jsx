@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState, useRef } from 'react';
+import React, { useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import OverviewModal from './OverviewModal';
@@ -6,6 +6,8 @@ import StatsCards from './components/StatsCards';
 import FolderNode from './components/FolderNode';
 import { buildFoldersByParent, buildWorkflowsByFolder, collectDescendantIds } from '../utils/treeUtils';
 import { createFolder, updateFolder, deleteFolder, createWorkflow, updateWorkflow, deleteWorkflow } from '../../api/backend.js';
+import { formatLastEdited } from '../utils/timeUtils.js';
+import { useToast } from '../../components/ToastContext.jsx';
 
 const MODAL_TYPES = {
     NEW_FOLDER: 'NEW_FOLDER',
@@ -64,9 +66,73 @@ const MODAL_CONFIG = {
 const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCreateWorkflow, onSelectWorkflow }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [modal, setModal] = useState({ isOpen: false, type: null, data: null, inputValue: '' });
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isCreateDropdownOpen, setIsCreateDropdownOpen] = useState(false);
+    const toast = useToast();
     const [dragInfo, setDragInfo] = useState({ type: null, id: null });
     const [dragOverFolderId, setDragOverFolderId] = useState(null);
     const container = useRef(null);
+    const createDropdownRef = useRef(null);
+    const fileInputRef = useRef(null);
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (createDropdownRef.current && !createDropdownRef.current.contains(event.target)) {
+                setIsCreateDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const handleImportJson = async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            
+            // Basic validation
+            if (!data.nodes || !Array.isArray(data.nodes)) {
+                throw new Error("Invalid workflow JSON format");
+            }
+
+            const wfData = {
+                name: data.name || 'Imported Workflow',
+                folderId: null,
+                status: data.status || 'Draft',
+                iconColor: data.iconColor || 'text-indigo-600',
+                iconBg: data.iconBg || 'bg-indigo-100',
+                nodes: data.nodes
+            };
+
+            const newWf = await createWorkflow(wfData);
+            setWorkflows((prev) => ({
+                ...prev,
+                [newWf.id]: newWf
+            }));
+            
+            toast.success('Workflow imported successfully');
+            if (onSelectWorkflow) onSelectWorkflow(newWf.id);
+        } catch (error) {
+            console.error("Failed to import workflow", error);
+            toast.error(error.message || "Failed to parse JSON file");
+        }
+        
+        // Reset file input
+        event.target.value = '';
+        setIsCreateDropdownOpen(false);
+    };
+
+    // Force re-render every minute for real-time relative time display
+    const [currentTime, setCurrentTime] = useState(() => Date.now());
+    
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(Date.now()), 60000);
+        return () => clearInterval(timer);
+    }, []);
 
     useGSAP(() => {
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
@@ -83,6 +149,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
     const folderById = useMemo(() => new Map(folders.map((folder) => [folder.id, folder])), [folders]);
     
     const rootFolders = foldersByParent.get(null) || [];
+    const rootWorkflows = workflowsByFolder.get(null) || [];
     const modalConfig = modal.type ? MODAL_CONFIG[modal.type] : null;
 
     const activeWorkflowCount = useMemo(
@@ -112,6 +179,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
     const handleModalSubmit = useCallback(async () => {
         const value = modal.inputValue.trim();
 
+        setIsSubmitting(true);
         try {
             switch (modal.type) {
                 case MODAL_TYPES.NEW_FOLDER:
@@ -121,6 +189,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                             ...prev,
                             { ...newFolder, isExpanded: true }
                         ]));
+                        toast.success('Folder created successfully');
                     }
                     break;
                 case MODAL_TYPES.NEW_WORKFLOW:
@@ -129,7 +198,6 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                             folderId: modal.data.folderId,
                             name: value,
                             status: 'Draft',
-                            lastEdited: 'Just now',
                             iconColor: 'text-indigo-600',
                             iconBg: 'bg-indigo-100',
                             nodes: []
@@ -139,6 +207,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                             ...prev,
                             [newWf.id]: newWf
                         }));
+                        toast.success('Workflow created successfully');
                     }
                     break;
                 case MODAL_TYPES.RENAME_FOLDER:
@@ -147,6 +216,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                         setFolders((prev) => prev.map((folder) => (
                             folder.id === modal.data.folderId ? { ...folder, name: value } : folder
                         )));
+                        toast.success('Folder renamed');
                     }
                     break;
                 case MODAL_TYPES.RENAME_WORKFLOW:
@@ -159,6 +229,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                                 name: value
                             }
                         }));
+                        toast.success('Workflow renamed');
                     }
                     break;
                 case MODAL_TYPES.DELETE_FOLDER: {
@@ -176,6 +247,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                         });
                         return next;
                     });
+                    toast.success('Folder deleted');
                     break;
                 }
                 case MODAL_TYPES.DELETE_WORKFLOW:
@@ -186,6 +258,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                             delete next[modal.data.workflowId];
                             return next;
                         });
+                        toast.success('Workflow deleted');
                     }
                     break;
                 default:
@@ -193,10 +266,12 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
             }
         } catch (error) {
             console.error("Failed to perform action", error);
+            toast.error(error.message || 'Failed to perform action');
+        } finally {
+            setIsSubmitting(false);
+            closeModal();
         }
-
-        closeModal();
-    }, [closeModal, folders, modal, setFolders, setWorkflows]);
+    }, [modal, folders, setFolders, setWorkflows, closeModal, toast]);
 
     const onDragStart = useCallback((event, type, id) => {
         event.stopPropagation();
@@ -291,13 +366,51 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                         <p className="text-sm text-slate-500 mt-1">Manage your automations and workspace health</p>
                     </div>
 
-                    <button
-                        onClick={onCreateWorkflow}
-                        className="bg-indigo-600 text-white font-medium text-sm py-2.5 px-5 rounded-xl shadow-sm hover:bg-indigo-700 hover:shadow transition-all flex items-center gap-2"
-                    >
-                        Create workflow
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                    </button>
+                    <div className="relative" ref={createDropdownRef}>
+                        <button
+                            onClick={() => setIsCreateDropdownOpen(!isCreateDropdownOpen)}
+                            className="bg-indigo-600 text-white font-medium text-sm py-2.5 px-5 rounded-xl shadow-sm hover:bg-indigo-700 hover:shadow transition-all flex items-center gap-2"
+                        >
+                            Create workflow
+                            <svg 
+                                width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                className={`transition-transform duration-200 ${isCreateDropdownOpen ? 'rotate-180' : ''}`}
+                            >
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+
+                        {isCreateDropdownOpen && (
+                            <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden z-30 animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="p-1.5 flex flex-col gap-0.5">
+                                    <button 
+                                        onClick={() => {
+                                            setIsCreateDropdownOpen(false);
+                                            onCreateWorkflow();
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-sm font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors flex items-center gap-2"
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                        Blank workflow
+                                    </button>
+                                    <button 
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="w-full text-left px-3 py-2 text-sm font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors flex items-center gap-2"
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                                        Import from JSON
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                        <input 
+                            type="file" 
+                            accept=".json" 
+                            className="hidden" 
+                            ref={fileInputRef}
+                            onChange={handleImportJson} 
+                        />
+                    </div>
                 </div>
 
                 <StatsCards activeWorkflowCount={activeWorkflowCount} />
@@ -333,9 +446,9 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                         }}
                         onDrop={handleRootDrop}
                     >
-                        {rootFolders.length === 0 && (
+                        {rootFolders.length === 0 && rootWorkflows.length === 0 && (
                             <div className="p-8 text-center text-slate-500 font-medium text-sm">
-                                No root folders. Create one to get started.
+                                No folders or workflows. Create one to get started.
                             </div>
                         )}
 
@@ -360,8 +473,45 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                                 onDrop={onDrop}
                                 onSelectWorkflow={onSelectWorkflow}
                                 MODAL_TYPES={MODAL_TYPES}
+                                currentTime={currentTime}
+                                formatLastEdited={formatLastEdited}
                             />
                         ))}
+
+                        {rootWorkflows.map((workflow) => {
+                            if (hasSearch && !workflow.name.toLowerCase().includes(searchValue)) return null;
+                            return (
+                                <div
+                                    key={workflow.id}
+                                    onClick={() => onSelectWorkflow?.(workflow.id, workflow.name, 'Root')}
+                                    className={`flex items-center gap-2.5 px-2 py-1.5 bg-white hover:bg-indigo-50 rounded-lg cursor-pointer transition-colors group relative border border-transparent hover:border-indigo-100 ${dragInfo.type === 'WORKFLOW' && dragInfo.id === workflow.id ? 'opacity-50 border-dashed border-indigo-300' : ''}`}
+                                >
+                                    <div
+                                        draggable
+                                        onDragStart={(event) => onDragStart(event, 'WORKFLOW', workflow.id)}
+                                        onDragEnd={onDragEnd}
+                                        className="absolute left-1 opacity-0 group-hover:opacity-100 text-slate-400 cursor-grab active:cursor-grabbing transition-opacity"
+                                    >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="5" r="1"></circle><circle cx="9" cy="19" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="5" r="1"></circle><circle cx="15" cy="19" r="1"></circle></svg>
+                                    </div>
+                                    <div className={`w-7 h-7 rounded-lg ${workflow.iconBg || 'bg-indigo-100'} ${workflow.iconColor || 'text-indigo-600'} flex items-center justify-center shrink-0 ml-5`}>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                                    </div>
+                                    <div className="flex flex-col flex-1 min-w-0">
+                                        <span className="text-sm font-medium text-slate-900 group-hover:text-indigo-700 transition-colors leading-tight truncate">{workflow.name}</span>
+                                        <span className="text-xs font-medium text-slate-500 leading-tight mt-0.5">{workflow.status || 'Draft'} • Updated {formatLastEdited ? formatLastEdited(workflow.updatedAt || workflow.createdAt, currentTime) : workflow.updated || 'Just now'}</span>
+                                    </div>
+                                    <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-0.5 shrink-0 bg-indigo-50 z-10 px-1 rounded">
+                                        <button onClick={(event) => { event.stopPropagation(); openModal(MODAL_TYPES.RENAME_WORKFLOW, { workflowId: workflow.id, currentName: workflow.name }); }} className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-all">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                                        </button>
+                                        <button onClick={(event) => { event.stopPropagation(); openModal(MODAL_TYPES.DELETE_WORKFLOW, { workflowId: workflow.id }); }} className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-200 transition-all">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             </div>
@@ -370,6 +520,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                 <OverviewModal
                     config={modalConfig}
                     inputValue={modal.inputValue}
+                    isSubmitting={isSubmitting}
                     onInputChange={(value) => setModal((prev) => ({ ...prev, inputValue: value }))}
                     onCancel={closeModal}
                     onConfirm={handleModalSubmit}
