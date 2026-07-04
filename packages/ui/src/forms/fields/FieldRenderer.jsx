@@ -246,4 +246,4 @@ const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
     }
 };
 
-export default FieldRenderer;
+export default React.memo(FieldRenderer);

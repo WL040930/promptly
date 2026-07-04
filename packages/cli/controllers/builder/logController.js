@@ -3,7 +3,7 @@ import { Op } from 'sequelize';
 import asyncHandler from '../../utils/asyncHandler.js';
 
 export const getExecutionLogs = asyncHandler(async (req, res) => {
-    const { search, status } = req.query;
+    const { search, status, limit = 100, offset = 0 } = req.query;
     
     let whereClause = { userId: req.user.id };
     
@@ -33,7 +33,8 @@ export const getExecutionLogs = asyncHandler(async (req, res) => {
     const logs = await ExecutionLog.findAll({
         where: whereClause,
         order: [['time', 'DESC']],
-        limit: 100
+        limit: parseInt(limit, 10),
+        offset: parseInt(offset, 10)
     });
     
     res.json(logs);

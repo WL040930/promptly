@@ -106,11 +106,18 @@ export const submitFormResponse = asyncHandler(async (req, res) => {
 
 export const getFormResponses = asyncHandler(async (req, res) => {
     const { formId } = req.params;
+    const { limit = 50, offset = 0 } = req.query;
+
     // Check form belongs to user
     const form = await Form.findOne({ where: { id: formId, userId: req.user.id } });
     if (!form) return res.status(404).json({ message: 'Form not found' });
 
-    const responses = await FormResponse.findAll({ where: { formId } });
+    const responses = await FormResponse.findAll({ 
+        where: { formId },
+        order: [['createdAt', 'DESC']],
+        limit: parseInt(limit, 10),
+        offset: parseInt(offset, 10)
+    });
     res.json(responses);
 });
 
