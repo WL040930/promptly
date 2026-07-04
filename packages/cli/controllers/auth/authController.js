@@ -103,7 +103,7 @@ const updateMode = async (req, res) => {
 const getMe = async (req, res) => {
     const user = await User.findByPk(req.user.id);
     if (!user) {
-        return res.status(404).json({ error: 'User not found.' });
+        return res.status(401).json({ error: 'User not found.' });
     }
     return res.json({
         user: {
@@ -133,8 +133,8 @@ export const forgotPassword = async (req, res) => {
     user.resetPasswordExpires = new Date(Date.now() + 3600000); // 1 hour from now
     await user.save();
 
-    // Use frontend URL for the link (assuming the app serves from the same domain or use an environment variable)
-    const resetUrl = `${req.protocol}://${req.get('host')}/reset-password/${resetToken}`;
+    // Use frontend URL for the link using the client origin environment variable
+    const resetUrl = `${env.app.clientOrigin}/reset-password/${resetToken}`;
 
     const message = `You are receiving this because you (or someone else) have requested the reset of the password for your account.\n\n`
         + `Please click on the following link, or paste this into your browser to complete the process:\n\n`

@@ -1,111 +1,64 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { generateFormFromPrompt, getFormChatHistory, addFormChatMessage, updateFormChatMessage } from '../../api/backend.js';
 import { useToast } from '../../components/ToastContext.jsx';
 
-export const useFormAIAssistant = (form, onUpdateForm) => {
-    const defaultMessage = {
-        id: 'init',
-        sender: 'bot',
-        text: "Hi! I'm your AI form designer. Describe what kind of form you want to build, or ask me to add specific fields.",
-    };
+const LIMIT = 50;
+const defaultMessage = {
+    id: 'init',
+    sender: 'bot',
+    text: "Hi! I'm your AI form designer. Describe what kind of form you want to build, or ask me to add specific fields.",
+};
 
-    const [messages, setMessages] = useState([]);
+export const useFormAIAssistant = (form, onUpdateForm) => {
+    const queryClient = useQueryClient();
+    const toast = useToast();
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
-    const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-    const [offset, setOffset] = useState(0);
-    const [hasMore, setHasMore] = useState(true);
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
-    const limit = 50;
-    const toast = useToast();
 
-    // Fetch history when form changes
-    useEffect(() => {
-        if (!form?.id) return;
-        
-        let isMounted = true;
-        const loadInitialHistory = async () => {
-            setIsLoadingHistory(true);
-            try {
-                const history = await getFormChatHistory(form.id, limit, 0);
-                if (isMounted) {
-                    if (history && history.length > 0) {
-                        setMessages(history);
-                        if (history.length < limit) {
-                            setHasMore(false);
-                        }
-                    } else {
-                        setMessages([defaultMessage]);
-                        setHasMore(false);
-                    }
-                    setOffset(history.length || 0);
-                }
-            } catch (error) {
-                console.error("Failed to load chat history:", error);
-                if (isMounted) {
-                    setMessages([defaultMessage]);
-                    toast.error("Failed to load chat history");
-                }
-            } finally {
-                if (isMounted) setIsLoadingHistory(false);
-            }
-        };
+    const queryKey = ['formChat', form?.id];
 
-        loadInitialHistory();
+    const {
+        data,
+        fetchNextPage,
+        hasNextPage,
+        isFetchingNextPage,
+        isLoading: isLoadingHistory
+    } = useInfiniteQuery({
+        queryKey,
+        queryFn: async ({ pageParam = 0 }) => {
+            const history = await getFormChatHistory(form.id, LIMIT, pageParam);
+            return {
+                messages: history || [],
+                nextOffset: history?.length === LIMIT ? pageParam + LIMIT : undefined
+            };
+        },
+        getNextPageParam: (lastPage) => lastPage.nextOffset,
+        enabled: !!form?.id,
+        staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+    });
 
-        return () => { isMounted = false; };
-    }, [form?.id]);
+    // Combine pages chronologically
+    const rawMessages = useMemo(() => {
+        if (!data) return [defaultMessage];
+        // data.pages is [page0 (latest), page1 (older), page2 (oldest)].
+        // We reverse the pages array so oldest page comes first, then flatMap.
+        const allMessages = [...data.pages].reverse().flatMap(page => page.messages);
+        return allMessages.length > 0 ? allMessages : [defaultMessage];
+    }, [data]);
 
-    const loadMoreHistory = useCallback(async () => {
-        if (!form?.id || !hasMore || isLoadingHistory) return;
-        
-        setIsLoadingHistory(true);
-        try {
-            const history = await getFormChatHistory(form.id, limit, offset);
-            if (history && history.length > 0) {
-                setMessages(prev => [...history, ...prev]);
-                setOffset(prev => prev + history.length);
-                if (history.length < limit) {
-                    setHasMore(false);
-                }
-            } else {
-                setHasMore(false);
-            }
-        } catch (error) {
-            console.error("Failed to load older messages:", error);
-            toast.error("Failed to load older messages");
-        } finally {
-            setIsLoadingHistory(false);
-        }
-    }, [form?.id, hasMore, isLoadingHistory, offset]);
-
-
-    const handleSend = async (text) => {
-        if (!text.trim() || isTyping || !form?.id) return;
-
-        setIsTyping(true);
-        
-        // Optimistic UI update for user message
-        const optimisticUserId = Date.now().toString();
-        setMessages(prev => [...prev, { id: optimisticUserId, sender: 'user', text }]);
-        setInput('');
-
-        try {
+    const sendMessageMutation = useMutation({
+        mutationFn: async (text) => {
             // Save user message to DB
             const savedUserMsg = await addFormChatMessage(form.id, { sender: 'user', text });
             
-            // Replace optimistic ID with real DB ID
-            setMessages(prev => prev.map(m => m.id === optimisticUserId ? savedUserMsg : m));
-
             // Generate AI response
             const result = await generateFormFromPrompt(text, form, form.id);
             
             // Save bot message to DB
-            let botMsgData = {
-                sender: 'bot',
-                text: result.message
-            };
+            let botMsgData = { sender: 'bot', text: result.message };
 
             if (result.type === 'proposal') {
                 botMsgData.proposal = {
@@ -122,35 +75,108 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
             }
 
             const savedBotMsg = await addFormChatMessage(form.id, botMsgData);
-            
-            // Add bot message to UI
-            setMessages(prev => [...prev, savedBotMsg]);
+            return { userMsg: savedUserMsg, botMsg: savedBotMsg };
+        },
+        onMutate: async (text) => {
+            setIsTyping(true);
+            setInput('');
+            await queryClient.cancelQueries({ queryKey });
 
-        } catch (error) {
-            console.error('AI Generation Error:', error);
-            
-            // Save error message to DB
-            const errorMsgData = {
-                sender: 'bot',
-                text: "Sorry, I encountered an error while generating the form. Please try again.",
-                isError: true
-            };
-            
-            try {
-                const savedErrorMsg = await addFormChatMessage(form.id, errorMsgData);
-                setMessages(prev => [...prev, savedErrorMsg]);
-            } catch (dbErr) {
-                 // Fallback if DB save also fails
-                 setMessages(prev => [...prev, { id: Date.now().toString(), ...errorMsgData }]);
-            }
+            const previousData = queryClient.getQueryData(queryKey);
+            const optimisticUserId = Date.now().toString();
 
-            toast.error('Failed to generate form with AI.');
-        } finally {
+            // Optimistically update the UI by appending the message to the first page (since it represents the latest chunk)
+            queryClient.setQueryData(queryKey, (old) => {
+                if (!old) return old;
+                const newPages = [...old.pages];
+                newPages[0] = {
+                    ...newPages[0],
+                    messages: [...newPages[0].messages, { id: optimisticUserId, sender: 'user', text, isOptimistic: true }]
+                };
+                return { ...old, pages: newPages };
+            });
+
+            return { previousData, optimisticUserId };
+        },
+        onError: (err, variables, context) => {
             setIsTyping(false);
+            if (context?.previousData) {
+                queryClient.setQueryData(queryKey, context.previousData);
+            }
+            
+            // Show error message
+            toast.error('Failed to generate form with AI.');
+            queryClient.setQueryData(queryKey, (old) => {
+                if (!old) return old;
+                const newPages = [...old.pages];
+                newPages[0] = {
+                    ...newPages[0],
+                    messages: [...newPages[0].messages, {
+                        id: Date.now().toString(),
+                        sender: 'bot',
+                        text: "Sorry, I encountered an error while generating the form. Please try again.",
+                        isError: true
+                    }]
+                };
+                return { ...old, pages: newPages };
+            });
+        },
+        onSuccess: (data, variables, context) => {
+            setIsTyping(false);
+            // Replace optimistic user message with actual, and append bot message
+            queryClient.setQueryData(queryKey, (old) => {
+                if (!old) return old;
+                const newPages = [...old.pages];
+                let currentMessages = newPages[0].messages.filter(m => m.id !== context.optimisticUserId);
+                newPages[0] = {
+                    ...newPages[0],
+                    messages: [...currentMessages, data.userMsg, data.botMsg]
+                };
+                return { ...old, pages: newPages };
+            });
         }
-    };
+    });
 
-    const handleAcceptProposal = async (msgId, proposalSchema) => {
+    const updateProposalMutation = useMutation({
+        mutationFn: async ({ msgId, status, schema }) => {
+            const updates = { proposal: { status } };
+            if (schema) updates.proposal.schema = schema;
+            await updateFormChatMessage(msgId, updates);
+            return { msgId, status };
+        },
+        onMutate: async ({ msgId, status }) => {
+            await queryClient.cancelQueries({ queryKey });
+            const previousData = queryClient.getQueryData(queryKey);
+
+            // Optimistic UI update
+            queryClient.setQueryData(queryKey, (old) => {
+                if (!old) return old;
+                return {
+                    ...old,
+                    pages: old.pages.map(page => ({
+                        ...page,
+                        messages: page.messages.map(msg => 
+                            msg.id === msgId ? { ...msg, proposal: { ...msg.proposal, status } } : msg
+                        )
+                    }))
+                };
+            });
+            return { previousData };
+        },
+        onError: (err, variables, context) => {
+            if (context?.previousData) {
+                queryClient.setQueryData(queryKey, context.previousData);
+            }
+            toast.error(`Failed to ${variables.status} proposal.`);
+        }
+    });
+
+    const handleSend = useCallback((text) => {
+        if (!text.trim() || isTyping || !form?.id) return;
+        sendMessageMutation.mutate(text);
+    }, [form?.id, isTyping, sendMessageMutation]);
+
+    const handleAcceptProposal = useCallback(async (msgId, proposalSchema) => {
         setAcceptingProposalId(msgId);
         try {
             // Ensure all fields have an ID
@@ -167,15 +193,7 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
                 fields: sanitizedFields
             });
 
-            // Update in DB
-            const updatedProposal = { ...proposalSchema, status: 'accepted' };
-            await updateFormChatMessage(msgId, { proposal: { schema: proposalSchema, status: 'accepted' }});
-
-            // Update in UI
-            setMessages(prev => prev.map(msg => 
-                msg.id === msgId ? { ...msg, proposal: { ...msg.proposal, status: 'accepted' } } : msg
-            ));
-
+            updateProposalMutation.mutate({ msgId, status: 'accepted', schema: proposalSchema });
             toast.success('Form updated successfully!');
         } catch (error) {
             console.error('Error applying proposal:', error);
@@ -183,35 +201,23 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
         } finally {
             setAcceptingProposalId(null);
         }
-    };
+    }, [onUpdateForm, updateProposalMutation, toast]);
 
-    const handleRejectProposal = async (msgId) => {
-         setRejectingProposalId(msgId);
-         try {
-            const message = messages.find(m => m.id === msgId);
-            if (message && message.proposal) {
-                 await updateFormChatMessage(msgId, { proposal: { ...message.proposal, status: 'rejected' }});
-            }
-             
-            setMessages(prev => prev.map(msg => 
-                msg.id === msgId ? { ...msg, proposal: { ...msg.proposal, status: 'rejected' } } : msg
-            ));
-         } catch (error) {
-            console.error('Error rejecting proposal:', error);
-            toast.error('Failed to reject proposal.');
-         } finally {
-            setRejectingProposalId(null);
-         }
-    };
+    const handleRejectProposal = useCallback((msgId) => {
+        setRejectingProposalId(msgId);
+        updateProposalMutation.mutate({ msgId, status: 'rejected' }, {
+            onSettled: () => setRejectingProposalId(null)
+        });
+    }, [updateProposalMutation]);
 
     return {
-        messages,
+        messages: rawMessages,
         input,
         setInput,
         isTyping,
-        isLoadingHistory,
-        hasMore,
-        loadMoreHistory,
+        isLoadingHistory: isLoadingHistory && rawMessages.length === 1 && rawMessages[0].id === 'init', // Only show main loader on first ever fetch
+        hasMore: !!hasNextPage,
+        loadMoreHistory: fetchNextPage,
         handleSend,
         handleAcceptProposal,
         handleRejectProposal,

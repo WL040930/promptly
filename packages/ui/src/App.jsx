@@ -82,13 +82,14 @@ function App() {
         goTo('/')
     }
 
-    const isLogin = path === '/login'
-    const isRegister = path === '/register'
-    const isForgotPassword = path === '/forgot-password'
-    const isResetPassword = path.startsWith('/reset-password/')
-    const isPublicForm = path.startsWith('/f/')
-    const isDashboard = path.startsWith('/workflow') || path.startsWith('/chat')
-    const isSecurity = path === '/landing/security' || path === '/security'
+    const currentPathname = path.split('?')[0]
+    const isLogin = currentPathname === '/login'
+    const isRegister = currentPathname === '/register'
+    const isForgotPassword = currentPathname === '/forgot-password'
+    const isResetPassword = currentPathname.startsWith('/reset-password/')
+    const isPublicForm = currentPathname.startsWith('/f/')
+    const isDashboard = currentPathname.startsWith('/workflow') || currentPathname.startsWith('/chat')
+    const isSecurity = currentPathname === '/landing/security' || currentPathname === '/security'
 
     if (isPublicForm) {
         return <PublicFormView />

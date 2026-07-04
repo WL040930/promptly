@@ -1,4 +1,4 @@
-import { getAuthToken } from '../utils/storage.js';
+import { getAuthToken, clearAuthToken, clearAuthUser } from '../utils/storage.js';
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -24,6 +24,12 @@ const apiRequest = async (path, options = {}) => {
         : await response.text().catch(() => null);
 
     if (!response.ok) {
+        if (response.status === 401 && window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+            clearAuthToken();
+            clearAuthUser();
+            window.location.href = '/login';
+        }
+
         const error = new Error(payload?.error || 'Request failed.');
         error.status = response.status;
         error.payload = payload;

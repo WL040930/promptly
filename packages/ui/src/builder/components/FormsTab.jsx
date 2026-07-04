@@ -448,25 +448,29 @@ const FormsTab = () => {
                 <div className="flex-1 overflow-hidden relative">
                     <div className="w-full h-full animate-slide-up-fade">
                         {isPreviewMode ? (
-                            <div className="h-full overflow-y-auto p-6 md:p-10 max-w-3xl mx-auto">
-                                <FormPreview form={activeForm} accentColor={accentColor} />
+                            <div className="h-full overflow-y-auto">
+                                <div className="p-6 md:p-10 max-w-3xl mx-auto">
+                                    <FormPreview form={activeForm} accentColor={accentColor} />
+                                </div>
                             </div>
                         ) : activeSubTab === 'questions' ? (
-                            <div className="h-full overflow-y-auto p-6 md:p-10 max-w-3xl mx-auto">
-                                <FormEditor
-                                    form={activeForm}
-                                    onUpdateForm={updateForm}
-                                    onUpdateField={(fieldId, updates) => {
-                                        updateForm({ fields: activeForm.fields.map(f => f.id === fieldId ? { ...f, ...updates } : f) });
-                                    }}
-                                    onDeleteField={(fieldId) => {
-                                        updateForm({ fields: activeForm.fields.map(f => f.id === fieldId ? { ...f, deleted: true } : f) });
-                                    }}
-                                    onDuplicateField={handleDuplicateField}
-                                    onAddField={handleAddField}
-                                    onReorderFields={handleReorderFields}
-                                    accentColor={accentColor}
-                                />
+                            <div className="h-full overflow-y-auto">
+                                <div className="p-6 md:p-10 max-w-3xl mx-auto">
+                                    <FormEditor
+                                        form={activeForm}
+                                        onUpdateForm={updateForm}
+                                        onUpdateField={(fieldId, updates) => {
+                                            updateForm({ fields: activeForm.fields.map(f => f.id === fieldId ? { ...f, ...updates } : f) });
+                                        }}
+                                        onDeleteField={(fieldId) => {
+                                            updateForm({ fields: activeForm.fields.map(f => f.id === fieldId ? { ...f, deleted: true } : f) });
+                                        }}
+                                        onDuplicateField={handleDuplicateField}
+                                        onAddField={handleAddField}
+                                        onReorderFields={handleReorderFields}
+                                        accentColor={accentColor}
+                                    />
+                                </div>
                             </div>
                         ) : activeSubTab === 'ai' ? (
                             <div className="h-full">
@@ -477,12 +481,16 @@ const FormsTab = () => {
                                 />
                             </div>
                         ) : activeSubTab === 'responses' ? (
-                            <div className="h-full overflow-y-auto p-6 md:p-10 max-w-3xl mx-auto">
-                                <FormResponses form={activeForm} />
+                            <div className="h-full overflow-y-auto">
+                                <div className="p-6 md:p-10 max-w-3xl mx-auto">
+                                    <FormResponses form={activeForm} />
+                                </div>
                             </div>
                         ) : activeSubTab === 'settings' ? (
-                            <div className="h-full overflow-y-auto p-6 md:p-10 max-w-3xl mx-auto">
-                                <FormSettings form={activeForm} onUpdateForm={updateForm} />
+                            <div className="h-full overflow-y-auto">
+                                <div className="p-6 md:p-10 max-w-3xl mx-auto">
+                                    <FormSettings form={activeForm} onUpdateForm={updateForm} />
+                                </div>
                             </div>
                         ) : null}
                     </div>
