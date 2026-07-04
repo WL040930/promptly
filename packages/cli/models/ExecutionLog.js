@@ -1,5 +1,6 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../db/index.js';
+import crypto from 'crypto';
 
 const ExecutionLog = sequelize.define(
     'ExecutionLog',
@@ -7,7 +8,7 @@ const ExecutionLog = sequelize.define(
         id: {
             type: DataTypes.STRING(100),
             primaryKey: true,
-            defaultValue: () => `run_${Date.now()}`
+            defaultValue: () => `run_${crypto.randomUUID().replace(/-/g, '')}`
         },
         time: {
             type: DataTypes.DATE,
@@ -40,7 +41,13 @@ const ExecutionLog = sequelize.define(
     },
     {
         tableName: 'execution_logs',
-        timestamps: true
+        timestamps: true,
+        indexes: [
+            { fields: ['userId'] },
+            { fields: ['userId', 'time'] },
+            { fields: ['userId', 'status'] },
+            { fields: ['workflowId'] }
+        ]
     }
 );
 

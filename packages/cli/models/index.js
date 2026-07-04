@@ -5,6 +5,7 @@ import Form from './Form.js';
 import FormResponse from './FormResponse.js';
 import ExecutionLog from './ExecutionLog.js';
 import ChatSession from './ChatSession.js';
+import ChatMessage from './ChatMessage.js';
 import FormChatMessage from './FormChatMessage.js';
 
 // --- Folder Associations ---
@@ -39,6 +40,10 @@ Workflow.hasMany(ExecutionLog, { foreignKey: 'workflowId', as: 'logs', onDelete:
 ChatSession.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 User.hasMany(ChatSession, { foreignKey: 'userId', as: 'chatSessions', onDelete: 'CASCADE' });
 
+// --- ChatMessage Associations ---
+ChatMessage.belongsTo(ChatSession, { foreignKey: 'sessionId', as: 'session' });
+ChatSession.hasMany(ChatMessage, { foreignKey: 'sessionId', as: 'chatMessages', onDelete: 'CASCADE' });
+
 // --- FormChatMessage Associations ---
 FormChatMessage.belongsTo(Form, { foreignKey: 'formId', as: 'form' });
 Form.hasMany(FormChatMessage, { foreignKey: 'formId', as: 'chatMessages', onDelete: 'CASCADE' });
@@ -51,5 +56,6 @@ export {
     FormResponse,
     ExecutionLog,
     ChatSession,
+    ChatMessage,
     FormChatMessage
 };

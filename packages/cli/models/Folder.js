@@ -1,13 +1,14 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../db/index.js';
+import crypto from 'crypto';
 
 const Folder = sequelize.define(
     'Folder',
     {
         id: {
-            type: DataTypes.STRING(100), // e.g., 'f1', 'f2' or UUID
+            type: DataTypes.STRING(100),
             primaryKey: true,
-            defaultValue: () => `f_${Date.now()}`
+            defaultValue: () => `f_${crypto.randomUUID().replace(/-/g, '')}`
         },
         name: {
             type: DataTypes.STRING(255),
@@ -20,7 +21,11 @@ const Folder = sequelize.define(
     },
     {
         tableName: 'folders',
-        timestamps: true
+        timestamps: true,
+        indexes: [
+            { fields: ['userId'] },
+            { fields: ['parentId'] }
+        ]
     }
 );
 

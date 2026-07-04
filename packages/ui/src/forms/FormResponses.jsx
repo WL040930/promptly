@@ -1,11 +1,6 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { getFormResponses } from '../api/backend.js';
+import React, { useMemo } from 'react';
+import { useFormResponses } from '../api/hooks/useForms.js';
 import { useToast } from '../components/ToastContext.jsx';
-
-/**
- * FormResponses — table view of form responses with summary stats.
- * Upgraded with premium design.
- */
 
 const renderValue = (val, toast) => {
     if (val === undefined || val === null || val === '') return <span className="text-gray-300">—</span>;
@@ -57,29 +52,8 @@ const renderValue = (val, toast) => {
 };
 
 const FormResponses = ({ form }) => {
-    const [responses, setResponses] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
+    const { data: responses = [], isLoading: loading, error } = useFormResponses(form?.id);
     const toast = useToast();
-
-    useEffect(() => {
-        const fetchResponses = async () => {
-            if (!form || !form.id) return;
-            setLoading(true);
-            try {
-                const data = await getFormResponses(form.id);
-                setResponses(data || []);
-                setError(null);
-            } catch (err) {
-                console.error('Failed to fetch form responses', err);
-                setError('Failed to load responses');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchResponses();
-    }, [form]);
 
     /**
      * Option A — Snapshot-aware column union.
@@ -150,7 +124,11 @@ const FormResponses = ({ form }) => {
     // Calculate latest submission date
     let latestSubmission = '—';
     if (responses.length > 0) {
-        const latestDate = new Date(Math.max(...responses.map(r => new Date(r.submittedAt).getTime())));
+        const latestTime = responses.reduce((max, r) => {
+            const t = new Date(r.createdAt).getTime();
+            return t > max ? t : max;
+        }, 0);
+        const latestDate = new Date(latestTime);
         
         // Format nicely: Today, Yesterday, or actual date
         const today = new Date();
@@ -183,7 +161,7 @@ const FormResponses = ({ form }) => {
         
         // Rows: iterate allColumns so removed-field data is included
         const rows = responses.map(response => {
-            const submitted = new Date(response.submittedAt).toLocaleString();
+            const submitted = new Date(response.createdAt || response.submittedAt).toLocaleString();
             
             const fieldValues = allColumns.map(col => {
                 let val = response.responseData ? response.responseData[col.id] : '';
@@ -237,7 +215,7 @@ const FormResponses = ({ form }) => {
                 </div>
             ) : error ? (
                 <div className="bg-red-50 text-red-600 p-6 rounded-3xl text-center shadow-sm border border-red-100">
-                    <p className="font-bold">{error}</p>
+                    <p className="font-bold">{error.message || 'Failed to load responses'}</p>
                 </div>
             ) : responses.length > 0 ? (
                 <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100">
@@ -298,7 +276,7 @@ const FormResponses = ({ form }) => {
                                     <tr key={response.id} className="border-b border-gray-50 hover:bg-gray-50/80 transition-colors group">
                                         <td className="px-6 py-4 text-gray-400 text-[13px] font-medium">{rIdx + 1}</td>
                                         <td className="px-6 py-4 text-gray-500 text-[13px] font-medium whitespace-nowrap">
-                                            {new Date(response.submittedAt).toLocaleString(undefined, { 
+                                            {new Date(response.createdAt || response.submittedAt).toLocaleString(undefined, { 
                                                 year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
                                             })}
                                         </td>

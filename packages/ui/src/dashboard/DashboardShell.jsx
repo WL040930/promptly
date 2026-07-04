@@ -40,6 +40,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
     const [isCollapsed, setIsCollapsed] = useState(() => {
         return window.location.pathname.includes('/builder/');
     });
+    const [isCreating, setIsCreating] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [hoveredTab, setHoveredTab] = useState(null);
     const container = useRef(null);
@@ -147,17 +148,28 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                     <div className="mb-4 px-1">
                         <button 
                             onClick={() => {
+                                if (isCreating) return;
+                                setIsCreating(true);
                                 setActiveTab(isChatMode ? 'chat' : 'workflows');
-                                window.dispatchEvent(new CustomEvent(isChatMode ? 'create-chat' : 'create-workflow'));
+                                window.dispatchEvent(new CustomEvent(isChatMode ? 'create-chat' : 'create-workflow', {
+                                    detail: { onComplete: () => setIsCreating(false) }
+                                }));
                             }}
-                            className={`flex items-center justify-center gap-2 rounded-xl text-sm font-bold text-white shadow-md shadow-indigo-500/20 hover:shadow-lg hover:shadow-indigo-500/30 hover:-translate-y-0.5 transition-all bg-gradient-to-r from-indigo-600 to-indigo-600 ${isCollapsed ? 'w-10 h-10 mx-auto p-0 shrink-0' : 'w-full py-2.5'}`}
+                            disabled={isCreating}
+                            className={`flex items-center justify-center gap-2 rounded-xl text-sm font-bold text-white shadow-md shadow-indigo-500/20 hover:shadow-lg hover:shadow-indigo-500/30 hover:-translate-y-0.5 transition-all bg-gradient-to-r from-indigo-600 to-indigo-600 ${isCollapsed ? 'w-10 h-10 mx-auto p-0 shrink-0' : 'w-full py-2.5'} ${isCreating ? 'opacity-80 cursor-not-allowed hover:-translate-y-0' : ''}`}
                             title={isChatMode ? 'Create Chat' : 'Create Workflow'}
                         >
-                            <svg className="shrink-0 transition-all duration-300" width={isCollapsed ? "24" : "18"} height={isCollapsed ? "24" : "18"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                <line x1="12" y1="5" x2="12" y2="19"></line>
-                                <line x1="5" y1="12" x2="19" y2="12"></line>
-                            </svg>
-                            {!isCollapsed && <span className="whitespace-nowrap">{isChatMode ? 'Create Chat' : 'Create Workflow'}</span>}
+                            {isCreating ? (
+                                <svg className="animate-spin shrink-0" width={isCollapsed ? "24" : "18"} height={isCollapsed ? "24" : "18"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+                                </svg>
+                            ) : (
+                                <svg className="shrink-0 transition-all duration-300" width={isCollapsed ? "24" : "18"} height={isCollapsed ? "24" : "18"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                            )}
+                            {!isCollapsed && <span className="whitespace-nowrap">{isCreating ? 'Creating...' : (isChatMode ? 'Create Chat' : 'Create Workflow')}</span>}
                         </button>
                     </div>
 

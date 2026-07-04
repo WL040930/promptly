@@ -1,7 +1,7 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
-import { getDashboardMetrics } from '../../api/backend.js';
+import { useDashboardMetrics } from '../../api/hooks/useDashboard.js';
 
 const INTEGRATIONS = [
     { name: 'OpenAI GPT-4o', category: 'Language Model', status: 'Healthy', uptime: '99.9%', color: 'indigo' },
@@ -72,25 +72,16 @@ const KPI_CARDS = [
 ];
 
 const DashboardTab = ({ activeWorkflowCount, onNavigateTab, simplified }) => {
-    const [metrics, setMetrics] = useState({
-        activeWorkflowCount: activeWorkflowCount || 0,
-        totalRuns: 0,
-        successRate: '0%',
-        aiTokensSaved: '0',
-        weeklyData: [],
-        recentActivities: []
-    });
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        getDashboardMetrics().then(data => {
-            setMetrics({ ...data, activeWorkflowCount: activeWorkflowCount || data.activeWorkflowCount });
-            setLoading(false);
-        }).catch(err => {
-            console.error(err);
-            setLoading(false);
-        });
-    }, [activeWorkflowCount]);
+    const { data, isLoading: loading } = useDashboardMetrics();
+    
+    const metrics = useMemo(() => ({
+        activeWorkflowCount: activeWorkflowCount || data?.activeWorkflowCount || 0,
+        totalRuns: data?.totalRuns || 0,
+        successRate: data?.successRate || '0%',
+        aiTokensSaved: data?.aiTokensSaved || '0',
+        weeklyData: data?.weeklyData || [],
+        recentActivities: data?.recentActivities || []
+    }), [data, activeWorkflowCount]);
 
     const maxRuns = useMemo(() => Math.max(1, ...metrics.weeklyData.map(d => d.runs)), [metrics.weeklyData]);
     const container = useRef(null);

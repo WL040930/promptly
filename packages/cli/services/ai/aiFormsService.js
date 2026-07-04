@@ -7,16 +7,16 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const instructionPath = path.resolve(__dirname, './instruction/form_instruction.md');
+let systemInstruction = 'You are an AI Form Designer. Output a full JSON form schema with title, description, and fields array.';
+try {
+    systemInstruction = fs.readFileSync(instructionPath, 'utf8');
+} catch (err) {
+    console.error('Failed to read form_instruction.md:', err);
+}
+
 export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory = []) => {
     try {
-        const instructionPath = path.resolve(__dirname, './instruction/form_instruction.md');
-        let systemInstruction = '';
-        try {
-            systemInstruction = fs.readFileSync(instructionPath, 'utf8');
-        } catch (err) {
-            console.error('Failed to read form_instruction.md:', err);
-            systemInstruction = 'You are an AI Form Designer. Output a full JSON form schema with title, description, and fields array.';
-        }
 
         // Map chat history to Gemini format
         const contents = chatHistory.map(msg => ({

@@ -34,9 +34,19 @@ class CategorizeDataNode extends AINode {}
 // Specific Logic Nodes
 class ConditionNode extends LogicNode {
     async execute(context) {
-        // Here we evaluate config.expression against context
-        // and determine which edge to follow (e.g. 'true' or 'false' branch)
-        return { ...context, logicResult: true };
+        const expression = this.config.expression || 'true';
+        let result = false;
+        try {
+            // Safely evaluate simple expression against context properties
+            const keys = Object.keys(context);
+            const values = Object.values(context);
+            const fn = new Function(...keys, `return Boolean(${expression});`);
+            result = fn(...values);
+        } catch (err) {
+            console.error('Failed to evaluate condition expression:', expression, err);
+            result = false;
+        }
+        return { ...context, logicResult: result, targetHandle: result ? 'true' : 'false' };
     }
 }
 class SwitchNode extends LogicNode {}

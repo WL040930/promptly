@@ -4,6 +4,7 @@ import { useGSAP } from '@gsap/react';
 import { BotIcon, UserIcon, SendIcon, PlusIcon, MessageSquareIcon } from './Icons';
 import { getChatSessions, getChatSession, sendChatMessage, updateChatSession, deleteChatSession } from '../../api/backend.js';
 import { useToast } from '../../components/ToastContext.jsx';
+import MarkdownRenderer from '../../components/MarkdownRenderer';
 
 const ChatTab = () => {
     const [messages, setMessages] = useState([
@@ -79,7 +80,7 @@ const ChatTab = () => {
         }
     };
 
-    const handleNewChat = () => {
+    const handleNewChat = (e) => {
         setActiveChatId(null);
         setIsSidebarOpen(false);
         setMessages([
@@ -88,6 +89,7 @@ const ChatTab = () => {
                 text: `Started a new session! What would you like to automate next?`
             }
         ]);
+        if (e?.detail?.onComplete) e.detail.onComplete();
     };
 
     useEffect(() => {
@@ -301,12 +303,16 @@ const ChatTab = () => {
                                     {msg.sender === 'user' ? 'You' : 'AI Assistant'}
                                 </span>
                                 
-                                <div className={`w-full rounded-2xl p-3.5 text-sm leading-relaxed whitespace-pre-wrap ${
+                                <div className={`w-full rounded-2xl p-3.5 text-sm leading-relaxed ${
                                     msg.sender === 'user'
-                                        ? 'bg-indigo-600 text-white font-medium rounded-tr-none shadow-sm'
+                                        ? 'bg-indigo-600 text-white font-medium rounded-tr-none shadow-sm whitespace-pre-wrap'
                                         : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'
                                 }`}>
-                                    {msg.text}
+                                    {msg.sender === 'user' ? (
+                                        msg.text
+                                    ) : (
+                                        <MarkdownRenderer content={msg.text} />
+                                    )}
                                 </div>
                             </div>
                         </div>

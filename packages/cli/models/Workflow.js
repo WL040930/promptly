@@ -1,13 +1,14 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../db/index.js';
+import crypto from 'crypto';
 
 const Workflow = sequelize.define(
     'Workflow',
     {
         id: {
-            type: DataTypes.STRING(100), // e.g., 'w1', 'w2' or UUID
+            type: DataTypes.STRING(100),
             primaryKey: true,
-            defaultValue: () => `w_${Date.now()}`
+            defaultValue: () => `w_${crypto.randomUUID().replace(/-/g, '')}`
         },
         name: {
             type: DataTypes.STRING(255),
@@ -40,7 +41,12 @@ const Workflow = sequelize.define(
     },
     {
         tableName: 'workflows',
-        timestamps: true
+        timestamps: true,
+        indexes: [
+            { fields: ['userId'] },
+            { fields: ['userId', 'status'] },
+            { fields: ['folderId'] }
+        ]
     }
 );
 

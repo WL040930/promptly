@@ -11,10 +11,10 @@ const sequelize = new Sequelize(
         dialect: 'postgres',
         logging: false,
         pool: {
-            max: 50,
-            min: 0,
+            max: 10,    // Stay comfortably under PgBouncer/session-mode limits
+            min: 2,     // Keep 2 connections warm — avoids cold-start latency on intermittent traffic
             acquire: 30000,
-            idle: 10000
+            idle: 30000 // 30s before eviction — reduces churn under intermittent load
         }
     }
 );

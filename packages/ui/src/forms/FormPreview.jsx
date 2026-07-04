@@ -2,6 +2,7 @@ import React from 'react';
 import FieldRenderer from './fields/FieldRenderer';
 import { useToast } from '../components/ToastContext.jsx';
 import { useFormEngine } from './engine/useFormEngine';
+import MarkdownRenderer from '../components/MarkdownRenderer';
 
 /**
  * FormPreview — renders the form as respondents would see it.
@@ -88,7 +89,11 @@ const FormPreview = ({ form, accentColor = '#4f46e5', onSubmitCallback }) => {
                             <div className="relative z-10">
                                 <h1 className="text-4xl md:text-5xl font-black text-white tracking-tight leading-tight mb-4 drop-shadow-sm">{form.title}</h1>
                                 {form.description && (
-                                    <p className="text-[17px] md:text-lg font-medium text-white/90 leading-relaxed max-w-2xl">{form.description}</p>
+                                    <MarkdownRenderer 
+                                        content={form.description} 
+                                        className="text-[17px] md:text-lg font-medium leading-relaxed max-w-2xl" 
+                                        inverted={true}
+                                    />
                                 )}
                             </div>
                         </div>

@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import WorkflowCanvas from './components/WorkflowCanvas';
@@ -9,7 +10,8 @@ import DashboardTab from './components/DashboardTab';
 import FormsTab from './components/FormsTab';
 import LogsTab from '../chat/components/LogsTab';
 import { navigate, parsePath } from '../utils/router.js';
-import { getWorkflows, createWorkflow, updateWorkflow, getFolders, createFolder } from '../api/backend.js';
+import { useWorkflows, useCreateWorkflow, useUpdateWorkflow } from '../api/hooks/useWorkflows.js';
+import { useFolders } from '../api/hooks/useFolders.js';
 
 const SYSTEM_NODES = {
     'Triggers': [
@@ -87,30 +89,36 @@ const CARD_STYLES = {
 };
 
 const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) => {
-    const [folders, setFolders] = useState([]);
-    const [workflows, setWorkflows] = useState({});
-    const [loading, setLoading] = useState(true);
+    const { data: folders = [], isLoading: isFoldersLoading } = useFolders();
+    const { data: workflowsData = [], isLoading: isWorkflowsLoading } = useWorkflows();
+    const createWorkflowMutation = useCreateWorkflow();
+    const updateWorkflowMutation = useUpdateWorkflow();
+    const queryClient = useQueryClient();
 
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const [workflowsData, foldersData] = await Promise.all([
-                    getWorkflows(),
-                    getFolders()
-                ]);
-                
-                const workflowsMap = {};
-                workflowsData.forEach(w => { workflowsMap[w.id] = w; });
-                setWorkflows(workflowsMap);
-                setFolders(foldersData);
-            } catch (err) {
-                console.error("Failed to fetch data:", err);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchData();
-    }, []);
+    const setFolders = (updater) => {
+        queryClient.setQueryData(['folders'], old => {
+            const current = old || [];
+            return typeof updater === 'function' ? updater(current) : updater;
+        });
+    };
+
+    const setWorkflows = (updater) => {
+        queryClient.setQueryData(['workflows'], old => {
+            const current = old || [];
+            const prevMap = {};
+            current.forEach(w => { prevMap[w.id] = w; });
+            const nextMap = typeof updater === 'function' ? updater(prevMap) : updater;
+            return Object.values(nextMap);
+        });
+    };
+
+    const loading = isFoldersLoading || isWorkflowsLoading;
+
+    const workflows = useMemo(() => {
+        const map = {};
+        workflowsData.forEach(w => { map[w.id] = w; });
+        return map;
+    }, [workflowsData]);
 
     // ── URL-driven view mode ─────────────────────────────────────────────────
     const getViewStateFromUrl = () => {
@@ -161,27 +169,24 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         navigateToBuilder(wfId);
     };
 
-    // Create workflow from overview header
-    const handleCreateWorkflow = async () => {
-        try {
-            const wfData = {
-                name: 'New Sequence Automation',
-                folderId: folders.length > 0 ? folders[0].id : null,
-                status: 'Draft',
-                lastEdited: 'Just now',
-                iconColor: 'text-indigo-600',
-                iconBg: 'bg-indigo-100',
-                nodes: []
-            };
-            const newWorkflow = await createWorkflow(wfData);
-            setWorkflows(prev => ({
-                ...prev,
-                [newWorkflow.id]: newWorkflow
-            }));
-            navigateToBuilder(newWorkflow.id);
-        } catch (e) {
-            console.error("Failed to create workflow:", e);
-        }
+    const handleCreateWorkflow = (e) => {
+        const wfData = {
+            name: 'New Sequence Automation',
+            folderId: folders.length > 0 ? folders[0].id : null,
+            status: 'Draft',
+            lastEdited: 'Just now',
+            iconColor: 'text-indigo-600',
+            iconBg: 'bg-indigo-100',
+            nodes: []
+        };
+        createWorkflowMutation.mutate(wfData, {
+            onSuccess: (newWorkflow) => {
+                navigateToBuilder(newWorkflow.id);
+            },
+            onSettled: () => {
+                if (e?.detail?.onComplete) e.detail.onComplete();
+            }
+        });
     };
 
     useEffect(() => {
@@ -222,6 +227,14 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
 
     const activeFolderName = activeFolder ? activeFolder.name : 'Root';
 
+    const handleWorkflowUpdate = (updatedFields) => {
+        if (!activeWorkflowId) return;
+        updateWorkflowMutation.mutate({
+            id: activeWorkflowId,
+            data: updatedFields
+        });
+    };
+
     // Handle node selection
     const handleNodeClick = (nodeId) => {
         setActiveNodeId(nodeId);
@@ -240,12 +253,8 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
             description: proposal.description
         };
 
-        setWorkflows(prev => {
-            const currentWf = prev[activeWorkflowId];
-            const updatedNodes = [...currentWf.nodes, newNode];
-            updateWorkflow(activeWorkflowId, { nodes: updatedNodes }).catch(e => console.error(e));
-            return { ...prev, [activeWorkflowId]: { ...currentWf, nodes: updatedNodes } };
-        });
+            const updatedNodes = [...nodes, newNode];
+        handleWorkflowUpdate({ nodes: updatedNodes });
         setActiveNodeId(newNodeId);
     };
 
@@ -261,12 +270,8 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
             position
         };
 
-        setWorkflows(prev => {
-            const currentWf = prev[activeWorkflowId];
-            const updatedNodes = [...currentWf.nodes, newNode];
-            updateWorkflow(activeWorkflowId, { nodes: updatedNodes }).catch(e => console.error(e));
-            return { ...prev, [activeWorkflowId]: { ...currentWf, nodes: updatedNodes } };
-        });
+        const updatedNodes = [...nodes, newNode];
+        handleWorkflowUpdate({ nodes: updatedNodes });
         setActiveNodeId(newNodeId);
     };
 
@@ -275,54 +280,31 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         const positionChanges = changes.filter(c => c.type === 'position' && c.position);
         if (positionChanges.length === 0) return;
 
-        setWorkflows(prev => {
-            const currentWf = prev[activeWorkflowId];
-            const updatedNodes = currentWf.nodes.map(node => {
-                const change = positionChanges.find(c => c.id === node.id);
-                if (change) {
-                    return { ...node, position: change.position };
-                }
-                return node;
-            });
-
-            // Async save to backend
-            updateWorkflow(activeWorkflowId, { nodes: updatedNodes }).catch(e => console.error(e));
-
-            return {
-                ...prev,
-                [activeWorkflowId]: {
-                    ...currentWf,
-                    nodes: updatedNodes
-                }
-            };
+        const updatedNodes = nodes.map(node => {
+            const change = positionChanges.find(c => c.id === node.id);
+            if (change) {
+                return { ...node, position: change.position };
+            }
+            return node;
         });
+
+        handleWorkflowUpdate({ nodes: updatedNodes });
     };
 
     // Live update of node configuration from properties panel
     const handleUpdateNode = (nodeId, updatedFields) => {
-        setWorkflows(prev => {
-            const currentWf = prev[activeWorkflowId];
-            if (!currentWf) return prev;
-
-            const updatedNodes = currentWf.nodes.map(node => {
-                if (node.id === nodeId) {
-                    const nextNode = { ...node, ...updatedFields };
-                    if (updatedFields.config && node.config) {
-                        nextNode.config = { ...node.config, ...updatedFields.config };
-                    }
-                    return nextNode;
+        const updatedNodes = nodes.map(node => {
+            if (node.id === nodeId) {
+                const nextNode = { ...node, ...updatedFields };
+                if (updatedFields.config && node.config) {
+                    nextNode.config = { ...node.config, ...updatedFields.config };
                 }
-                return node;
-            });
-
-            return {
-                ...prev,
-                [activeWorkflowId]: {
-                    ...currentWf,
-                    nodes: updatedNodes
-                }
-            };
+                return nextNode;
+            }
+            return node;
         });
+
+        handleWorkflowUpdate({ nodes: updatedNodes });
     };
 
     const activeWorkflowCount = useMemo(() => {

@@ -25,7 +25,8 @@ const getJwtSecret = () => {
 
 const env = {
     app: {
-        port: Number(process.env.PORT || 3000)
+        port: Number(process.env.PORT || 3000),
+        clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173'
     },
     db: {
         host: requireEnv('DB_HOST'),

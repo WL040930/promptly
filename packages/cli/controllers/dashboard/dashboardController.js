@@ -1,19 +1,43 @@
 import { ExecutionLog, Workflow } from '../../models/index.js';
-import { Op } from 'sequelize';
+import sequelize from '../../db/index.js';
+import { QueryTypes } from 'sequelize';
+import asyncHandler from '../../utils/asyncHandler.js';
 
-export const getDashboardMetrics = async (req, res) => {
+export const getDashboardMetrics = asyncHandler(async (req, res) => {
     const userId = req.user.id;
     
     // Run queries concurrently for better performance
     const [
         activeWorkflowCount,
-        totalRuns,
-        successRuns,
+        runAggregate,
+        weeklyData,
         recentActivities
     ] = await Promise.all([
         Workflow.count({ where: { userId, status: 'Active' } }),
-        ExecutionLog.count({ where: { userId } }),
-        ExecutionLog.count({ where: { userId, status: 'Success' } }),
+
+        // Single aggregate query replaces two separate COUNT queries
+        sequelize.query(
+            `SELECT
+                COUNT(*) AS "totalRuns",
+                COUNT(*) FILTER (WHERE status = 'Success') AS "successRuns"
+             FROM execution_logs
+             WHERE "userId" = :userId`,
+            { replacements: { userId }, type: QueryTypes.SELECT }
+        ),
+
+        // Real GROUP BY date query for the last 7 days
+        sequelize.query(
+            `SELECT
+                TO_CHAR(DATE_TRUNC('day', time), 'Dy') AS day,
+                COUNT(*) AS runs
+             FROM execution_logs
+             WHERE "userId" = :userId
+               AND time >= NOW() - INTERVAL '7 days'
+             GROUP BY DATE_TRUNC('day', time)
+             ORDER BY DATE_TRUNC('day', time) ASC`,
+            { replacements: { userId }, type: QueryTypes.SELECT }
+        ),
+
         ExecutionLog.findAll({
             where: { userId },
             order: [['time', 'DESC']],
@@ -21,23 +45,32 @@ export const getDashboardMetrics = async (req, res) => {
             include: [{ model: Workflow, as: 'workflow', attributes: ['name'] }]
         })
     ]);
-    
-    const successRate = totalRuns === 0 ? '100%' : `${((successRuns / totalRuns) * 100).toFixed(1)}%`;
-    
-    // Simulated weekly data for now until we write a complex postgres group-by query
+
+    const { totalRuns, successRuns } = runAggregate[0] || { totalRuns: 0, successRuns: 0 };
+    const totalRunsNum = parseInt(totalRuns, 10);
+    const successRunsNum = parseInt(successRuns, 10);
+    const successRate = totalRunsNum === 0 ? '100%' : `${((successRunsNum / totalRunsNum) * 100).toFixed(1)}%`;
+
+    // Fill in any days with zero runs so the chart always shows 7 bars
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const weeklyData = days.map(day => ({
+    const today = new Date();
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(today);
+        d.setDate(today.getDate() - (6 - i));
+        return days[d.getDay()];
+    });
+    const weeklyMap = Object.fromEntries(weeklyData.map(r => [r.day.trim(), parseInt(r.runs, 10)]));
+    const filledWeeklyData = last7Days.map(day => ({
         day,
-        runs: Math.floor(Math.random() * 500) + 100, // mock data for visual chart
-        successRate: '99.5%'
+        runs: weeklyMap[day] || 0
     }));
 
     res.json({
         activeWorkflowCount,
-        totalRuns,
+        totalRuns: totalRunsNum,
         successRate,
-        aiTokensSaved: '14.2M', // mock
-        weeklyData,
+        aiTokensSaved: '14.2M', // mock — real token tracking not yet implemented
+        weeklyData: filledWeeklyData,
         recentActivities: recentActivities.map(log => ({
             id: log.id,
             action: `${log.workflow ? log.workflow.name : 'Workflow'} ${log.status}`,
@@ -47,4 +80,4 @@ export const getDashboardMetrics = async (req, res) => {
             latency: `${log.durationMs}ms`
         }))
     });
-};
+});

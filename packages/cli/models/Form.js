@@ -25,11 +25,19 @@ const Form = sequelize.define(
         fields: {
             type: DataTypes.JSONB,
             defaultValue: []
+        },
+        responseCount: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0
         }
     },
     {
         tableName: 'forms',
-        timestamps: true
+        timestamps: true,
+        indexes: [
+            { fields: ['userId'] },
+            { fields: ['userId', 'createdAt'] }
+        ]
     }
 );
 

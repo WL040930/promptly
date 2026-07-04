@@ -1,5 +1,6 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../db/index.js';
+import crypto from 'crypto';
 
 const ChatSession = sequelize.define(
     'ChatSession',
@@ -7,7 +8,7 @@ const ChatSession = sequelize.define(
         id: {
             type: DataTypes.STRING(100),
             primaryKey: true,
-            defaultValue: () => `chat_${Date.now()}`
+            defaultValue: () => `chat_${crypto.randomUUID().replace(/-/g, '')}`
         },
         title: {
             type: DataTypes.STRING,
@@ -20,7 +21,11 @@ const ChatSession = sequelize.define(
     },
     {
         tableName: 'chat_sessions',
-        timestamps: true
+        timestamps: true,
+        indexes: [
+            { fields: ['userId'] },
+            { fields: ['userId', 'updatedAt'] }
+        ]
     }
 );
 

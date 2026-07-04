@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import routes from './routes/routes.js';
 import errorHandler from './middleware/errorHandler.js';
+import env from './config/env.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -15,7 +16,7 @@ const app = express();
 app.use(helmet({
     contentSecurityPolicy: false, // Disabling CSP locally to avoid blocking frontend assets
 }));
-app.use(cors());
+app.use(cors({ origin: env.app.clientOrigin }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

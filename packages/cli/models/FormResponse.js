@@ -1,5 +1,6 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../db/index.js';
+import crypto from 'crypto';
 
 const FormResponse = sequelize.define(
     'FormResponse',
@@ -7,7 +8,7 @@ const FormResponse = sequelize.define(
         id: {
             type: DataTypes.STRING(100),
             primaryKey: true,
-            defaultValue: () => `resp_${Date.now()}`
+            defaultValue: () => `resp_${crypto.randomUUID().replace(/-/g, '')}`
         },
         responseData: {
             type: DataTypes.JSONB,
@@ -17,15 +18,20 @@ const FormResponse = sequelize.define(
             type: DataTypes.JSONB,
             allowNull: true,
             comment: 'Snapshot of the form fields at the time of submission'
-        },
-        submittedAt: {
-            type: DataTypes.DATE,
-            defaultValue: DataTypes.NOW
         }
+        // Note: submittedAt removed — use Sequelize's built-in createdAt instead
     },
     {
         tableName: 'form_responses',
-        timestamps: true
+        timestamps: true,
+        indexes: [
+            { fields: ['formId'] },
+            { fields: ['formId', 'createdAt'] },
+            {
+                fields: ['responseData'],
+                using: 'gin'
+            }
+        ]
     }
 );
 

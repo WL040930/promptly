@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import FormEditor from '../../forms/FormEditor';
@@ -8,7 +8,7 @@ import FormResponses from '../../forms/FormResponses';
 import FormSettings from '../../forms/FormSettings';
 import FormShareModal from '../../forms/FormShareModal';
 import { createField } from '../../forms/fields/fieldTypes';
-import { getForms, createForm, updateForm as apiUpdateForm, deleteForm } from '../../api/backend.js';
+import { useForms, useCreateForm, useUpdateForm, useDeleteForm } from '../../api/hooks/useForms.js';
 import { useToast } from '../../components/ToastContext.jsx';
 import { parsePath, buildPath } from '../../utils/router.js';
 
@@ -18,7 +18,10 @@ import { parsePath, buildPath } from '../../utils/router.js';
  */
 
 const FormsTab = () => {
-    const [forms, setForms] = useState([]);
+    const { data: forms = [], isLoading: isFormsLoading } = useForms();
+    const createFormMutation = useCreateForm();
+    const updateFormMutation = useUpdateForm();
+    const deleteFormMutation = useDeleteForm();
     const [activeFormId, setActiveFormId] = useState(() => parsePath(window.location.pathname).formId || null);
     const [activeSubTab, setActiveSubTab] = useState(() => {
         const urlSubTab = parsePath(window.location.pathname).subTab;
@@ -27,6 +30,14 @@ const FormsTab = () => {
     const [isPreviewMode, setIsPreviewMode] = useState(() => parsePath(window.location.pathname).subTab === 'preview');
     const [isShareOpen, setIsShareOpen] = useState(false);
     const [sidebarSearch, setSidebarSearch] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedSearch(sidebarSearch);
+        }, 300);
+        return () => clearTimeout(handler);
+    }, [sidebarSearch]);
 
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isCreatingForm, setIsCreatingForm] = useState(false);
@@ -36,19 +47,18 @@ const FormsTab = () => {
     const toast = useToast();
     const container = useRef(null);
 
+    const isInitialLoad = useRef(true);
     useEffect(() => {
-        getForms().then(data => {
-            setForms(data);
+        if (!isFormsLoading && forms.length > 0 && isInitialLoad.current) {
+            isInitialLoad.current = false;
             const urlFormId = parsePath(window.location.pathname).formId;
-            if (urlFormId && data.find(f => f.id === urlFormId)) {
+            if (urlFormId && forms.find(f => f.id === urlFormId)) {
                 setActiveFormId(urlFormId);
-            } else if (data.length > 0 && !activeFormId) {
-                setActiveFormId(data[0].id);
+            } else if (!activeFormId) {
+                setActiveFormId(forms[0].id);
             }
-        }).catch(err => {
-            console.error(err);
-        });
-    }, []);
+        }
+    }, [forms, isFormsLoading, activeFormId]);
 
     // Sync URL when activeFormId, activeSubTab, or isPreviewMode changes
     useEffect(() => {
@@ -95,64 +105,48 @@ const FormsTab = () => {
 
     // ── Form CRUD ──────────────────────────────────────────────────────────────
 
-    const updateForm = useCallback(async (updates) => {
-        try {
-            // Optimistic update
-            setForms(prev => prev.map(f => {
-                if (f.id === activeFormId) {
-                    return { ...f, ...updates };
-                }
-                return f;
-            }));
-            
-            // Sync with backend
-            await apiUpdateForm(activeFormId, updates);
-        } catch (e) {
-            console.error('Failed to update form', e);
-        }
-    }, [activeFormId]);
+    const updateForm = useCallback((updates) => {
+        updateFormMutation.mutate({ id: activeFormId, data: updates });
+    }, [activeFormId, updateFormMutation]);
 
-    const handleCreateForm = async () => {
-        try {
-            setIsCreatingForm(true);
-            const newFormPayload = {
-                title: 'Untitled Form',
-                description: '',
-                settings: { accentColor: '#4f46e5', acceptingResponses: true },
-                fields: [createField('text')],
-            };
-            const newForm = await createForm(newFormPayload);
-            setForms(prev => [...prev, newForm]);
-            setActiveFormId(newForm.id);
-            setActiveSubTab('questions');
-            setIsSidebarOpen(false);
-        } catch (e) {
-            console.error('Failed to create form', e);
-        } finally {
-            setIsCreatingForm(false);
-        }
+    const handleCreateForm = () => {
+        setIsCreatingForm(true);
+        const newFormPayload = {
+            title: 'Untitled Form',
+            description: '',
+            settings: { accentColor: '#4f46e5', acceptingResponses: true },
+            fields: [createField('text')],
+        };
+        createFormMutation.mutate(newFormPayload, {
+            onSuccess: (newForm) => {
+                setActiveFormId(newForm.id);
+                setActiveSubTab('questions');
+                setIsSidebarOpen(false);
+                setIsCreatingForm(false);
+            },
+            onError: () => setIsCreatingForm(false)
+        });
     };
-    const handleDuplicateForm = async (formId) => {
-        try {
-            const source = forms.find(f => f.id === formId);
-            if (!source) return;
-            
-            const duplicated = {
-                title: `${source.title} (copy)`,
-                description: source.description,
-                settings: source.settings,
-                fields: source.fields.map(field => ({
-                    ...field,
-                    id: `f_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-                }))
-            };
-            
-            const newForm = await createForm(duplicated);
-            setForms(prev => [...prev, newForm]);
-            setActiveFormId(newForm.id);
-        } catch (e) {
-            console.error('Failed to duplicate form', e);
-        }
+    const handleDuplicateForm = (formId) => {
+        const source = forms.find(f => f.id === formId);
+        if (!source) return;
+        
+        const duplicated = {
+            title: `${source.title} (copy)`,
+            description: source.description,
+            settings: source.settings,
+            fields: source.fields.map(field => ({
+                ...field,
+                id: `f_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            }))
+        };
+        
+        createFormMutation.mutate(duplicated, {
+            onSuccess: (newForm) => {
+                setActiveFormId(newForm.id);
+                setActiveSubTab('questions');
+            }
+        });
     };
 
     const handleDeleteForm = (e, formId) => {
@@ -160,23 +154,25 @@ const FormsTab = () => {
         setFormToDelete(formId);
     };
 
-    const confirmDeleteForm = async () => {
+    const confirmDeleteForm = () => {
         if (!formToDelete) return;
-        try {
-            setIsDeleting(true);
-            await deleteForm(formToDelete);
-            setForms(prev => prev.filter(f => f.id !== formToDelete));
-            if (activeFormId === formToDelete) {
-                setActiveFormId(forms.find(f => f.id !== formToDelete)?.id || null);
+        setIsDeleting(true);
+        deleteFormMutation.mutate(formToDelete, {
+            onSuccess: () => {
+                const updatedForms = forms.filter(f => f.id !== formToDelete);
+                if (activeFormId === formToDelete) {
+                    setActiveFormId(updatedForms.length > 0 ? updatedForms[0].id : null);
+                }
+                toast.success('Form deleted successfully.');
+                setIsDeleting(false);
+                setFormToDelete(null);
+            },
+            onError: () => {
+                toast.error('Failed to delete form.');
+                setIsDeleting(false);
+                setFormToDelete(null);
             }
-            toast.success('Form deleted successfully.');
-        } catch (e) {
-            console.error('Failed to delete form', e);
-            toast.error('Failed to delete form.');
-        } finally {
-            setIsDeleting(false);
-            setFormToDelete(null);
-        }
+        });
     };
 
 
@@ -209,9 +205,11 @@ const FormsTab = () => {
 
     // ── Sidebar filtering ──────────────────────────────────────────────────────
 
-    const filteredForms = sidebarSearch
-        ? forms.filter(f => f.title.toLowerCase().includes(sidebarSearch.toLowerCase()))
-        : forms;
+    const filteredForms = useMemo(() => {
+        return debouncedSearch
+            ? forms.filter(f => f.title.toLowerCase().includes(debouncedSearch.toLowerCase()))
+            : forms;
+    }, [forms, debouncedSearch]);
 
     // ── Sub-tab icons ──────────────────────────────────────────────────────────
 
@@ -385,7 +383,8 @@ const FormsTab = () => {
                                         onChange={(e) => updateForm({ title: e.target.value })}
                                         placeholder="Untitled Form"
                                         title="Click to rename"
-                                        className="text-[15px] font-extrabold text-gray-900 truncate min-w-0 max-w-[100px] md:max-w-[150px] 2xl:max-w-[250px] tracking-tight bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 rounded hover:bg-gray-100 transition-colors px-2 py-1 -ml-2"
+                                        size={Math.max(15, activeForm.title.length || 15)}
+                                        className="text-[15px] font-extrabold text-gray-900 truncate min-w-0 max-w-[150px] md:max-w-[300px] lg:max-w-[400px] 2xl:max-w-[600px] tracking-tight bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 rounded hover:bg-gray-100 transition-colors px-2 py-1 -ml-2"
                                     />
 
                         {/* Sub-tabs */}

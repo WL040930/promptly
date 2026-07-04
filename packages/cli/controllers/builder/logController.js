@@ -1,7 +1,8 @@
 import { ExecutionLog, Workflow } from '../../models/index.js';
 import { Op } from 'sequelize';
+import asyncHandler from '../../utils/asyncHandler.js';
 
-export const getExecutionLogs = async (req, res) => {
+export const getExecutionLogs = asyncHandler(async (req, res) => {
     const { search, status } = req.query;
     
     let whereClause = { userId: req.user.id };
@@ -36,4 +37,4 @@ export const getExecutionLogs = async (req, res) => {
     });
     
     res.json(logs);
-};
+});

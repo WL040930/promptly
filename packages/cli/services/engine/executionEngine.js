@@ -70,6 +70,13 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}) =
                 
                 // For logic nodes, determine which path to follow
                 if (node.type === 'logic') {
+                    // Resolve targetHandle to targetEdgeId if not already present
+                    if (executionResult.targetHandle && !executionResult.targetEdgeId) {
+                        const matchingEdge = edges.find(e => e.source === node.id && e.sourceHandle === executionResult.targetHandle);
+                        if (matchingEdge) {
+                            executionResult.targetEdgeId = matchingEdge.id;
+                        }
+                    }
                     // Expect logic nodes to optionally return a targetEdgeId
                     if (executionResult.targetEdgeId) {
                         stepDetails += ` Routing down edge ${executionResult.targetEdgeId}`;

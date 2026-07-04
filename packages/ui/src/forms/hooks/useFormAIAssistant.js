@@ -9,7 +9,7 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
         text: "Hi! I'm your AI form designer. Describe what kind of form you want to build, or ask me to add specific fields.",
     };
 
-    const [messages, setMessages] = useState([defaultMessage]);
+    const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
