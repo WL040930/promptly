@@ -1,6 +1,6 @@
-import { LogicNode } from '../../../BaseNode.js';
+import { BaseNode } from '../../../BaseNode.js';
 
-export default class CustomNodeJSNode extends LogicNode {
+export default class CustomNodeJSNode extends BaseNode {
     async execute(context) {
         // Core execution logic goes here
         return { ...context, success: true };

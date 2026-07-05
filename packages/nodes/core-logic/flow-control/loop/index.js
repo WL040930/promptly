@@ -1,6 +1,6 @@
-import { LogicNode } from '../../../BaseNode.js';
+import { BaseNode } from '../../../BaseNode.js';
 
-export default class LoopIteratorNode extends LogicNode {
+export default class LoopIteratorNode extends BaseNode {
     async execute(context) {
         const config = this.getResolvedConfig(context);
         let items = config.inputArray;

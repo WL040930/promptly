@@ -1,6 +1,6 @@
-import { TriggerNode } from '../../../BaseNode.js';
+import { BaseNode } from '../../../BaseNode.js';
 
-export default class EmailReceivedNode extends TriggerNode {
+export default class EmailReceivedNode extends BaseNode {
     async execute(context) {
         // Core execution logic goes here
         return { ...context, success: true };

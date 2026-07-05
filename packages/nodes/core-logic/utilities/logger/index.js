@@ -1,6 +1,6 @@
-import { LogicNode } from '../../../BaseNode.js';
+import { BaseNode } from '../../../BaseNode.js';
 
-export default class LoggerNode extends LogicNode {
+export default class LoggerNode extends BaseNode {
     /**
      * Executes the node's core logic.
      * @param {Object} context - The current execution context, containing results from previous nodes.

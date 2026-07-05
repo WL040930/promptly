@@ -1,6 +1,6 @@
-import { LogicNode } from '../../../BaseNode.js';
+import { BaseNode } from '../../../BaseNode.js';
 
-export default class RouterSwitchNode extends LogicNode {
+export default class RouterSwitchNode extends BaseNode {
     async execute(context) {
         const config = this.getResolvedConfig(context);
         const { valueToTest = "", matchA = "", matchB = "" } = config;

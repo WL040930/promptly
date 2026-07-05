@@ -1,6 +1,6 @@
-import { AINode } from '../../../BaseNode.js';
+import { BaseNode } from '../../../BaseNode.js';
 
-export default class KnowledgeBaseSearchNode extends AINode {
+export default class KnowledgeBaseSearchNode extends BaseNode {
     async execute(context) {
         // Core execution logic goes here
         return { ...context, success: true };

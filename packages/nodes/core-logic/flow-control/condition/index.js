@@ -1,6 +1,6 @@
-import { LogicNode } from '../../../BaseNode.js';
+import { BaseNode } from '../../../BaseNode.js';
 
-export default class ConditionIfElseNode extends LogicNode {
+export default class ConditionIfElseNode extends BaseNode {
     async execute(context) {
         const config = this.getResolvedConfig(context);
         const { valueA = "", operator = "equals", valueB = "" } = config;

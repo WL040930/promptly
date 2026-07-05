@@ -1,6 +1,6 @@
-import { LogicNode } from '../../../BaseNode.js';
+import { BaseNode } from '../../../BaseNode.js';
 
-export default class WaitDelayNode extends LogicNode {
+export default class WaitDelayNode extends BaseNode {
     async execute(context) {
         const config = this.getResolvedConfig(context);
         let amount = Number(config.delayAmount) || 1;

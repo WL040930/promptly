@@ -1,6 +1,6 @@
-import { LogicNode } from '../../../BaseNode.js';
+import { BaseNode } from '../../../BaseNode.js';
 
-export default class MergeBranchesNode extends LogicNode {
+export default class MergeBranchesNode extends BaseNode {
     async execute(context) {
         // The execution engine inherently waits for all incoming edges to complete
         // before running this node (due to inDegree tracking).

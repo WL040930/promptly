@@ -23,7 +23,4 @@ export class BaseNode {
     }
 }
 
-export class TriggerNode extends BaseNode {}
-export class ActionNode extends BaseNode {}
-export class LogicNode extends BaseNode {}
-export class AINode extends BaseNode {}
+
