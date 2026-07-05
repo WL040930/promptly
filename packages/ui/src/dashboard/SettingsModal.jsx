@@ -7,6 +7,11 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
     const [activeTab, setActiveTab] = useState('general');
     const [selectedRole, setSelectedRole] = useState(user?.experienceLevel || 'chat');
     const [isSaving, setIsSaving] = useState(false);
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [showNewPassword, setShowNewPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
     const modalRef = useRef(null);
     const toast = useToast();
 
@@ -35,6 +40,69 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
             }
         }
     };
+
+    const handleUpdatePassword = async (e) => {
+        e.preventDefault();
+        if (!newPassword || !confirmPassword) {
+            toast.error('Both password fields are required.');
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            toast.error('Passwords do not match.');
+            return;
+        }
+        
+        const isPasswordValid = 
+            newPassword.length >= 12 &&
+            /[A-Z]/.test(newPassword) &&
+            /[a-z]/.test(newPassword) &&
+            /[0-9]/.test(newPassword) &&
+            /[^A-Za-z0-9]/.test(newPassword);
+
+        if (!isPasswordValid) {
+            toast.error('Password does not meet the complexity requirements.');
+            return;
+        }
+
+        setIsUpdatingPassword(true);
+        try {
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch('http://localhost:3000/api/auth/change-password', {
+                method: 'PUT',
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ newPassword })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                toast.success('Password updated successfully.');
+                setNewPassword('');
+                setConfirmPassword('');
+                setShowNewPassword(false);
+                setShowConfirmPassword(false);
+            } else {
+                toast.error(data.error || 'Failed to update password.');
+            }
+        } catch (err) {
+            console.error('Failed to change password:', err);
+            toast.error('An error occurred while changing password.');
+        } finally {
+            setIsUpdatingPassword(false);
+        }
+    };
+
+    const passwordRequirements = [
+        { label: 'At least 12 characters', met: newPassword.length >= 12 },
+        { label: 'One uppercase letter (A-Z)', met: /[A-Z]/.test(newPassword) },
+        { label: 'One lowercase letter (a-z)', met: /[a-z]/.test(newPassword) },
+        { label: 'One number (0-9)', met: /[0-9]/.test(newPassword) },
+        { label: 'One special character (e.g. !@#$)', met: /[^A-Za-z0-9]/.test(newPassword) }
+    ];
+
+    const isPasswordValid = passwordRequirements.every(req => req.met);
+    const passwordsMatch = newPassword === confirmPassword && confirmPassword !== '';
 
     const isDirty = selectedRole !== user?.experienceLevel;
 
@@ -83,7 +151,7 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
                             <div className="mt-3 inline-block px-2 py-1 bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-wider rounded">Recommended for everyone</div>
                         </div>
                     </button>
-
+ 
                     {/* Builder Card */}
                     <button 
                         onClick={() => setSelectedRole('builder')}
@@ -104,6 +172,105 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
                         </div>
                     </button>
                 </div>
+            </div>
+
+            {/* Change Password Section */}
+            <div className="pt-6 border-t border-slate-100">
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-2">Security</h3>
+                <p className="text-sm text-slate-500 mb-4">Ensure your account is using a long, secure password.</p>
+                <form onSubmit={handleUpdatePassword} className="flex flex-col gap-6 p-4 rounded-xl border border-slate-100 bg-slate-50/50">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Inputs Column */}
+                        <div className="flex flex-col gap-4">
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">New Password</label>
+                                <div className="relative">
+                                    <input 
+                                        type={showNewPassword ? "text" : "password"} 
+                                        value={newPassword}
+                                        onChange={(e) => setNewPassword(e.target.value)}
+                                        className="w-full pl-3 pr-10 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-indigo-500 transition-colors"
+                                        placeholder="••••••••••••"
+                                    />
+                                    <button 
+                                        type="button"
+                                        onClick={() => setShowNewPassword(!showNewPassword)}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                                    >
+                                        {showNewPassword ? (
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"></path></svg>
+                                        ) : (
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"></path><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Confirm New Password</label>
+                                <div className="relative">
+                                    <input 
+                                        type={showConfirmPassword ? "text" : "password"} 
+                                        value={confirmPassword}
+                                        onChange={(e) => setConfirmPassword(e.target.value)}
+                                        className="w-full pl-3 pr-10 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-indigo-500 transition-colors"
+                                        placeholder="••••••••••••"
+                                    />
+                                    <button 
+                                        type="button"
+                                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                                    >
+                                        {showConfirmPassword ? (
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"></path></svg>
+                                        ) : (
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"></path><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                        )}
+                                    </button>
+                                </div>
+                                {confirmPassword && !passwordsMatch && (
+                                    <span className="text-[11px] font-bold text-red-500 mt-1">Passwords do not match</span>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Requirements Column */}
+                        <div className="flex flex-col gap-2 p-3 bg-white rounded-lg border border-slate-100">
+                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Requirements</span>
+                            <ul className="flex flex-col gap-1.5">
+                                {passwordRequirements.map((req, idx) => (
+                                    <li key={idx} className="flex items-center gap-2 text-xs">
+                                        <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${req.met ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                            <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"></path>
+                                            </svg>
+                                        </div>
+                                        <span className={`font-medium ${req.met ? 'text-slate-600 line-through decoration-slate-300' : 'text-slate-500'}`}>{req.label}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div className="flex justify-end pt-2 border-t border-slate-100/50">
+                        <button 
+                            type="submit"
+                            disabled={isUpdatingPassword || !isPasswordValid || !passwordsMatch}
+                            className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md disabled:shadow-none hover:shadow-indigo-600/10 flex items-center gap-2"
+                        >
+                            {isUpdatingPassword ? (
+                                <>
+                                    <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                    </svg>
+                                    Updating...
+                                </>
+                            ) : (
+                                'Update Password'
+                            )}
+                        </button>
+                    </div>
+                </form>
             </div>
 
             <div className="pt-6 border-t border-slate-100">
@@ -248,7 +415,7 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
                 
                 {renderTabs()}
 
-                <div className="bg-white min-h-[350px] relative overflow-hidden">
+                <div className="bg-white min-h-[350px] max-h-[60vh] overflow-y-auto relative">
                     {activeTab === 'general' ? renderGeneral() : renderConnections()}
                 </div>
             </div>

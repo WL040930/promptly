@@ -182,4 +182,29 @@ export const resetPassword = async (req, res) => {
     res.json({ message: 'Your password has been successfully reset.' });
 };
 
+export const changePassword = async (req, res) => {
+    const { newPassword } = req.body;
+
+    if (!newPassword) {
+        return res.status(400).json({ error: 'New password is required.' });
+    }
+
+    const user = await User.findByPk(req.user.id);
+    if (!user) {
+        return res.status(404).json({ error: 'User not found.' });
+    }
+
+    // Validate new password pattern
+    if (!passwordPattern.test(newPassword)) {
+        return res.status(400).json({
+            error: 'New password must be at least 12 characters and include uppercase, lowercase, number, and symbol.'
+        });
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    return res.json({ message: 'Password updated successfully.' });
+};
+
 export { register, login, updateMode, getMe };
