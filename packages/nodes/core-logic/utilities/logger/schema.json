@@ -1,0 +1,43 @@
+{
+  "inputs": [
+    {
+      "name": "triggerData",
+      "type": "object",
+      "label": "Incoming Data",
+      "isConnection": true
+    },
+    {
+      "name": "logMessage",
+      "type": "text",
+      "label": "Log Message",
+      "defaultValue": "Hello from the logger!",
+      "placeholder": "Enter text or {{variables}} to log"
+    },
+    {
+      "name": "logLevel",
+      "type": "select",
+      "label": "Log Level",
+      "defaultValue": "info",
+      "options": [
+        { "label": "Info", "value": "info" },
+        { "label": "Warning", "value": "warn" },
+        { "label": "Error", "value": "error" }
+      ]
+    },
+    {
+      "name": "includeContext",
+      "type": "boolean",
+      "label": "Include full execution context?",
+      "defaultValue": false
+    }
+  ],
+  "outputs": [
+    {
+      "name": "loggedAt",
+      "type": "string",
+      "label": "Timestamp",
+      "isConnection": true,
+      "description": "The timestamp of when the log occurred."
+    }
+  ]
+}

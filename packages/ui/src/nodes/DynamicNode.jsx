@@ -41,25 +41,31 @@ const NODE_STYLES = {
     }
 };
 
-const BaseNode = ({
-    type = 'ai',
-    title,
-    description,
-    isActive,
-    onClick,
-    onHandleClick,
-    isConnectable = true,
-    showInputHandle = type !== 'trigger',
-    showOutputHandle = true,
-    customOutputHandles,
-    icon,
-    children,
-    onDelete
-}) => {
-    const style = NODE_STYLES[type] || NODE_STYLES.ai;
-    const nodeIcon = icon || style.icon;
+const DynamicNode = ({ data, type, isConnectable = true }) => {
+    const { title, description, schema, isActive, onClick, onDelete, onHandleClick } = data;
+    
+    const showInputHandle = type !== 'trigger';
+    const showOutputHandle = true;
 
-    // If customOutputHandles is provided, we map through them, otherwise we render the default single handle if showOutputHandle is true
+    const style = NODE_STYLES[type] || NODE_STYLES.ai;
+    const nodeIcon = style.icon;
+
+    // Calculate dynamic handles based on schema
+    const schemaInputs = schema?.inputs?.filter(i => i.isConnection) || [];
+    const schemaOutputs = schema?.outputs?.filter(o => o.isConnection) || [];
+
+    const allInputHandles = schemaInputs.map(i => ({ id: i.name, label: i.label || i.name }));
+    if (showInputHandle && allInputHandles.length === 0) {
+        allInputHandles.push({ id: 'default', label: 'Input' });
+    }
+
+    const allOutputHandles = [
+        ...schemaOutputs.map(o => ({ id: o.name, label: o.label || o.name }))
+    ];
+    if (showOutputHandle && allOutputHandles.length === 0) {
+        allOutputHandles.push({ id: 'default', label: 'Output' });
+    }
+
     return (
         <div
             onClick={onClick}
@@ -69,16 +75,25 @@ const BaseNode = ({
                     : 'border-slate-200 hover:border-slate-300 shadow-sm hover:shadow z-10'
             }`}
         >
-            {/* Input Handle (Left) */}
-            {showInputHandle && (
-                <Handle
-                    type="target"
-                    position={Position.Left}
-                    isConnectable={isConnectable}
-                    className="!w-3 !h-3 !bg-white !border-2 !border-slate-300 hover:!border-indigo-500 hover:!bg-indigo-50 !transition-all"
-                    style={{ left: '-6px' }}
-                    onClick={(e) => onHandleClick?.(e, null, 'target')}
-                />
+            {/* Input Handles (Left) */}
+            {allInputHandles.length > 0 && (
+                <div className="absolute -left-[6px] top-0 h-full flex flex-col justify-evenly pointer-events-none z-30">
+                    {allInputHandles.map((handle) => (
+                        <div key={handle.id} className="group relative flex items-center pointer-events-auto">
+                            <span className="absolute right-4 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold text-white bg-slate-800 px-2 py-0.5 shadow-md rounded whitespace-nowrap pointer-events-none">
+                                {handle.label}
+                            </span>
+                            <Handle
+                                type="target"
+                                position={Position.Left}
+                                id={handle.id === 'default' ? null : handle.id}
+                                isConnectable={isConnectable}
+                                className="!w-3 !h-3 !bg-white !border-2 !border-slate-300 hover:!border-indigo-500 hover:!bg-indigo-50 !transition-all !relative !transform-none !left-0 !right-0 !top-0"
+                                onClick={(e) => onHandleClick?.(e, handle.id === 'default' ? null : handle.id, 'target')}
+                            />
+                        </div>
+                    ))}
+                </div>
             )}
 
             {/* Left Icon Panel */}
@@ -110,14 +125,13 @@ const BaseNode = ({
                 <p className="text-[11px] font-medium text-slate-500 mt-0.5 line-clamp-2 leading-tight pr-8">
                     {description}
                 </p>
-                {children}
 
             </div>
 
             {/* Output Handles (Right) */}
-            {customOutputHandles && customOutputHandles.length > 0 ? (
+            {allOutputHandles.length > 0 && (
                 <div className="absolute -right-[6px] top-0 h-full flex flex-col justify-evenly pointer-events-none z-30">
-                    {customOutputHandles.map((handle) => (
+                    {allOutputHandles.map((handle) => (
                         <div key={handle.id} className="group relative flex items-center pointer-events-auto">
                             <span className="absolute left-4 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold text-white bg-slate-800 px-2 py-0.5 shadow-md rounded whitespace-nowrap pointer-events-none">
                                 {handle.label}
@@ -125,26 +139,17 @@ const BaseNode = ({
                             <Handle
                                 type="source"
                                 position={Position.Right}
-                                id={handle.id}
+                                id={handle.id === 'default' ? null : handle.id}
                                 isConnectable={isConnectable}
                                 className="!w-3 !h-3 !bg-white !border-2 !border-slate-300 hover:!border-indigo-500 hover:!bg-indigo-50 !transition-all !relative !transform-none !left-0 !right-0 !top-0"
-                                onClick={(e) => onHandleClick?.(e, handle.id, 'source')}
+                                onClick={(e) => onHandleClick?.(e, handle.id === 'default' ? null : handle.id, 'source')}
                             />
                         </div>
                     ))}
                 </div>
-            ) : showOutputHandle ? (
-                <Handle
-                    type="source"
-                    position={Position.Right}
-                    isConnectable={isConnectable}
-                    className="!w-3 !h-3 !bg-white !border-2 !border-slate-300 hover:!border-indigo-500 hover:!bg-indigo-50 !transition-all"
-                    style={{ right: '-6px' }}
-                    onClick={(e) => onHandleClick?.(e, null, 'source')}
-                />
-            ) : null}
+            )}
         </div>
     );
 };
 
-export default BaseNode;
+export default DynamicNode;

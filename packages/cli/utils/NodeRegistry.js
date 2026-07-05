@@ -6,11 +6,9 @@ class NodeRegistry {
     constructor() {
         this.nodesBySubType = new Map();
         this.uiLibrary = []; // Array of categories for the UI
-        this.initialized = false;
     }
 
     async init() {
-        if (this.initialized) return;
 
         // The cli process runs in packages/cli, so go up one level to packages/nodes
         const nodesDir = path.resolve(process.cwd(), '..', 'nodes');
@@ -75,9 +73,18 @@ class NodeRegistry {
                     continue; // Skip if we can't import the execution logic
                 }
 
+                // Read optional schema.json
+                let configSchema = { inputs: [], outputs: [] };
+                try {
+                    const schemaContent = await fs.readFile(path.join(dir, 'schema.json'), 'utf-8');
+                    configSchema = JSON.parse(schemaContent);
+                } catch (err) {
+                    // Ignore if schema.json doesn't exist
+                }
+
                 // 4. Register the node
                 const key = `${metadata.type}:${metadata.subType}`;
-                this.nodesBySubType.set(key, { NodeClass, metadata });
+                this.nodesBySubType.set(key, { NodeClass, metadata, configSchema });
 
                 // 5. Build UI Library hierarchy
                 if (!categoryMap.has(category)) {
@@ -94,6 +101,7 @@ class NodeRegistry {
                     type: metadata.type,
                     subType: metadata.subType,
                     description: metadata.description,
+                    schema: configSchema,
                     ...metadata.ui
                 };
                 
@@ -117,7 +125,6 @@ class NodeRegistry {
             };
         });
 
-        this.initialized = true;
         console.log(`[NodeRegistry] Successfully registered ${this.nodesBySubType.size} dynamic nodes.`);
     }
 

@@ -1,0 +1,36 @@
+{
+  "inputs": [
+    {
+      "name": "input1",
+      "type": "object",
+      "label": "Input Data",
+      "isConnection": true
+    },
+    {
+      "name": "input2",
+      "type": "object",
+      "label": "Input Data",
+      "isConnection": true
+    },
+    {
+      "name": "setting",
+      "type": "text",
+      "label": "Configure? ",
+      "defaultValue": "dd"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "true",
+      "type": "object",
+      "label": "True",
+      "isConnection": true
+    },
+    {
+      "name": "false",
+      "type": "object",
+      "label": "False",
+      "isConnection": true
+    }
+  ]
+}

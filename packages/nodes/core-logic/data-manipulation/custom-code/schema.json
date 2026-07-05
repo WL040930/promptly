@@ -1,0 +1,24 @@
+{
+  "inputs": [
+    {
+      "name": "input1",
+      "type": "object",
+      "label": "Input Data",
+      "isConnection": true
+    },
+    {
+      "name": "setting",
+      "type": "text",
+      "label": "Configuration Setting",
+      "defaultValue": ""
+    }
+  ],
+  "outputs": [
+    {
+      "name": "outputData",
+      "type": "object",
+      "label": "Output Data",
+      "isConnection": true
+    }
+  ]
+}

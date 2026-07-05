@@ -1,0 +1,19 @@
+{
+  "inputs": [
+    {
+      "name": "eventName",
+      "type": "text",
+      "label": "Event Name to listen to",
+      "defaultValue": "onCreated"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "triggerData",
+      "type": "object",
+      "label": "Trigger Data",
+      "isConnection": true,
+      "description": "Data received from the trigger event."
+    }
+  ]
+}

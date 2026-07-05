@@ -10,10 +10,7 @@ import {
   ReactFlowProvider,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import TriggerNode from '../../nodes/TriggerNode';
-import AINode from '../../nodes/AINode';
-import ActionNode from '../../nodes/ActionNode';
-import LogicNode from '../../nodes/LogicNode';
+import DynamicNode from '../../nodes/DynamicNode';
 import DeletableEdge from './edges/DeletableEdge';
 import CustomConnectionLine from './edges/CustomConnectionLine';
 
@@ -22,10 +19,10 @@ const edgeTypes = {
 };
 
 const nodeTypes = {
-  trigger: TriggerNode,
-  ai: AINode,
-  action: ActionNode,
-  logic: LogicNode,
+  trigger: DynamicNode,
+  ai: DynamicNode,
+  action: DynamicNode,
+  logic: DynamicNode,
 };
 
 const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, onNodeClick, onNodesChangeCallback, onEdgesChangeCallback, onAddNode, draggedNode }) => {
@@ -53,6 +50,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
         subType: n.subType,
         title: n.title,
         description: n.description,
+        schema: n.schema,
         isActive: n.id === activeNodeId,
         onClick: () => onNodeClick(n.id),
         onHandleClick: (e, handleId, handleType) => onHandleClickRef.current?.(e, n.id, handleId, handleType),
@@ -88,6 +86,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
             ...node.data,
             title: matchingInitialNode.title,
             description: matchingInitialNode.description,
+            schema: matchingInitialNode.schema,
             isActive: node.id === activeNodeId,
           },
         };

@@ -1,0 +1,45 @@
+{
+  "inputs": [
+    {
+      "name": "inputData",
+      "type": "object",
+      "label": "Input Data",
+      "isConnection": true
+    },
+    {
+      "name": "prompt",
+      "type": "textarea",
+      "label": "Prompt Template",
+      "defaultValue": "Process this data: {{variables}}"
+    },
+    {
+      "name": "model",
+      "type": "select",
+      "label": "AI Model",
+      "defaultValue": "gpt-4o",
+      "options": [
+        {
+          "label": "GPT-4o",
+          "value": "gpt-4o"
+        },
+        {
+          "label": "Claude 3.5 Sonnet",
+          "value": "claude-3-5"
+        },
+        {
+          "label": "Gemini 1.5 Pro",
+          "value": "gemini-1-5"
+        }
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "result",
+      "type": "string",
+      "label": "Output Result",
+      "isConnection": true,
+      "description": "The AI generated text/data."
+    }
+  ]
+}

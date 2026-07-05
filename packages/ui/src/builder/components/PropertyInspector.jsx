@@ -22,8 +22,6 @@ const PropertyInspector = ({ activeNode, onUpdateNode }) => {
 
     const [title, setTitle] = useState(activeNode.title || '');
     const [description, setDescription] = useState(activeNode.description || '');
-    const [prompt, setPrompt] = useState(activeNode.config?.prompt || 'Extract the main intent and urgency from the following email: {{email_body}}');
-    const [model, setModel] = useState(activeNode.config?.model || 'prompty-ultra-v3');
 
     const handleTitleChange = (e) => {
         const val = e.target.value;
@@ -35,18 +33,6 @@ const PropertyInspector = ({ activeNode, onUpdateNode }) => {
         const val = e.target.value;
         setDescription(val);
         onUpdateNode?.(activeNode.id, { description: val });
-    };
-
-    const handlePromptChange = (e) => {
-        const val = e.target.value;
-        setPrompt(val);
-        onUpdateNode?.(activeNode.id, { config: { prompt: val } });
-    };
-
-    const handleModelChange = (e) => {
-        const val = e.target.value;
-        setModel(val);
-        onUpdateNode?.(activeNode.id, { config: { model: val } });
     };
 
     return (
@@ -84,66 +70,86 @@ const PropertyInspector = ({ activeNode, onUpdateNode }) => {
 
                 <div className="w-full h-px bg-slate-100 my-2"></div>
 
-                {activeNode.type === 'ai' && (
-                    <div className="flex flex-col gap-3">
-                        <div className={sectionClassName}>
-                            <label className={`${labelClassName} flex justify-between`}>
-                                Prompt Template
-                                <span className="text-indigo-500 cursor-pointer hover:underline">Variables</span>
-                            </label>
-                            <textarea
-                                value={prompt}
-                                onChange={handlePromptChange}
-                                rows="4"
-                                className="w-full bg-slate-900 border border-slate-800 rounded-lg text-indigo-100 px-3 py-3 outline-none font-mono text-xs focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all shadow-inner resize-none leading-relaxed"
-                            />
-                        </div>
-                        <div className={sectionClassName}>
-                            <label className={labelClassName}>Model Selection</label>
-                            <select 
-                                value={model}
-                                onChange={handleModelChange}
-                                className={`${inputClassName} appearance-none cursor-pointer`}
-                            >
-                                <option value="prompty-ultra-v3">prompty-ultra-v3</option>
-                                <option value="prompty-fast-v3">prompty-fast-v3</option>
-                            </select>
-                        </div>
-                    </div>
-                )}
+                {/* Dynamic Configuration Driven by schema.json */}
+                {(() => {
+                    const configInputs = activeNode.schema?.inputs?.filter(input => !input.isConnection) || [];
+                    
+                    if (configInputs.length > 0) {
+                        return (
+                            <div className="flex flex-col gap-4">
+                                {configInputs.map((input) => {
+                                    const value = activeNode.config?.[input.name] !== undefined 
+                                                ? activeNode.config[input.name] 
+                                                : (input.defaultValue !== undefined ? input.defaultValue : '');
+                                                
+                                    const handleChange = (e) => {
+                                        let val = e.target.value;
+                                        if (input.type === 'boolean') {
+                                            val = e.target.checked;
+                                        } else if (input.type === 'number') {
+                                            val = Number(val);
+                                        }
+                                        onUpdateNode?.(activeNode.id, { 
+                                            config: { ...(activeNode.config || {}), [input.name]: val } 
+                                        });
+                                    };
 
-                 {activeNode.type === 'trigger' && (
-                    <div className="flex flex-col gap-3">
-                        <div className={sectionClassName}>
-                            <label className={labelClassName}>Webhook URL</label>
-                            <div className="flex gap-2">
-                                <input
-                                    type="text"
-                                    readOnly
-                                    value="https://api.prompty.com/v1/wh/9a8b7"
-                                    className="flex-1 bg-slate-50 border border-slate-200 rounded-lg text-slate-500 px-3 py-2 outline-none font-mono text-xs shadow-inner"
-                                />
-                                <button className="bg-slate-100 text-slate-600 px-3 rounded-lg border border-slate-200 hover:bg-slate-200 font-semibold text-xs transition-colors">
-                                    Copy
-                                </button>
+                                    return (
+                                        <div key={input.name} className={sectionClassName}>
+                                            {input.type !== 'boolean' && (
+                                                <label className={labelClassName}>{input.label || input.name}</label>
+                                            )}
+                                            
+                                            {input.type === 'textarea' ? (
+                                                <textarea
+                                                    value={value}
+                                                    onChange={handleChange}
+                                                    placeholder={input.placeholder}
+                                                    rows="4"
+                                                    className={`${inputClassName} resize-none`}
+                                                />
+                                            ) : input.type === 'select' ? (
+                                                <select 
+                                                    value={value}
+                                                    onChange={handleChange}
+                                                    className={`${inputClassName} appearance-none cursor-pointer`}
+                                                >
+                                                    {input.options?.map(opt => (
+                                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                    ))}
+                                                </select>
+                                            ) : input.type === 'boolean' ? (
+                                                <label className="flex items-center gap-2 cursor-pointer mt-1">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={!!value} 
+                                                        onChange={handleChange}
+                                                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
+                                                    />
+                                                    <span className="text-sm font-semibold text-slate-700">{input.label || input.name}</span>
+                                                </label>
+                                            ) : (
+                                                <input
+                                                    type={input.type === 'number' ? 'number' : 'text'}
+                                                    value={value}
+                                                    onChange={handleChange}
+                                                    placeholder={input.placeholder}
+                                                    className={inputClassName}
+                                                />
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
-                        </div>
-                    </div>
-                )}
-
-                {activeNode.type === 'action' && (
-                    <div className="flex flex-col gap-3">
-                        <div className={sectionClassName}>
-                            <label className={labelClassName}>Connection</label>
-                            <div className="flex items-center gap-2 p-2 bg-emerald-50 border border-emerald-100 rounded-lg">
-                                <div className="w-6 h-6 rounded bg-white flex items-center justify-center text-emerald-600 shadow-sm border border-emerald-100">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
-                                </div>
-                                <span className="text-sm font-semibold text-emerald-800">Production DB</span>
+                        );
+                    } else {
+                        return (
+                            <div className="text-xs text-slate-400 italic text-center py-4 bg-slate-50 rounded-lg">
+                                This node has no configurable properties.
                             </div>
-                        </div>
-                    </div>
-                )}
+                        );
+                    }
+                })()}
             </div>
 
             <div className="p-4 border-t border-slate-100 bg-slate-50/50">

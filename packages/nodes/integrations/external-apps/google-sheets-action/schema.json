@@ -1,0 +1,24 @@
+{
+  "inputs": [
+    {
+      "name": "triggerData",
+      "type": "object",
+      "label": "Input Payload",
+      "isConnection": true
+    },
+    {
+      "name": "actionUrl",
+      "type": "text",
+      "label": "Target URL/Resource",
+      "placeholder": "https://api.example.com"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "response",
+      "type": "object",
+      "label": "API Response",
+      "isConnection": true
+    }
+  ]
+}

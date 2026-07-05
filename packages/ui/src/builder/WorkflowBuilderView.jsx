@@ -136,6 +136,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         [workflows, activeWorkflowId]
     );
     const nodes = activeWorkflow?.nodes || [];
+    const edges = activeWorkflow?.edges || [];
     const activeNode = useMemo(() => nodes.find(n => n.id === activeNodeId) || null, [nodes, activeNodeId]);
 
     const activeFolder = useMemo(() => {
@@ -196,6 +197,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
             subType: nodeData.subType,
             title: nodeData.title,
             description: nodeData.description,
+            schema: nodeData.schema,
             position
         }];
         handleWorkflowUpdate({ nodes: updatedNodes });
@@ -226,6 +228,10 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         }
 
         handleWorkflowUpdate({ nodes: updatedNodes });
+    };
+
+    const handleEdgesChange = (updatedEdges) => {
+        handleWorkflowUpdate({ edges: updatedEdges });
     };
 
     const handleUpdateNode = (nodeId, updatedFields) => {
@@ -339,10 +345,12 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                 <div className="flex-1 p-6 overflow-hidden flex flex-col bg-slate-50">
                     <WorkflowCanvas
                         initialNodes={nodes}
+                        initialEdges={edges}
                         activeNodeId={activeNodeId}
                         onNodeClick={handleNodeClick}
                         onAddNode={handleAddNode}
                         onNodesChangeCallback={handleNodesChange}
+                        onEdgesChangeCallback={handleEdgesChange}
                         draggedNode={draggedNode}
                     />
                 </div>

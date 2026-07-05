@@ -1,0 +1,36 @@
+{
+  "inputs": [
+    {
+      "name": "input1",
+      "type": "object",
+      "label": "Input Data",
+      "isConnection": true
+    },
+    {
+      "name": "setting",
+      "type": "text",
+      "label": "Configuration Setting",
+      "defaultValue": ""
+    }
+  ],
+  "outputs": [
+    {
+      "name": "branchA",
+      "type": "object",
+      "label": "Branch A",
+      "isConnection": true
+    },
+    {
+      "name": "branchB",
+      "type": "object",
+      "label": "Branch B",
+      "isConnection": true
+    },
+    {
+      "name": "default",
+      "type": "object",
+      "label": "Default",
+      "isConnection": true
+    }
+  ]
+}
