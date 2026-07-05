@@ -13,10 +13,30 @@
       "isConnection": true
     },
     {
-      "name": "setting",
+      "name": "valueA",
       "type": "text",
-      "label": "Configure? ",
-      "defaultValue": "dd"
+      "label": "Value A",
+      "defaultValue": ""
+    },
+    {
+      "name": "operator",
+      "type": "select",
+      "label": "Operator",
+      "defaultValue": "equals",
+      "options": [
+        { "label": "Equals (==)", "value": "equals" },
+        { "label": "Not Equals (!=)", "value": "not_equals" },
+        { "label": "Greater Than (>)", "value": "greater_than" },
+        { "label": "Less Than (<)", "value": "less_than" },
+        { "label": "Contains", "value": "contains" },
+        { "label": "Exists", "value": "exists" }
+      ]
+    },
+    {
+      "name": "valueB",
+      "type": "text",
+      "label": "Value B",
+      "defaultValue": ""
     }
   ],
   "outputs": [

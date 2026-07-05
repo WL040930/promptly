@@ -1,5 +1,6 @@
 import React from 'react';
 import { formatLastEdited } from '../utils/timeUtils.js';
+import { ICON_MAP } from '../utils/iconMap.jsx';
 
 /**
  * The top header toolbar for the workflow builder.
@@ -14,12 +15,12 @@ const BuilderToolbar = ({
     onBack,
     activeFolderName,
     activeWorkflow,
-    isEditingTitle,
-    titleInput,
+    isEditingTitle, // deprecated
+    titleInput, // deprecated
     onTitleEditStart,
-    onTitleInputChange,
-    onTitleEditComplete,
-    onTitleEditCancel,
+    onTitleInputChange, // deprecated
+    onTitleEditComplete, // deprecated
+    onTitleEditCancel, // deprecated
     nodeCount,
     currentTime
 }) => {
@@ -31,11 +32,10 @@ const BuilderToolbar = ({
                     {/* Left sidebar toggle */}
                     <button
                         onClick={onToggleLeft}
-                        className={`shrink-0 p-1.5 rounded-lg border transition-colors ${
-                            isLeftSidebarOpen
+                        className={`shrink-0 p-1.5 rounded-lg border transition-colors ${isLeftSidebarOpen
                                 ? 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
                                 : 'border-slate-200 text-slate-500 hover:bg-slate-100'
-                        }`}
+                            }`}
                         title="Toggle Node Library"
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -59,36 +59,27 @@ const BuilderToolbar = ({
                         <span className="text-slate-500 text-sm font-medium truncate hidden sm:block">{activeFolderName}</span>
                         <span className="text-slate-300 text-sm hidden sm:block">/</span>
 
-                        {isEditingTitle ? (
-                            <input
-                                autoFocus
-                                className="text-base font-semibold text-slate-900 bg-white border border-indigo-300 rounded px-1.5 py-0.5 outline-none focus:ring-2 focus:ring-indigo-500/20 w-48"
-                                value={titleInput}
-                                onChange={(e) => onTitleInputChange(e.target.value)}
-                                onBlur={onTitleEditComplete}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') onTitleEditComplete();
-                                    if (e.key === 'Escape') onTitleEditCancel();
-                                }}
-                            />
-                        ) : (
-                            <div
-                                className="flex items-center gap-1.5 group cursor-pointer hover:bg-slate-100 rounded px-1.5 py-0.5 transition-colors"
-                                onClick={onTitleEditStart}
-                                title="Click to edit name"
-                            >
-                                <h2 className="text-base font-semibold text-slate-900 truncate">
-                                    {activeWorkflow?.name || 'Untitled'}
-                                </h2>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
-                                </svg>
-                            </div>
-                        )}
+                        <div
+                            className="flex items-center gap-1.5 group cursor-pointer hover:bg-slate-100 rounded px-1.5 py-0.5 transition-colors"
+                            onClick={onTitleEditStart}
+                            title="Click to edit name and icon"
+                        >
+                            {/* Workflow Icon */}
+                            {activeWorkflow?.icon && ICON_MAP[activeWorkflow.icon] && (
+                                <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${activeWorkflow.iconBg} ${activeWorkflow.iconColor}`}>
+                                    {ICON_MAP[activeWorkflow.icon]}
+                                </div>
+                            )}
+                            <h2 className="text-base font-semibold text-slate-900 truncate">
+                                {activeWorkflow?.name || 'Untitled'}
+                            </h2>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400 group-hover:text-indigo-500 transition-all shrink-0">
+                                <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                            </svg>
+                        </div>
 
-                        <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded ml-2 ${
-                            activeWorkflow?.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
-                        }`}>
+                        <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded ml-2 ${activeWorkflow?.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
+                            }`}>
                             {activeWorkflow?.status || 'Draft'}
                         </span>
                     </div>
@@ -101,11 +92,10 @@ const BuilderToolbar = ({
                     {/* Right sidebar toggle */}
                     <button
                         onClick={onToggleRight}
-                        className={`shrink-0 p-1.5 rounded-lg border transition-colors ${
-                            isRightSidebarOpen
+                        className={`shrink-0 p-1.5 rounded-lg border transition-colors ${isRightSidebarOpen
                                 ? 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
                                 : 'border-slate-200 text-slate-500 hover:bg-slate-100'
-                        }`}
+                            }`}
                         title="Toggle Promptly Agent / Inspector"
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">

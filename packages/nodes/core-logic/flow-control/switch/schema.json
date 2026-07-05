@@ -7,9 +7,21 @@
       "isConnection": true
     },
     {
-      "name": "setting",
+      "name": "valueToTest",
       "type": "text",
-      "label": "Configuration Setting",
+      "label": "Value to Test",
+      "defaultValue": ""
+    },
+    {
+      "name": "matchA",
+      "type": "text",
+      "label": "Match Case A",
+      "defaultValue": ""
+    },
+    {
+      "name": "matchB",
+      "type": "text",
+      "label": "Match Case B",
       "defaultValue": ""
     }
   ],

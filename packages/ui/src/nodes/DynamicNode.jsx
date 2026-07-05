@@ -1,5 +1,6 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
+import { ICON_MAP } from '../builder/utils/iconMap.jsx';
 
 const NODE_STYLES = {
     trigger: {
@@ -48,7 +49,17 @@ const DynamicNode = ({ data, type, isConnectable = true }) => {
     const showOutputHandle = true;
 
     const style = NODE_STYLES[type] || NODE_STYLES.ai;
-    const nodeIcon = style.icon;
+    
+    // Use node-specific UI properties if they exist (using bgColor and color from NODE.md)
+    const iconBgClass = data.bgColor || style.iconBg;
+    const iconColorClass = data.color || 'text-white';
+    
+    // Check if the specific icon exists in ICON_MAP, otherwise use the type's default icon
+    const nodeIcon = (data.icon && ICON_MAP[data.icon]) ? (
+        <div className={`w-6 h-6 flex items-center justify-center ${iconColorClass}`}>
+            {ICON_MAP[data.icon]}
+        </div>
+    ) : style.icon;
 
     // Calculate dynamic handles based on schema
     const schemaInputs = schema?.inputs?.filter(i => i.isConnection) || [];
@@ -97,7 +108,7 @@ const DynamicNode = ({ data, type, isConnectable = true }) => {
             )}
 
             {/* Left Icon Panel */}
-            <div className={`w-16 ${style.iconBg} rounded-l-lg flex flex-col items-center justify-center shrink-0 border-r border-slate-100`}>
+            <div className={`w-16 ${iconBgClass} rounded-l-lg flex flex-col items-center justify-center shrink-0 border-r border-slate-100`}>
                 {nodeIcon}
             </div>
 

@@ -7,10 +7,11 @@ export default class LoggerNode extends LogicNode {
      * @returns {Object} - Returns the updated context and any specific output data.
      */
     async execute(context) {
-        // 1. Read configuration dynamically provided by the UI via schema.json
-        const message = this.config.logMessage || "No message provided";
-        const level = this.config.logLevel || "info";
-        const includeContext = this.config.includeContext === true || this.config.includeContext === "true";
+        // 1. Resolve configuration dynamically against context to support variables
+        const resolvedConfig = this.getResolvedConfig(context);
+        const message = resolvedConfig.logMessage || "No message provided";
+        const level = resolvedConfig.logLevel || "info";
+        const includeContext = resolvedConfig.includeContext === true || resolvedConfig.includeContext === "true";
 
         // 2. Perform the node's specific action (in this case, logging)
         const logPrefix = `[Workflow Logger - ${level.toUpperCase()}] Node ID: ${this.id}`;

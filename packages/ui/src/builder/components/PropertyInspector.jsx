@@ -109,15 +109,22 @@ const PropertyInspector = ({ activeNode, onUpdateNode }) => {
                                                     className={`${inputClassName} resize-none`}
                                                 />
                                             ) : input.type === 'select' ? (
-                                                <select 
-                                                    value={value}
-                                                    onChange={handleChange}
-                                                    className={`${inputClassName} appearance-none cursor-pointer`}
-                                                >
-                                                    {input.options?.map(opt => (
-                                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                                    ))}
-                                                </select>
+                                                <div className="relative">
+                                                    <select 
+                                                        value={value}
+                                                        onChange={handleChange}
+                                                        className={`${inputClassName} appearance-none cursor-pointer pr-8`}
+                                                    >
+                                                        {input.options?.map(opt => (
+                                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                        ))}
+                                                    </select>
+                                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                                                            <polyline points="6 9 12 15 18 9"></polyline>
+                                                        </svg>
+                                                    </div>
+                                                </div>
                                             ) : input.type === 'boolean' ? (
                                                 <label className="flex items-center gap-2 cursor-pointer mt-1">
                                                     <input 

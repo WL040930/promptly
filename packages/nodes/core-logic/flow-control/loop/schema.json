@@ -7,9 +7,9 @@
       "isConnection": true
     },
     {
-      "name": "setting",
+      "name": "inputArray",
       "type": "text",
-      "label": "Configuration Setting",
+      "label": "Input Array (Variable)",
       "defaultValue": ""
     }
   ],

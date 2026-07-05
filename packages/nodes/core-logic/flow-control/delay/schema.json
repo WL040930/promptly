@@ -7,10 +7,22 @@
       "isConnection": true
     },
     {
-      "name": "setting",
-      "type": "text",
-      "label": "Configuration Setting",
-      "defaultValue": ""
+      "name": "delayAmount",
+      "type": "number",
+      "label": "Delay Amount",
+      "defaultValue": "1"
+    },
+    {
+      "name": "delayUnit",
+      "type": "select",
+      "label": "Delay Unit",
+      "defaultValue": "seconds",
+      "options": [
+        { "label": "Milliseconds", "value": "milliseconds" },
+        { "label": "Seconds", "value": "seconds" },
+        { "label": "Minutes", "value": "minutes" },
+        { "label": "Hours", "value": "hours" }
+      ]
     }
   ],
   "outputs": [

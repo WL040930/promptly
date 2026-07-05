@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
@@ -8,6 +8,8 @@ import AIAgentChat from './components/AIAgentChat';
 import NodeLibrarySidebar from './components/NodeLibrarySidebar';
 import BuilderToolbar from './components/BuilderToolbar';
 import WorkflowOverview from './overview/WorkflowOverview';
+import OverviewModal from './overview/OverviewModal';
+import { MODAL_TYPES, MODAL_CONFIG } from './overview/constants.js';
 import DashboardTab from './components/DashboardTab';
 import FormsTab from './components/FormsTab';
 import LogsTab from '../chat/components/LogsTab';
@@ -56,8 +58,8 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
     const [rightTab, setRightTab] = useState('chat');
     const [draggedNode, setDraggedNode] = useState(null);
-    const [isEditingTitle, setIsEditingTitle] = useState(false);
-    const [titleInput, setTitleInput] = useState('');
+    const [modal, setModal] = useState({ isOpen: false, type: null, data: null, inputValue: '', formData: {} });
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Real-time relative timestamp ticker
     const [currentTime, setCurrentTime] = useState(() => Date.now());
@@ -156,17 +158,55 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         updateWorkflowMutation.mutate({ id: activeWorkflowId, data: updatedFields });
     };
 
-    // ── Title editing ────────────────────────────────────────────────────────
-    const handleTitleEditStart = () => {
-        setTitleInput(activeWorkflow?.name || 'Untitled');
-        setIsEditingTitle(true);
-    };
+    // ── Modal & Title editing ────────────────────────────────────────────────
+    const openModal = useCallback((type, data = null) => {
+        setModal({ 
+            isOpen: true, 
+            type, 
+            data, 
+            inputValue: data?.currentName || '',
+            formData: {
+                name: data?.currentName || '',
+                icon: data?.icon || 'default',
+                iconColor: data?.iconColor || 'text-indigo-600',
+                iconBg: data?.iconBg || 'bg-indigo-100'
+            }
+        });
+    }, []);
 
-    const handleTitleEditComplete = () => {
-        if (titleInput.trim() && titleInput !== activeWorkflow?.name) {
-            handleWorkflowUpdate({ name: titleInput.trim() });
+    const closeModal = useCallback(() => {
+        setModal({ isOpen: false, type: null, data: null, inputValue: '', formData: {} });
+    }, []);
+
+    const handleModalSubmit = useCallback(async () => {
+        setIsSubmitting(true);
+        try {
+            if (modal.type === MODAL_TYPES.EDIT_WORKFLOW_PROPERTIES && activeWorkflowId) {
+                const nameValue = modal.formData.name?.trim() || 'Untitled Workflow';
+                const payload = {
+                    name: nameValue,
+                    icon: modal.formData.icon,
+                    iconBg: modal.formData.iconBg,
+                    iconColor: modal.formData.iconColor,
+                };
+                await updateWorkflowMutation.mutateAsync({ id: activeWorkflowId, data: payload });
+            }
+        } catch (error) {
+            console.error('Action failed:', error);
+        } finally {
+            setIsSubmitting(false);
+            closeModal();
         }
-        setIsEditingTitle(false);
+    }, [modal, activeWorkflowId, updateWorkflowMutation, closeModal]);
+
+    const handleTitleEditStart = () => {
+        const activeWorkflow = workflows[activeWorkflowId];
+        openModal(MODAL_TYPES.EDIT_WORKFLOW_PROPERTIES, {
+            currentName: activeWorkflow?.name,
+            icon: activeWorkflow?.icon,
+            iconBg: activeWorkflow?.iconBg,
+            iconColor: activeWorkflow?.iconColor,
+        });
     };
 
     // ── Node operations ──────────────────────────────────────────────────────
@@ -198,6 +238,9 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
             title: nodeData.title,
             description: nodeData.description,
             schema: nodeData.schema,
+            icon: nodeData.icon,
+            bgColor: nodeData.bgColor,
+            color: nodeData.color,
             position
         }];
         handleWorkflowUpdate({ nodes: updatedNodes });
@@ -321,23 +364,27 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
 
             {/* 2. CENTER: Canvas + Toolbar */}
             <main className="flex-1 flex flex-col h-full bg-slate-50/50 relative overflow-hidden">
+                {modal.isOpen && (
+                    <OverviewModal
+                        config={MODAL_CONFIG[modal.type]}
+                        inputValue={modal.inputValue}
+                        formData={modal.formData}
+                        isSubmitting={isSubmitting}
+                        onInputChange={(val) => setModal(prev => ({ ...prev, inputValue: val }))}
+                        onFormDataChange={(updates) => setModal(prev => ({ ...prev, formData: { ...prev.formData, ...updates } }))}
+                        onCancel={closeModal}
+                        onConfirm={handleModalSubmit}
+                    />
+                )}
                 <BuilderToolbar
                     isLeftSidebarOpen={isLeftSidebarOpen}
                     isRightSidebarOpen={isRightSidebarOpen}
                     onToggleLeft={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)}
                     onToggleRight={() => setIsRightSidebarOpen(!isRightSidebarOpen)}
-                    onBack={() => {
-                        setViewMode('overview');
-                        if (setSidebarCollapsed) setSidebarCollapsed(false);
-                    }}
+                    onBack={navigateToOverview}
                     activeFolderName={activeFolderName}
                     activeWorkflow={activeWorkflow}
-                    isEditingTitle={isEditingTitle}
-                    titleInput={titleInput}
                     onTitleEditStart={handleTitleEditStart}
-                    onTitleInputChange={setTitleInput}
-                    onTitleEditComplete={handleTitleEditComplete}
-                    onTitleEditCancel={() => setIsEditingTitle(false)}
                     nodeCount={nodes.length}
                     currentTime={currentTime}
                 />
