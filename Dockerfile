@@ -20,12 +20,16 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-# Copy server code and built UI assets
+# Copy server code, dynamic node definitions, and built UI assets
 COPY --from=build /app/packages/cli ./packages/cli
+COPY --from=build /app/packages/nodes ./packages/nodes
 COPY --from=build /app/packages/ui/dist ./packages/ui/dist
+
+# Match the runtime working directory expected by server-side path resolution
+WORKDIR /app/packages/cli
 
 # Drop privileges for runtime
 USER node
 
 EXPOSE 3000
-CMD ["node", "packages/cli/server.js"]
+CMD ["node", "server.js"]
