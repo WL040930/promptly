@@ -8,8 +8,11 @@ const oauth2Client = new OAuth2Client(
     env.google.redirectUri
 );
 
-const redirectToConnections = (res, params) => {
-    const redirectUrl = new URL('/dashboard', env.app.clientOrigin);
+const getConnectionsPath = (user) =>
+    user?.experienceLevel === 'chat' ? '/chat/dashboard' : '/workflow/dashboard';
+
+const redirectToConnections = (res, params, user = null) => {
+    const redirectUrl = new URL(getConnectionsPath(user), env.app.clientOrigin);
 
     for (const [key, value] of Object.entries(params)) {
         redirectUrl.searchParams.set(key, value);
@@ -27,7 +30,7 @@ const googleConnect = async (req, res) => {
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/drive.file'
         ],
-        state: req.userId
+        state: req.user.id
     });
 
     return res.json({ url });
@@ -44,6 +47,14 @@ const googleCallback = async (req, res) => {
     }
 
     const userId = state;
+    const user = await User.findByPk(userId);
+
+    if (!user) {
+        return redirectToConnections(res, {
+            settings: 'connections',
+            error: 'user_not_found'
+        });
+    }
 
     try {
         const { tokens } = await oauth2Client.getToken(code);
@@ -53,32 +64,29 @@ const googleCallback = async (req, res) => {
         const googleEmail = response.data.email;
         const googleId = response.data.id;
 
-        const user = await User.findByPk(userId);
-        if (user) {
-            user.googleId = googleId;
-            user.googleEmail = googleEmail;
-            user.googleAccessToken = tokens.access_token;
-            if (tokens.refresh_token) {
-                user.googleRefreshToken = tokens.refresh_token;
-            }
-            await user.save();
+        user.googleId = googleId;
+        user.googleEmail = googleEmail;
+        user.googleAccessToken = tokens.access_token;
+        if (tokens.refresh_token) {
+            user.googleRefreshToken = tokens.refresh_token;
         }
+        await user.save();
 
         return redirectToConnections(res, {
             settings: 'connections',
             success: 'true'
-        });
+        }, user);
     } catch (err) {
         console.error('Google OAuth Error:', err);
         return redirectToConnections(res, {
             settings: 'connections',
             error: 'oauth_failed'
-        });
+        }, user);
     }
 };
 
 const googleDisconnect = async (req, res) => {
-    const userId = req.userId;
+    const userId = req.user.id;
     try {
         const user = await User.findByPk(userId);
         if (user) {

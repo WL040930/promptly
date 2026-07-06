@@ -4,8 +4,8 @@ import { useGSAP } from '@gsap/react';
 import { apiRequest } from '../api/client.js';
 import { useToast } from '../components/ToastContext.jsx';
 
-const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
-    const [activeTab, setActiveTab] = useState('general');
+const SettingsModal = ({ user, onClose, onSwitchRole, onLogout, initialTab = 'general' }) => {
+    const [activeTab, setActiveTab] = useState(initialTab);
     const [selectedRole, setSelectedRole] = useState(user?.experienceLevel || 'chat');
     const [isSaving, setIsSaving] = useState(false);
     const [newPassword, setNewPassword] = useState('');
@@ -27,6 +27,10 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout }) => {
             setSelectedRole(user.experienceLevel);
         }
     }, [user?.experienceLevel]);
+
+    useEffect(() => {
+        setActiveTab(initialTab);
+    }, [initialTab]);
 
     const handleSave = async () => {
         if (selectedRole !== user?.experienceLevel) {

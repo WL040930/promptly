@@ -42,6 +42,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
     });
     const [isCreating, setIsCreating] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [settingsInitialTab, setSettingsInitialTab] = useState('general');
     const [hoveredTab, setHoveredTab] = useState(null);
     const container = useRef(null);
     const toast = useToast();
@@ -75,6 +76,31 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
         window.addEventListener('popstate', handler);
         return () => window.removeEventListener('popstate', handler);
     }, [getTabFromUrl]);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('settings') !== 'connections') {
+            return;
+        }
+
+        setSettingsInitialTab('connections');
+        setIsSettingsOpen(true);
+
+        if (params.get('success') === 'true') {
+            toast.success('Google account connected successfully.');
+        } else {
+            const errorCode = params.get('error');
+            if (errorCode === 'missing_code_or_state') {
+                toast.error('Google OAuth did not return the required callback state.');
+            } else if (errorCode === 'user_not_found') {
+                toast.error('Could not match the Google callback to your account.');
+            } else if (errorCode === 'oauth_failed') {
+                toast.error('Google OAuth failed. Please try again.');
+            }
+        }
+
+        window.history.replaceState({}, '', window.location.pathname);
+    }, [toast]);
 
     // Navigate and update tab — used by sidebar buttons
     const setActiveTab = useCallback((tab) => {
@@ -216,7 +242,10 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                             ))}
                             
                             <div className="mt-auto pt-6 flex flex-col gap-1">
-                                <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-3 w-full p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-medium transition-colors border border-transparent">
+                                <button onClick={() => {
+                                    setSettingsInitialTab('general');
+                                    setIsSettingsOpen(true);
+                                }} className="flex items-center gap-3 w-full p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-medium transition-colors border border-transparent">
                                     <span className="shrink-0"><SettingsIcon /></span>
                                     {!isCollapsed && <span className="truncate">Settings</span>}
                                 </button>
@@ -258,7 +287,10 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                             ))}
 
                             <div className="mt-auto pt-6 flex flex-col gap-1">
-                                <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-3 w-full p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-medium transition-colors">
+                                <button onClick={() => {
+                                    setSettingsInitialTab('general');
+                                    setIsSettingsOpen(true);
+                                }} className="flex items-center gap-3 w-full p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-medium transition-colors">
                                     <span className="shrink-0"><SettingsIcon /></span>
                                     {!isCollapsed && <span className="truncate">Settings</span>}
                                 </button>
@@ -306,6 +338,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                     onClose={() => setIsSettingsOpen(false)} 
                     onSwitchRole={handleSwitchRole} 
                     onLogout={handleLogout} 
+                    initialTab={settingsInitialTab}
                 />
             )}
         </div>
