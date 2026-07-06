@@ -26,8 +26,16 @@ Folder.hasMany(Workflow, { foreignKey: 'folderId', as: 'workflows' });
 Form.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 User.hasMany(Form, { foreignKey: 'userId', as: 'forms', onDelete: 'CASCADE' });
 
-FormResponse.belongsTo(Form, { foreignKey: 'formId', as: 'form' });
-Form.hasMany(FormResponse, { foreignKey: 'formId', as: 'responses', onDelete: 'CASCADE' });
+FormResponse.belongsTo(Form, {
+    foreignKey: { name: 'formId', allowNull: false },
+    as: 'form',
+    onDelete: 'CASCADE'
+});
+Form.hasMany(FormResponse, {
+    foreignKey: { name: 'formId', allowNull: false },
+    as: 'responses',
+    onDelete: 'CASCADE'
+});
 
 // --- ExecutionLog Associations ---
 ExecutionLog.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -45,8 +53,16 @@ ChatMessage.belongsTo(ChatSession, { foreignKey: 'sessionId', as: 'session' });
 ChatSession.hasMany(ChatMessage, { foreignKey: 'sessionId', as: 'chatMessages', onDelete: 'CASCADE' });
 
 // --- FormChatMessage Associations ---
-FormChatMessage.belongsTo(Form, { foreignKey: 'formId', as: 'form' });
-Form.hasMany(FormChatMessage, { foreignKey: 'formId', as: 'chatMessages', onDelete: 'CASCADE' });
+FormChatMessage.belongsTo(Form, {
+    foreignKey: { name: 'formId', allowNull: false },
+    as: 'form',
+    onDelete: 'CASCADE'
+});
+Form.hasMany(FormChatMessage, {
+    foreignKey: { name: 'formId', allowNull: false },
+    as: 'chatMessages',
+    onDelete: 'CASCADE'
+});
 
 export {
     User,

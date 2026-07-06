@@ -5,8 +5,8 @@ const errorHandler = (err, req, res, next) => {
     let message = err.message || 'Something went wrong!';
     
     if (err.name === 'SequelizeForeignKeyConstraintError') {
-        status = 401;
-        message = 'User no longer exists or invalid reference.';
+        status = 409;
+        message = 'This record is still referenced by related data.';
     }
 
     if (status >= 500) {

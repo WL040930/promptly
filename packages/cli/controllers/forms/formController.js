@@ -1,3 +1,4 @@
+import sequelize from '../../db/index.js';
 import { Form, FormResponse, FormChatMessage } from '../../models/index.js';
 import { generateFormFromPrompt } from '../../services/ai/aiFormsService.js';
 import asyncHandler from '../../utils/asyncHandler.js';
@@ -49,8 +50,21 @@ export const deleteForm = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const form = await Form.findOne({ where: { id, userId: req.user.id } });
     if (!form) return res.status(404).json({ message: 'Form not found' });
-    
-    await form.destroy();
+
+    await sequelize.transaction(async (transaction) => {
+        await FormChatMessage.destroy({
+            where: { formId: form.id },
+            transaction
+        });
+
+        await FormResponse.destroy({
+            where: { formId: form.id },
+            transaction
+        });
+
+        await form.destroy({ transaction });
+    });
+
     res.json({ message: 'Form deleted' });
 });
 
