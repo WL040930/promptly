@@ -8,6 +8,16 @@ const oauth2Client = new OAuth2Client(
     env.google.redirectUri
 );
 
+const redirectToConnections = (res, params) => {
+    const redirectUrl = new URL('/dashboard', env.app.clientOrigin);
+
+    for (const [key, value] of Object.entries(params)) {
+        redirectUrl.searchParams.set(key, value);
+    }
+
+    return res.redirect(redirectUrl.toString());
+};
+
 const googleConnect = async (req, res) => {
     const url = oauth2Client.generateAuthUrl({
         access_type: 'offline',
@@ -19,27 +29,30 @@ const googleConnect = async (req, res) => {
         ],
         state: req.userId
     });
-    
+
     return res.json({ url });
 };
 
 const googleCallback = async (req, res) => {
     const { code, state } = req.query;
-    
+
     if (!code || !state) {
-        return res.redirect('http://localhost:5173/dashboard?settings=connections&error=missing_code_or_state');
+        return redirectToConnections(res, {
+            settings: 'connections',
+            error: 'missing_code_or_state'
+        });
     }
-    
+
     const userId = state;
-    
+
     try {
         const { tokens } = await oauth2Client.getToken(code);
         oauth2Client.setCredentials(tokens);
-        
+
         const response = await oauth2Client.request({ url: 'https://www.googleapis.com/oauth2/v2/userinfo' });
         const googleEmail = response.data.email;
         const googleId = response.data.id;
-        
+
         const user = await User.findByPk(userId);
         if (user) {
             user.googleId = googleId;
@@ -50,11 +63,17 @@ const googleCallback = async (req, res) => {
             }
             await user.save();
         }
-        
-        return res.redirect('http://localhost:5173/dashboard?settings=connections&success=true');
+
+        return redirectToConnections(res, {
+            settings: 'connections',
+            success: 'true'
+        });
     } catch (err) {
         console.error('Google OAuth Error:', err);
-        return res.redirect('http://localhost:5173/dashboard?settings=connections&error=oauth_failed');
+        return redirectToConnections(res, {
+            settings: 'connections',
+            error: 'oauth_failed'
+        });
     }
 };
 
