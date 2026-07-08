@@ -1,7 +1,7 @@
 import React, { useMemo, useRef } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
-import { useDashboardMetrics } from '../../api/hooks/useDashboard.js';
+import { useDashboardMetrics } from '../../../api/hooks/useDashboard.js';
 
 const INTEGRATIONS = [
     { name: 'OpenAI GPT-4o', category: 'Language Model', status: 'Healthy', uptime: '99.9%', color: 'indigo' },

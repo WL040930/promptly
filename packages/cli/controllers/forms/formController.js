@@ -122,8 +122,8 @@ export const submitFormResponse = asyncHandler(async (req, res) => {
         responseId:  response.id,
         submittedAt: response.createdAt,
     };
-    // Find all Active workflows for this form's owner
-    Workflow.findAll({ where: { userId: form.userId, status: 'Active' } })
+    // Find all active workflows for this form's owner
+    Workflow.findAll({ where: { userId: form.userId, isActive: true } })
         .then(workflows => {
             for (const workflow of workflows) {
                 const triggerNode = (workflow.nodes || []).find(

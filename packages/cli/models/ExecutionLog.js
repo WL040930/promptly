@@ -46,7 +46,7 @@ const ExecutionLog = sequelize.define(
             { fields: ['userId'] },
             { fields: ['userId', 'time'] },
             { fields: ['userId', 'status'] },
-            { fields: ['workflowId'] }
+            { fields: ['workflowId', 'time'] }
         ]
     }
 );

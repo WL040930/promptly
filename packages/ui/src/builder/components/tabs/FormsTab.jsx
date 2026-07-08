@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
-import FormEditor from '../../forms/FormEditor';
-import FormPreview from '../../forms/FormPreview';
-import FormAIAssistant from '../../forms/FormAIAssistant';
-import FormResponses from '../../forms/FormResponses';
-import FormSettings from '../../forms/FormSettings';
-import FormShareModal from '../../forms/FormShareModal';
-import { createField } from '../../forms/fields/fieldTypes';
-import { useForms, useCreateForm, useUpdateForm, useDeleteForm } from '../../api/hooks/useForms.js';
-import { useToast } from '../../components/ToastContext.jsx';
-import { parsePath, buildPath } from '../../utils/router.js';
+import FormEditor from '../../../forms/FormEditor';
+import FormPreview from '../../../forms/FormPreview';
+import FormAIAssistant from '../../../forms/FormAIAssistant';
+import FormResponses from '../../../forms/FormResponses';
+import FormSettings from '../../../forms/FormSettings';
+import FormShareModal from '../../../forms/FormShareModal';
+import { createField } from '../../../forms/fields/fieldTypes';
+import { useForms, useCreateForm, useUpdateForm, useDeleteForm } from '../../../api/hooks/useForms.js';
+import { useToast } from '../../../components/ToastContext.jsx';
+import { parsePath, buildPath } from '../../../utils/router.js';
 
 /**
  * FormsTab — main orchestrator for the form builder module.

@@ -24,7 +24,7 @@ export const handleWebhook = asyncHandler(async (req, res) => {
     try {
         // Scan ALL workflows (across all users) for a matching webhookId.
         // We can't filter by userId since the caller is unauthenticated.
-        const allWorkflows = await Workflow.findAll({ where: { status: 'Active' } });
+        const allWorkflows = await Workflow.findAll({ where: { isActive: true } });
 
         for (const workflow of allWorkflows) {
             const triggerNode = (workflow.nodes || []).find(

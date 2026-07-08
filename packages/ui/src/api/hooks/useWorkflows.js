@@ -69,3 +69,36 @@ export const useDeleteWorkflow = () => {
         },
     });
 };
+
+export const useWorkflowVersions = (workflowId) => {
+    return useQuery({
+        queryKey: ['workflows', workflowId, 'versions'],
+        queryFn: () => import('../backend.js').then(m => m.getWorkflowVersions(workflowId)),
+        enabled: !!workflowId,
+    });
+};
+
+export const useSaveWorkflowVersion = () => {
+    const queryClient = useQueryClient();
+    
+    return useMutation({
+        mutationFn: (id) => import('../backend.js').then(m => m.saveWorkflowVersion(id)),
+        onSuccess: (newVersion, id) => {
+            queryClient.invalidateQueries({ queryKey: ['workflows', id, 'versions'] });
+        },
+    });
+};
+
+export const useRestoreWorkflowVersion = () => {
+    const queryClient = useQueryClient();
+    
+    return useMutation({
+        mutationFn: ({ id, versionId }) => import('../backend.js').then(m => m.restoreWorkflowVersion(id, versionId)),
+        onSuccess: (updatedWorkflow, { id }) => {
+            queryClient.setQueryData(['workflows'], old => 
+                old ? old.map(w => w.id === id ? updatedWorkflow : w) : [updatedWorkflow]
+            );
+            queryClient.invalidateQueries({ queryKey: ['workflows'] });
+        },
+    });
+};

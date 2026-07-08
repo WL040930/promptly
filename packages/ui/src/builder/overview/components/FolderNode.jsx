@@ -50,7 +50,7 @@ const FolderNode = ({
         dragOverFolderId, dragInfo, searchValue, hasSearch,
         toggleFolder, openModal,
         onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop,
-        onSelectWorkflow, currentTime
+        onSelectWorkflow, onToggleActive, currentTime
     };
 
     return (
@@ -135,6 +135,7 @@ const FolderNode = ({
                                 onDragStart={onDragStart}
                                 onDragEnd={onDragEnd}
                                 onSelectWorkflow={onSelectWorkflow}
+                                onToggleActive={onToggleActive}
                                 folderName={folderById.get(workflow.folderId)?.name}
                                 style={{ marginLeft: `${depth + 1}rem` }}
                             />

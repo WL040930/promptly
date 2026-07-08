@@ -62,9 +62,22 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
     const modalConfig = modal.type ? MODAL_CONFIG[modal.type] : null;
 
     const activeWorkflowCount = useMemo(
-        () => workflowsArray.filter(w => w.status === 'Active').length,
+        () => workflowsArray.filter(w => w.isActive).length,
         [workflowsArray]
     );
+
+    const handleToggleActive = useCallback(async (workflowId, isActive) => {
+        try {
+            await updateWorkflow(workflowId, { isActive });
+            setWorkflows(prev => ({
+                ...prev,
+                [workflowId]: { ...prev[workflowId], isActive }
+            }));
+            toast.success(`Workflow ${isActive ? 'activated' : 'deactivated'}`);
+        } catch (error) {
+            toast.error('Failed to toggle workflow state');
+        }
+    }, [setWorkflows, toast]);
 
     // ── Modal helpers ────────────────────────────────────────────────────────
     const openModal = useCallback((type, data = null) => {
@@ -110,7 +123,8 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                         const newWf = await createWorkflow({
                             folderId: modal.data.folderId,
                             name: value,
-                            status: 'Draft',
+                            status: 'Saved',
+                            isActive: false,
                             iconColor: 'text-indigo-600',
                             iconBg: 'bg-indigo-100',
                             nodes: []
@@ -307,7 +321,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
         dragOverFolderId, dragInfo, searchValue, hasSearch,
         toggleFolder, openModal,
         onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop,
-        onSelectWorkflow, currentTime
+        onSelectWorkflow, onToggleActive: handleToggleActive, currentTime
     };
 
     // ── Render ───────────────────────────────────────────────────────────────
@@ -417,6 +431,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                                     onDragStart={onDragStart}
                                     onDragEnd={onDragEnd}
                                     onSelectWorkflow={onSelectWorkflow}
+                                    onToggleActive={handleToggleActive}
                                     folderName="Root"
                                 />
                             );

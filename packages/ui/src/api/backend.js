@@ -6,6 +6,9 @@ export const createWorkflow = (data) => apiRequest('/api/workflows', { method: '
 export const updateWorkflow = (id, data) => apiRequest(`/api/workflows/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 export const deleteWorkflow = (id) => apiRequest(`/api/workflows/${id}`, { method: 'DELETE' });
 export const triggerWorkflow = (id, payload) => apiRequest(`/api/workflows/${id}/trigger`, { method: 'POST', body: JSON.stringify({ payload }) });
+export const getWorkflowVersions = (id) => apiRequest(`/api/workflows/${id}/versions`);
+export const saveWorkflowVersion = (id) => apiRequest(`/api/workflows/${id}/versions`, { method: 'POST' });
+export const restoreWorkflowVersion = (id, versionId) => apiRequest(`/api/workflows/${id}/versions/${versionId}/restore`, { method: 'POST' });
 
 // --- Folders ---
 export const getFolders = () => apiRequest('/api/folders');

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { ICON_MAP } from '../utils/iconMap.jsx';
-import { useNodeLibrary } from '../hooks/useNodeLibrary.js';
+import { ICON_MAP } from '../../utils/iconMap.jsx';
+import { useNodeLibrary } from '../../hooks/useNodeLibrary.js';
 
 /**
  * The left-hand node library sidebar in the workflow builder.

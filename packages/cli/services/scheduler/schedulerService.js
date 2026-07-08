@@ -66,9 +66,9 @@ function deregister(workflowId) {
  * Called once on server boot.
  */
 async function start() {
-    console.log('[Scheduler] Starting — scanning for schedule-triggered workflows…');
+    console.log('[Scheduler] Starting — scanning for active schedule-triggered workflows…');
     try {
-        const workflows = await Workflow.findAll({ where: { status: 'Active' } });
+        const workflows = await Workflow.findAll({ where: { isActive: true } });
         let count = 0;
         for (const workflow of workflows) {
             const triggerNode = (workflow.nodes || []).find(

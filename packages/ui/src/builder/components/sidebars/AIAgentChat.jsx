@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { sendChatMessage } from '../../api/backend.js';
+import { sendChatMessage } from '../../../api/backend.js';
 
 const SUGGESTIONS = [
     "Add a Slack notification step",

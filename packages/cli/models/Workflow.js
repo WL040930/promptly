@@ -14,9 +14,13 @@ const Workflow = sequelize.define(
             type: DataTypes.STRING(255),
             allowNull: false
         },
+        isActive: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false
+        },
         status: {
             type: DataTypes.STRING(50),
-            defaultValue: 'Draft'
+            defaultValue: 'Saved'
         },
         icon: {
             type: DataTypes.STRING(50),
@@ -44,7 +48,8 @@ const Workflow = sequelize.define(
         timestamps: true,
         indexes: [
             { fields: ['userId'] },
-            { fields: ['userId', 'status'] },
+            { fields: ['userId', 'isActive'] },
+            { fields: ['isActive'] },
             { fields: ['folderId'] }
         ]
     }

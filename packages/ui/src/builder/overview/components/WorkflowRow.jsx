@@ -15,6 +15,7 @@ const WorkflowRow = ({
     onDragStart,
     onDragEnd,
     onSelectWorkflow,
+    onToggleActive,
     folderName,
     style
 }) => {
@@ -49,13 +50,27 @@ const WorkflowRow = ({
                 <span className="text-sm font-medium text-slate-900 group-hover:text-indigo-700 transition-colors leading-tight truncate">
                     {workflow.name}
                 </span>
-                <span className="text-xs font-medium text-slate-500 leading-tight mt-0.5">
-                    {workflow.status || 'Draft'} • Updated {formatLastEdited(workflow.updatedAt || workflow.createdAt, currentTime)}
+                <span className="text-[11px] font-medium text-slate-500 leading-tight mt-0.5 flex items-center gap-1.5">
+                    {workflow.isActive && <span className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_4px_rgba(34,197,94,0.6)]"></span>}
+                    <span className="uppercase tracking-wide font-bold">{workflow.status || 'Saved'}</span>
+                    <span>•</span>
+                    <span>Updated {formatLastEdited(workflow.updatedAt || workflow.createdAt, currentTime)}</span>
                 </span>
             </div>
 
-            {/* Actions: edit, delete */}
-            <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-0.5 shrink-0 bg-indigo-50 z-10 px-1 rounded">
+            {/* Actions: toggle active, edit, delete */}
+            <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-1.5 shrink-0 bg-indigo-50 z-10 px-1.5 rounded">
+                <button 
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        onToggleActive?.(workflow.id, !workflow.isActive);
+                    }}
+                    className={`w-7 h-4 shrink-0 flex items-center rounded-full transition-colors duration-200 mt-0.5 p-0.5 ${workflow.isActive ? 'bg-green-500' : 'bg-slate-300'}`}
+                    title={workflow.isActive ? 'Deactivate' : 'Activate'}
+                >
+                    <div className={`w-2.5 h-2.5 shrink-0 rounded-full bg-white shadow-sm transition-transform duration-200 ${workflow.isActive ? 'translate-x-3.5' : 'translate-x-0'}`}></div>
+                </button>
+                <div className="w-px h-4 bg-slate-200 mx-0.5"></div>
                 <button
                     onClick={(event) => {
                         event.stopPropagation();

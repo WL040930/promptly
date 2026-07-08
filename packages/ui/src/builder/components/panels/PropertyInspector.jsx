@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import VariableInput from './VariableInput';
-import ResourceSelectInput from './ResourceSelectInput';
-import { getUpstreamOutputs } from '../utils/getUpstreamOutputs';
+import VariableInput from '../inputs/VariableInput';
+import ResourceSelectInput from '../inputs/ResourceSelectInput';
+import CronInput from '../inputs/CronInput';
+import { getUpstreamOutputs } from '../../utils/getUpstreamOutputs';
 
 const labelClassName = 'text-xs font-semibold text-slate-500';
 const inputClassName = 'w-full bg-slate-50 border border-slate-200 rounded-lg text-slate-800 px-3 py-2 outline-none text-sm font-medium focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 transition-all shadow-inner';
@@ -164,6 +165,21 @@ const PropertyInspector = ({ activeNode, onUpdateNode, nodes = [], edges = [] })
                                                     })}
                                                     resource={input.resource}
                                                     placeholder={input.placeholder}
+                                                />
+                                            </div>
+                                        );
+                                    }
+
+                                    // Cron input for schedule trigger
+                                    if (input.type === 'cron') {
+                                        return (
+                                            <div key={input.name} className={sectionClassName}>
+                                                <label className={labelClassName}>{input.label || input.name}</label>
+                                                <CronInput
+                                                    value={value}
+                                                    onChange={(val) => onUpdateNode?.(activeNode.id, {
+                                                        config: { ...(activeNode.config || {}), [input.name]: val }
+                                                    })}
                                                 />
                                             </div>
                                         );

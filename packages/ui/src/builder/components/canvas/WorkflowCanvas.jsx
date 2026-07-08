@@ -10,7 +10,7 @@ import {
   ReactFlowProvider,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import DynamicNode from '../../nodes/DynamicNode';
+import DynamicNode from '../../../nodes/DynamicNode';
 import DeletableEdge from './edges/DeletableEdge';
 import CustomConnectionLine from './edges/CustomConnectionLine';
 

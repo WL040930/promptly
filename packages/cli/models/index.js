@@ -7,6 +7,7 @@ import ExecutionLog from './ExecutionLog.js';
 import ChatSession from './ChatSession.js';
 import ChatMessage from './ChatMessage.js';
 import FormChatMessage from './FormChatMessage.js';
+import WorkflowVersion from './WorkflowVersion.js';
 
 // --- Folder Associations ---
 Folder.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -21,6 +22,9 @@ User.hasMany(Workflow, { foreignKey: 'userId', as: 'workflows' });
 
 Workflow.belongsTo(Folder, { foreignKey: 'folderId', as: 'folder' });
 Folder.hasMany(Workflow, { foreignKey: 'folderId', as: 'workflows' });
+
+Workflow.hasMany(WorkflowVersion, { foreignKey: 'workflowId', as: 'versions', onDelete: 'CASCADE' });
+WorkflowVersion.belongsTo(Workflow, { foreignKey: 'workflowId', as: 'workflow' });
 
 // --- Form Associations ---
 Form.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -73,5 +77,6 @@ export {
     ExecutionLog,
     ChatSession,
     ChatMessage,
-    FormChatMessage
+    FormChatMessage,
+    WorkflowVersion
 };

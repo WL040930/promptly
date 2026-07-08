@@ -2,22 +2,23 @@ import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
-import WorkflowCanvas from './components/WorkflowCanvas';
-import PropertyInspector from './components/PropertyInspector';
-import AIAgentChat from './components/AIAgentChat';
-import NodeLibrarySidebar from './components/NodeLibrarySidebar';
-import BuilderToolbar from './components/BuilderToolbar';
+import WorkflowCanvas from './components/canvas/WorkflowCanvas';
+import PropertyInspector from './components/panels/PropertyInspector';
+import AIAgentChat from './components/sidebars/AIAgentChat';
+import NodeLibrarySidebar from './components/sidebars/NodeLibrarySidebar';
+import BuilderToolbar from './components/layout/BuilderToolbar';
 import WorkflowOverview from './overview/WorkflowOverview';
 import OverviewModal from './overview/OverviewModal';
 import { MODAL_TYPES, MODAL_CONFIG } from './overview/constants.js';
-import DashboardTab from './components/DashboardTab';
-import FormsTab from './components/FormsTab';
+import DashboardTab from './components/tabs/DashboardTab';
+import FormsTab from './components/tabs/FormsTab';
 import LogsTab from '../chat/components/LogsTab';
+import VersionHistorySidebar from './components/sidebars/VersionHistorySidebar';
 import { navigate, parsePath } from '../utils/router.js';
-import { useWorkflows, useCreateWorkflow, useUpdateWorkflow } from '../api/hooks/useWorkflows.js';
+import { useWorkflows, useCreateWorkflow, useUpdateWorkflow, useSaveWorkflowVersion } from '../api/hooks/useWorkflows.js';
 import { useFolders } from '../api/hooks/useFolders.js';
 import { useRunWorkflow } from '../api/hooks/useRunWorkflow.js';
-import ExecutionPanel from './components/ExecutionPanel';
+import ExecutionPanel from './components/panels/ExecutionPanel';
 
 const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) => {
     // ── Server data ──────────────────────────────────────────────────────────
@@ -25,6 +26,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     const { data: workflowsData = [], isLoading: isWorkflowsLoading } = useWorkflows();
     const createWorkflowMutation = useCreateWorkflow();
     const updateWorkflowMutation = useUpdateWorkflow();
+    const saveVersionMutation = useSaveWorkflowVersion();
     const queryClient = useQueryClient();
 
     // ── Optimistic cache updaters ────────────────────────────────────────────
@@ -58,6 +60,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     // ── UI state ─────────────────────────────────────────────────────────────
     const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
     const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
+    const [isHistorySidebarOpen, setIsHistorySidebarOpen] = useState(false);
     const [rightTab, setRightTab] = useState('chat');
     const [draggedNode, setDraggedNode] = useState(null);
     const [modal, setModal] = useState({ isOpen: false, type: null, data: null, inputValue: '', formData: {} });
@@ -134,7 +137,8 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         const wfData = {
             name: 'New Sequence Automation',
             folderId: folders.length > 0 ? folders[0].id : null,
-            status: 'Draft',
+            isActive: false,
+            status: 'Saved',
             iconColor: 'text-indigo-600',
             iconBg: 'bg-indigo-100',
             nodes: []
@@ -175,6 +179,16 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     const handleWorkflowUpdate = (updatedFields) => {
         if (!activeWorkflowId) return;
         updateWorkflowMutation.mutate({ id: activeWorkflowId, data: updatedFields });
+    };
+
+    const handleToggleActive = () => {
+        if (!activeWorkflow) return;
+        handleWorkflowUpdate({ isActive: !activeWorkflow.isActive });
+    };
+
+    const handleSaveVersion = () => {
+        if (!activeWorkflowId) return;
+        saveVersionMutation.mutate(activeWorkflowId);
     };
 
     // ── Modal & Title editing ────────────────────────────────────────────────
@@ -408,6 +422,9 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                     currentTime={currentTime}
                     onTestRun={handleTestRun}
                     isRunning={runWorkflowMutation.isPending}
+                    onSaveVersion={handleSaveVersion}
+                    onToggleHistory={() => setIsHistorySidebarOpen(!isHistorySidebarOpen)}
+                    onToggleActive={handleToggleActive}
                 />
 
                 <div className="flex-1 p-6 overflow-hidden flex flex-col bg-slate-50">
@@ -423,6 +440,16 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                     />
                 </div>
             </main>
+
+            {/* VERSION HISTORY SIDEBAR (Overlay) */}
+            {isHistorySidebarOpen && activeWorkflowId && (
+                <div className="absolute top-14 right-0 bottom-0 z-30">
+                    <VersionHistorySidebar 
+                        workflowId={activeWorkflowId} 
+                        onClose={() => setIsHistorySidebarOpen(false)} 
+                    />
+                </div>
+            )}
 
             {/* 3. RIGHT PANEL: Promptly Agent & Property Inspector */}
             <aside

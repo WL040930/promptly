@@ -2,17 +2,9 @@
   "inputs": [
     {
       "name": "cronExpression",
-      "type": "text",
-      "label": "Cron Expression",
-      "defaultValue": "0 9 * * *",
-      "placeholder": "0 9 * * * (every day at 9am)"
-    },
-    {
-      "name": "timezone",
-      "type": "text",
-      "label": "Timezone",
-      "defaultValue": "UTC",
-      "placeholder": "UTC"
+      "type": "cron",
+      "label": "Run Schedule",
+      "defaultValue": "0 9 * * *"
     }
   ],
   "outputs": [
