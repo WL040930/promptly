@@ -1,19 +1,24 @@
 {
   "inputs": [
     {
-      "name": "eventName",
+      "name": "webhookId",
+      "type": "webhook-display",
+      "label": "Webhook Endpoint",
+      "readOnly": true,
+      "hint": "Send a POST request to this URL to trigger the workflow."
+    },
+    {
+      "name": "secret",
       "type": "text",
-      "label": "Event Name to listen to",
-      "defaultValue": "onCreated"
+      "label": "Secret Token (optional)",
+      "placeholder": "Used to verify incoming requests"
     }
   ],
   "outputs": [
-    {
-      "name": "triggerData",
-      "type": "object",
-      "label": "Trigger Data",
-      "isConnection": true,
-      "description": "Data received from the trigger event."
-    }
+    { "name": "triggerData", "type": "object", "label": "Full Payload",    "isConnection": true, "description": "The entire webhook payload." },
+    { "name": "body",        "type": "object", "label": "Request Body",    "description": "The full JSON body of the incoming webhook request." },
+    { "name": "headers",     "type": "object", "label": "Request Headers", "description": "HTTP headers from the incoming request." },
+    { "name": "method",      "type": "string", "label": "HTTP Method",     "description": "The HTTP method used (GET, POST, etc.)." },
+    { "name": "timestamp",   "type": "string", "label": "Triggered At",    "description": "ISO timestamp of when the webhook was received." }
   ]
 }

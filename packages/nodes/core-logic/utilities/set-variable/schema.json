@@ -1,0 +1,57 @@
+{
+  "inputs": [
+    {
+      "name": "triggerData",
+      "type": "object",
+      "label": "Input Data",
+      "isConnection": true
+    },
+    {
+      "name": "variableName",
+      "type": "text",
+      "label": "Variable Name",
+      "placeholder": "myVariable (no spaces, use camelCase)",
+      "defaultValue": "myVariable"
+    },
+    {
+      "name": "variableValue",
+      "type": "textarea",
+      "label": "Variable Value",
+      "placeholder": "Enter a value or use {{nodeId.field}} to reference upstream data",
+      "defaultValue": ""
+    },
+    {
+      "name": "valueType",
+      "type": "select",
+      "label": "Value Type",
+      "defaultValue": "string",
+      "options": [
+        { "label": "String (text)", "value": "string" },
+        { "label": "Number", "value": "number" },
+        { "label": "Boolean (true/false)", "value": "boolean" },
+        { "label": "JSON / Object", "value": "json" },
+        { "label": "Auto-detect", "value": "auto" }
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "outputData",
+      "type": "object",
+      "label": "Output",
+      "isConnection": true
+    },
+    {
+      "name": "value",
+      "type": "any",
+      "label": "Variable Value",
+      "description": "The stored value, accessible downstream as {{nodeId.value}}"
+    },
+    {
+      "name": "variableName",
+      "type": "string",
+      "label": "Variable Name",
+      "description": "The name this variable was stored under"
+    }
+  ]
+}

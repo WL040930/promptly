@@ -1,24 +1,94 @@
 {
   "inputs": [
     {
-      "name": "triggerData",
-      "type": "object",
-      "label": "Input Payload",
-      "isConnection": true
+      "name": "url",
+      "type": "text",
+      "label": "URL",
+      "placeholder": "https://api.example.com/endpoint or {{nodeId.apiUrl}}",
+      "defaultValue": ""
     },
     {
-      "name": "actionUrl",
+      "name": "method",
+      "type": "select",
+      "label": "HTTP Method",
+      "defaultValue": "GET",
+      "options": [
+        { "label": "GET", "value": "GET" },
+        { "label": "POST", "value": "POST" },
+        { "label": "PUT", "value": "PUT" },
+        { "label": "PATCH", "value": "PATCH" },
+        { "label": "DELETE", "value": "DELETE" }
+      ]
+    },
+    {
+      "name": "headers",
+      "type": "textarea",
+      "label": "Headers (JSON)",
+      "placeholder": "{ \"Content-Type\": \"application/json\", \"Authorization\": \"Bearer {{nodeId.token}}\" }",
+      "defaultValue": ""
+    },
+    {
+      "name": "body",
+      "type": "textarea",
+      "label": "Request Body (JSON)",
+      "placeholder": "{ \"key\": \"{{nodeId.value}}\" }",
+      "defaultValue": ""
+    },
+    {
+      "name": "authentication",
+      "type": "select",
+      "label": "Authentication",
+      "defaultValue": "none",
+      "options": [
+        { "label": "None", "value": "none" },
+        { "label": "Bearer Token", "value": "bearer" },
+        { "label": "API Key (Header)", "value": "apikey" },
+        { "label": "Basic Auth", "value": "basic" }
+      ]
+    },
+    {
+      "name": "authToken",
       "type": "text",
-      "label": "Target URL/Resource",
-      "placeholder": "https://api.example.com"
+      "label": "Auth Token / API Key",
+      "placeholder": "Paste token or use {{nodeId.token}}",
+      "defaultValue": ""
+    },
+    {
+      "name": "timeout",
+      "type": "number",
+      "label": "Timeout (ms)",
+      "defaultValue": 10000
     }
   ],
   "outputs": [
     {
-      "name": "response",
+      "name": "outputData",
       "type": "object",
-      "label": "API Response",
+      "label": "Output",
       "isConnection": true
+    },
+    {
+      "name": "body",
+      "type": "object",
+      "label": "Response Body",
+      "description": "The parsed response body (JSON) or raw text."
+    },
+    {
+      "name": "statusCode",
+      "type": "number",
+      "label": "HTTP Status Code",
+      "description": "e.g. 200, 201, 400, 404, 500"
+    },
+    {
+      "name": "headers",
+      "type": "object",
+      "label": "Response Headers"
+    },
+    {
+      "name": "ok",
+      "type": "boolean",
+      "label": "Success (2xx)",
+      "description": "True if status code is in the 200-299 range."
     }
   ]
 }

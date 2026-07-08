@@ -1,45 +1,79 @@
 {
   "inputs": [
     {
-      "name": "inputData",
-      "type": "object",
-      "label": "Input Data",
-      "isConnection": true
-    },
-    {
-      "name": "prompt",
-      "type": "textarea",
-      "label": "Prompt Template",
-      "defaultValue": "Process this data: {{variables}}"
+      "name": "audioFileUrl",
+      "type": "text",
+      "label": "Audio File URL",
+      "placeholder": "https://... or {{nodeId.fileUrl}} from an upstream node",
+      "defaultValue": ""
     },
     {
       "name": "model",
       "type": "select",
-      "label": "AI Model",
-      "defaultValue": "gpt-4o",
+      "label": "Transcription Model",
+      "defaultValue": "whisper-1",
       "options": [
-        {
-          "label": "GPT-4o",
-          "value": "gpt-4o"
-        },
-        {
-          "label": "Claude 3.5 Sonnet",
-          "value": "claude-3-5"
-        },
-        {
-          "label": "Gemini 1.5 Pro",
-          "value": "gemini-1-5"
-        }
+        { "label": "Whisper (OpenAI)", "value": "whisper-1" },
+        { "label": "AssemblyAI Universal", "value": "assemblyai-universal" },
+        { "label": "Deepgram Nova-2", "value": "deepgram-nova-2" }
+      ]
+    },
+    {
+      "name": "language",
+      "type": "text",
+      "label": "Language (optional)",
+      "placeholder": "en, zh, ms, fr… leave blank for auto-detect",
+      "defaultValue": ""
+    },
+    {
+      "name": "prompt",
+      "type": "textarea",
+      "label": "Context Hint (optional)",
+      "placeholder": "Provide context to improve accuracy, e.g. technical terms, names, abbreviations.",
+      "defaultValue": ""
+    },
+    {
+      "name": "responseFormat",
+      "type": "select",
+      "label": "Response Format",
+      "defaultValue": "text",
+      "options": [
+        { "label": "Plain Text", "value": "text" },
+        { "label": "JSON (with timestamps)", "value": "verbose_json" },
+        { "label": "SRT subtitles", "value": "srt" },
+        { "label": "VTT subtitles", "value": "vtt" }
       ]
     }
   ],
   "outputs": [
     {
-      "name": "result",
+      "name": "outputData",
+      "type": "object",
+      "label": "Output",
+      "isConnection": true
+    },
+    {
+      "name": "transcript",
       "type": "string",
-      "label": "Output Result",
-      "isConnection": true,
-      "description": "The AI generated text/data."
+      "label": "Transcript",
+      "description": "The full text transcription of the audio."
+    },
+    {
+      "name": "language",
+      "type": "string",
+      "label": "Detected Language",
+      "description": "ISO 639-1 language code detected in the audio."
+    },
+    {
+      "name": "duration",
+      "type": "number",
+      "label": "Duration (seconds)",
+      "description": "Total duration of the audio file in seconds."
+    },
+    {
+      "name": "model",
+      "type": "string",
+      "label": "Model Used"
     }
   ]
 }

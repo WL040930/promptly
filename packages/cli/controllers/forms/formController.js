@@ -1,7 +1,8 @@
 import sequelize from '../../db/index.js';
-import { Form, FormResponse, FormChatMessage } from '../../models/index.js';
+import { Form, FormResponse, FormChatMessage, Workflow } from '../../models/index.js';
 import { generateFormFromPrompt } from '../../services/ai/aiFormsService.js';
 import asyncHandler from '../../utils/asyncHandler.js';
+import { executeWorkflow } from '../../services/engine/executionEngine.js';
 
 export const getForms = asyncHandler(async (req, res) => {
     const forms = await Form.findAll({ where: { userId: req.user.id } });
@@ -114,6 +115,28 @@ export const submitFormResponse = asyncHandler(async (req, res) => {
     
     // Increment the denormalized response count
     await form.increment('responseCount');
+
+    // ── Fire-and-forget: dispatch any workflows bound to this form ──────────
+    const initialPayload = {
+        fields:      responseData,
+        responseId:  response.id,
+        submittedAt: response.createdAt,
+    };
+    // Find all Active workflows for this form's owner
+    Workflow.findAll({ where: { userId: form.userId, status: 'Active' } })
+        .then(workflows => {
+            for (const workflow of workflows) {
+                const triggerNode = (workflow.nodes || []).find(
+                    n => n.subType === 'form-submission' && n.config?.formId === formId
+                );
+                if (triggerNode) {
+                    executeWorkflow(workflow.id, form.userId, initialPayload)
+                        .catch(err => console.error(`[FormTrigger] Dispatch failed for workflow ${workflow.id}:`, err.message));
+                }
+            }
+        })
+        .catch(err => console.error('[FormTrigger] Failed to load workflows for dispatch:', err.message));
+    // ────────────────────────────────────────────────────────────────────────
     
     res.status(201).json(response);
 });

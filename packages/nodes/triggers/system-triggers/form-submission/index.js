@@ -2,7 +2,15 @@ import { BaseNode } from '../../../BaseNode.js';
 
 export default class PromptlyFormNode extends BaseNode {
     async execute(context) {
-        // Core execution logic goes here
-        return { ...context, success: true };
+        const payload = context.initialPayload || {};
+
+        return {
+            ...context,
+            success: true,
+            triggerData:  payload,
+            fields:       payload.fields      || {},
+            responseId:   payload.responseId  || null,
+            submittedAt:  payload.submittedAt || new Date().toISOString(),
+        };
     }
 }

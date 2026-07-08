@@ -16,6 +16,8 @@ import LogsTab from '../chat/components/LogsTab';
 import { navigate, parsePath } from '../utils/router.js';
 import { useWorkflows, useCreateWorkflow, useUpdateWorkflow } from '../api/hooks/useWorkflows.js';
 import { useFolders } from '../api/hooks/useFolders.js';
+import { useRunWorkflow } from '../api/hooks/useRunWorkflow.js';
+import ExecutionPanel from './components/ExecutionPanel';
 
 const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) => {
     // ── Server data ──────────────────────────────────────────────────────────
@@ -60,6 +62,23 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     const [draggedNode, setDraggedNode] = useState(null);
     const [modal, setModal] = useState({ isOpen: false, type: null, data: null, inputValue: '', formData: {} });
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // ── Execution panel state ─────────────────────────────────────────────
+    const [isExecutionPanelOpen, setIsExecutionPanelOpen] = useState(false);
+    const [lastExecutionLog, setLastExecutionLog]         = useState(null);
+    const runWorkflowMutation = useRunWorkflow();
+
+    const handleTestRun = async () => {
+        if (!activeWorkflowId) return;
+        setIsExecutionPanelOpen(true);
+        setLastExecutionLog(null);
+        try {
+            const log = await runWorkflowMutation.mutateAsync({ workflowId: activeWorkflowId, payload: {} });
+            setLastExecutionLog(log);
+        } catch (err) {
+            setLastExecutionLog({ status: 'Failed', durationMs: 0, steps: [], error: err.message });
+        }
+    };
 
     // Real-time relative timestamp ticker
     const [currentTime, setCurrentTime] = useState(() => Date.now());
@@ -387,6 +406,8 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                     onTitleEditStart={handleTitleEditStart}
                     nodeCount={nodes.length}
                     currentTime={currentTime}
+                    onTestRun={handleTestRun}
+                    isRunning={runWorkflowMutation.isPending}
                 />
 
                 <div className="flex-1 p-6 overflow-hidden flex flex-col bg-slate-50">
@@ -444,12 +465,21 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                     {rightTab === 'chat' ? (
                         <AIAgentChat onApplyAction={handleApplyAction} />
                     ) : (
-                        <PropertyInspector activeNode={activeNode} onUpdateNode={handleUpdateNode} />
+                        <PropertyInspector activeNode={activeNode} onUpdateNode={handleUpdateNode} nodes={nodes} edges={edges} />
                     )}
                 </div>
             </aside>
+
+            {/* Execution results panel */}
+            <ExecutionPanel
+                isOpen={isExecutionPanelOpen}
+                onClose={() => setIsExecutionPanelOpen(false)}
+                log={lastExecutionLog}
+                isLoading={runWorkflowMutation.isPending}
+            />
         </div>
     );
 };
 
 export default WorkflowBuilderView;
+

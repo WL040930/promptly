@@ -1,0 +1,103 @@
+{
+  "inputs": [
+    {
+      "name": "input1",
+      "type": "object",
+      "label": "Input Data",
+      "isConnection": true
+    },
+    {
+      "name": "dataType",
+      "type": "select",
+      "label": "Data Type",
+      "defaultValue": "text",
+      "options": [
+        { "label": "Text (String)", "value": "text" },
+        { "label": "Number", "value": "number" },
+        { "label": "Date", "value": "date" },
+        { "label": "JSON / Object", "value": "json" }
+      ]
+    },
+    {
+      "name": "operation",
+      "type": "select",
+      "label": "Operation",
+      "defaultValue": "uppercase",
+      "options": [
+        { "label": "— Text —", "value": "text_header", "disabled": true },
+        { "label": "Uppercase", "value": "uppercase" },
+        { "label": "Lowercase", "value": "lowercase" },
+        { "label": "Title Case", "value": "titlecase" },
+        { "label": "Trim Whitespace", "value": "trim" },
+        { "label": "Replace", "value": "replace" },
+        { "label": "Split into Array", "value": "split" },
+        { "label": "Slice (substring)", "value": "slice" },
+        { "label": "— Number —", "value": "number_header", "disabled": true },
+        { "label": "Add", "value": "add" },
+        { "label": "Subtract", "value": "subtract" },
+        { "label": "Multiply", "value": "multiply" },
+        { "label": "Divide", "value": "divide" },
+        { "label": "Round", "value": "round" },
+        { "label": "Absolute Value", "value": "abs" },
+        { "label": "To Fixed Decimals", "value": "toFixed" },
+        { "label": "— Date —", "value": "date_header", "disabled": true },
+        { "label": "Format Date", "value": "formatDate" },
+        { "label": "Add Days", "value": "addDays" },
+        { "label": "Subtract Days", "value": "subtractDays" },
+        { "label": "Current Timestamp", "value": "now" },
+        { "label": "— JSON —", "value": "json_header", "disabled": true },
+        { "label": "Parse JSON String", "value": "parse" },
+        { "label": "Stringify to JSON", "value": "stringify" },
+        { "label": "Get Nested Value", "value": "get" },
+        { "label": "Set Nested Value", "value": "set" },
+        { "label": "Get Object Keys", "value": "keys" }
+      ]
+    },
+    {
+      "name": "value",
+      "type": "text",
+      "label": "Input Value",
+      "placeholder": "Enter a value or use {{nodeId.field}} to reference upstream data",
+      "defaultValue": ""
+    },
+    {
+      "name": "operand",
+      "type": "text",
+      "label": "Operand / Second Value",
+      "placeholder": "e.g. 10 for Add, or ',' for Split, or 'YYYY-MM-DD' for Format Date",
+      "defaultValue": ""
+    },
+    {
+      "name": "decimals",
+      "type": "number",
+      "label": "Decimal Places (for toFixed)",
+      "defaultValue": 2
+    }
+  ],
+  "outputs": [
+    {
+      "name": "outputData",
+      "type": "object",
+      "label": "Output",
+      "isConnection": true
+    },
+    {
+      "name": "result",
+      "type": "any",
+      "label": "Transformed Result",
+      "description": "The output of the transformation — type depends on the operation."
+    },
+    {
+      "name": "outputType",
+      "type": "string",
+      "label": "Output Type",
+      "description": "The JavaScript typeof of the result (string, number, object, boolean)."
+    },
+    {
+      "name": "inputValue",
+      "type": "string",
+      "label": "Original Input Value",
+      "description": "The original value before transformation."
+    }
+  ]
+}

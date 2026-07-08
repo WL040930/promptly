@@ -1,0 +1,64 @@
+{
+  "inputs": [
+    {
+      "name": "inputData",
+      "type": "object",
+      "label": "Input (connect from node that may fail)",
+      "isConnection": true
+    },
+    {
+      "name": "errorSource",
+      "type": "text",
+      "label": "Error Source Node ID (optional)",
+      "placeholder": "Leave blank to catch errors from any upstream node",
+      "defaultValue": ""
+    },
+    {
+      "name": "fallbackValue",
+      "type": "textarea",
+      "label": "Fallback Value (optional)",
+      "placeholder": "Value to output if an error is caught — use {{variables}} or literal text",
+      "defaultValue": ""
+    }
+  ],
+  "outputs": [
+    {
+      "name": "errorPath",
+      "type": "object",
+      "label": "Error Path",
+      "isConnection": true,
+      "description": "Activated when an error is caught."
+    },
+    {
+      "name": "successPath",
+      "type": "object",
+      "label": "Success Path",
+      "isConnection": true,
+      "description": "Activated when no error — passes data through."
+    },
+    {
+      "name": "errorMessage",
+      "type": "string",
+      "label": "Error Message",
+      "description": "The error message from the failed node."
+    },
+    {
+      "name": "failedNodeId",
+      "type": "string",
+      "label": "Failed Node ID",
+      "description": "The ID of the node that failed."
+    },
+    {
+      "name": "hasError",
+      "type": "boolean",
+      "label": "Has Error",
+      "description": "True if an error was caught, false if data passed through cleanly."
+    },
+    {
+      "name": "fallbackValue",
+      "type": "any",
+      "label": "Fallback Value",
+      "description": "The configured fallback value, if set."
+    }
+  ]
+}

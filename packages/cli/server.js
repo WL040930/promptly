@@ -3,6 +3,7 @@ import sequelize from './db/index.js';
 import env from './config/env.js';
 import './models/index.js';
 import NodeRegistry from './utils/NodeRegistry.js';
+import SchedulerService from './services/scheduler/schedulerService.js';
 
 const startServer = async () => {
   try {
@@ -39,9 +40,11 @@ const startServer = async () => {
       console.log('⚠️ Could not auto-initialize storage bucket (ignore if not using Supabase storage or missing permissions)', err.message);
     }
 
-    app.listen(env.app.port, () => {
+    app.listen(env.app.port, async () => {
       console.log(`🚀 Server running on http://localhost:${env.app.port}`);
       console.log(`📚 API Health: http://localhost:${env.app.port}/api/health`);
+      // Start cron scheduler after server is listening
+      await SchedulerService.start();
     });
   } catch (error) {
     console.error('Database connection failed:', error);

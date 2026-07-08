@@ -1,19 +1,18 @@
 {
   "inputs": [
     {
-      "name": "eventName",
-      "type": "text",
-      "label": "Event Name to listen to",
-      "defaultValue": "onCreated"
+      "name": "formId",
+      "type": "resource-select",
+      "label": "Form",
+      "resource": "forms",
+      "placeholder": "Select a form to listen to…",
+      "required": true
     }
   ],
   "outputs": [
-    {
-      "name": "triggerData",
-      "type": "object",
-      "label": "Trigger Data",
-      "isConnection": true,
-      "description": "Data received from the trigger event."
-    }
+    { "name": "triggerData",  "type": "object", "label": "Full Response",   "isConnection": true, "description": "The entire form response payload." },
+    { "name": "fields",       "type": "object", "label": "Form Fields",     "description": "Submitted field values as a flat key-value object." },
+    { "name": "responseId",   "type": "string", "label": "Response ID",     "description": "Unique ID of this form response." },
+    { "name": "submittedAt",  "type": "string", "label": "Submitted At",    "description": "ISO timestamp of when the form was submitted." }
   ]
 }

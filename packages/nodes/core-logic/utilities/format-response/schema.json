@@ -1,0 +1,60 @@
+{
+  "inputs": [
+    {
+      "name": "triggerData",
+      "type": "object",
+      "label": "Input Data",
+      "isConnection": true
+    },
+    {
+      "name": "mode",
+      "type": "select",
+      "label": "Mode",
+      "defaultValue": "template",
+      "options": [
+        { "label": "Text Template", "value": "template" },
+        { "label": "JSON Builder", "value": "json" }
+      ]
+    },
+    {
+      "name": "template",
+      "type": "textarea",
+      "label": "Template (Text mode)",
+      "placeholder": "Hello {{nodeId.name}}, your AI response is:\n\n{{aiNode.response}}",
+      "defaultValue": ""
+    },
+    {
+      "name": "jsonTemplate",
+      "type": "textarea",
+      "label": "JSON Template (JSON mode)",
+      "placeholder": "{\n  \"userId\": \"{{trigger.userId}}\",\n  \"reply\": \"{{aiNode.response}}\",\n  \"status\": \"success\"\n}",
+      "defaultValue": ""
+    },
+    {
+      "name": "statusCode",
+      "type": "number",
+      "label": "HTTP Status Code (if used as webhook response)",
+      "defaultValue": 200
+    }
+  ],
+  "outputs": [
+    {
+      "name": "outputData",
+      "type": "object",
+      "label": "Output",
+      "isConnection": true
+    },
+    {
+      "name": "output",
+      "type": "any",
+      "label": "Formatted Output",
+      "description": "The final formatted string or JSON object."
+    },
+    {
+      "name": "outputType",
+      "type": "string",
+      "label": "Output Type",
+      "description": "string or object"
+    }
+  ]
+}

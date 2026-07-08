@@ -1,0 +1,97 @@
+{
+  "inputs": [
+    {
+      "name": "inputData",
+      "type": "object",
+      "label": "Input Data",
+      "isConnection": true
+    },
+    {
+      "name": "taskType",
+      "type": "select",
+      "label": "Task Type",
+      "defaultValue": "custom",
+      "options": [
+        { "label": "Custom Prompt", "value": "custom" },
+        { "label": "Summarize", "value": "summarize" },
+        { "label": "Extract Data (JSON)", "value": "extract" },
+        { "label": "Sentiment Analysis", "value": "sentiment" },
+        { "label": "Categorize / Classify", "value": "categorize" }
+      ]
+    },
+    {
+      "name": "prompt",
+      "type": "textarea",
+      "label": "Prompt Template",
+      "placeholder": "Write your prompt here. Use {{nodeId.field}} to reference data from previous nodes.",
+      "defaultValue": ""
+    },
+    {
+      "name": "extractionSchema",
+      "type": "textarea",
+      "label": "Extraction Schema (JSON) — for Extract Data only",
+      "placeholder": "{ \"name\": \"string\", \"email\": \"string\", \"amount\": \"number\" }",
+      "defaultValue": ""
+    },
+    {
+      "name": "categories",
+      "type": "text",
+      "label": "Categories (comma-separated) — for Categorize only",
+      "placeholder": "billing, support, sales, other",
+      "defaultValue": ""
+    },
+    {
+      "name": "model",
+      "type": "select",
+      "label": "AI Model",
+      "defaultValue": "gpt-4o",
+      "options": [
+        { "label": "GPT-4o (OpenAI)", "value": "gpt-4o" },
+        { "label": "GPT-4o Mini (OpenAI)", "value": "gpt-4o-mini" },
+        { "label": "Claude 3.5 Sonnet (Anthropic)", "value": "claude-3-5-sonnet" },
+        { "label": "Claude 3 Haiku (Anthropic)", "value": "claude-3-haiku" },
+        { "label": "Gemini 1.5 Pro (Google)", "value": "gemini-1-5-pro" },
+        { "label": "Gemini 1.5 Flash (Google)", "value": "gemini-1-5-flash" }
+      ]
+    },
+    {
+      "name": "systemPrompt",
+      "type": "textarea",
+      "label": "System Prompt (optional)",
+      "placeholder": "You are a helpful assistant...",
+      "defaultValue": ""
+    }
+  ],
+  "outputs": [
+    {
+      "name": "outputData",
+      "type": "object",
+      "label": "Output",
+      "isConnection": true
+    },
+    {
+      "name": "response",
+      "type": "string",
+      "label": "AI Response",
+      "description": "The text or JSON output from the AI model."
+    },
+    {
+      "name": "taskType",
+      "type": "string",
+      "label": "Task Type Used",
+      "description": "The task type that was executed."
+    },
+    {
+      "name": "tokensUsed",
+      "type": "number",
+      "label": "Tokens Used",
+      "description": "Total tokens consumed by this AI call."
+    },
+    {
+      "name": "model",
+      "type": "string",
+      "label": "Model Used",
+      "description": "The AI model that processed this request."
+    }
+  ]
+}

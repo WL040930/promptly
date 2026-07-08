@@ -22,7 +22,9 @@ const BuilderToolbar = ({
     onTitleEditComplete, // deprecated
     onTitleEditCancel, // deprecated
     nodeCount,
-    currentTime
+    currentTime,
+    onTestRun,
+    isRunning = false,
 }) => {
     return (
         <div className="flex flex-col shrink-0 z-10">
@@ -86,7 +88,30 @@ const BuilderToolbar = ({
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0">
-                    <button className="ghost text-sm py-1.5 px-3.5 rounded-lg font-medium border-slate-200 shadow-sm hover:shadow whitespace-nowrap">Test Run</button>
+                    <button
+                        onClick={onTestRun}
+                        disabled={isRunning}
+                        className={`ghost text-sm py-1.5 px-3.5 rounded-lg font-medium border border-slate-200 shadow-sm hover:shadow whitespace-nowrap flex items-center gap-1.5 transition-all ${
+                            isRunning ? 'opacity-60 cursor-not-allowed' : 'hover:border-indigo-300 hover:text-indigo-600'
+                        }`}
+                    >
+                        {isRunning ? (
+                            <>
+                                <svg className="w-3.5 h-3.5 animate-spin text-indigo-500" viewBox="0 0 24 24" fill="none">
+                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.2" />
+                                    <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                </svg>
+                                Running…
+                            </>
+                        ) : (
+                            <>
+                                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <polygon points="5 3 19 12 5 21 5 3" />
+                                </svg>
+                                Test Run
+                            </>
+                        )}
+                    </button>
                     <button className="solid text-sm py-1.5 px-4 rounded-lg shadow bg-indigo-600 text-white font-medium hover:bg-indigo-700 whitespace-nowrap">Deploy</button>
 
                     {/* Right sidebar toggle */}

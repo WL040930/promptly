@@ -3,22 +3,73 @@
     {
       "name": "triggerData",
       "type": "object",
-      "label": "Input Payload",
+      "label": "Input Data",
       "isConnection": true
     },
     {
-      "name": "actionUrl",
+      "name": "to",
       "type": "text",
-      "label": "Target URL/Resource",
-      "placeholder": "https://api.example.com"
+      "label": "To (recipient email)",
+      "placeholder": "user@example.com or {{nodeId.email}}",
+      "defaultValue": ""
+    },
+    {
+      "name": "cc",
+      "type": "text",
+      "label": "CC (optional)",
+      "placeholder": "manager@example.com",
+      "defaultValue": ""
+    },
+    {
+      "name": "subject",
+      "type": "text",
+      "label": "Subject",
+      "placeholder": "Hello {{nodeId.name}}, your order is ready",
+      "defaultValue": ""
+    },
+    {
+      "name": "body",
+      "type": "textarea",
+      "label": "Email Body",
+      "placeholder": "Hi {{nodeId.name}},\n\nYour order #{{nodeId.orderId}} has shipped.\n\nBest regards",
+      "defaultValue": ""
+    },
+    {
+      "name": "isHtml",
+      "type": "boolean",
+      "label": "Send as HTML?",
+      "defaultValue": false
+    },
+    {
+      "name": "fromName",
+      "type": "text",
+      "label": "From Name (optional)",
+      "placeholder": "Promptly Notifications",
+      "defaultValue": ""
     }
   ],
   "outputs": [
     {
-      "name": "response",
+      "name": "outputData",
       "type": "object",
-      "label": "API Response",
+      "label": "Output",
       "isConnection": true
+    },
+    {
+      "name": "messageId",
+      "type": "string",
+      "label": "Message ID",
+      "description": "The ID returned by the email provider after sending."
+    },
+    {
+      "name": "to",
+      "type": "string",
+      "label": "Sent To"
+    },
+    {
+      "name": "subject",
+      "type": "string",
+      "label": "Subject Sent"
     }
   ]
 }

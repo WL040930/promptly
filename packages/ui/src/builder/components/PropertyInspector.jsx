@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import VariableInput from './VariableInput';
+import ResourceSelectInput from './ResourceSelectInput';
+import { getUpstreamOutputs } from '../utils/getUpstreamOutputs';
 
 const labelClassName = 'text-xs font-semibold text-slate-500';
 const inputClassName = 'w-full bg-slate-50 border border-slate-200 rounded-lg text-slate-800 px-3 py-2 outline-none text-sm font-medium focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 transition-all shadow-inner';
 const sectionClassName = 'flex flex-col gap-1.5';
 
-const PropertyInspector = ({ activeNode, onUpdateNode }) => {
+const PropertyInspector = ({ activeNode, onUpdateNode, nodes = [], edges = [] }) => {
     if (!activeNode) {
         return (
             <div className="h-full p-6 flex flex-col items-center justify-center text-center">
@@ -22,6 +25,14 @@ const PropertyInspector = ({ activeNode, onUpdateNode }) => {
 
     const [title, setTitle] = useState(activeNode.title || '');
     const [description, setDescription] = useState(activeNode.description || '');
+
+    useEffect(() => {
+        setTitle(activeNode.title || '');
+        setDescription(activeNode.description || '');
+    }, [activeNode.id]);
+
+    // Compute available upstream variables for this node
+    const availableVars = getUpstreamOutputs(activeNode.id, nodes, edges);
 
     const handleTitleChange = (e) => {
         const val = e.target.value;
@@ -77,36 +88,103 @@ const PropertyInspector = ({ activeNode, onUpdateNode }) => {
                     if (configInputs.length > 0) {
                         return (
                             <div className="flex flex-col gap-4">
+                                {/* Variable picker hint banner — only if upstream vars exist */}
+                                {availableVars.length > 0 && (
+                                    <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-lg">
+                                        <span className="text-indigo-500 text-sm font-black shrink-0">{'{}'}</span>
+                                        <p className="text-[11px] text-indigo-700 font-medium leading-snug">
+                                            {availableVars.length} variable{availableVars.length !== 1 ? 's' : ''} from upstream nodes available — click <strong>{'{}'}</strong> inside any text field to insert.
+                                        </p>
+                                    </div>
+                                )}
+
                                 {configInputs.map((input) => {
                                     const value = activeNode.config?.[input.name] !== undefined 
                                                 ? activeNode.config[input.name] 
                                                 : (input.defaultValue !== undefined ? input.defaultValue : '');
                                                 
-                                    const handleChange = (e) => {
-                                        let val = e.target.value;
+                                    const handleChange = (val) => {
+                                        // Support both raw event and direct value (VariableInput passes value directly)
+                                        const resolvedVal = val?.target !== undefined ? val.target.value : val;
+                                        let finalVal = resolvedVal;
                                         if (input.type === 'boolean') {
-                                            val = e.target.checked;
+                                            finalVal = val?.target !== undefined ? val.target.checked : val;
                                         } else if (input.type === 'number') {
-                                            val = Number(val);
+                                            finalVal = Number(resolvedVal);
                                         }
                                         onUpdateNode?.(activeNode.id, { 
-                                            config: { ...(activeNode.config || {}), [input.name]: val } 
+                                            config: { ...(activeNode.config || {}), [input.name]: finalVal } 
                                         });
                                     };
+
+                                    // Determine if this field should use VariableInput
+                                    const supportsVariables = input.type === 'text' || input.type === 'textarea';
+
+                                    // Webhook display URL — read-only copyable endpoint
+                                    if (input.type === 'webhook-display') {
+                                        const webhookId = value || activeNode.config?.webhookId || '';
+                                        const webhookUrl = webhookId
+                                            ? `${window.location.origin}/api/webhooks/${webhookId}`
+                                            : 'Save the workflow to generate a URL';
+                                        return (
+                                            <div key={input.name} className={sectionClassName}>
+                                                <label className={labelClassName}>{input.label}</label>
+                                                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 shadow-inner">
+                                                    <span className="flex-1 text-xs font-mono text-slate-600 truncate">{webhookUrl}</span>
+                                                    {webhookId && (
+                                                        <button
+                                                            type="button"
+                                                            title="Copy URL"
+                                                            onClick={() => navigator.clipboard.writeText(webhookUrl)}
+                                                            className="shrink-0 text-slate-400 hover:text-indigo-600 transition-colors"
+                                                        >
+                                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                                                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                                            </svg>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                {input.hint && (
+                                                    <p className="text-[10px] text-slate-400 px-1">{input.hint}</p>
+                                                )}
+                                            </div>
+                                        );
+                                    }
+
+                                    // Resource-select — dynamic API-fetched dropdown
+                                    if (input.type === 'resource-select') {
+                                        return (
+                                            <div key={input.name} className={sectionClassName}>
+                                                <label className={labelClassName}>{input.label || input.name}</label>
+                                                <ResourceSelectInput
+                                                    value={value}
+                                                    onChange={(val) => onUpdateNode?.(activeNode.id, {
+                                                        config: { ...(activeNode.config || {}), [input.name]: val }
+                                                    })}
+                                                    resource={input.resource}
+                                                    placeholder={input.placeholder}
+                                                />
+                                            </div>
+                                        );
+                                    }
 
                                     return (
                                         <div key={input.name} className={sectionClassName}>
                                             {input.type !== 'boolean' && (
-                                                <label className={labelClassName}>{input.label || input.name}</label>
+                                                <label className={labelClassName}>
+                                                    {input.label || input.name}
+                                                </label>
                                             )}
                                             
-                                            {input.type === 'textarea' ? (
-                                                <textarea
-                                                    value={value}
+                                            {supportsVariables ? (
+                                                <VariableInput
+                                                    value={String(value ?? '')}
                                                     onChange={handleChange}
                                                     placeholder={input.placeholder}
-                                                    rows="4"
-                                                    className={`${inputClassName} resize-none`}
+                                                    multiline={input.type === 'textarea'}
+                                                    rows={input.type === 'textarea' ? 4 : undefined}
+                                                    availableVars={availableVars}
                                                 />
                                             ) : input.type === 'select' ? (
                                                 <div className="relative">
