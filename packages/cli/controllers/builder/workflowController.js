@@ -4,8 +4,20 @@ import asyncHandler from '../../utils/asyncHandler.js';
 import SchedulerService from '../../services/scheduler/schedulerService.js';
 
 export const getWorkflows = asyncHandler(async (req, res) => {
-    const workflows = await Workflow.findAll({ where: { userId: req.user.id } });
+    const workflows = await Workflow.findAll({ 
+        where: { userId: req.user.id },
+        attributes: { exclude: ['nodes', 'edges'] }
+    });
     res.json(workflows);
+});
+
+export const getWorkflow = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const workflow = await Workflow.findOne({ 
+        where: { id, userId: req.user.id } 
+    });
+    if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
+    res.json(workflow);
 });
 
 export const createWorkflow = asyncHandler(async (req, res) => {

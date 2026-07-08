@@ -7,6 +7,7 @@ import FormAIAssistant from '../../../forms/FormAIAssistant';
 import FormResponses from '../../../forms/FormResponses';
 import FormSettings from '../../../forms/FormSettings';
 import FormShareModal from '../../../forms/FormShareModal';
+import Button from '../../../components/Button.jsx';
 import { createField } from '../../../forms/fields/fieldTypes';
 import { useForms, useCreateForm, useUpdateForm, useDeleteForm } from '../../../api/hooks/useForms.js';
 import { useToast } from '../../../components/ToastContext.jsx';
@@ -249,20 +250,20 @@ const FormsTab = () => {
                 {/* Sidebar Header */}
                 <div className="p-4 flex items-center justify-between shrink-0">
                     <h3 className="font-extrabold text-gray-900 text-[15px] tracking-tight pl-1">Forms</h3>
-                    <button
+                    <Button
+                        variant="ghost"
+                        size="icon-md"
                         onClick={handleCreateForm}
                         disabled={isCreatingForm}
-                        className="p-1.5 rounded-xl text-gray-400 hover:text-gray-900 hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-100 transition-all disabled:opacity-50 flex items-center justify-center"
+                        isLoading={isCreatingForm}
+                        className="rounded-xl border border-transparent hover:border-gray-100"
                         title="Create new form"
-                    >
-                        {isCreatingForm ? (
-                            <svg className="animate-spin" width="18" height="18" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                        ) : (
+                        iconLeft={!isCreatingForm && (
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                                 <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
                             </svg>
                         )}
-                    </button>
+                    />
                 </div>
 
                 {/* Search */}
@@ -414,20 +415,14 @@ const FormsTab = () => {
                     {/* Right: Actions */}
                     <div className="flex items-center gap-2 md:gap-3 shrink-0">
                         {/* Preview Toggle */}
-                        <button
+                        <Button
+                            variant={isPreviewMode ? 'primary' : 'outline'}
                             onClick={() => setIsPreviewMode(!isPreviewMode)}
-                            className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl text-[13px] font-bold border-2 transition-all duration-300 ${
-                                isPreviewMode
-                                    ? 'bg-gray-900 text-white border-gray-900 shadow-md scale-105'
-                                    : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 hover:shadow-sm'
-                            }`}
+                            className={`px-3 md:px-4 ${isPreviewMode ? 'bg-gray-900 border-gray-900 hover:bg-gray-800' : ''}`}
+                            iconLeft={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>}
                         >
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                                <circle cx="12" cy="12" r="3" />
-                            </svg>
                             <span className="hidden 2xl:inline">Preview</span>
-                        </button>
+                        </Button>
 
                         {/* Share Button */}
                         <button
@@ -522,27 +517,24 @@ const FormsTab = () => {
                             </p>
                         </div>
                         <div className="flex gap-3 mt-8">
-                            <button
+                            <Button
+                                variant="secondary"
                                 disabled={isDeleting}
                                 onClick={() => setFormToDelete(null)}
-                                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50"
+                                className="flex-1 py-2.5"
                             >
                                 Cancel
-                            </button>
-                            <button
+                            </Button>
+                            <Button
+                                variant="dangerSolid"
                                 disabled={isDeleting}
+                                isLoading={isDeleting}
+                                loadingText="Delete"
                                 onClick={confirmDeleteForm}
-                                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 shadow-md shadow-red-500/20 transition-all flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed"
+                                className="flex-1 py-2.5"
                             >
-                                {isDeleting ? (
-                                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                ) : (
-                                    'Delete'
-                                )}
-                            </button>
+                                Delete
+                            </Button>
                         </div>
                     </div>
                 </div>

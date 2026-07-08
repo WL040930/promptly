@@ -15,19 +15,39 @@ import FormsTab from './components/tabs/FormsTab';
 import LogsTab from '../chat/components/LogsTab';
 import VersionHistorySidebar from './components/sidebars/VersionHistorySidebar';
 import { navigate, parsePath } from '../utils/router.js';
-import { useWorkflows, useCreateWorkflow, useUpdateWorkflow, useSaveWorkflowVersion } from '../api/hooks/useWorkflows.js';
+import { useWorkflows, useWorkflow, useCreateWorkflow, useUpdateWorkflow, useSaveWorkflowVersion } from '../api/hooks/useWorkflows.js';
 import { useFolders } from '../api/hooks/useFolders.js';
 import { useRunWorkflow } from '../api/hooks/useRunWorkflow.js';
 import ExecutionPanel from './components/panels/ExecutionPanel';
+import { useUndoRedo } from '../hooks/useUndoRedo';
+import { useToast } from '../components/ToastContext.jsx';
 
 const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) => {
     // ── Server data ──────────────────────────────────────────────────────────
+    const getViewStateFromUrl = () => {
+        const parsed = parsePath(window.location.pathname);
+        return {
+            viewMode: parsed.viewMode || 'overview',
+            workflowId: parsed.workflowId || null
+        };
+    };
+
     const { data: folders = [], isLoading: isFoldersLoading } = useFolders();
     const { data: workflowsData = [], isLoading: isWorkflowsLoading } = useWorkflows();
+    const [activeWorkflowId, setActiveWorkflowId] = useState(() => getViewStateFromUrl().workflowId);
+    
+    // Automatically select the first workflow if none is selected
+    const derivedWorkflowId = activeWorkflowId || (workflowsData.length > 0 ? workflowsData[0].id : null);
+    const { data: activeWorkflowData, isLoading: isActiveWorkflowLoading } = useWorkflow(derivedWorkflowId);
+    
+    const [activeNodeId, setActiveNodeId] = useState(null);
+    const [viewMode, setViewModeState] = useState(() => getViewStateFromUrl().viewMode);
+    
     const createWorkflowMutation = useCreateWorkflow();
     const updateWorkflowMutation = useUpdateWorkflow();
     const saveVersionMutation = useSaveWorkflowVersion();
     const queryClient = useQueryClient();
+    const toast = useToast();
 
     // ── Optimistic cache updaters ────────────────────────────────────────────
     const setFolders = (updater) => {
@@ -48,7 +68,9 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     };
 
     // Only show skeleton on initial load (no data yet), not on background refetches
-    const loading = (isFoldersLoading && folders.length === 0) || (isWorkflowsLoading && workflowsData.length === 0);
+    const loading = (isFoldersLoading && folders.length === 0) || 
+                    (isWorkflowsLoading && workflowsData.length === 0) || 
+                    (isActiveWorkflowLoading && !activeWorkflowData && viewMode === 'builder');
 
     // Normalise workflows array → id-keyed map for fast lookup
     const workflows = useMemo(() => {
@@ -72,37 +94,20 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     const runWorkflowMutation = useRunWorkflow();
 
     const handleTestRun = async () => {
-        if (!activeWorkflowId) return;
+        if (!derivedWorkflowId) return;
         setIsExecutionPanelOpen(true);
         setLastExecutionLog(null);
         try {
-            const log = await runWorkflowMutation.mutateAsync({ workflowId: activeWorkflowId, payload: {} });
+            const log = await runWorkflowMutation.mutateAsync({ workflowId: derivedWorkflowId, payload: {} });
             setLastExecutionLog(log);
         } catch (err) {
             setLastExecutionLog({ status: 'Failed', durationMs: 0, steps: [], error: err.message });
         }
     };
 
-    // Real-time relative timestamp ticker
-    const [currentTime, setCurrentTime] = useState(() => Date.now());
-    useEffect(() => {
-        const timer = setInterval(() => setCurrentTime(Date.now()), 60000);
-        return () => clearInterval(timer);
-    }, []);
+    // Real-time relative timestamp ticker removed for performance, handled by child components now
 
-    // ── URL-driven view/workflow routing ─────────────────────────────────────
-    const getViewStateFromUrl = () => {
-        const parsed = parsePath(window.location.pathname);
-        return {
-            viewMode: parsed.viewMode || 'overview',
-            workflowId: parsed.workflowId || 'w2'
-        };
-    };
-
-    const [activeWorkflowId, setActiveWorkflowId] = useState(() => getViewStateFromUrl().workflowId);
-    const [activeNodeId, setActiveNodeId] = useState('w2-2');
-    const [viewMode, setViewModeState] = useState(() => getViewStateFromUrl().viewMode);
-
+    // ── Handlers ─────────────────────────────────────────────────────────────
     // Sync view state when user hits back/forward
     useEffect(() => {
         const handler = () => {
@@ -157,11 +162,11 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
 
     // ── Derived data ─────────────────────────────────────────────────────────
     const activeWorkflow = useMemo(
-        () => workflows[activeWorkflowId] || Object.values(workflows)[0] || null,
-        [workflows, activeWorkflowId]
+        () => activeWorkflowData || workflows[derivedWorkflowId] || null,
+        [activeWorkflowData, workflows, derivedWorkflowId]
     );
-    const nodes = activeWorkflow?.nodes || [];
-    const edges = activeWorkflow?.edges || [];
+    const nodes = useMemo(() => activeWorkflow?.nodes || [], [activeWorkflow?.nodes]);
+    const edges = useMemo(() => activeWorkflow?.edges || [], [activeWorkflow?.edges]);
     const activeNode = useMemo(() => nodes.find(n => n.id === activeNodeId) || null, [nodes, activeNodeId]);
 
     const activeFolder = useMemo(() => {
@@ -175,21 +180,68 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         [workflows]
     );
 
-    // ── Workflow mutation helpers ─────────────────────────────────────────────
-    const handleWorkflowUpdate = (updatedFields) => {
-        if (!activeWorkflowId) return;
-        updateWorkflowMutation.mutate({ id: activeWorkflowId, data: updatedFields });
-    };
+    const { takeSnapshot, undo, redo } = useUndoRedo(20);
 
-    const handleToggleActive = () => {
+    // ── Workflow mutation helpers ─────────────────────────────────────────────
+    const handleWorkflowUpdate = useCallback((updatedFields, skipSnapshot = false) => {
+        if (!derivedWorkflowId) return;
+
+        if (!skipSnapshot && (updatedFields.nodes || updatedFields.edges)) {
+            takeSnapshot({ nodes, edges });
+        }
+
+        updateWorkflowMutation.mutate({ id: derivedWorkflowId, data: updatedFields });
+    }, [derivedWorkflowId, updateWorkflowMutation, nodes, edges, takeSnapshot]);
+
+    const handleToggleActive = useCallback(() => {
         if (!activeWorkflow) return;
         handleWorkflowUpdate({ isActive: !activeWorkflow.isActive });
-    };
+    }, [activeWorkflow, handleWorkflowUpdate]);
 
-    const handleSaveVersion = () => {
-        if (!activeWorkflowId) return;
-        saveVersionMutation.mutate(activeWorkflowId);
-    };
+    const handleSaveVersion = useCallback(() => {
+        if (!derivedWorkflowId) return;
+        saveVersionMutation.mutate(derivedWorkflowId, {
+            onSuccess: () => toast.success('New version snapshot saved!'),
+            onError: () => toast.error('Failed to save version')
+        });
+    }, [derivedWorkflowId, saveVersionMutation, toast]);
+
+    // ── Undo / Redo Keybinds ──────────────────────────────────────────────────
+    const handleUndo = useCallback(() => {
+        const previousState = undo({ nodes, edges });
+        if (previousState) {
+            handleWorkflowUpdate(previousState, true);
+        }
+    }, [undo, nodes, edges, handleWorkflowUpdate]);
+
+    const handleRedo = useCallback(() => {
+        const nextState = redo({ nodes, edges });
+        if (nextState) {
+            handleWorkflowUpdate(nextState, true);
+        }
+    }, [redo, nodes, edges, handleWorkflowUpdate]);
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+            const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+
+            if (cmdOrCtrl && e.key.toLowerCase() === 'z') {
+                if (e.shiftKey) {
+                    e.preventDefault();
+                    handleRedo();
+                } else {
+                    e.preventDefault();
+                    handleUndo();
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [handleUndo, handleRedo]);
 
     // ── Modal & Title editing ────────────────────────────────────────────────
     const openModal = useCallback((type, data = null) => {
@@ -232,7 +284,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         }
     }, [modal, activeWorkflowId, updateWorkflowMutation, closeModal]);
 
-    const handleTitleEditStart = () => {
+    const handleTitleEditStart = useCallback(() => {
         const activeWorkflow = workflows[activeWorkflowId];
         openModal(MODAL_TYPES.EDIT_WORKFLOW_PROPERTIES, {
             currentName: activeWorkflow?.name,
@@ -240,16 +292,16 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
             iconBg: activeWorkflow?.iconBg,
             iconColor: activeWorkflow?.iconColor,
         });
-    };
+    }, [workflows, activeWorkflowId, openModal]);
 
     // ── Node operations ──────────────────────────────────────────────────────
-    const handleNodeClick = (nodeId) => {
+    const handleNodeClick = useCallback((nodeId) => {
         setActiveNodeId(nodeId);
         setRightTab('properties');
         setIsRightSidebarOpen(true);
-    };
+    }, []);
 
-    const handleApplyAction = (proposal) => {
+    const handleApplyAction = useCallback((proposal) => {
         const newNodeId = `${activeWorkflowId}-${Date.now()}`;
         const updatedNodes = [...nodes, {
             id: newNodeId,
@@ -260,9 +312,9 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         }];
         handleWorkflowUpdate({ nodes: updatedNodes });
         setActiveNodeId(newNodeId);
-    };
+    }, [activeWorkflowId, nodes, handleWorkflowUpdate]);
 
-    const handleAddNode = (nodeData, position) => {
+    const handleAddNode = useCallback((nodeData, position) => {
         const newNodeId = `${activeWorkflowId}-${Date.now()}`;
         const updatedNodes = [...nodes, {
             id: newNodeId,
@@ -278,9 +330,9 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         }];
         handleWorkflowUpdate({ nodes: updatedNodes });
         setActiveNodeId(newNodeId);
-    };
+    }, [activeWorkflowId, nodes, handleWorkflowUpdate]);
 
-    const handleNodesChange = (changes) => {
+    const handleNodesChange = useCallback((changes) => {
         const positionChanges = changes.filter(c => c.type === 'position' && c.position && !c.dragging);
         const removeChanges = changes.filter(c => c.type === 'remove');
         if (positionChanges.length === 0 && removeChanges.length === 0) return;
@@ -304,13 +356,13 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         }
 
         handleWorkflowUpdate({ nodes: updatedNodes });
-    };
+    }, [nodes, activeNodeId, handleWorkflowUpdate]);
 
-    const handleEdgesChange = (updatedEdges) => {
+    const handleEdgesChange = useCallback((updatedEdges) => {
         handleWorkflowUpdate({ edges: updatedEdges });
-    };
+    }, [handleWorkflowUpdate]);
 
-    const handleUpdateNode = (nodeId, updatedFields) => {
+    const handleUpdateNode = useCallback((nodeId, updatedFields) => {
         const updatedNodes = nodes.map(node => {
             if (node.id !== nodeId) return node;
             const nextNode = { ...node, ...updatedFields };
@@ -320,7 +372,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
             return nextNode;
         });
         handleWorkflowUpdate({ nodes: updatedNodes });
-    };
+    }, [nodes, handleWorkflowUpdate]);
 
     // ── GSAP entrance animation ───────────────────────────────────────────────
     const builderContainer = useRef(null);
@@ -430,9 +482,9 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                     activeWorkflow={activeWorkflow}
                     onTitleEditStart={handleTitleEditStart}
                     nodeCount={nodes.length}
-                    currentTime={currentTime}
                     onTestRun={handleTestRun}
                     isRunning={runWorkflowMutation.isPending}
+                    isSavingVersion={saveVersionMutation.isPending}
                     onSaveVersion={handleSaveVersion}
                     onToggleHistory={() => {
                         setIsHistorySidebarOpen(!isHistorySidebarOpen);

@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { ICON_MAP } from '../utils/iconMap.jsx';
+import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
 
 const COLOR_PRESETS = [
     { name: 'Indigo', bg: 'bg-indigo-100', text: 'text-indigo-600' },
@@ -12,11 +14,52 @@ const COLOR_PRESETS = [
 ];
 
 const OverviewModal = ({ config, inputValue, formData, isSubmitting, onInputChange, onFormDataChange, onCancel, onConfirm }) => {
+    const overlayRef = useRef(null);
+    const modalRef = useRef(null);
+
+    useGSAP(() => {
+        if (config && overlayRef.current && modalRef.current) {
+            gsap.fromTo(overlayRef.current, 
+                { opacity: 0 }, 
+                { opacity: 1, duration: 0.2, ease: 'power2.out' }
+            );
+            
+            gsap.fromTo(modalRef.current,
+                { opacity: 0, y: 15, scale: 0.95 },
+                { opacity: 1, y: 0, scale: 1, duration: 0.3, ease: 'back.out(1.2)' }
+            );
+        }
+    }, { dependencies: [config] });
+
+    const handleAction = (actionFn) => {
+        if (overlayRef.current && modalRef.current) {
+            gsap.to(overlayRef.current, { opacity: 0, duration: 0.15, ease: 'power2.in' });
+            gsap.to(modalRef.current, { 
+                opacity: 0, 
+                y: 10, 
+                scale: 0.95, 
+                duration: 0.15, 
+                ease: 'power2.in',
+                onComplete: actionFn
+            });
+        } else {
+            actionFn();
+        }
+    };
+
+    const handleCancel = () => handleAction(onCancel);
+    const handleConfirm = () => handleAction(onConfirm);
+
     if (!config) return null;
 
     return (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className={`bg-white w-full ${config.showProperties ? 'max-w-md' : 'max-w-sm'} rounded-2xl shadow-2xl border border-slate-100 overflow-hidden animate-in zoom-in-95 duration-200`}>
+        <div className="absolute inset-0 z-50 flex items-center justify-center p-4">
+            <div 
+                ref={overlayRef}
+                className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+                onClick={handleCancel}
+            />
+            <div ref={modalRef} className={`relative bg-white w-full ${config.showProperties ? 'max-w-md' : 'max-w-sm'} rounded-2xl shadow-2xl border border-slate-100 overflow-hidden`}>
                 <div className="p-5">
                     <h3 className="text-lg font-semibold text-slate-900 mb-4">{config.title}</h3>
 
@@ -31,7 +74,7 @@ const OverviewModal = ({ config, inputValue, formData, isSubmitting, onInputChan
                                     disabled={isSubmitting}
                                     value={formData.name || ''}
                                     onChange={(event) => onFormDataChange({ name: event.target.value })}
-                                    onKeyDown={(event) => event.key === 'Enter' && !isSubmitting && onConfirm()}
+                                    onKeyDown={(event) => event.key === 'Enter' && !isSubmitting && handleConfirm()}
                                     placeholder="e.g. Lead Qualification"
                                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                                 />
@@ -95,7 +138,7 @@ const OverviewModal = ({ config, inputValue, formData, isSubmitting, onInputChan
                             disabled={isSubmitting}
                             value={inputValue}
                             onChange={(event) => onInputChange(event.target.value)}
-                            onKeyDown={(event) => event.key === 'Enter' && !isSubmitting && onConfirm()}
+                            onKeyDown={(event) => event.key === 'Enter' && !isSubmitting && handleConfirm()}
                             placeholder={config.placeholder}
                             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                         />
@@ -106,14 +149,14 @@ const OverviewModal = ({ config, inputValue, formData, isSubmitting, onInputChan
 
                 <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
                     <button
-                        onClick={onCancel}
+                        onClick={handleCancel}
                         disabled={isSubmitting}
                         className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         Cancel
                     </button>
                     <button
-                        onClick={onConfirm}
+                        onClick={handleConfirm}
                         disabled={isSubmitting}
                         className={`flex items-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-lg transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${config.isDestructive
                                 ? 'bg-red-600 hover:bg-red-700 hover:shadow-red-600/20'

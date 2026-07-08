@@ -1,9 +1,9 @@
 import React from 'react';
-import DashboardTab from '../builder/components/DashboardTab';
-import ChatTab from './components/ChatTab';
-import WorkflowTab from './components/WorkflowTab';
-import LogsTab from './components/LogsTab';
-import FormsTab from '../builder/components/FormsTab';
+import DashboardTab from '../builder/components/tabs/DashboardTab.jsx';
+import ChatTab from './components/ChatTab.jsx';
+import WorkflowTab from './components/WorkflowTab.jsx';
+import LogsTab from './components/LogsTab.jsx';
+import FormsTab from '../builder/components/tabs/FormsTab.jsx';
 
 const ChatView = ({ user, activeTab = 'chat' }) => {
     const renderActiveTab = () => {

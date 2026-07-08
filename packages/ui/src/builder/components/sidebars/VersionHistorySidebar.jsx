@@ -1,11 +1,18 @@
 import React, { useState } from 'react';
 import { useWorkflowVersions, useRestoreWorkflowVersion } from '../../../api/hooks/useWorkflows.js';
 import WorkflowDiffPreviewModal from '../modals/WorkflowDiffPreviewModal.jsx';
+import { useToast } from '../../../components/ToastContext.jsx';
+import Button from '../../../components/Button';
+import ConfirmModal from '../../../components/ConfirmModal';
 
 export default function VersionHistorySidebar({ workflowId, currentWorkflow }) {
     const { data: versions = [], isLoading } = useWorkflowVersions(workflowId);
     const restoreMutation = useRestoreWorkflowVersion();
     const [previewVersion, setPreviewVersion] = useState(null);
+    const [isRestoringSuccess, setIsRestoringSuccess] = useState(false);
+    const toast = useToast();
+
+    const [versionToRestore, setVersionToRestore] = useState(null);
 
     return (
         <div className="flex flex-col h-full bg-slate-50">
@@ -25,36 +32,68 @@ export default function VersionHistorySidebar({ workflowId, currentWorkflow }) {
                             {v.nodes?.length || 0} nodes, {v.edges?.length || 0} edges
                         </div>
                         <div className="flex items-center gap-2 mt-2">
-                            <button
+                            <Button
+                                variant="outline"
+                                size="xs"
+                                className="flex-1 py-1.5"
                                 onClick={() => setPreviewVersion(v)}
-                                className="flex-1 text-xs font-bold py-1.5 border border-slate-200 text-slate-700 rounded bg-white hover:bg-slate-50 transition-colors shadow-sm"
                             >
                                 Preview
-                            </button>
-                            <button
-                                onClick={() => {
-                                    if (window.confirm(`Are you sure you want to restore Version ${v.versionNumber}? This will overwrite your current draft.`)) {
-                                        restoreMutation.mutate({ id: workflowId, versionId: v.id });
-                                    }
-                                }}
-                                className="flex-1 text-xs font-bold py-1.5 border border-indigo-200 text-indigo-700 rounded bg-indigo-50 hover:bg-indigo-100 transition-colors shadow-sm"
+                            </Button>
+                            <Button
+                                variant="primary"
+                                size="xs"
+                                className="flex-1 py-1.5"
+                                onClick={() => setVersionToRestore(v)}
                             >
                                 Restore
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 ))}
             </div>
 
+            <ConfirmModal
+                isOpen={!!versionToRestore}
+                onClose={() => setVersionToRestore(null)}
+                onConfirm={() => {
+                    if (versionToRestore) {
+                        restoreMutation.mutate({ id: workflowId, versionId: versionToRestore.id }, {
+                            onSuccess: () => {
+                                toast.success(`Restored Version ${versionToRestore.versionNumber}!`);
+                                setVersionToRestore(null);
+                            },
+                            onError: () => toast.error('Failed to restore version.')
+                        });
+                    }
+                }}
+                title={`Restore Version ${versionToRestore?.versionNumber}`}
+                message="Are you sure you want to restore this version? This will overwrite your current draft."
+                confirmText="Restore Version"
+                confirmVariant="primary"
+                isLoading={restoreMutation.isPending}
+            />
+
             <WorkflowDiffPreviewModal 
                 isOpen={!!previewVersion}
-                onClose={() => setPreviewVersion(null)}
                 currentWorkflow={currentWorkflow}
                 versionWorkflow={previewVersion}
                 onRestore={() => {
                     if (previewVersion) {
-                        restoreMutation.mutate({ id: workflowId, versionId: previewVersion.id });
+                        restoreMutation.mutate({ id: workflowId, versionId: previewVersion.id }, {
+                            onSuccess: () => {
+                                toast.success(`Restored Version ${previewVersion.versionNumber}!`);
+                                setIsRestoringSuccess(true);
+                            },
+                            onError: () => toast.error('Failed to restore version.')
+                        });
                     }
+                }}
+                isRestoring={restoreMutation.isPending}
+                isRestoringSuccess={isRestoringSuccess}
+                onClose={() => {
+                    setPreviewVersion(null);
+                    setIsRestoringSuccess(false);
                 }}
             />
         </div>

@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
 
 /**
  * FormShareModal — modal for sharing a form via link or embed code.
@@ -8,6 +10,38 @@ const FormShareModal = ({ form, isOpen, onClose }) => {
     const [activeShareTab, setActiveShareTab] = useState('link');
     const [copied, setCopied] = useState(false);
     const linkInputRef = useRef(null);
+    const overlayRef = useRef(null);
+    const modalRef = useRef(null);
+
+    useGSAP(() => {
+        if (isOpen && overlayRef.current && modalRef.current) {
+            gsap.fromTo(overlayRef.current, 
+                { opacity: 0 }, 
+                { opacity: 1, duration: 0.2, ease: 'power2.out' }
+            );
+            
+            gsap.fromTo(modalRef.current,
+                { opacity: 0, y: 15, scale: 0.95 },
+                { opacity: 1, y: 0, scale: 1, duration: 0.3, ease: 'back.out(1.2)' }
+            );
+        }
+    }, { dependencies: [isOpen] });
+
+    const handleClose = () => {
+        if (overlayRef.current && modalRef.current) {
+            gsap.to(overlayRef.current, { opacity: 0, duration: 0.15, ease: 'power2.in' });
+            gsap.to(modalRef.current, { 
+                opacity: 0, 
+                y: 10, 
+                scale: 0.95, 
+                duration: 0.15, 
+                ease: 'power2.in',
+                onComplete: onClose
+            });
+        } else {
+            onClose();
+        }
+    };
 
     useEffect(() => {
         if (!isOpen) {
@@ -30,20 +64,21 @@ const FormShareModal = ({ form, isOpen, onClose }) => {
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ zIndex: 99999 }}>
             {/* Backdrop */}
             <div
-                className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity duration-300"
-                onClick={onClose}
+                ref={overlayRef}
+                className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm"
+                onClick={handleClose}
             />
 
             {/* Modal */}
-            <div className="relative w-full max-w-lg bg-white rounded-[2rem] shadow-2xl overflow-hidden animate-slide-up-fade">
+            <div ref={modalRef} className="relative w-full max-w-lg bg-white rounded-[2rem] shadow-2xl overflow-hidden">
                 {/* Header */}
                 <div className="flex items-center justify-between px-8 py-6">
                     <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">Share Form</h2>
                     <button
-                        onClick={onClose}
+                        onClick={handleClose}
                         className="p-2 text-gray-400 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 rounded-full transition-colors"
                     >
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -81,7 +116,7 @@ const FormShareModal = ({ form, isOpen, onClose }) => {
                 {/* Content */}
                 <div className="p-8 min-h-[220px]">
                     {activeShareTab === 'link' && (
-                        <div className="flex flex-col gap-4 animate-slide-up-fade">
+                        <div className="flex flex-col gap-4">
                             <p className="text-[15px] font-medium text-gray-500">Share this link with anyone to let them fill out your form.</p>
                             <div className="flex flex-col sm:flex-row gap-3">
                                 <input
@@ -115,7 +150,7 @@ const FormShareModal = ({ form, isOpen, onClose }) => {
                     )}
 
                     {activeShareTab === 'embed' && (
-                        <div className="flex flex-col gap-4 animate-slide-up-fade">
+                        <div className="flex flex-col gap-4">
                             <p className="text-[15px] font-medium text-gray-500">Paste this code into your website's HTML to embed the form.</p>
                             <div className="relative group">
                                 <pre className="bg-gray-50/80 border border-gray-200 rounded-2xl p-5 text-[13px] text-gray-600 font-mono overflow-x-auto leading-relaxed whitespace-pre-wrap break-all shadow-inner h-[120px]">
@@ -147,7 +182,7 @@ const FormShareModal = ({ form, isOpen, onClose }) => {
                         Anyone with the link can respond
                     </div>
                     <button
-                        onClick={onClose}
+                        onClick={handleClose}
                         className="text-[14px] font-bold text-gray-600 hover:text-gray-900 transition-colors px-4 py-2 hover:bg-gray-200/50 rounded-xl"
                     >
                         Done

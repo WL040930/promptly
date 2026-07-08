@@ -1,10 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow } from '../backend.js';
+import { getWorkflows, getWorkflow, createWorkflow, updateWorkflow, deleteWorkflow } from '../backend.js';
 
 export const useWorkflows = () => {
     return useQuery({
         queryKey: ['workflows'],
         queryFn: getWorkflows,
+    });
+};
+
+export const useWorkflow = (id) => {
+    return useQuery({
+        queryKey: ['workflows', id],
+        queryFn: () => getWorkflow(id),
+        enabled: !!id,
+        retry: false,
     });
 };
 
@@ -27,21 +36,35 @@ export const useUpdateWorkflow = () => {
         mutationFn: ({ id, data }) => updateWorkflow(id, data),
         onMutate: async ({ id, data }) => {
             await queryClient.cancelQueries({ queryKey: ['workflows'] });
+            await queryClient.cancelQueries({ queryKey: ['workflows', id] });
+            
             const previousWorkflows = queryClient.getQueryData(['workflows']);
+            const previousSingle = queryClient.getQueryData(['workflows', id]);
+            
             if (previousWorkflows) {
                 queryClient.setQueryData(['workflows'], old =>
                     old.map(w => w.id === id ? { ...w, ...data } : w)
                 );
             }
-            return { previousWorkflows };
+            if (previousSingle) {
+                queryClient.setQueryData(['workflows', id], old => ({ ...old, ...data }));
+            }
+            
+            return { previousWorkflows, previousSingle, id };
         },
         onError: (err, variables, context) => {
             if (context?.previousWorkflows) {
                 queryClient.setQueryData(['workflows'], context.previousWorkflows);
             }
+            if (context?.previousSingle && context?.id) {
+                queryClient.setQueryData(['workflows', context.id], context.previousSingle);
+            }
         },
-        onSettled: () => {
+        onSettled: (data, error, variables) => {
             queryClient.invalidateQueries({ queryKey: ['workflows'] });
+            if (variables?.id) {
+                queryClient.invalidateQueries({ queryKey: ['workflows', variables.id] });
+            }
         },
     });
 };

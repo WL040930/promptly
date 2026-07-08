@@ -7,19 +7,20 @@ import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap } from '@xy
 import '@xyflow/react/dist/style.css';
 import DynamicNode from '../../../nodes/DynamicNode';
 import DeletableEdge from '../canvas/edges/DeletableEdge';
+import Button from '../../../components/Button';
 
 const nodeTypes = {
-  trigger: DynamicNode,
-  ai: DynamicNode,
-  action: DynamicNode,
-  logic: DynamicNode,
+    trigger: DynamicNode,
+    ai: DynamicNode,
+    action: DynamicNode,
+    logic: DynamicNode,
 };
 
 const edgeTypes = {
-  deletable: DeletableEdge,
+    deletable: DeletableEdge,
 };
 
-export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkflow, versionWorkflow, onRestore }) {
+export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkflow, versionWorkflow, onRestore, isRestoring = false, isRestoringSuccess = false }) {
     // Prevent background scrolling when open
     useEffect(() => {
         if (isOpen) {
@@ -38,11 +39,11 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
     useGSAP(() => {
         if (isOpen && overlayRef.current && modalRef.current) {
             // Animate overlay fading in
-            gsap.fromTo(overlayRef.current, 
-                { opacity: 0 }, 
+            gsap.fromTo(overlayRef.current,
+                { opacity: 0 },
                 { opacity: 1, duration: 0.3, ease: 'power2.out' }
             );
-            
+
             // Animate modal sliding up and scaling slightly
             gsap.fromTo(modalRef.current,
                 { opacity: 0, y: 30, scale: 0.95 },
@@ -54,11 +55,11 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
     const handleClose = useCallback(() => {
         if (overlayRef.current && modalRef.current) {
             gsap.to(overlayRef.current, { opacity: 0, duration: 0.2, ease: 'power2.in' });
-            gsap.to(modalRef.current, { 
-                opacity: 0, 
-                y: 20, 
-                scale: 0.95, 
-                duration: 0.2, 
+            gsap.to(modalRef.current, {
+                opacity: 0,
+                y: 20,
+                scale: 0.95,
+                duration: 0.2,
                 ease: 'power2.in',
                 onComplete: onClose
             });
@@ -68,31 +69,33 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
     }, [onClose]);
 
     const handleRestore = useCallback(() => {
-        if (overlayRef.current && modalRef.current) {
-            gsap.to(overlayRef.current, { opacity: 0, duration: 0.2, ease: 'power2.in' });
-            gsap.to(modalRef.current, { 
-                opacity: 0, 
-                scale: 0.95, 
-                duration: 0.2, 
+        onRestore(); // Fire immediately to show spinner
+    }, [onRestore]);
+
+    // Handle exit animation on success
+    useEffect(() => {
+        if (isRestoringSuccess) {
+            gsap.to(overlayRef.current, { opacity: 0, duration: 0.25, ease: 'power2.in' });
+            gsap.to(modalRef.current, {
+                scale: 0.95,
+                y: 20,
+                opacity: 0,
+                duration: 0.25,
                 ease: 'power2.in',
                 onComplete: () => {
-                    onRestore();
                     onClose();
                 }
             });
-        } else {
-            onRestore();
-            onClose();
         }
-    }, [onRestore, onClose]);
+    }, [isRestoringSuccess, onClose]);
 
     const diffNodes = useMemo(() => {
         if (!currentWorkflow || !versionWorkflow) return [];
         const currentNodes = currentWorkflow.nodes || [];
         const versionNodes = versionWorkflow.nodes || [];
-        
+
         const list = [];
-        
+
         // 1. Added or Modified
         for (const vNode of versionNodes) {
             const cNode = currentNodes.find(n => n.id === vNode.id);
@@ -103,7 +106,7 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
                 list.push({ ...vNode, _diffStatus: isModified ? 'updated' : 'unchanged' });
             }
         }
-        
+
         // 2. Removed (exists in current but not in version)
         for (const cNode of currentNodes) {
             const vNode = versionNodes.find(n => n.id === cNode.id);
@@ -111,7 +114,7 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
                 list.push({ ...cNode, _diffStatus: 'removed' });
             }
         }
-        
+
         return list;
     }, [currentWorkflow, versionWorkflow]);
 
@@ -148,7 +151,7 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
     return createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6" style={{ zIndex: 99999 }}>
             {/* Overlay */}
-            <div 
+            <div
                 ref={overlayRef}
                 className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
                 onClick={handleClose}
@@ -156,27 +159,28 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
 
             {/* Modal Box */}
             <div ref={modalRef} className="relative bg-slate-50 w-full max-w-[90vw] h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-                
+
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between shrink-0">
                     <div>
                         <h2 className="text-lg font-bold text-slate-800">Preview Version {versionWorkflow.versionNumber}</h2>
                         <p className="text-xs text-slate-500 font-medium mt-0.5">Review what will change if you restore this version.</p>
                     </div>
-                    <button 
+                    <Button
+                        variant="ghost"
+                        size="icon-md"
                         onClick={handleClose}
-                        className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
                     >
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <line x1="18" y1="6" x2="6" y2="18"></line>
                             <line x1="6" y1="6" x2="18" y2="18"></line>
                         </svg>
-                    </button>
+                    </Button>
                 </div>
 
                 {/* Content Body (Split View) */}
                 <div className="flex-1 flex overflow-hidden">
-                    
+
                     {/* Left Pane: Read-only Canvas */}
                     <div className="flex-1 relative bg-slate-50/50 border-r border-slate-200">
                         <ReactFlowProvider>
@@ -196,10 +200,11 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
                                 zoomOnScroll={true}
                                 selectionOnDrag={false}
                                 className="diff-preview-canvas"
+                                proOptions={{ hideAttribution: true }}
                             >
                                 <Background color="#cbd5e1" gap={20} size={1.5} />
                                 <Controls showInteractive={false} />
-                                <MiniMap 
+                                <MiniMap
                                     nodeStrokeColor={(n) => {
                                         if (n.data.diffStatus === 'added') return '#10b981';
                                         if (n.data.diffStatus === 'updated') return '#f59e0b';
@@ -260,7 +265,7 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
                                     </div>
                                 );
                             })}
-                            
+
                             {diffNodes.length === 0 && (
                                 <div className="text-center text-slate-400 py-10 font-medium">
                                     No nodes found in this version.
@@ -271,19 +276,21 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
                 </div>
 
                 {/* Footer */}
-                <div className="px-6 py-4 border-t border-slate-200 bg-white flex justify-between shrink-0">
-                    <button 
-                        onClick={handleClose}
-                        className="px-6 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors"
+                <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end shrink-0 gap-3">
+                    <Button
+                        variant="soft"
+                        onClick={onClose}
                     >
                         Cancel
-                    </button>
-                    <button 
+                    </Button>
+                    <Button
+                        variant="primary"
                         onClick={handleRestore}
-                        className="px-6 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-colors shadow-sm"
+                        isLoading={isRestoring}
+                        loadingText="Restoring…"
                     >
                         Restore This Version
-                    </button>
+                    </Button>
                 </div>
             </div>
         </div>,

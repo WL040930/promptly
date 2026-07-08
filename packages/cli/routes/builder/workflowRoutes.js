@@ -2,7 +2,7 @@ import { Router } from 'express';
 import asyncHandler from '../../utils/asyncHandler.js';
 import { requireAuth } from '../../middleware/authMiddleware.js';
 import { 
-    getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, triggerWorkflow,
+    getWorkflows, getWorkflow, createWorkflow, updateWorkflow, deleteWorkflow, triggerWorkflow,
     getWorkflowVersions, saveWorkflowVersion, restoreWorkflowVersion
 } from '../../controllers/builder/workflowController.js';
 
@@ -11,6 +11,7 @@ const router = Router();
 router.use(requireAuth);
 
 router.get('/', asyncHandler(getWorkflows));
+router.get('/:id', asyncHandler(getWorkflow));
 router.post('/', asyncHandler(createWorkflow));
 router.put('/:id', asyncHandler(updateWorkflow));
 router.delete('/:id', asyncHandler(deleteWorkflow));

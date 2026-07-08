@@ -2,6 +2,7 @@ import { apiRequest } from './client.js';
 
 // --- Workflows ---
 export const getWorkflows = () => apiRequest('/api/workflows');
+export const getWorkflow = (id) => apiRequest(`/api/workflows/${id}`);
 export const createWorkflow = (data) => apiRequest('/api/workflows', { method: 'POST', body: JSON.stringify(data) });
 export const updateWorkflow = (id, data) => apiRequest(`/api/workflows/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 export const deleteWorkflow = (id) => apiRequest(`/api/workflows/${id}`, { method: 'DELETE' });

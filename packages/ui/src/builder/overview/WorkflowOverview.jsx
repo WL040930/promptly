@@ -9,6 +9,7 @@ import { MODAL_TYPES, MODAL_CONFIG } from './constants.js';
 import { buildFoldersByParent, buildWorkflowsByFolder, collectDescendantIds } from '../utils/treeUtils';
 import { createFolder, updateFolder, deleteFolder, createWorkflow, updateWorkflow, deleteWorkflow } from '../../api/backend.js';
 import { useToast } from '../../components/ToastContext.jsx';
+import Button from '../../components/Button.jsx';
 
 const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCreateWorkflow, onSelectWorkflow }) => {
     // ── State & refs ────────────────────────────────────────────────────────
@@ -338,36 +339,34 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
 
                     {/* Create workflow dropdown */}
                     <div className="relative" ref={createDropdownRef}>
-                        <button
+                        <Button
+                            variant="primary"
                             onClick={() => setIsCreateDropdownOpen(!isCreateDropdownOpen)}
-                            className="bg-indigo-600 text-white font-medium text-sm py-2.5 px-5 rounded-xl shadow-sm hover:bg-indigo-700 hover:shadow transition-all flex items-center gap-2"
+                            className="shadow-md shadow-indigo-600/20"
+                            iconRight={<svg className={`w-4 h-4 transition-transform duration-200 ${isCreateDropdownOpen ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>}
                         >
                             Create workflow
-                            <svg
-                                width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                                className={`transition-transform duration-200 ${isCreateDropdownOpen ? 'rotate-180' : ''}`}
-                            >
-                                <polyline points="6 9 12 15 18 9"></polyline>
-                            </svg>
-                        </button>
+                        </Button>
 
                         {isCreateDropdownOpen && (
                             <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden z-30 animate-in fade-in slide-in-from-top-2 duration-200">
                                 <div className="p-1.5 flex flex-col gap-0.5">
-                                    <button
+                                    <Button
+                                        variant="ghost"
                                         onClick={() => { setIsCreateDropdownOpen(false); onCreateWorkflow(); }}
-                                        className="w-full text-left px-3 py-2 text-sm font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors flex items-center gap-2"
+                                        className="w-full justify-start font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50"
+                                        iconLeft={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>}
                                     >
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                                         Blank workflow
-                                    </button>
-                                    <button
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
                                         onClick={() => fileInputRef.current?.click()}
-                                        className="w-full text-left px-3 py-2 text-sm font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors flex items-center gap-2"
+                                        className="w-full justify-start font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50"
+                                        iconLeft={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>}
                                     >
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                                         Import from JSON
-                                    </button>
+                                    </Button>
                                 </div>
                             </div>
                         )}
@@ -393,13 +392,13 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                             />
                         </div>
                         <div className="flex items-center gap-3">
-                            <button
+                            <Button
+                                variant="outline"
                                 onClick={() => openModal(MODAL_TYPES.NEW_FOLDER)}
-                                className="flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition-colors active:scale-[0.98]"
+                                iconLeft={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>}
                             >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>
                                 New Folder
-                            </button>
+                            </Button>
                         </div>
                     </div>
 

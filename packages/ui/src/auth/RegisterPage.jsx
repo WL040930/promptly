@@ -33,30 +33,29 @@ const RegisterPage = ({ onLogin, onLoginSuccess }) => {
     }
 
     return (
-        <div style={{
-            minHeight: '100vh',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'linear-gradient(135deg, #f7f9fc 0%, #eef2f7 100%)',
-            padding: '1rem'
-        }}>
-            <div className="glass-card" style={{
-                width: '100%',
-                maxWidth: '420px',
-                padding: '2.5rem',
-                borderRadius: '24px',
-                boxShadow: '0 20px 40px rgba(15, 23, 42, 0.05)'
-            }}>
-                <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
-                    <h2 style={{ fontSize: '2rem', fontWeight: '800', marginBottom: '0.75rem', letterSpacing: '-0.02em' }}>Create Account</h2>
-                    <p className="muted" style={{ fontSize: '1.05rem' }}>Please enter your details to sign up.</p>
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4 font-sans relative overflow-hidden">
+            {/* Decorative background blobs */}
+            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-200/50 rounded-full blur-[100px] pointer-events-none" />
+            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-200/50 rounded-full blur-[100px] pointer-events-none" />
+
+            <div className="bg-white/80 backdrop-blur-xl border border-white shadow-2xl rounded-3xl p-8 sm:p-10 max-w-[420px] w-full relative z-10">
+                <div className="text-center mb-8">
+                    <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm border border-indigo-100/50">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                            <circle cx="9" cy="7" r="4" />
+                            <line x1="19" y1="8" x2="19" y2="14" />
+                            <line x1="22" y1="11" x2="16" y2="11" />
+                        </svg>
+                    </div>
+                    <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-2">Create Account</h2>
+                    <p className="text-slate-500 font-medium">Please enter your details to sign up.</p>
                 </div>
 
-                <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '1.75rem' }}>
-                    <div>
-                        <label htmlFor="email" style={{ display: 'block', marginBottom: '0.6rem', fontWeight: '700', fontSize: '0.9rem', color: '#334155' }}>
-                            Email
+                <form onSubmit={handleSubmit} className="flex flex-col gap-6 animate-in fade-in duration-300">
+                    <div className="space-y-1.5">
+                        <label htmlFor="email" className="block text-sm font-bold text-slate-700">
+                            Email Address
                         </label>
                         <input
                             type="email"
@@ -64,32 +63,13 @@ const RegisterPage = ({ onLogin, onLoginSuccess }) => {
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             placeholder="name@company.com"
-                            style={{
-                                width: '100%',
-                                padding: '0.85rem 1rem',
-                                borderRadius: '12px',
-                                border: '1px solid #e2e8f0',
-                                background: '#ffffff',
-                                fontSize: '1rem',
-                                fontWeight: '500',
-                                outline: 'none',
-                                transition: 'all 0.2s ease',
-                                boxShadow: '0 2px 5px rgba(0,0,0,0.02)'
-                            }}
-                            onFocus={(e) => {
-                                e.target.style.borderColor = '#3b82f6'
-                                e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)'
-                            }}
-                            onBlur={(e) => {
-                                e.target.style.borderColor = '#e2e8f0'
-                                e.target.style.boxShadow = '0 2px 5px rgba(0,0,0,0.02)'
-                            }}
+                            className="w-full px-4 py-3 bg-slate-50 hover:bg-white border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:bg-white rounded-xl text-slate-900 placeholder:text-slate-400 font-medium outline-none transition-all focus:ring-4 focus:ring-indigo-500/10 shadow-sm"
                             required
                         />
                     </div>
 
-                    <div>
-                        <label htmlFor="password" style={{ display: 'block', marginBottom: '0.6rem', fontWeight: '700', fontSize: '0.9rem', color: '#334155' }}>
+                    <div className="space-y-1.5">
+                        <label htmlFor="password" className="block text-sm font-bold text-slate-700">
                             Password
                         </label>
                         <input
@@ -98,32 +78,13 @@ const RegisterPage = ({ onLogin, onLoginSuccess }) => {
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             placeholder="••••••••"
-                            style={{
-                                width: '100%',
-                                padding: '0.85rem 1rem',
-                                borderRadius: '12px',
-                                border: '1px solid #e2e8f0',
-                                background: '#ffffff',
-                                fontSize: '1rem',
-                                fontWeight: '500',
-                                outline: 'none',
-                                transition: 'all 0.2s ease',
-                                boxShadow: '0 2px 5px rgba(0,0,0,0.02)'
-                            }}
-                            onFocus={(e) => {
-                                e.target.style.borderColor = '#3b82f6'
-                                e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)'
-                            }}
-                            onBlur={(e) => {
-                                e.target.style.borderColor = '#e2e8f0'
-                                e.target.style.boxShadow = '0 2px 5px rgba(0,0,0,0.02)'
-                            }}
+                            className="w-full px-4 py-3 bg-slate-50 hover:bg-white border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:bg-white rounded-xl text-slate-900 placeholder:text-slate-400 font-medium outline-none transition-all focus:ring-4 focus:ring-indigo-500/10 shadow-sm"
                             required
                         />
                     </div>
 
-                    <div>
-                        <label htmlFor="confirmPassword" style={{ display: 'block', marginBottom: '0.6rem', fontWeight: '700', fontSize: '0.9rem', color: '#334155' }}>
+                    <div className="space-y-1.5">
+                        <label htmlFor="confirmPassword" className="block text-sm font-bold text-slate-700">
                             Confirm Password
                         </label>
                         <input
@@ -132,61 +93,43 @@ const RegisterPage = ({ onLogin, onLoginSuccess }) => {
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}
                             placeholder="••••••••"
-                            style={{
-                                width: '100%',
-                                padding: '0.85rem 1rem',
-                                borderRadius: '12px',
-                                border: `1px solid ${error ? '#ef4444' : '#e2e8f0'}`,
-                                background: '#ffffff',
-                                fontSize: '1rem',
-                                fontWeight: '500',
-                                outline: 'none',
-                                transition: 'all 0.2s ease',
-                                boxShadow: '0 2px 5px rgba(0,0,0,0.02)'
-                            }}
-                            onFocus={(e) => {
-                                if (!error) {
-                                    e.target.style.borderColor = '#3b82f6'
-                                    e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)'
-                                }
-                            }}
-                            onBlur={(e) => {
-                                if (!error) {
-                                    e.target.style.borderColor = '#e2e8f0'
-                                    e.target.style.boxShadow = '0 2px 5px rgba(0,0,0,0.02)'
-                                }
-                            }}
+                            className={`w-full px-4 py-3 bg-slate-50 hover:bg-white border ${error && error.includes('match') ? 'border-red-400 focus:border-red-500 focus:ring-red-500/10' : 'border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:ring-indigo-500/10'} focus:bg-white rounded-xl text-slate-900 placeholder:text-slate-400 font-medium outline-none transition-all focus:ring-4 shadow-sm`}
                             required
                         />
-                        {error && (
-                            <p style={{ color: '#ef4444', fontSize: '0.875rem', marginTop: '0.5rem', fontWeight: '500' }}>
-                                {error}
-                            </p>
-                        )}
                     </div>
 
-                    <button type="submit" className="solid full" style={{
-                        padding: '1rem',
-                        fontSize: '1.05rem',
-                        borderRadius: '12px',
-                        marginTop: '0.5rem',
-                        opacity: isSubmitting ? 0.7 : 1
-                    }} disabled={isSubmitting}>
-                        {isSubmitting ? 'Signing Up...' : 'Sign Up'}
+                    {error && (
+                        <div className="flex items-start gap-2 text-red-600 bg-red-50 p-3 rounded-lg border border-red-100">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 mt-0.5">
+                                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                            </svg>
+                            <p className="text-sm font-semibold">{error}</p>
+                        </div>
+                    )}
+
+                    <button 
+                        type="submit" 
+                        disabled={isSubmitting || !email.trim() || !password.trim() || !confirmPassword.trim()}
+                        className="w-full py-3.5 text-base rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all hover:-translate-y-0.5 active:scale-95 disabled:opacity-50 flex justify-center items-center gap-2 mt-2"
+                    >
+                        {isSubmitting ? (
+                            <>
+                                <svg className="animate-spin" width="18" height="18" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                Signing Up...
+                            </>
+                        ) : 'Sign Up'}
                     </button>
                 </form>
 
-                <div style={{ marginTop: '2rem', textAlign: 'center', display: 'grid', gap: '1rem' }}>
-                    <button onClick={onLogin} className="ghost full" style={{
-                        padding: '0.75rem',
-                        borderRadius: '12px',
-                        color: '#64748b',
-                        borderColor: 'transparent',
-                        background: 'transparent'
-                    }}>
-                        Already have an account? Sign In
+                <div className="mt-8 text-center text-sm font-medium text-slate-500">
+                    Already have an account?{' '}
+                    <button 
+                        type="button" 
+                        onClick={onLogin}
+                        className="font-bold text-indigo-600 hover:text-indigo-700 hover:underline transition-colors focus:outline-none ml-1"
+                    >
+                        Sign In
                     </button>
-
                 </div>
             </div>
         </div>

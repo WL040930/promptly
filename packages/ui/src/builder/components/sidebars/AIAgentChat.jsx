@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { sendChatMessage } from '../../../api/backend.js';
+import Button from '../../../components/Button.jsx';
 
 const SUGGESTIONS = [
     "Add a Slack notification step",
@@ -152,18 +153,22 @@ const AIAgentChat = ({ onApplyAction }) => {
                                         </div>
                                     ) : (
                                         <div className="flex gap-2">
-                                            <button
+                                            <Button
+                                                variant="primary"
+                                                size="sm"
                                                 onClick={() => handleAcceptProposal(msg.id, msg.proposal)}
-                                                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs py-2 rounded-lg shadow-sm hover:-translate-y-0.5 transition-all"
+                                                className="flex-1 py-2 text-xs"
                                             >
                                                 Accept & Add
-                                            </button>
-                                            <button
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
                                                 onClick={() => handleRejectProposal(msg.id)}
-                                                className="flex-1 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 font-semibold text-xs py-2 rounded-lg transition-all"
+                                                className="flex-1 py-2 text-xs"
                                             >
                                                 Ignore
-                                            </button>
+                                            </Button>
                                         </div>
                                     )}
                                 </div>
@@ -199,14 +204,16 @@ const AIAgentChat = ({ onApplyAction }) => {
             {messages.length === 1 && (
                 <div className="px-4 py-3 flex gap-2 overflow-x-auto scrollbar-hide no-scrollbar w-full border-t border-slate-100 shrink-0">
                     {SUGGESTIONS.map((suggestion, idx) => (
-                        <button
+                        <Button
                             key={idx}
+                            variant="secondary"
+                            size="sm"
                             onClick={() => handleSend(suggestion)}
                             disabled={isTyping}
-                            className="whitespace-nowrap px-3.5 py-1.5 bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-100 rounded-full text-indigo-700 text-[12px] font-semibold transition-colors disabled:opacity-50"
+                            className="whitespace-nowrap rounded-full text-[12px] px-3.5 py-1.5 font-semibold"
                         >
                             {suggestion}
-                        </button>
+                        </Button>
                     ))}
                 </div>
             )}
