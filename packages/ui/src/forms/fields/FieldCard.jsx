@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { FIELD_TYPES, getTypesByCategory } from './fieldTypes';
 import FieldSettingsPanel from './components/FieldSettingsPanel';
+import Switch from '../../components/Switch';
 
 const TypeIcon = ({ typeName, size = 16 }) => {
     const def = FIELD_TYPES[typeName];
@@ -264,18 +265,12 @@ const FieldCard = ({
                         {!isHeading ? (
                             <label className="flex items-center gap-3 cursor-pointer select-none group/req">
                                 <span className="text-[13px] text-gray-500 font-bold group-hover/req:text-gray-700 transition-colors">Required</span>
-                                <button
-                                    type="button"
-                                    role="switch"
-                                    aria-checked={field.required}
-                                    onClick={(e) => { e.stopPropagation(); onUpdate({ required: !field.required }); }}
-                                    className={`relative shrink-0 w-10 h-6 rounded-full transition-all duration-300 border-2 p-0 flex items-center ${field.required ? 'border-transparent' : 'bg-gray-100 border-gray-200 group-hover/req:bg-gray-200'
-                                        }`}
-                                    style={field.required ? { backgroundColor: accentColor } : {}}
-                                >
-                                    <span className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ml-[2px] ${field.required ? 'translate-x-4 scale-110' : 'translate-x-0'
-                                        }`} />
-                                </button>
+                                <Switch
+                                    size="md"
+                                    checked={field.required}
+                                    onChange={(val) => onUpdate({ required: val })}
+                                    activeColor={accentColor}
+                                />
                             </label>
                         ) : (
                             <div />

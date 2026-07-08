@@ -1,22 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useWorkflowVersions, useRestoreWorkflowVersion } from '../../../api/hooks/useWorkflows.js';
+import WorkflowDiffPreviewModal from '../modals/WorkflowDiffPreviewModal.jsx';
 
-export default function VersionHistorySidebar({ workflowId, onClose }) {
+export default function VersionHistorySidebar({ workflowId, currentWorkflow }) {
     const { data: versions = [], isLoading } = useWorkflowVersions(workflowId);
     const restoreMutation = useRestoreWorkflowVersion();
+    const [previewVersion, setPreviewVersion] = useState(null);
 
     return (
-        <div className="w-80 bg-white border-l border-slate-200 h-full flex flex-col shadow-xl z-20">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50">
-                <h3 className="font-semibold text-slate-800">Version History</h3>
-                <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 rounded">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
-                </button>
-            </div>
-
+        <div className="flex flex-col h-full bg-slate-50">
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {isLoading && <div className="text-sm text-slate-500 text-center py-4">Loading history...</div>}
                 {!isLoading && versions.length === 0 && (
@@ -32,19 +24,39 @@ export default function VersionHistorySidebar({ workflowId, onClose }) {
                         <div className="text-xs text-slate-500">
                             {v.nodes?.length || 0} nodes, {v.edges?.length || 0} edges
                         </div>
-                        <button
-                            onClick={() => {
-                                if (window.confirm(`Are you sure you want to restore Version ${v.versionNumber}? This will overwrite your current draft.`)) {
-                                    restoreMutation.mutate({ id: workflowId, versionId: v.id });
-                                }
-                            }}
-                            className="mt-1 w-full text-xs font-medium py-1.5 border border-indigo-200 text-indigo-600 rounded bg-indigo-50 hover:bg-indigo-100 transition-colors"
-                        >
-                            Restore this version
-                        </button>
+                        <div className="flex items-center gap-2 mt-2">
+                            <button
+                                onClick={() => setPreviewVersion(v)}
+                                className="flex-1 text-xs font-bold py-1.5 border border-slate-200 text-slate-700 rounded bg-white hover:bg-slate-50 transition-colors shadow-sm"
+                            >
+                                Preview
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (window.confirm(`Are you sure you want to restore Version ${v.versionNumber}? This will overwrite your current draft.`)) {
+                                        restoreMutation.mutate({ id: workflowId, versionId: v.id });
+                                    }
+                                }}
+                                className="flex-1 text-xs font-bold py-1.5 border border-indigo-200 text-indigo-700 rounded bg-indigo-50 hover:bg-indigo-100 transition-colors shadow-sm"
+                            >
+                                Restore
+                            </button>
+                        </div>
                     </div>
                 ))}
             </div>
+
+            <WorkflowDiffPreviewModal 
+                isOpen={!!previewVersion}
+                onClose={() => setPreviewVersion(null)}
+                currentWorkflow={currentWorkflow}
+                versionWorkflow={previewVersion}
+                onRestore={() => {
+                    if (previewVersion) {
+                        restoreMutation.mutate({ id: workflowId, versionId: previewVersion.id });
+                    }
+                }}
+            />
         </div>
     );
 }

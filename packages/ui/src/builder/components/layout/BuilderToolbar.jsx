@@ -1,6 +1,7 @@
 import React from 'react';
 import { formatLastEdited } from '../../utils/timeUtils.js';
 import { ICON_MAP } from '../../utils/iconMap.jsx';
+import Switch from '../../../components/Switch';
 
 const BuilderToolbar = ({
     isLeftSidebarOpen,
@@ -110,13 +111,12 @@ const BuilderToolbar = ({
 
                     {/* Activation Toggle */}
                     <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                            onClick={onToggleActive}
-                            className={`w-9 h-5 flex items-center p-0.5 rounded-full transition-colors duration-200 shrink-0 ${activeWorkflow?.isActive ? 'bg-green-500' : 'bg-slate-300'}`}
+                        <Switch
+                            size="md"
+                            checked={activeWorkflow?.isActive || false}
+                            onChange={onToggleActive}
                             title={activeWorkflow?.isActive ? 'Deactivate workflow' : 'Activate workflow'}
-                        >
-                            <div className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-200 ${activeWorkflow?.isActive ? 'translate-x-5' : 'translate-x-0'}`}></div>
-                        </button>
+                        />
                     </div>
 
                     <button

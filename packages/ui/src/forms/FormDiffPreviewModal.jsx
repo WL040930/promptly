@@ -1,6 +1,8 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import FieldRenderer from './fields/FieldRenderer';
+import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
 
 const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
     // Prevent background scrolling when open
@@ -14,6 +16,41 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
             document.body.style.overflow = '';
         };
     }, [isOpen]);
+
+    const overlayRef = useRef(null);
+    const modalRef = useRef(null);
+
+    useGSAP(() => {
+        if (isOpen && overlayRef.current && modalRef.current) {
+            // Animate overlay fading in
+            gsap.fromTo(overlayRef.current, 
+                { opacity: 0 }, 
+                { opacity: 1, duration: 0.3, ease: 'power2.out' }
+            );
+            
+            // Animate modal sliding up and scaling slightly
+            gsap.fromTo(modalRef.current,
+                { opacity: 0, y: 30, scale: 0.95 },
+                { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: 'back.out(1.2)', delay: 0.05 }
+            );
+        }
+    }, { dependencies: [isOpen] });
+
+    const handleClose = useCallback(() => {
+        if (overlayRef.current && modalRef.current) {
+            gsap.to(overlayRef.current, { opacity: 0, duration: 0.2, ease: 'power2.in' });
+            gsap.to(modalRef.current, { 
+                opacity: 0, 
+                y: 20, 
+                scale: 0.95, 
+                duration: 0.2, 
+                ease: 'power2.in',
+                onComplete: onClose
+            });
+        } else {
+            onClose();
+        }
+    }, [onClose]);
 
     const patches = proposal?.patches || [];
     const proposedSchema = proposal?.schema || {};
@@ -49,12 +86,13 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6" style={{ zIndex: 99999 }}>
             {/* Overlay */}
             <div 
-                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
-                onClick={onClose}
+                ref={overlayRef}
+                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+                onClick={handleClose}
             ></div>
 
             {/* Modal Box */}
-            <div className="relative bg-slate-50 w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-slide-up-fade">
+            <div ref={modalRef} className="relative bg-slate-50 w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
                 
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between shrink-0">
@@ -63,7 +101,7 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
                         <p className="text-xs text-slate-500 font-medium mt-0.5">Review exactly how the AI will modify your form canvas.</p>
                     </div>
                     <button 
-                        onClick={onClose}
+                        onClick={handleClose}
                         className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
                     >
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -127,7 +165,7 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
                 {/* Footer */}
                 <div className="px-6 py-4 border-t border-slate-200 bg-white flex justify-end shrink-0">
                     <button 
-                        onClick={onClose}
+                        onClick={handleClose}
                         className="px-6 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors"
                     >
                         Done

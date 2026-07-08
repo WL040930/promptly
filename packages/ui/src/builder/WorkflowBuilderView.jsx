@@ -330,6 +330,17 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         }
     }, { scope: builderContainer, dependencies: [viewMode] });
 
+    // ── GSAP Right Panel Animations ───────────────────────────────────────────
+    const rightPanelContentRef = useRef(null);
+    useGSAP(() => {
+        if (rightPanelContentRef.current) {
+            gsap.fromTo(rightPanelContentRef.current,
+                { opacity: 0, x: 15 },
+                { opacity: 1, x: 0, duration: 0.3, ease: 'power2.out', clearProps: 'all' }
+            );
+        }
+    }, { dependencies: [isHistorySidebarOpen, rightTab] });
+
     // ── Early returns ────────────────────────────────────────────────────────
     if (loading) {
         return (
@@ -423,7 +434,12 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                     onTestRun={handleTestRun}
                     isRunning={runWorkflowMutation.isPending}
                     onSaveVersion={handleSaveVersion}
-                    onToggleHistory={() => setIsHistorySidebarOpen(!isHistorySidebarOpen)}
+                    onToggleHistory={() => {
+                        setIsHistorySidebarOpen(!isHistorySidebarOpen);
+                        if (!isHistorySidebarOpen && !isRightSidebarOpen) {
+                            setIsRightSidebarOpen(true);
+                        }
+                    }}
                     onToggleActive={handleToggleActive}
                 />
 
@@ -441,15 +457,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                 </div>
             </main>
 
-            {/* VERSION HISTORY SIDEBAR (Overlay) */}
-            {isHistorySidebarOpen && activeWorkflowId && (
-                <div className="absolute top-14 right-0 bottom-0 z-30">
-                    <VersionHistorySidebar 
-                        workflowId={activeWorkflowId} 
-                        onClose={() => setIsHistorySidebarOpen(false)} 
-                    />
-                </div>
-            )}
+
 
             {/* 3. RIGHT PANEL: Promptly Agent & Property Inspector */}
             <aside
@@ -458,41 +466,65 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                 }`}
             >
                 <div className="flex border-b border-slate-200/60 shrink-0">
-                    <button
-                        onClick={() => setRightTab('chat')}
-                        className={`flex-1 py-3 px-1 text-center text-sm truncate font-medium transition-all border-b-2 ${
-                            rightTab === 'chat'
-                                ? 'border-indigo-600 text-indigo-600 bg-indigo-50/30'
-                                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                        }`}
-                    >
-                        Promptly Agent
-                    </button>
-                    <button
-                        onClick={() => setRightTab('properties')}
-                        className={`flex-1 py-3 px-1 text-center text-sm truncate font-medium transition-all border-b-2 ${
-                            rightTab === 'properties'
-                                ? 'border-indigo-600 text-indigo-600 bg-indigo-50/30'
-                                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                        }`}
-                    >
-                        Properties
-                    </button>
-                    <button
-                        onClick={() => setIsRightSidebarOpen(false)}
-                        className="px-3 py-3 text-slate-400 hover:text-slate-700 hover:bg-slate-50 border-b-2 border-transparent transition-colors"
-                        title="Close Panel"
-                    >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                    </button>
-                </div>
-                <div className="flex-1 overflow-hidden">
-                    {rightTab === 'chat' ? (
-                        <AIAgentChat onApplyAction={handleApplyAction} />
+                    {isHistorySidebarOpen ? (
+                        <>
+                            <div className="flex-1 py-3 px-4 text-sm font-semibold text-slate-800 flex items-center">
+                                Version History
+                            </div>
+                            <button
+                                onClick={() => setIsHistorySidebarOpen(false)}
+                                className="px-3 py-3 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors border-b-2 border-transparent"
+                                title="Back to Tools"
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                            </button>
+                        </>
                     ) : (
-                        <PropertyInspector activeNode={activeNode} onUpdateNode={handleUpdateNode} nodes={nodes} edges={edges} />
+                        <>
+                            <button
+                                onClick={() => setRightTab('chat')}
+                                className={`flex-1 py-3 px-1 text-center text-sm truncate font-medium transition-all border-b-2 ${
+                                    rightTab === 'chat'
+                                        ? 'border-indigo-600 text-indigo-600 bg-indigo-50/30'
+                                        : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                                }`}
+                            >
+                                Promptly Agent
+                            </button>
+                            <button
+                                onClick={() => setRightTab('properties')}
+                                className={`flex-1 py-3 px-1 text-center text-sm truncate font-medium transition-all border-b-2 ${
+                                    rightTab === 'properties'
+                                        ? 'border-indigo-600 text-indigo-600 bg-indigo-50/30'
+                                        : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                                }`}
+                            >
+                                Properties
+                            </button>
+                            <button
+                                onClick={() => setIsRightSidebarOpen(false)}
+                                className="px-3 py-3 text-slate-400 hover:text-slate-700 hover:bg-slate-50 border-b-2 border-transparent transition-colors"
+                                title="Close Panel"
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                            </button>
+                        </>
+                    )}
+                </div>
+                <div ref={rightPanelContentRef} className="flex-1 overflow-hidden">
+                    {isHistorySidebarOpen ? (
+                        <VersionHistorySidebar workflowId={activeWorkflowId} currentWorkflow={activeWorkflow} />
+                    ) : (
+                        rightTab === 'chat' ? (
+                            <AIAgentChat onApplyAction={handleApplyAction} />
+                        ) : (
+                            <PropertyInspector activeNode={activeNode} onUpdateNode={handleUpdateNode} nodes={nodes} edges={edges} />
+                        )
                     )}
                 </div>
             </aside>

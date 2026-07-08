@@ -77,14 +77,22 @@ const DynamicNode = ({ data, type, isConnectable = true }) => {
         allOutputHandles.push({ id: 'default', label: 'Output' });
     }
 
+    let borderClass = 'border-slate-200 hover:border-slate-300 shadow-sm hover:shadow z-10';
+    
+    if (data.diffStatus === 'added') {
+        borderClass = 'border-emerald-400 ring-2 ring-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.3)] z-20';
+    } else if (data.diffStatus === 'updated') {
+        borderClass = 'border-amber-400 ring-2 ring-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.3)] z-20';
+    } else if (data.diffStatus === 'removed') {
+        borderClass = 'border-red-400 ring-2 ring-red-400 opacity-60 grayscale z-10';
+    } else if (isActive) {
+        borderClass = 'border-indigo-500 shadow-md ring-1 ring-indigo-500 z-20';
+    }
+
     return (
         <div
             onClick={onClick}
-            className={`w-[260px] bg-white rounded-lg border transition-all duration-200 flex flex-row relative overflow-visible items-stretch ${
-                isActive
-                    ? 'border-indigo-500 shadow-md ring-1 ring-indigo-500 z-20'
-                    : 'border-slate-200 hover:border-slate-300 shadow-sm hover:shadow z-10'
-            }`}
+            className={`w-[260px] bg-white rounded-lg border transition-all duration-200 flex flex-row relative overflow-visible items-stretch ${borderClass}`}
         >
             {/* Input Handles (Left) */}
             {allInputHandles.length > 0 && (

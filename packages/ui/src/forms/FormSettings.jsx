@@ -1,4 +1,5 @@
 import React from 'react';
+import Switch from '../components/Switch';
 
 /**
  * FormSettings — settings panel for a form.
@@ -95,20 +96,12 @@ const FormSettings = ({ form, onUpdateForm }) => {
                         <h3 className="text-[16px] font-extrabold text-gray-900">Accepting Responses</h3>
                         <p className="text-[13px] font-medium text-gray-500 mt-1">When off, the form will show a closed message.</p>
                     </div>
-                    <button
-                        type="button"
-                        role="switch"
-                        aria-checked={settings.acceptingResponses !== false}
-                        onClick={() => updateSetting('acceptingResponses', settings.acceptingResponses === false)}
-                        className={`relative inline-flex items-center px-0.5 w-14 h-8 rounded-full transition-colors duration-300 border-2 shrink-0 ${
-                            settings.acceptingResponses !== false ? 'border-transparent bg-emerald-500' : 'bg-gray-100 border-gray-200'
-                        }`}
-                        style={settings.acceptingResponses !== false ? { backgroundColor: settings.accentColor || '#4f46e5' } : {}}
-                    >
-                        <span className={`w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-300 ${
-                            settings.acceptingResponses !== false ? 'translate-x-6' : 'translate-x-0'
-                        }`} />
-                    </button>
+                    <Switch
+                        size="lg"
+                        checked={settings.acceptingResponses !== false}
+                        onChange={(val) => updateSetting('acceptingResponses', val)}
+                        activeColor={settings.accentColor || '#4f46e5'}
+                    />
                 </div>
 
                 {/* Limit 1 per Browser */}
@@ -117,20 +110,12 @@ const FormSettings = ({ form, onUpdateForm }) => {
                         <h3 className="text-[16px] font-extrabold text-gray-900">Limit to 1 response per browser</h3>
                         <p className="text-[13px] font-medium text-gray-500 mt-1">Respondents can only submit this form once per browser.</p>
                     </div>
-                    <button
-                        type="button"
-                        role="switch"
-                        aria-checked={settings.limitOnePerBrowser || false}
-                        onClick={() => updateSetting('limitOnePerBrowser', !settings.limitOnePerBrowser)}
-                        className={`relative inline-flex items-center px-0.5 w-14 h-8 rounded-full transition-colors duration-300 border-2 shrink-0 ${
-                            settings.limitOnePerBrowser ? 'border-transparent' : 'bg-gray-100 border-gray-200'
-                        }`}
-                        style={settings.limitOnePerBrowser ? { backgroundColor: settings.accentColor || '#4f46e5' } : {}}
-                    >
-                        <span className={`w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-300 ${
-                            settings.limitOnePerBrowser ? 'translate-x-6' : 'translate-x-0'
-                        }`} />
-                    </button>
+                    <Switch
+                        size="lg"
+                        checked={settings.limitOnePerBrowser || false}
+                        onChange={(val) => updateSetting('limitOnePerBrowser', val)}
+                        activeColor={settings.accentColor || '#4f46e5'}
+                    />
                 </div>
 
                 {/* Response Limit */}
@@ -140,20 +125,12 @@ const FormSettings = ({ form, onUpdateForm }) => {
                             <h3 className="text-[16px] font-extrabold text-gray-900">Response Limit</h3>
                             <p className="text-[13px] font-medium text-gray-500 mt-1">Automatically close after reaching the limit.</p>
                         </div>
-                        <button
-                            type="button"
-                            role="switch"
-                            aria-checked={settings.hasResponseLimit || false}
-                            onClick={() => updateSetting('hasResponseLimit', !settings.hasResponseLimit)}
-                            className={`relative inline-flex items-center px-0.5 w-14 h-8 rounded-full transition-colors duration-300 border-2 shrink-0 ${
-                                settings.hasResponseLimit ? 'border-transparent' : 'bg-gray-100 border-gray-200'
-                            }`}
-                            style={settings.hasResponseLimit ? { backgroundColor: settings.accentColor || '#4f46e5' } : {}}
-                        >
-                            <span className={`w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-300 ${
-                                settings.hasResponseLimit ? 'translate-x-6' : 'translate-x-0'
-                            }`} />
-                        </button>
+                        <Switch
+                            size="lg"
+                            checked={settings.hasResponseLimit || false}
+                            onChange={(val) => updateSetting('hasResponseLimit', val)}
+                            activeColor={settings.accentColor || '#4f46e5'}
+                        />
                     </div>
                     {settings.hasResponseLimit && (
                         <div className="animate-slide-up-fade bg-gray-50/50 border border-gray-200 rounded-2xl p-4 flex items-center gap-4 mt-2">

@@ -2,6 +2,7 @@ import React from 'react';
 import { MODAL_TYPES } from '../constants.js';
 import { formatLastEdited } from '../../utils/timeUtils.js';
 import { ICON_MAP } from '../../utils/iconMap.jsx';
+import Switch from '../../../components/Switch';
 
 /**
  * A single draggable workflow row used in both the root-level list
@@ -60,16 +61,13 @@ const WorkflowRow = ({
 
             {/* Actions: toggle active, edit, delete */}
             <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-1.5 shrink-0 bg-indigo-50 z-10 px-1.5 rounded">
-                <button 
-                    onClick={(event) => {
-                        event.stopPropagation();
-                        onToggleActive?.(workflow.id, !workflow.isActive);
-                    }}
-                    className={`w-7 h-4 shrink-0 flex items-center rounded-full transition-colors duration-200 mt-0.5 p-0.5 ${workflow.isActive ? 'bg-green-500' : 'bg-slate-300'}`}
+                <Switch
+                    size="sm"
+                    checked={workflow.isActive}
+                    onChange={(val) => onToggleActive?.(workflow.id, val)}
                     title={workflow.isActive ? 'Deactivate' : 'Activate'}
-                >
-                    <div className={`w-2.5 h-2.5 shrink-0 rounded-full bg-white shadow-sm transition-transform duration-200 ${workflow.isActive ? 'translate-x-3.5' : 'translate-x-0'}`}></div>
-                </button>
+                    className="mt-0.5"
+                />
                 <div className="w-px h-4 bg-slate-200 mx-0.5"></div>
                 <button
                     onClick={(event) => {
