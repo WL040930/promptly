@@ -13,6 +13,7 @@ import { MODAL_TYPES, MODAL_CONFIG } from './overview/constants.js';
 import DashboardTab from './components/tabs/DashboardTab';
 import FormsTab from './components/tabs/FormsTab';
 import LogsTab from '../chat/components/LogsTab';
+import TestRunModal from './components/modals/TestRunModal';
 import VersionHistorySidebar from './components/sidebars/VersionHistorySidebar';
 import { navigate, parsePath } from '../utils/router.js';
 import { useWorkflows, useWorkflow, useCreateWorkflow, useUpdateWorkflow, useSaveWorkflowVersion } from '../api/hooks/useWorkflows.js';
@@ -90,15 +91,21 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
 
     // ── Execution panel state ─────────────────────────────────────────────
     const [isExecutionPanelOpen, setIsExecutionPanelOpen] = useState(false);
+    const [isTestRunModalOpen, setIsTestRunModalOpen]     = useState(false);
     const [lastExecutionLog, setLastExecutionLog]         = useState(null);
     const runWorkflowMutation = useRunWorkflow();
 
-    const handleTestRun = async () => {
+    const handleTestRunClick = () => {
         if (!derivedWorkflowId) return;
+        setIsTestRunModalOpen(true);
+    };
+
+    const handleTestRunConfirm = async (payload) => {
+        setIsTestRunModalOpen(false);
         setIsExecutionPanelOpen(true);
         setLastExecutionLog(null);
         try {
-            const log = await runWorkflowMutation.mutateAsync({ workflowId: derivedWorkflowId, payload: {} });
+            const log = await runWorkflowMutation.mutateAsync({ workflowId: derivedWorkflowId, payload });
             setLastExecutionLog(log);
         } catch (err) {
             setLastExecutionLog({ status: 'Failed', durationMs: 0, steps: [], error: err.message });
@@ -482,7 +489,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                     activeWorkflow={activeWorkflow}
                     onTitleEditStart={handleTitleEditStart}
                     nodeCount={nodes.length}
-                    onTestRun={handleTestRun}
+                    onTestRun={handleTestRunClick}
                     isRunning={runWorkflowMutation.isPending}
                     isSavingVersion={saveVersionMutation.isPending}
                     onSaveVersion={handleSaveVersion}
@@ -580,6 +587,16 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                     )}
                 </div>
             </aside>
+
+            {/* Test Run Modal */}
+            <TestRunModal
+                isOpen={isTestRunModalOpen}
+                onClose={() => setIsTestRunModalOpen(false)}
+                onConfirm={handleTestRunConfirm}
+                isLoading={runWorkflowMutation.isPending}
+                workflowId={derivedWorkflowId}
+                nodes={nodes}
+            />
 
             {/* Execution results panel */}
             <ExecutionPanel
