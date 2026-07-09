@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { apiRequest } from '../api/client.js';
@@ -384,7 +385,7 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout, initialTab = 'ge
         </div>
     );
 
-    return (
+    return createPortal(
         <div ref={modalRef} className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" style={{ zIndex: 99999 }}>
             <div 
                 ref={overlayRef}
@@ -410,7 +411,8 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout, initialTab = 'ge
                     {activeTab === 'general' ? renderGeneral() : renderConnections()}
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

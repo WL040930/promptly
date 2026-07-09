@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { ICON_MAP } from '../utils/iconMap.jsx';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
@@ -52,11 +53,11 @@ const OverviewModal = ({ config, inputValue, formData, isSubmitting, onInputChan
 
     if (!config) return null;
 
-    return (
-        <div className="absolute inset-0 z-50 flex items-center justify-center p-4">
+    return createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ zIndex: 99999 }}>
             <div 
                 ref={overlayRef}
-                className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+                className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm"
                 onClick={handleCancel}
             />
             <div ref={modalRef} className={`relative bg-white w-full ${config.showProperties ? 'max-w-md' : 'max-w-sm'} rounded-2xl shadow-2xl border border-slate-100 overflow-hidden`}>
@@ -173,7 +174,8 @@ const OverviewModal = ({ config, inputValue, formData, isSubmitting, onInputChan
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

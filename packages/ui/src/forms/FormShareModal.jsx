@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 
@@ -63,7 +64,7 @@ const FormShareModal = ({ form, isOpen, onClose }) => {
         });
     };
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ zIndex: 99999 }}>
             {/* Backdrop */}
             <div
@@ -189,7 +190,8 @@ const FormShareModal = ({ form, isOpen, onClose }) => {
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 
