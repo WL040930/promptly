@@ -11,7 +11,7 @@
   ],
   "outputs": [
     { "name": "triggerData",  "type": "object", "label": "Full Response",   "isConnection": true, "description": "The entire form response payload." },
-    { "name": "fields",       "type": "object", "label": "Form Fields",     "description": "Submitted field values as a flat key-value object." },
+    { "name": "fields",       "type": "object", "label": "Form Fields",     "expandable": true, "description": "Submitted field values as a flat key-value object." },
     { "name": "responseId",   "type": "string", "label": "Response ID",     "description": "Unique ID of this form response." },
     { "name": "submittedAt",  "type": "string", "label": "Submitted At",    "description": "ISO timestamp of when the form was submitted." }
   ]

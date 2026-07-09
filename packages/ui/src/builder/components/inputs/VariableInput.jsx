@@ -2,13 +2,13 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 /* ─── Type-colour map for the variable pill badges ─────────────────────── */
 const TYPE_COLORS = {
-  string:  'bg-emerald-100 text-emerald-700 border-emerald-200',
-  text:    'bg-emerald-100 text-emerald-700 border-emerald-200',
-  number:  'bg-blue-100   text-blue-700   border-blue-200',
+  string: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  text: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  number: 'bg-blue-100   text-blue-700   border-blue-200',
   boolean: 'bg-amber-100  text-amber-700  border-amber-200',
-  object:  'bg-violet-100 text-violet-700 border-violet-200',
-  array:   'bg-pink-100   text-pink-700   border-pink-200',
-  any:     'bg-slate-100  text-slate-600  border-slate-200',
+  object: 'bg-violet-100 text-violet-700 border-violet-200',
+  array: 'bg-pink-100   text-pink-700   border-pink-200',
+  any: 'bg-slate-100  text-slate-600  border-slate-200',
 };
 
 function typeColor(type) {
@@ -16,32 +16,42 @@ function typeColor(type) {
 }
 
 /* ─── Token preview — renders {{...}} as colored pills ─────────────────── */
-function TokenPreview({ value }) {
+function TokenPreview({ value, availableVars = [], className, onClick }) {
   if (!value || typeof value !== 'string') return null;
   const parts = value.split(/({{[\w.-]+}})/g);
   return (
-    <div className="flex flex-wrap gap-1 items-center min-h-[28px] px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg">
+    <div
+      className={`flex flex-wrap gap-1 items-center min-h-[38px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg cursor-text ${className || ''}`}
+      onClick={onClick}
+    >
+      {parts.length === 1 && parts[0] === '' && (
+        <span className="text-sm text-slate-400 select-none">Click to type or insert variables...</span>
+      )}
       {parts.map((part, i) => {
         const match = part.match(/^{{([\w.-]+)}}$/);
         if (match) {
+          const path = match[1];
+          const v = availableVars.find(v => v.path === path);
+          const displayLabel = v ? v.label : path;
+
           return (
             <span
               key={i}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 font-mono"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 select-none shadow-sm"
+              title={`Raw ID: {{${path}}}`}
             >
               <span className="opacity-50 text-[9px]">{'{{'}</span>
-              {match[1]}
+              {displayLabel}
               <span className="opacity-50 text-[9px]">{'}}'}</span>
             </span>
           );
         }
         return part ? (
-          <span key={i} className="text-xs text-slate-700">
+          <span key={i} className="text-sm text-slate-800 whitespace-pre-wrap">
             {part}
           </span>
         ) : null;
       })}
-      {!value && <span className="text-xs text-slate-400 italic">Empty</span>}
     </div>
   );
 }
@@ -68,26 +78,27 @@ const VariableInput = ({
   rows = 4,
 }) => {
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [search, setSearch]         = useState('');
-  const inputRef    = useRef(null);
-  const pickerRef   = useRef(null);
-  const cursorRef   = useRef(null); // tracks cursor position in the input
+  const [search, setSearch] = useState('');
+  const [openUpwards, setOpenUpwards] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+
+  const containerRef = useRef(null);
+  const inputRef = useRef(null);
+  const pickerRef = useRef(null);
+  const cursorRef = useRef(null); // tracks cursor position in the input
 
   /* ── Close picker on outside click ───────────────────────────────────── */
   useEffect(() => {
-    if (!pickerOpen) return;
     const handler = (e) => {
-      if (
-        pickerRef.current && !pickerRef.current.contains(e.target) &&
-        inputRef.current  && !inputRef.current.contains(e.target)
-      ) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
         setPickerOpen(false);
         setSearch('');
+        setIsFocused(false);
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [pickerOpen]);
+  }, []);
 
   /* ── Track cursor position before picker opens ────────────────────────── */
   const saveCursor = useCallback(() => {
@@ -98,24 +109,23 @@ const VariableInput = ({
 
   /* ── Insert token at last cursor position ─────────────────────────────── */
   const insertToken = useCallback((varPath) => {
-    const token  = `{{${varPath}}}`;
-    const pos    = cursorRef.current ?? value.length;
-    const before = value.slice(0, pos);
-    const after  = value.slice(pos);
-    const next   = before + token + after;
-    onChange?.(next);
+    const token = `{{${varPath}}}`;
+    const pos = cursorRef.current ?? value.length;
+    const before = value.substring(0, pos);
+    const after = value.substring(pos);
+    const newValue = before + token + after;
 
-    setPickerOpen(false);
-    setSearch('');
+    onChange?.(newValue);
+    cursorRef.current = pos + token.length;
 
-    // Restore focus + move cursor to after the token
-    requestAnimationFrame(() => {
+    // Re-focus the input
+    setIsFocused(true);
+    setTimeout(() => {
       if (inputRef.current) {
         inputRef.current.focus();
-        const newPos = pos + token.length;
-        inputRef.current.setSelectionRange(newPos, newPos);
+        inputRef.current.setSelectionRange(cursorRef.current, cursorRef.current);
       }
-    });
+    }, 0);
   }, [value, onChange]);
 
   /* ── Filter variables by search ───────────────────────────────────────── */
@@ -126,7 +136,7 @@ const VariableInput = ({
         !q ||
         v.label.toLowerCase().includes(q) ||
         v.path.toLowerCase().includes(q) ||
-        v.nodeTitle?.toLowerCase().includes(q)
+        (v.description?.toLowerCase() || '').includes(q)
     );
 
     // Group by nodeTitle
@@ -143,45 +153,58 @@ const VariableInput = ({
     'w-full bg-slate-50 border border-slate-200 rounded-lg text-slate-800 px-3 py-2 outline-none text-sm font-medium focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 transition-all shadow-inner resize-none pr-9';
 
   const hasVars = availableVars.length > 0;
-
-  /* ── Has any {{...}} tokens already? ─────────────────────────────────── */
   const hasTokens = /{{[\w.-]+}}/.test(value ?? '');
 
+  // Show the real input if focused, or if there are no tokens (so empty state looks normal)
+  const showRealInput = isFocused || !hasTokens;
+
   return (
-    <div className="relative flex flex-col gap-1.5">
+    <div ref={containerRef} className="relative flex flex-col gap-1.5">
 
-      {/* Token preview row (shown when value contains tokens) */}
-      {hasTokens && (
-        <TokenPreview value={value} />
-      )}
-
-      {/* Input area */}
       <div className="relative">
-        {multiline ? (
-          <textarea
-            ref={inputRef}
+        {/* Fake Input (Preview Mode) */}
+        {!showRealInput && (
+          <TokenPreview
             value={value}
-            rows={rows}
-            placeholder={placeholder}
-            className={inputClass}
-            onChange={e => onChange?.(e.target.value)}
-            onSelect={saveCursor}
-            onKeyUp={saveCursor}
-            onClick={saveCursor}
-          />
-        ) : (
-          <input
-            ref={inputRef}
-            type="text"
-            value={value}
-            placeholder={placeholder}
-            className={inputClass}
-            onChange={e => onChange?.(e.target.value)}
-            onSelect={saveCursor}
-            onKeyUp={saveCursor}
-            onClick={saveCursor}
+            availableVars={availableVars}
+            className="w-full pr-9 overflow-y-auto"
+            onClick={() => {
+              setIsFocused(true);
+              setTimeout(() => inputRef.current?.focus(), 0);
+            }}
           />
         )}
+
+        {/* Real Input (Edit Mode) */}
+        <div className={showRealInput ? 'block' : 'hidden'}>
+          {multiline ? (
+            <textarea
+              ref={inputRef}
+              value={value}
+              rows={rows}
+              placeholder={placeholder}
+              className={inputClass}
+              onChange={e => onChange?.(e.target.value)}
+              onSelect={saveCursor}
+              onKeyUp={saveCursor}
+              onClick={saveCursor}
+              onFocus={() => setIsFocused(true)}
+            />
+          ) : (
+            <input
+              ref={inputRef}
+              type="text"
+              value={value}
+              placeholder={placeholder}
+              className={inputClass}
+              onChange={e => onChange?.(e.target.value)}
+              onSelect={saveCursor}
+              onKeyUp={saveCursor}
+              onClick={saveCursor}
+              onFocus={() => setIsFocused(true)}
+            />
+          )}
+        </div>
 
         {/* { } trigger button */}
         {hasVars && (
@@ -190,6 +213,14 @@ const VariableInput = ({
             onMouseDown={(e) => {
               e.preventDefault(); // don't blur the input
               saveCursor();
+
+              // dynamic placement measurement
+              if (!pickerOpen && containerRef.current) {
+                const rect = containerRef.current.getBoundingClientRect();
+                const spaceBelow = window.innerHeight - rect.bottom;
+                setOpenUpwards(spaceBelow < 280 && rect.top > spaceBelow);
+              }
+
               setPickerOpen(o => !o);
               setSearch('');
             }}
@@ -209,7 +240,8 @@ const VariableInput = ({
       {pickerOpen && (
         <div
           ref={pickerRef}
-          className="absolute top-full left-0 right-0 mt-1 z-[500] bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden"
+          className={`absolute left-0 right-0 z-[500] bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden
+            ${openUpwards ? 'bottom-full mb-1' : 'top-full mt-1'}`}
           style={{ minWidth: 260 }}
         >
           {/* Search */}
@@ -235,10 +267,27 @@ const VariableInput = ({
                 <div key={nodeTitle}>
                   {/* Node group header */}
                   <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-100 flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 truncate">
-                      {nodeTitle}
-                    </span>
+                    {/* Form icon if this group contains form fields */}
+                    {vars.some(v => v.isFormField) ? (
+                      <svg className="w-3 h-3 text-indigo-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <line x1="9" y1="13" x2="15" y2="13" />
+                        <line x1="9" y1="17" x2="13" y2="17" />
+                      </svg>
+                    ) : (
+                      <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
+                    )}
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 truncate">
+                        {nodeTitle}
+                      </span>
+                      {vars[0]?.formName && (
+                        <span className="text-[9px] text-indigo-400 font-medium truncate">
+                          from "{vars[0].formName}"
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Variable rows */}
@@ -256,14 +305,16 @@ const VariableInput = ({
                         {v.type || 'any'}
                       </span>
 
-                      {/* Label + path */}
+                      {/* Label + optional description */}
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-semibold text-slate-800 truncate group-hover:text-indigo-700">
                           {v.label}
                         </div>
-                        <div className="text-[10px] text-slate-400 font-mono truncate">
-                          {`{{${v.path}}}`}
-                        </div>
+                        {v.description && (
+                          <div className="text-[10px] text-slate-400 truncate mt-0.5 not-italic">
+                            {v.description}
+                          </div>
+                        )}
                       </div>
 
                       {/* Insert arrow */}

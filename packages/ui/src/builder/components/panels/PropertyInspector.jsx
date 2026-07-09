@@ -1,14 +1,81 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import VariableInput from '../inputs/VariableInput';
 import ResourceSelectInput from '../inputs/ResourceSelectInput';
 import CronInput from '../inputs/CronInput';
 import { getUpstreamOutputs } from '../../utils/getUpstreamOutputs';
+import { useFormFields } from '../../hooks/useFormFields';
 
 const labelClassName = 'text-xs font-semibold text-slate-500';
 const inputClassName = 'w-full bg-slate-50 border border-slate-200 rounded-lg text-slate-800 px-3 py-2 outline-none text-sm font-medium focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 transition-all shadow-inner';
 const sectionClassName = 'flex flex-col gap-1.5';
 
 const PropertyInspector = ({ activeNode, onUpdateNode, nodes = [], edges = [] }) => {
+    const [title, setTitle]             = useState(activeNode?.title || '');
+    const [description, setDescription] = useState(activeNode?.description || '');
+
+    useEffect(() => {
+        setTitle(activeNode?.title || '');
+        setDescription(activeNode?.description || '');
+    }, [activeNode?.id]);
+
+    const upstreamFormNodes = useMemo(() => {
+        if (!activeNode) return [];
+        const upstreamIds = new Set();
+        const queue = [activeNode.id];
+        while (queue.length > 0) {
+            const cur = queue.shift();
+            edges.filter(e => e.target === cur).forEach(e => {
+                if (!upstreamIds.has(e.source)) {
+                    upstreamIds.add(e.source);
+                    queue.push(e.source);
+                }
+            });
+        }
+        return nodes.filter(
+            n => upstreamIds.has(n.id) &&
+                 n.subType === 'form-submission' &&
+                 n.config?.formId
+        );
+    }, [activeNode?.id, nodes, edges]);
+
+    const resolvedFormData0 = useFormFields(upstreamFormNodes[0]?.config?.formId ?? null);
+    const resolvedFormData1 = useFormFields(upstreamFormNodes[1]?.config?.formId ?? null);
+    const resolvedFormData2 = useFormFields(upstreamFormNodes[2]?.config?.formId ?? null);
+
+    const resolvedFormFields = useMemo(() => {
+        const map = {};
+        const entries = [
+            [upstreamFormNodes[0], resolvedFormData0],
+            [upstreamFormNodes[1], resolvedFormData1],
+            [upstreamFormNodes[2], resolvedFormData2],
+        ];
+        for (const [node, resolved] of entries) {
+            if (node && resolved.fields.length > 0) {
+                map[node.id] = resolved;
+            }
+        }
+        return map;
+    }, [upstreamFormNodes, resolvedFormData0, resolvedFormData1, resolvedFormData2]);
+
+    const isFormFieldsLoading = [resolvedFormData0, resolvedFormData1, resolvedFormData2]
+        .some(r => r.isLoading);
+
+    const availableVars = activeNode
+        ? getUpstreamOutputs(activeNode.id, nodes, edges, resolvedFormFields)
+        : [];
+
+    const handleTitleChange = (e) => {
+        const val = e.target.value;
+        setTitle(val);
+        onUpdateNode?.(activeNode.id, { title: val });
+    };
+
+    const handleDescriptionChange = (e) => {
+        const val = e.target.value;
+        setDescription(val);
+        onUpdateNode?.(activeNode.id, { description: val });
+    };
+
     if (!activeNode) {
         return (
             <div className="h-full p-6 flex flex-col items-center justify-center text-center">
@@ -23,29 +90,6 @@ const PropertyInspector = ({ activeNode, onUpdateNode, nodes = [], edges = [] })
             </div>
         );
     }
-
-    const [title, setTitle] = useState(activeNode.title || '');
-    const [description, setDescription] = useState(activeNode.description || '');
-
-    useEffect(() => {
-        setTitle(activeNode.title || '');
-        setDescription(activeNode.description || '');
-    }, [activeNode.id]);
-
-    // Compute available upstream variables for this node
-    const availableVars = getUpstreamOutputs(activeNode.id, nodes, edges);
-
-    const handleTitleChange = (e) => {
-        const val = e.target.value;
-        setTitle(val);
-        onUpdateNode?.(activeNode.id, { title: val });
-    };
-
-    const handleDescriptionChange = (e) => {
-        const val = e.target.value;
-        setDescription(val);
-        onUpdateNode?.(activeNode.id, { description: val });
-    };
 
     return (
         <div
@@ -93,9 +137,19 @@ const PropertyInspector = ({ activeNode, onUpdateNode, nodes = [], edges = [] })
                                 {availableVars.length > 0 && (
                                     <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-lg">
                                         <span className="text-indigo-500 text-sm font-black shrink-0">{'{}'}</span>
-                                        <p className="text-[11px] text-indigo-700 font-medium leading-snug">
-                                            {availableVars.length} variable{availableVars.length !== 1 ? 's' : ''} from upstream nodes available — click <strong>{'{}'}</strong> inside any text field to insert.
-                                        </p>
+                                        <div className="flex flex-col gap-0.5 min-w-0">
+                                            <p className="text-[11px] text-indigo-700 font-medium leading-snug">
+                                                {availableVars.length} variable{availableVars.length !== 1 ? 's' : ''} available
+                                                {isFormFieldsLoading && <span className="ml-1 text-indigo-400 italic">(loading form fields…)</span>}
+                                                {' '}— click <strong>{'{}'}</strong> to insert.
+                                            </p>
+                                            {upstreamFormNodes.length > 0 && !isFormFieldsLoading && (
+                                                <p className="text-[10px] text-indigo-500 leading-snug">
+                                                    Includes individual fields from:
+                                                    {' '}{upstreamFormNodes.map(n => resolvedFormFields[n.id]?.form?.title ?? 'form').join(', ')}
+                                                </p>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
 
