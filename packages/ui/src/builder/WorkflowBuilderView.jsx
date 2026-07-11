@@ -33,13 +33,13 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         };
     };
 
-    const { data: folders = [], isLoading: isFoldersLoading } = useFolders();
-    const { data: workflowsData = [], isLoading: isWorkflowsLoading } = useWorkflows();
+    const { data: folders = [], isPending: isFoldersPending } = useFolders();
+    const { data: workflowsData = [], isPending: isWorkflowsPending } = useWorkflows();
     const [activeWorkflowId, setActiveWorkflowId] = useState(() => getViewStateFromUrl().workflowId);
     
     // Automatically select the first workflow if none is selected
     const derivedWorkflowId = activeWorkflowId || (workflowsData.length > 0 ? workflowsData[0].id : null);
-    const { data: activeWorkflowData, isLoading: isActiveWorkflowLoading } = useWorkflow(derivedWorkflowId);
+    const { data: activeWorkflowData, isPending: isActiveWorkflowPending } = useWorkflow(derivedWorkflowId);
     
     const [activeNodeId, setActiveNodeId] = useState(null);
     const [viewMode, setViewModeState] = useState(() => getViewStateFromUrl().viewMode);
@@ -69,9 +69,9 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     };
 
     // Only show skeleton on initial load (no data yet), not on background refetches
-    const loading = (isFoldersLoading && folders.length === 0) || 
-                    (isWorkflowsLoading && workflowsData.length === 0) || 
-                    (isActiveWorkflowLoading && !activeWorkflowData && viewMode === 'builder');
+    const loading = (isFoldersPending && folders.length === 0) || 
+                    (isWorkflowsPending && workflowsData.length === 0) || 
+                    (viewMode === 'builder' && derivedWorkflowId && isActiveWorkflowPending && !activeWorkflowData);
 
     // Normalise workflows array → id-keyed map for fast lookup
     const workflows = useMemo(() => {
@@ -401,6 +401,10 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     }, { dependencies: [isHistorySidebarOpen, rightTab] });
 
     // ── Early returns ────────────────────────────────────────────────────────
+    if (activeTab === 'dashboard') return <DashboardTab activeWorkflowCount={activeWorkflowCount} onNavigateTab={setActiveTab} />;
+    if (activeTab === 'forms') return <FormsTab />;
+    if (activeTab === 'logs') return <LogsTab />;
+
     if (loading) {
         return (
             <div className="flex-1 flex w-full h-full bg-slate-50 overflow-hidden font-sans">
@@ -436,10 +440,6 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
             </div>
         );
     }
-
-    if (activeTab === 'dashboard') return <DashboardTab activeWorkflowCount={activeWorkflowCount} onNavigateTab={setActiveTab} />;
-    if (activeTab === 'forms') return <FormsTab />;
-    if (activeTab === 'logs') return <LogsTab />;
 
     if (viewMode === 'overview') {
         return (

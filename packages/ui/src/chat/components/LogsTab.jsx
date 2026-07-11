@@ -5,15 +5,68 @@ import { getExecutionLogs } from '../../api/backend.js';
 
 const LogsTab = () => {
     const [selectedLog, setSelectedLog] = useState(null);
+    const [displayedLog, setDisplayedLog] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('All'); // 'All' | 'Success' | 'Failed'
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
     const container = useRef(null);
+    const drawerRef = useRef(null);
+    const drawerWrapperRef = useRef(null);
 
-    useGSAP(() => {
+    const { contextSafe } = useGSAP(() => {
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
     }, { scope: container });
+
+    const handleLogClick = contextSafe((log) => {
+        if (!displayedLog) {
+            setDisplayedLog(log);
+            setSelectedLog(log);
+            requestAnimationFrame(() => {
+                if (drawerRef.current && drawerWrapperRef.current) {
+                    const isDesktop = window.innerWidth >= 1024;
+                    // Animate the layout space smoothly
+                    gsap.fromTo(drawerWrapperRef.current,
+                        { width: 0 },
+                        { width: isDesktop ? 420 : window.innerWidth, duration: 0.4, ease: 'power3.out' }
+                    );
+                    // Slide in the actual drawer
+                    gsap.fromTo(drawerRef.current, 
+                        { x: 420, opacity: 0 }, 
+                        { x: 0, opacity: 1, duration: 0.4, ease: 'power3.out' }
+                    );
+                }
+            });
+        } else {
+            setSelectedLog(log);
+            setDisplayedLog(log);
+            if (drawerRef.current) {
+                gsap.fromTo(drawerRef.current, { opacity: 0.5 }, { opacity: 1, duration: 0.3 });
+            }
+        }
+    });
+
+    const closeDrawer = contextSafe(() => {
+        setSelectedLog(null);
+        if (drawerRef.current && drawerWrapperRef.current) {
+            gsap.to(drawerWrapperRef.current, {
+                width: 0,
+                duration: 0.3,
+                ease: 'power3.in'
+            });
+            gsap.to(drawerRef.current, {
+                x: 420,
+                opacity: 0,
+                duration: 0.3,
+                ease: 'power3.in',
+                onComplete: () => {
+                    setDisplayedLog(null);
+                }
+            });
+        } else {
+            setDisplayedLog(null);
+        }
+    });
 
     useEffect(() => {
         setLoading(true);
@@ -49,7 +102,7 @@ const LogsTab = () => {
         <div ref={container} className="tab-content flex-1 flex overflow-hidden bg-slate-50/50 font-sans h-full">
             
             {/* Logs List Pane */}
-            <div className={`flex-1 p-6 md:p-8 overflow-y-auto flex flex-col gap-8 ${selectedLog ? 'hidden lg:flex lg:w-1/2' : 'w-full'}`}>
+            <div className={`flex-1 p-6 md:p-8 overflow-y-auto flex flex-col gap-8 w-full`}>
                 <div className="max-w-6xl mx-auto w-full flex flex-col gap-8">
                     {/* Header */}
                     <div>
@@ -103,7 +156,7 @@ const LogsTab = () => {
                             {filteredLogs.map(log => (
                                 <div
                                     key={log.id}
-                                    onClick={() => setSelectedLog(log)}
+                                    onClick={() => handleLogClick(log)}
                                     className={`p-4 flex items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/50 transition-colors select-none border-t border-slate-100 first:border-t-0 ${
                                         selectedLog?.id === log.id ? 'bg-indigo-50/20 border-l-4 border-l-blue-600' : 'border-l-4 border-l-transparent'
                                     }`}
@@ -154,16 +207,17 @@ const LogsTab = () => {
             </div>
 
             {/* Right Pane: Visual Debugger Drawer */}
-            {selectedLog && (
-                <div className="w-full lg:w-[420px] border-l border-slate-200 bg-white h-full flex flex-col shrink-0 animate-in slide-in-from-right duration-250 shadow-2xl z-10">
-                    {/* Drawer Header */}
+            {displayedLog && (
+                <div ref={drawerWrapperRef} className="shrink-0 overflow-hidden h-full z-10" style={{ width: 0 }}>
+                    <div ref={drawerRef} className="w-full lg:w-[420px] border-l border-slate-200 bg-white h-full flex flex-col shadow-2xl opacity-0 translate-x-[420px]">
+                        {/* Drawer Header */}
                     <div className="p-4 border-b border-slate-150 flex items-center justify-between bg-slate-50/50 shrink-0">
                         <div>
                             <h3 className="font-semibold text-slate-900 text-sm sm:text-base">Execution Inspector</h3>
-                            <span className="font-mono text-xs text-slate-500">{selectedLog.id}</span>
+                            <span className="font-mono text-xs text-slate-500">{displayedLog.id}</span>
                         </div>
                         <button 
-                            onClick={() => setSelectedLog(null)} 
+                            onClick={closeDrawer} 
                             className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-700 transition-colors"
                         >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -177,12 +231,12 @@ const LogsTab = () => {
                         <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-150 text-xs sm:text-sm">
                             <div className="flex flex-col gap-0.5">
                                 <span className="font-medium text-slate-500 text-xs">Duration</span>
-                                <span className="font-semibold text-slate-850 text-slate-800">{selectedLog.duration}</span>
+                                <span className="font-semibold text-slate-850 text-slate-800">{displayedLog.duration}</span>
                             </div>
                             <div className="flex flex-col gap-0.5">
                                 <span className="font-medium text-slate-500 text-xs">Outcome</span>
-                                <span className={`font-semibold ${selectedLog.status === 'Success' ? 'text-emerald-600' : 'text-red-700'}`}>
-                                    {selectedLog.status}
+                                <span className={`font-semibold ${displayedLog.status === 'Success' ? 'text-emerald-600' : 'text-red-700'}`}>
+                                    {displayedLog.status}
                                 </span>
                             </div>
                         </div>
@@ -192,7 +246,7 @@ const LogsTab = () => {
                             <span className="text-xs font-semibold text-slate-500">Execution Path Debugger</span>
                             
                             <div className="flex flex-col pl-4 relative border-l border-slate-150 ml-1.5 gap-5">
-                                {selectedLog.steps.map((step, idx) => {
+                                {displayedLog.steps.map((step, idx) => {
                                     const isSuccess = step.status === 'success';
                                     const isFailed = step.status === 'failed';
                                     const isSkipped = step.status === 'skipped';
@@ -226,9 +280,9 @@ const LogsTab = () => {
                             <span className="text-xs font-semibold text-slate-500">Raw Input Payload</span>
                             <div className="bg-slate-900 border border-slate-800 text-indigo-150 p-4 rounded-2xl text-xs font-mono shadow-inner overflow-x-auto select-all leading-relaxed">
                                 <pre>{JSON.stringify({
-                                    event: selectedLog.trigger,
-                                    time: selectedLog.time,
-                                    runId: selectedLog.id,
+                                    event: displayedLog.trigger,
+                                    time: displayedLog.time,
+                                    runId: displayedLog.id,
                                     context: {
                                         environment: 'production',
                                         version: '1.0.2',
@@ -239,6 +293,7 @@ const LogsTab = () => {
                         </div>
 
                     </div>
+                </div>
                 </div>
             )}
         </div>

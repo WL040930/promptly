@@ -15,6 +15,14 @@ function typeColor(type) {
   return TYPE_COLORS[type] ?? TYPE_COLORS.any;
 }
 
+function isObjectLike(v) {
+  return v?.hasChildren || ['object', 'array', 'any'].includes(v?.type);
+}
+
+function canUseCustomPath(v) {
+  return ['object', 'any'].includes(v?.type) || v?.hasChildren;
+}
+
 /* ─── Token preview — renders {{...}} as colored pills ─────────────────── */
 function TokenPreview({ value, availableVars = [], className, onClick }) {
   if (!value || typeof value !== 'string') return null;
@@ -81,6 +89,9 @@ const VariableInput = ({
   const [search, setSearch] = useState('');
   const [openUpwards, setOpenUpwards] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const [expandedPaths, setExpandedPaths] = useState(() => new Set());
+  const [customPathTarget, setCustomPathTarget] = useState(null);
+  const [customPath, setCustomPath] = useState('');
 
   const containerRef = useRef(null);
   const inputRef = useRef(null);
@@ -94,6 +105,8 @@ const VariableInput = ({
         setPickerOpen(false);
         setSearch('');
         setIsFocused(false);
+        setCustomPathTarget(null);
+        setCustomPath('');
       }
     };
     document.addEventListener('mousedown', handler);
@@ -128,6 +141,32 @@ const VariableInput = ({
     }, 0);
   }, [value, onChange]);
 
+  const toggleExpanded = useCallback((path) => {
+    setExpandedPaths(prev => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
+
+  const startCustomPath = useCallback((variable) => {
+    setExpandedPaths(prev => new Set(prev).add(variable.path));
+    setCustomPathTarget(variable);
+    setCustomPath('');
+  }, []);
+
+  const insertCustomPath = useCallback(() => {
+    if (!customPathTarget) return;
+
+    const cleanPath = customPath.trim();
+    if (!/^[\w-]+(\.[\w-]+)*$/.test(cleanPath)) return;
+
+    insertToken(`${customPathTarget.path}.${cleanPath}`);
+    setCustomPathTarget(null);
+    setCustomPath('');
+  }, [customPath, customPathTarget, insertToken]);
+
   /* ── Filter variables by search ───────────────────────────────────────── */
   const grouped = React.useMemo(() => {
     const q = search.toLowerCase();
@@ -149,6 +188,16 @@ const VariableInput = ({
     return map;
   }, [availableVars, search]);
 
+  const childrenByParent = React.useMemo(() => {
+    const map = new Map();
+    for (const v of availableVars) {
+      if (!v.parentPath) continue;
+      if (!map.has(v.parentPath)) map.set(v.parentPath, []);
+      map.get(v.parentPath).push(v);
+    }
+    return map;
+  }, [availableVars]);
+
   const inputClass =
     'w-full bg-slate-50 border border-slate-200 rounded-lg text-slate-800 px-3 py-2 outline-none text-sm font-medium focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 transition-all shadow-inner resize-none pr-9';
 
@@ -157,6 +206,131 @@ const VariableInput = ({
 
   // Show the real input if focused, or if there are no tokens (so empty state looks normal)
   const showRealInput = isFocused || !hasTokens;
+
+  const renderNestedRows = (parentVar) => {
+    const children = childrenByParent.get(parentVar.path) || [];
+
+    return children.map(child => {
+      const nestedChildren = childrenByParent.get(child.path) || [];
+      const childExpanded = expandedPaths.has(child.path);
+      const childExpandable = isObjectLike(child) || nestedChildren.length > 0;
+
+      return (
+        <div key={child.path}>
+          <div
+            className="w-full pr-3 py-1.5 flex items-center gap-2 text-left hover:bg-indigo-50/60 transition-colors group"
+            style={{ paddingLeft: 20 + (child.depth * 12) }}
+          >
+            {childExpandable ? (
+              <button
+                type="button"
+                onClick={() => toggleExpanded(child.path)}
+                className="shrink-0 w-4 h-4 flex items-center justify-center text-slate-400 hover:text-indigo-600 transition-colors"
+                title={childExpanded ? 'Collapse variable fields' : 'Expand variable fields'}
+              >
+                <svg
+                  className={`w-3 h-3 transition-transform ${childExpanded ? 'rotate-90' : ''}`}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
+                  <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            ) : (
+              <div className="shrink-0 w-4 h-4 flex items-center justify-center text-slate-300">
+                <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+              </div>
+            )}
+
+            <span className={`shrink-0 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border tracking-wide ${typeColor(child.type)}`}>
+              {child.type || 'any'}
+            </span>
+
+            <button
+              type="button"
+              onClick={() => childExpandable ? toggleExpanded(child.path) : insertToken(child.path)}
+              className="flex-1 min-w-0 text-left"
+            >
+              <div className="text-xs font-semibold text-slate-700 truncate group-hover:text-indigo-700">
+                {child.label}
+              </div>
+              <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                {child.path}
+              </div>
+            </button>
+
+            {childExpandable ? (
+              <button
+                type="button"
+                onClick={() => insertToken(child.path)}
+                className="shrink-0 text-[10px] font-bold text-slate-400 hover:text-indigo-600 px-1.5 py-1 rounded hover:bg-indigo-50 transition-colors"
+                title={`Insert {{${child.path}}}`}
+              >
+                Use value
+              </button>
+            ) : (
+              <svg
+                className="w-3 h-3 text-slate-300 group-hover:text-indigo-400 shrink-0 transition-colors"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+              >
+                <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </div>
+
+          {childExpandable && childExpanded && (
+            <div className="border-l border-slate-100 ml-5">
+              {canUseCustomPath(child) && (
+                <div className="pl-5 pr-3 py-2 bg-slate-50/70">
+                  {customPathTarget?.path === child.path ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-mono text-slate-400 truncate">{child.path}.</span>
+                      <input
+                        autoFocus
+                        type="text"
+                        value={customPath}
+                        onChange={e => setCustomPath(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') insertCustomPath();
+                          if (e.key === 'Escape') {
+                            setCustomPathTarget(null);
+                            setCustomPath('');
+                          }
+                        }}
+                        placeholder="customer.email"
+                        className="min-w-0 flex-1 text-xs px-2 py-1 bg-white border border-slate-200 rounded outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-300"
+                      />
+                      <button
+                        type="button"
+                        onClick={insertCustomPath}
+                        disabled={!/^[\w-]+(\.[\w-]+)*$/.test(customPath.trim())}
+                        className="shrink-0 text-[10px] font-bold px-2 py-1 rounded bg-indigo-600 text-white disabled:bg-slate-200 disabled:text-slate-400 transition-colors"
+                      >
+                        Insert
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => startCustomPath(child)}
+                      className="w-full flex items-center gap-2 text-left text-xs font-semibold text-slate-500 hover:text-indigo-700 transition-colors"
+                    >
+                      <span className="text-[11px] font-black">{'{}'}</span>
+                      Insert nested field...
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {renderNestedRows(child)}
+            </div>
+          )}
+        </div>
+      );
+    });
+  };
 
   return (
     <div ref={containerRef} className="relative flex flex-col gap-1.5">
@@ -223,6 +397,8 @@ const VariableInput = ({
 
               setPickerOpen(o => !o);
               setSearch('');
+              setCustomPathTarget(null);
+              setCustomPath('');
             }}
             title="Insert variable"
             className={`absolute right-2 top-2 flex items-center justify-center w-5 h-5 rounded text-[11px] font-black transition-all select-none
@@ -291,41 +467,149 @@ const VariableInput = ({
                   </div>
 
                   {/* Variable rows */}
-                  {vars.map(v => (
-                    <button
-                      key={v.path}
-                      type="button"
-                      onClick={() => insertToken(v.path)}
-                      className="w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-indigo-50/60 transition-colors group"
-                    >
-                      {/* Type badge */}
-                      <span
-                        className={`shrink-0 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border tracking-wide ${typeColor(v.type)}`}
-                      >
-                        {v.type || 'any'}
-                      </span>
+                  {(search ? vars : vars.filter(v => !v.parentPath)).map(v => {
+                    const expanded = expandedPaths.has(v.path);
+                    const showNestedControls = isObjectLike(v);
+                    const showAsExpandable = !search && showNestedControls;
 
-                      {/* Label + optional description */}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-semibold text-slate-800 truncate group-hover:text-indigo-700">
-                          {v.label}
+                    return (
+                      <div key={v.path}>
+                        <div
+                          className={`w-full px-3 py-2 flex items-center gap-2 text-left transition-colors group
+                            ${showAsExpandable ? 'hover:bg-slate-50' : 'hover:bg-indigo-50/60'}`}
+                          style={{ paddingLeft: search && v.depth ? 12 + (v.depth * 12) : undefined }}
+                        >
+                          {showAsExpandable && (
+                            <button
+                              type="button"
+                              onClick={() => toggleExpanded(v.path)}
+                              className="shrink-0 w-4 h-4 flex items-center justify-center text-slate-400 hover:text-indigo-600 transition-colors"
+                              title={expanded ? 'Collapse variable fields' : 'Expand variable fields'}
+                            >
+                              <svg
+                                className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`}
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2.5"
+                              >
+                                <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </button>
+                          )}
+
+                          {!showAsExpandable && v.depth > 0 && (
+                            <div className="shrink-0 w-4 h-4 flex items-center justify-center text-slate-300">
+                              <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                            </div>
+                          )}
+
+                          {/* Type badge */}
+                          <span
+                            className={`shrink-0 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border tracking-wide ${typeColor(v.type)}`}
+                          >
+                            {v.type || 'any'}
+                          </span>
+
+                          {/* Label + optional description */}
+                          <button
+                            type="button"
+                            onClick={() => showAsExpandable ? toggleExpanded(v.path) : insertToken(v.path)}
+                            className="flex-1 min-w-0 text-left"
+                          >
+                            <div className="text-xs font-semibold text-slate-800 truncate group-hover:text-indigo-700">
+                              {v.label}
+                            </div>
+                            {v.description && (
+                              <div className="text-[10px] text-slate-400 truncate mt-0.5 not-italic">
+                                {v.description}
+                              </div>
+                            )}
+                          </button>
+
+                          {showAsExpandable ? (
+                            <button
+                              type="button"
+                              onClick={() => insertToken(v.path)}
+                              className="shrink-0 text-[10px] font-bold text-slate-400 hover:text-indigo-600 px-1.5 py-1 rounded hover:bg-indigo-50 transition-colors"
+                              title={`Insert {{${v.path}}}`}
+                            >
+                              Use object
+                            </button>
+                          ) : (
+                            <svg
+                              className="w-3 h-3 text-slate-300 group-hover:text-indigo-400 shrink-0 transition-colors"
+                              viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                            >
+                              <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
                         </div>
-                        {v.description && (
-                          <div className="text-[10px] text-slate-400 truncate mt-0.5 not-italic">
-                            {v.description}
+
+                        {showAsExpandable && expanded && (
+                          <div className="border-l border-slate-100 ml-5">
+                            <button
+                              type="button"
+                              onClick={() => insertToken(v.path)}
+                              className="w-full pl-5 pr-3 py-1.5 flex items-center gap-2 text-left hover:bg-indigo-50/60 transition-colors group"
+                            >
+                              <span className={`shrink-0 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border tracking-wide ${typeColor(v.type)}`}>
+                                {v.type || 'any'}
+                              </span>
+                              <span className="flex-1 min-w-0 text-xs font-semibold text-slate-700 truncate group-hover:text-indigo-700">
+                                Use whole object
+                              </span>
+                              <span className="text-[10px] text-slate-400 truncate">{`{{${v.path}}}`}</span>
+                            </button>
+
+                            {canUseCustomPath(v) && (
+                              <div className="pl-5 pr-3 py-2 bg-slate-50/70">
+                                {customPathTarget?.path === v.path ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-mono text-slate-400 truncate">{v.path}.</span>
+                                    <input
+                                      autoFocus
+                                      type="text"
+                                      value={customPath}
+                                      onChange={e => setCustomPath(e.target.value)}
+                                      onKeyDown={e => {
+                                        if (e.key === 'Enter') insertCustomPath();
+                                        if (e.key === 'Escape') {
+                                          setCustomPathTarget(null);
+                                          setCustomPath('');
+                                        }
+                                      }}
+                                      placeholder="customer.email"
+                                      className="min-w-0 flex-1 text-xs px-2 py-1 bg-white border border-slate-200 rounded outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-300"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={insertCustomPath}
+                                      disabled={!/^[\w-]+(\.[\w-]+)*$/.test(customPath.trim())}
+                                      className="shrink-0 text-[10px] font-bold px-2 py-1 rounded bg-indigo-600 text-white disabled:bg-slate-200 disabled:text-slate-400 transition-colors"
+                                    >
+                                      Insert
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => startCustomPath(v)}
+                                    className="w-full flex items-center gap-2 text-left text-xs font-semibold text-slate-500 hover:text-indigo-700 transition-colors"
+                                  >
+                                    <span className="text-[11px] font-black">{'{}'}</span>
+                                    Insert nested field...
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            {renderNestedRows(v)}
                           </div>
                         )}
                       </div>
-
-                      {/* Insert arrow */}
-                      <svg
-                        className="w-3 h-3 text-slate-300 group-hover:text-indigo-400 shrink-0 transition-colors"
-                        viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-                      >
-                        <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </button>
-                  ))}
+                    );
+                  })}
                 </div>
               ))
             )}
