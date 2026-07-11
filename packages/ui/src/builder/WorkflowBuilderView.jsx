@@ -331,8 +331,9 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
             description: nodeData.description,
             schema: nodeData.schema,
             icon: nodeData.icon,
-            bgColor: nodeData.bgColor,
-            color: nodeData.color,
+            bgColor: nodeData.bgColor || nodeData.iconBg,
+            color: nodeData.color || nodeData.iconColor,
+            iconColor: nodeData.iconColor || nodeData.color,
             position
         }];
         handleWorkflowUpdate({ nodes: updatedNodes });
@@ -610,4 +611,3 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
 };
 
 export default WorkflowBuilderView;
-

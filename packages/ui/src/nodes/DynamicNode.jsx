@@ -1,44 +1,27 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { ICON_MAP } from '../builder/utils/iconMap.jsx';
+import { getIconByName, resolveNodeUi } from '../builder/utils/iconMap.jsx';
 
 const NODE_STYLES = {
     trigger: {
-        iconBg: 'bg-orange-500',
-        text: 'text-orange-500',
-        icon: (
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-white">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-            </svg>
-        ),
+        icon: 'zap',
+        bgColor: 'bg-orange-500',
+        color: 'text-white',
     },
     ai: {
-        iconBg: 'bg-indigo-500',
-        text: 'text-indigo-500',
-        icon: (
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-white">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-            </svg>
-        ),
+        icon: 'message',
+        bgColor: 'bg-indigo-500',
+        color: 'text-white',
     },
     action: {
-        iconBg: 'bg-emerald-500',
-        text: 'text-emerald-500',
-        icon: (
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-white">
-                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-            </svg>
-        ),
+        icon: 'zap',
+        bgColor: 'bg-emerald-500',
+        color: 'text-white',
     },
     logic: {
-        iconBg: 'bg-blue-500',
-        text: 'text-blue-500',
-        icon: (
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-white">
-                <circle cx="12" cy="12" r="10"></circle>
-                <path d="M12 8v4l3 3"></path>
-            </svg>
-        ),
+        icon: 'clock',
+        bgColor: 'bg-blue-500',
+        color: 'text-white',
     }
 };
 
@@ -48,18 +31,8 @@ const DynamicNode = ({ data, type, isConnectable = true }) => {
     const showInputHandle = type !== 'trigger';
     const showOutputHandle = true;
 
-    const style = NODE_STYLES[type] || NODE_STYLES.ai;
-    
-    // Use node-specific UI properties if they exist (using bgColor and color from NODE.md)
-    const iconBgClass = data.bgColor || style.iconBg;
-    const iconColorClass = data.color || 'text-white';
-    
-    // Check if the specific icon exists in ICON_MAP, otherwise use the type's default icon
-    const nodeIcon = (data.icon && ICON_MAP[data.icon]) ? (
-        <div className={`w-6 h-6 flex items-center justify-center ${iconColorClass}`}>
-            {ICON_MAP[data.icon]}
-        </div>
-    ) : style.icon;
+    const nodeUi = resolveNodeUi(data, NODE_STYLES[type] || NODE_STYLES.ai);
+    const nodeIcon = getIconByName(nodeUi.icon, { size: 20, strokeWidth: 2.5, className: 'shrink-0' });
 
     // Calculate dynamic handles based on schema
     const schemaInputs = schema?.inputs?.filter(i => i.isConnection) || [];
@@ -116,8 +89,10 @@ const DynamicNode = ({ data, type, isConnectable = true }) => {
             )}
 
             {/* Left Icon Panel */}
-            <div className={`w-16 ${iconBgClass} rounded-l-lg flex flex-col items-center justify-center shrink-0 border-r border-slate-100`}>
-                {nodeIcon}
+            <div className={`w-16 ${nodeUi.bgColor} rounded-l-lg flex flex-col items-center justify-center shrink-0 border-r border-slate-100`}>
+                <div className={`w-6 h-6 flex items-center justify-center ${nodeUi.color}`}>
+                    {nodeIcon}
+                </div>
             </div>
 
             {/* Content Body */}

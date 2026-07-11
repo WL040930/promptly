@@ -96,13 +96,17 @@ class NodeRegistry {
                 }
                 
                 // Construct the UI item
+                const ui = metadata.ui || {};
                 const uiItem = {
                     title: metadata.title,
                     type: metadata.type,
                     subType: metadata.subType,
                     description: metadata.description,
                     schema: configSchema,
-                    ...metadata.ui
+                    icon: ui.icon,
+                    bgColor: ui.bgColor || ui.iconBg,
+                    color: ui.color || ui.iconColor,
+                    iconColor: ui.iconColor || ui.color
                 };
                 
                 groupMap.get(group).push(uiItem);

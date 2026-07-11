@@ -54,6 +54,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
         icon: n.icon,
         bgColor: n.bgColor,
         color: n.color,
+        iconColor: n.iconColor,
         isActive: n.id === activeNodeId,
         onClick: () => onNodeClick(n.id),
         onHandleClick: (e, handleId, handleType) => onHandleClickRef.current?.(e, n.id, handleId, handleType),
@@ -90,6 +91,10 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
             title: matchingInitialNode.title,
             description: matchingInitialNode.description,
             schema: matchingInitialNode.schema,
+            icon: matchingInitialNode.icon,
+            bgColor: matchingInitialNode.bgColor,
+            color: matchingInitialNode.color,
+            iconColor: matchingInitialNode.iconColor,
             isActive: node.id === activeNodeId,
           },
         };

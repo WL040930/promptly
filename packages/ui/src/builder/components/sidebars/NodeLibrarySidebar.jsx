@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ICON_MAP } from '../../utils/iconMap.jsx';
+import { getIconByName, resolveNodeUi } from '../../utils/iconMap.jsx';
 import { useNodeLibrary } from '../../hooks/useNodeLibrary.js';
 
 /**
@@ -71,9 +71,8 @@ const NodeLibrarySidebar = ({ isOpen, onDragStart, onDragEnd }) => {
                                             </div>
                                             <div className="flex flex-col gap-2">
                                                 {group.items.map(node => {
-                                                    const color = node.color || 'text-slate-500';
-                                                    const bgColor = node.bgColor || 'bg-slate-100';
-                                                    const IconComponent = ICON_MAP[node.icon] || ICON_MAP.default;
+                                                    const nodeUi = resolveNodeUi(node);
+                                                    const nodeIcon = getIconByName(nodeUi.icon, { size: 14, strokeWidth: 2.8 });
 
                                                     return (
                                                         <div
@@ -92,8 +91,8 @@ const NodeLibrarySidebar = ({ isOpen, onDragStart, onDragEnd }) => {
                                                             onDragEnd={onDragEnd}
                                                             className={`group bg-white p-3 rounded-xl cursor-grab active:cursor-grabbing transition-all duration-300 flex items-start gap-3 border border-slate-200 hover:shadow-md hover:-translate-y-0.5`}
                                                         >
-                                                            <div className={`mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${bgColor} ${color} group-hover:scale-105 transition-transform`}>
-                                                                {IconComponent}
+                                                            <div className={`mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${nodeUi.bgColor} ${nodeUi.color} group-hover:scale-105 transition-transform`}>
+                                                                {nodeIcon}
                                                             </div>
                                                             <div className="flex flex-col flex-1 min-w-0">
                                                                 <div className="flex items-center justify-between gap-2 mb-1">

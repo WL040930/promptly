@@ -1,6 +1,5 @@
 import React, { useMemo, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import * as LucideIcons from 'lucide-react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap } from '@xyflow/react';
@@ -8,6 +7,7 @@ import '@xyflow/react/dist/style.css';
 import DynamicNode from '../../../nodes/DynamicNode';
 import DeletableEdge from '../canvas/edges/DeletableEdge';
 import Button from '../../../components/Button';
+import { getIconByName, resolveNodeUi } from '../../utils/iconMap.jsx';
 
 const nodeTypes = {
     trigger: DynamicNode,
@@ -248,14 +248,14 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
                                     tag = <span className="absolute -top-3 left-4 bg-red-100 text-red-800 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border border-red-300">- Removed</span>;
                                 }
 
-                                const IconComponent = LucideIcons[node.icon] || LucideIcons.Square;
+                                const nodeUi = resolveNodeUi(node);
 
                                 return (
                                     <div key={node.id} className={wrapperClass}>
                                         {tag}
                                         <div className={node._diffStatus === 'removed' ? 'pointer-events-none grayscale opacity-60 line-through w-full flex items-center gap-4' : 'pointer-events-none w-full flex items-center gap-4'}>
-                                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-slate-200/50 ${node.bgColor || 'bg-slate-100'} ${node.color || 'text-slate-600'}`}>
-                                                <IconComponent size={24} />
+                                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-slate-200/50 ${nodeUi.bgColor} ${nodeUi.color}`}>
+                                                {getIconByName(nodeUi.icon, { size: 24, strokeWidth: 2.5 })}
                                             </div>
                                             <div className="flex flex-col">
                                                 <span className="font-bold text-slate-800 text-[15px]">{node.title || node.type}</span>
