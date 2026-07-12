@@ -30,9 +30,9 @@ function getValueFromContext(path, contextData) {
 export function resolveVariables(text, contextData) {
     if (typeof text !== 'string') return text;
 
-    // Check if the string is EXACTLY one variable, e.g. "{{node1.data}}"
+    // Check if the string is EXACTLY one variable, e.g. "{{My Form (2).data}}"
     // This allows us to return the raw type (object, array, number) instead of coercing to string.
-    const exactMatchRegex = /^\{\{([\w.-]+)\}\}$/;
+    const exactMatchRegex = /^\{\{([^{}]+)\}\}$/;
     const exactMatch = text.match(exactMatchRegex);
     
     if (exactMatch) {
@@ -42,7 +42,7 @@ export function resolveVariables(text, contextData) {
     }
 
     // Otherwise, do string replacement for all {{...}} occurrences in the string
-    return text.replace(/\{\{([\w.-]+)\}\}/g, (match, path) => {
+    return text.replace(/\{\{([^{}]+)\}\}/g, (match, path) => {
         const val = getValueFromContext(path, contextData);
         
         if (val === undefined) {

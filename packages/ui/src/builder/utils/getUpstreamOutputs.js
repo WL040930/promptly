@@ -91,7 +91,7 @@ function addNestedProperties(vars, { schema, basePath, baseLabel, nodeId, nodeTi
 }
 
 function addOutputVariable(vars, { nodeId, nodeTitle, output, source }) {
-  const path = `${nodeId}.${output.name}`;
+  const path = `${nodeTitle}.${output.name}`;
   const label = output.label || output.name;
 
   vars.push({
@@ -125,7 +125,7 @@ function addAiExtractionFields(vars, node, nodeTitle, output) {
 
   addNestedProperties(vars, {
     schema: extractionSchema,
-    basePath: `${node.id}.${output.name}`,
+    basePath: `${nodeTitle}.${output.name}`,
     baseLabel: output.label || output.name,
     nodeId: node.id,
     nodeTitle,
@@ -166,15 +166,30 @@ export function getUpstreamOutputs(nodeId, nodes, edges, resolvedFormFields = {}
   // For each upstream node, build the variable list
   const vars = [];
 
+  const titleCounts = {};
+  const uniqueTitles = {};
+  for (const id of upstreamIds) {
+    const node = nodes.find(n => n.id === id);
+    if (!node) continue;
+    let baseTitle = node.title || node.subType || id;
+    if (!titleCounts[baseTitle]) {
+      titleCounts[baseTitle] = 1;
+      uniqueTitles[id] = baseTitle;
+    } else {
+      titleCounts[baseTitle]++;
+      uniqueTitles[id] = `${baseTitle} (${titleCounts[baseTitle]})`;
+    }
+  }
+
   for (const id of upstreamIds) {
     const node = nodes.find(n => n.id === id);
     if (!node) continue;
 
-    const nodeTitle = node.title || node.subType || id;
+    const nodeTitle = uniqueTitles[id];
 
     // Always expose a `success` field — every node returns it
     vars.push({
-      path: `${id}.success`,
+      path: `${nodeTitle}.success`,
       label: 'Success',
       type: 'boolean',
       nodeId: id,
@@ -195,7 +210,7 @@ export function getUpstreamOutputs(nodeId, nodes, edges, resolvedFormFields = {}
           // Emit one typed token per form field
           for (const field of resolved.fields) {
             vars.push({
-              path: `${id}.fields.${field.id}`,
+              path: `${nodeTitle}.fields.${field.id}`,
               label: field.label || field.id,
               type: varTypeForField(field.type),
               description: `"${field.label}" field from "${resolved.form?.title ?? 'form'}"`,
@@ -203,7 +218,7 @@ export function getUpstreamOutputs(nodeId, nodes, edges, resolvedFormFields = {}
               nodeTitle,
               isFormField: true,
               formName: resolved.form?.title ?? null,
-              parentPath: `${id}.${o.name}`,
+              parentPath: `${nodeTitle}.${o.name}`,
               depth: 1,
               isNested: true,
               source: 'form-field',
@@ -226,7 +241,7 @@ export function getUpstreamOutputs(nodeId, nodes, edges, resolvedFormFields = {}
     // Fallback: if a node has no schema outputs at all, expose a generic `data` field
     if (schemaOutputs.length === 0) {
       vars.push({
-        path: `${id}.data`,
+        path: `${nodeTitle}.data`,
         label: 'Output Data',
         type: 'object',
         nodeId: id,

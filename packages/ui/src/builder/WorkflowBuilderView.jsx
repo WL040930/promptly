@@ -308,26 +308,49 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         setIsRightSidebarOpen(true);
     }, []);
 
+    const generateUniqueTitle = useCallback((baseTitle, excludeNodeId = null) => {
+        let uniqueTitle = baseTitle;
+        let counter = 2;
+        let isUnique = false;
+        
+        while (!isUnique) {
+            const exists = nodes.some(n => n.id !== excludeNodeId && (n.title || n.subType || n.id) === uniqueTitle);
+            if (!exists) {
+                isUnique = true;
+            } else {
+                uniqueTitle = `${baseTitle} (${counter})`;
+                counter++;
+            }
+        }
+        return uniqueTitle;
+    }, [nodes]);
+
     const handleApplyAction = useCallback((proposal) => {
         const newNodeId = `${activeWorkflowId}-${Date.now()}`;
+        const baseTitle = proposal.title || proposal.subType || proposal.type;
+        const uniqueTitle = generateUniqueTitle(baseTitle);
+
         const updatedNodes = [...nodes, {
             id: newNodeId,
             type: proposal.type,
             subType: proposal.subType,
-            title: proposal.title,
+            title: uniqueTitle,
             description: proposal.description
         }];
         handleWorkflowUpdate({ nodes: updatedNodes });
         setActiveNodeId(newNodeId);
-    }, [activeWorkflowId, nodes, handleWorkflowUpdate]);
+    }, [activeWorkflowId, nodes, handleWorkflowUpdate, generateUniqueTitle]);
 
     const handleAddNode = useCallback((nodeData, position) => {
         const newNodeId = `${activeWorkflowId}-${Date.now()}`;
+        const baseTitle = nodeData.title || nodeData.subType || nodeData.type;
+        const uniqueTitle = generateUniqueTitle(baseTitle);
+
         const updatedNodes = [...nodes, {
             id: newNodeId,
             type: nodeData.type,
             subType: nodeData.subType,
-            title: nodeData.title,
+            title: uniqueTitle,
             description: nodeData.description,
             schema: nodeData.schema,
             icon: nodeData.icon,
@@ -338,7 +361,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         }];
         handleWorkflowUpdate({ nodes: updatedNodes });
         setActiveNodeId(newNodeId);
-    }, [activeWorkflowId, nodes, handleWorkflowUpdate]);
+    }, [activeWorkflowId, nodes, handleWorkflowUpdate, generateUniqueTitle]);
 
     const handleNodesChange = useCallback((changes) => {
         const positionChanges = changes.filter(c => c.type === 'position' && c.position && !c.dragging);
@@ -371,16 +394,55 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     }, [handleWorkflowUpdate]);
 
     const handleUpdateNode = useCallback((nodeId, updatedFields) => {
-        const updatedNodes = nodes.map(node => {
+        let updatedNodes = [...nodes];
+        let oldTitle = null;
+        let newTitle = null;
+        let refactoredCount = 0;
+
+        updatedNodes = updatedNodes.map(node => {
             if (node.id !== nodeId) return node;
+            
             const nextNode = { ...node, ...updatedFields };
+            
+            if (updatedFields.title !== undefined) {
+                oldTitle = node.title || node.subType || node.id;
+                const requestedTitle = updatedFields.title || node.subType || node.id;
+                // Enforce uniqueness, excluding self
+                newTitle = generateUniqueTitle(requestedTitle, nodeId);
+                nextNode.title = newTitle;
+            }
+
             if (updatedFields.config && node.config) {
                 nextNode.config = { ...node.config, ...updatedFields.config };
             }
             return nextNode;
         });
+
+        // Auto-refactor downstream nodes if title changed
+        if (oldTitle && newTitle && oldTitle !== newTitle) {
+            function escapeRegExp(string) {
+                return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            }
+            const regex = new RegExp(`\\{\\{${escapeRegExp(oldTitle)}\\.`, 'g');
+            
+            updatedNodes = updatedNodes.map(node => {
+                if (node.id === nodeId) return node;
+                let configStr = JSON.stringify(node.config || {});
+                if (regex.test(configStr)) {
+                    configStr = configStr.replace(regex, `{{${newTitle}.`);
+                    refactoredCount++;
+                    return { ...node, config: JSON.parse(configStr) };
+                }
+                return node;
+            });
+
+            if (refactoredCount > 0) {
+                toast.success(`Updated references in ${refactoredCount} downstream node${refactoredCount !== 1 ? 's' : ''}.`);
+            }
+        }
+
         handleWorkflowUpdate({ nodes: updatedNodes });
-    }, [nodes, handleWorkflowUpdate]);
+    }, [nodes, handleWorkflowUpdate, generateUniqueTitle, toast]);
 
     // ── GSAP entrance animation ───────────────────────────────────────────────
     const builderContainer = useRef(null);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import VariableInput from '../inputs/VariableInput';
 import ResourceSelectInput from '../inputs/ResourceSelectInput';
 import CronInput from '../inputs/CronInput';
@@ -13,10 +13,29 @@ const PropertyInspector = ({ activeNode, onUpdateNode, nodes = [], edges = [] })
     const [title, setTitle]             = useState(activeNode?.title || '');
     const [description, setDescription] = useState(activeNode?.description || '');
 
+    const [localConfig, setLocalConfig] = useState(activeNode?.config || {});
+
     useEffect(() => {
         setTitle(activeNode?.title || '');
         setDescription(activeNode?.description || '');
+        setLocalConfig(activeNode?.config || {});
     }, [activeNode?.id]);
+
+    const updateTimeoutRef = useRef(null);
+
+    const debouncedUpdateNode = (nodeId, newConfig) => {
+        if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current);
+        updateTimeoutRef.current = setTimeout(() => {
+            onUpdateNode?.(nodeId, { config: newConfig });
+        }, 300);
+    };
+
+    // Clean up timeout on unmount
+    useEffect(() => {
+        return () => {
+            if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current);
+        };
+    }, []);
 
     const upstreamFormNodes = useMemo(() => {
         if (!activeNode) return [];
@@ -65,9 +84,22 @@ const PropertyInspector = ({ activeNode, onUpdateNode, nodes = [], edges = [] })
         : [];
 
     const handleTitleChange = (e) => {
-        const val = e.target.value;
-        setTitle(val);
-        onUpdateNode?.(activeNode.id, { title: val });
+        setTitle(e.target.value);
+    };
+
+    const handleTitleBlur = () => {
+        const trimmed = title.trim();
+        setTitle(trimmed);
+        const currentTitle = activeNode?.title || '';
+        if (currentTitle !== trimmed) {
+            onUpdateNode?.(activeNode.id, { title: trimmed });
+        }
+    };
+
+    const handleTitleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.target.blur();
+        }
     };
 
     const handleDescriptionChange = (e) => {
@@ -110,6 +142,8 @@ const PropertyInspector = ({ activeNode, onUpdateNode, nodes = [], edges = [] })
                         type="text"
                         value={title}
                         onChange={handleTitleChange}
+                        onBlur={handleTitleBlur}
+                        onKeyDown={handleTitleKeyDown}
                         className={inputClassName}
                     />
                 </div>
@@ -154,8 +188,8 @@ const PropertyInspector = ({ activeNode, onUpdateNode, nodes = [], edges = [] })
                                 )}
 
                                 {configInputs.map((input) => {
-                                    const value = activeNode.config?.[input.name] !== undefined 
-                                                ? activeNode.config[input.name] 
+                                    const value = localConfig[input.name] !== undefined 
+                                                ? localConfig[input.name] 
                                                 : (input.defaultValue !== undefined ? input.defaultValue : '');
                                                 
                                     const handleChange = (val) => {
@@ -167,9 +201,10 @@ const PropertyInspector = ({ activeNode, onUpdateNode, nodes = [], edges = [] })
                                         } else if (input.type === 'number') {
                                             finalVal = Number(resolvedVal);
                                         }
-                                        onUpdateNode?.(activeNode.id, { 
-                                            config: { ...(activeNode.config || {}), [input.name]: finalVal } 
-                                        });
+                                        
+                                        const newConfig = { ...(localConfig || {}), [input.name]: finalVal };
+                                        setLocalConfig(newConfig);
+                                        debouncedUpdateNode(activeNode.id, newConfig);
                                     };
 
                                     // Determine if this field should use VariableInput

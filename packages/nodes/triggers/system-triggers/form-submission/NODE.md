@@ -1,7 +1,7 @@
 ---
 title: "Promptly Form"
 type: trigger
-subType: form
+subType: form-submission
 description: "Trigger when a user submits a form"
 ui:
   icon: form

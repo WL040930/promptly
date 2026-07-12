@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useForms } from '../../../api/hooks/useForms.js';
+import { useMe } from '../../../api/hooks/useMe.js';
 
 /* ─── Resource fetcher map ─────────────────────────────────────────────── */
 // Add more resource types here as needed (e.g. workflows, connections).
 function useResource(resource) {
     const formsQuery = useForms();
+    const meQuery = useMe();
 
     if (resource === 'forms') {
         return {
@@ -12,6 +14,19 @@ function useResource(resource) {
             isLoading: formsQuery.isLoading,
             isError: formsQuery.isError,
             refetch: formsQuery.refetch,
+        };
+    }
+
+    if (resource === 'email-providers') {
+        const data = [{ value: 'system-default', label: 'System Default (SMTP)' }];
+        if (meQuery.data?.googleEmail) {
+            data.push({ value: 'user-gmail', label: `User's Gmail (${meQuery.data.googleEmail})` });
+        }
+        return {
+            data,
+            isLoading: meQuery.isLoading,
+            isError: meQuery.isError,
+            refetch: meQuery.refetch,
         };
     }
 

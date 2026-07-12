@@ -7,17 +7,17 @@
       "isConnection": true
     },
     {
+      "name": "emailProvider",
+      "type": "resource-select",
+      "resource": "email-providers",
+      "label": "Email Provider",
+      "defaultValue": "system-default"
+    },
+    {
       "name": "to",
       "type": "text",
       "label": "To (recipient email)",
       "placeholder": "user@example.com or {{nodeId.email}}",
-      "defaultValue": ""
-    },
-    {
-      "name": "cc",
-      "type": "text",
-      "label": "CC (optional)",
-      "placeholder": "manager@example.com",
       "defaultValue": ""
     },
     {
@@ -32,19 +32,6 @@
       "type": "textarea",
       "label": "Email Body",
       "placeholder": "Hi {{nodeId.name}},\n\nYour order #{{nodeId.orderId}} has shipped.\n\nBest regards",
-      "defaultValue": ""
-    },
-    {
-      "name": "isHtml",
-      "type": "boolean",
-      "label": "Send as HTML?",
-      "defaultValue": false
-    },
-    {
-      "name": "fromName",
-      "type": "text",
-      "label": "From Name (optional)",
-      "placeholder": "Promptly Notifications",
       "defaultValue": ""
     }
   ],

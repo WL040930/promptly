@@ -50,7 +50,7 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}) =
         }
 
         // Context state passed along the DAG
-        let contextData = { initialPayload: triggerPayload };
+        let contextData = { initialPayload: triggerPayload, metadata: { userId, workflowId } };
         const executedNodes = new Set();
 
         while (queue.length > 0) {
@@ -66,6 +66,14 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}) =
             try {
                 const executionResult = await node.execute(contextData);
                 contextData = { ...contextData, [node.id]: executionResult };
+                
+                // Triple Alias Strategy: Inject node result under Title and Subtype as well
+                if (node.title) {
+                    contextData[node.title] = executionResult;
+                }
+                if (node.subType) {
+                    contextData[node.subType] = executionResult;
+                }
                 stepDetails = `Successfully executed ${node.title || node.type} (${node.subType})`;
                 
                 // For logic nodes, determine which path to follow

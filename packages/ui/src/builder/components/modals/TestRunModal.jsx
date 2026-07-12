@@ -203,7 +203,10 @@ const TestRunModal = ({ isOpen, onClose, onConfirm, isLoading, workflowId, nodes
         const fields = Object.fromEntries(
             (linkedForm?.fields || [])
                 .filter(f => !f.deleted && fieldValues[f.id] !== undefined)
-                .map(f => [f.label, fieldValues[f.id]])
+                .flatMap(f => [
+                    [f.id, fieldValues[f.id]],
+                    [f.label, fieldValues[f.id]],
+                ])
         );
         storage.save(workflowId, fieldValues);
         onConfirm({ fields, responseId: `test-run-${Date.now()}`, submittedAt: new Date().toISOString() });
