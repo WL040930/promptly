@@ -22,6 +22,22 @@ const ChatMessage = sequelize.define(
         text: {
             type: DataTypes.TEXT,
             allowNull: false
+        },
+        kind: {
+            type: DataTypes.STRING(40),
+            defaultValue: 'text'
+        },
+        payload: {
+            type: DataTypes.JSONB,
+            defaultValue: null
+        },
+        proposalStatus: {
+            type: DataTypes.STRING(20),
+            allowNull: true
+        },
+        tokenUsage: {
+            type: DataTypes.JSONB,
+            defaultValue: null
         }
     },
     {

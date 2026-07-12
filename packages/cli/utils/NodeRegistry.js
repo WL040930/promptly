@@ -5,10 +5,14 @@ import matter from 'gray-matter';
 class NodeRegistry {
     constructor() {
         this.nodesBySubType = new Map();
+        this.nodesBySubTypeName = new Map();
         this.uiLibrary = []; // Array of categories for the UI
     }
 
     async init() {
+
+        this.nodesBySubType.clear();
+        this.nodesBySubTypeName.clear();
 
         // The cli process runs in packages/cli, so go up one level to packages/nodes
         const nodesDir = path.resolve(process.cwd(), '..', 'nodes');
@@ -37,7 +41,7 @@ class NodeRegistry {
             try {
                 // 1. Read metadata from NODE.md
                 const mdContent = await fs.readFile(path.join(dir, 'NODE.md'), 'utf-8');
-                const { data: metadata } = matter(mdContent);
+                const { data: metadata, content: instructionBody } = matter(mdContent);
 
                 // 2. Parse category and group from directory path
                 // Expected path: packages/nodes/<category>/<group>/<node-name>
@@ -84,7 +88,9 @@ class NodeRegistry {
 
                 // 4. Register the node
                 const key = `${metadata.type}:${metadata.subType}`;
-                this.nodesBySubType.set(key, { NodeClass, metadata, configSchema });
+                const entry = { NodeClass, metadata, configSchema, instructionBody: instructionBody.trim() };
+                this.nodesBySubType.set(key, entry);
+                this.nodesBySubTypeName.set(metadata.subType, entry);
 
                 // 5. Build UI Library hierarchy
                 if (!categoryMap.has(category)) {
@@ -139,6 +145,43 @@ class NodeRegistry {
 
     getUiLibrary() {
         return this.uiLibrary;
+    }
+
+    /**
+     * Return the small amount of information needed to classify an agent
+     * request. Keeping schemas and instruction bodies out of this catalogue
+     * is what makes the first model call inexpensive.
+     */
+    getCompactCatalogue() {
+        return Array.from(this.nodesBySubTypeName.entries()).map(([subType, entry]) => ({
+            subType,
+            type: entry.metadata.type,
+            title: entry.metadata.title,
+            description: entry.metadata.description || ''
+        }));
+    }
+
+    /**
+     * Resolve the full node contracts selected by the classifier. Unknown
+     * subTypes are intentionally omitted; the agent service performs the
+     * request-level validation and fallback policy.
+     */
+    getSchemasFor(subTypes = []) {
+        return [...new Set(subTypes)]
+            .map(subType => {
+                const entry = this.nodesBySubTypeName.get(subType);
+                if (!entry) return null;
+                return {
+                    subType,
+                    type: entry.metadata.type,
+                    title: entry.metadata.title,
+                    description: entry.metadata.description || '',
+                    schema: entry.configSchema || { inputs: [], outputs: [] },
+                    instruction: entry.instructionBody || '',
+                    ui: entry.metadata.ui || {}
+                };
+            })
+            .filter(Boolean);
     }
 }
 

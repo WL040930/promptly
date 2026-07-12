@@ -22,6 +22,7 @@ import { useRunWorkflow } from '../api/hooks/useRunWorkflow.js';
 import ExecutionPanel from './components/panels/ExecutionPanel';
 import { useUndoRedo } from '../hooks/useUndoRedo';
 import { useToast } from '../components/ToastContext.jsx';
+import { createForm, updateForm } from '../api/backend.js';
 
 const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) => {
     // ── Server data ──────────────────────────────────────────────────────────
@@ -325,21 +326,61 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         return uniqueTitle;
     }, [nodes]);
 
-    const handleApplyAction = useCallback((proposal) => {
-        const newNodeId = `${activeWorkflowId}-${Date.now()}`;
-        const baseTitle = proposal.title || proposal.subType || proposal.type;
-        const uniqueTitle = generateUniqueTitle(baseTitle);
+    const attachedFormId = useMemo(() => {
+        const formNode = nodes.find(node => node.subType === 'form-submission');
+        return formNode?.config?.formId || null;
+    }, [nodes]);
 
-        const updatedNodes = [...nodes, {
-            id: newNodeId,
-            type: proposal.type,
-            subType: proposal.subType,
-            title: uniqueTitle,
-            description: proposal.description
-        }];
-        handleWorkflowUpdate({ nodes: updatedNodes });
-        setActiveNodeId(newNodeId);
-    }, [activeWorkflowId, nodes, handleWorkflowUpdate, generateUniqueTitle]);
+    const handleApplyAction = useCallback(async (message) => {
+        const payload = message.payload || {};
+        if (message.kind === 'form_proposal') {
+            const schema = payload.schema || {};
+            const formData = {
+                title: schema.title || 'New Promptly Form',
+                description: schema.description || '',
+                settings: schema.settings || {},
+                fields: schema.fields || []
+            };
+            const saved = payload.formId ? await updateForm(payload.formId, formData) : await createForm(formData);
+            return { formId: saved.id };
+        }
+
+        if (message.kind === 'workflow_diff') {
+            if (payload.baseWorkflowUpdatedAt && activeWorkflow?.updatedAt && payload.baseWorkflowUpdatedAt !== activeWorkflow.updatedAt) {
+                throw new Error('This workflow changed while the proposal was open. Please generate the changes again.');
+            }
+            await updateWorkflowMutation.mutateAsync({ id: activeWorkflowId, data: { nodes: payload.nodes, edges: payload.edges } });
+            return { workflowId: activeWorkflowId };
+        }
+
+        if (message.kind === 'workflow_proposal') {
+            if (payload.baseWorkflowUpdatedAt && activeWorkflow?.updatedAt && payload.baseWorkflowUpdatedAt !== activeWorkflow.updatedAt) {
+                throw new Error('This workflow changed while the proposal was open. Please generate the workflow again.');
+            }
+            const hasCurrentNodes = nodes.length > 0;
+            let targetWorkflowId = activeWorkflowId;
+            if (hasCurrentNodes) {
+                const replace = window.confirm('This workflow already has nodes. Choose OK to replace it, or Cancel to create a separate workflow.');
+                if (!replace) {
+                    const created = await createWorkflowMutation.mutateAsync({
+                        name: payload.name || 'New Workflow',
+                        status: 'Draft',
+                        iconColor: 'text-indigo-600',
+                        iconBg: 'bg-indigo-100',
+                        nodes: payload.nodes || [],
+                        edges: payload.edges || []
+                    });
+                    targetWorkflowId = created.id;
+                    toast.success('Created a separate workflow from the proposal.');
+                    return { workflowId: targetWorkflowId };
+                }
+            }
+            await updateWorkflowMutation.mutateAsync({ id: targetWorkflowId, data: { name: payload.name || activeWorkflow?.name || 'New Workflow', nodes: payload.nodes || [], edges: payload.edges || [] } });
+            toast.success('Workflow proposal applied.');
+            return { workflowId: targetWorkflowId };
+        }
+        return null;
+    }, [activeWorkflow, activeWorkflowId, createWorkflowMutation, nodes, toast, updateWorkflowMutation]);
 
     const handleAddNode = useCallback((nodeData, position) => {
         const newNodeId = `${activeWorkflowId}-${Date.now()}`;
@@ -643,7 +684,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                         <VersionHistorySidebar workflowId={activeWorkflowId} currentWorkflow={activeWorkflow} />
                     ) : (
                         rightTab === 'chat' ? (
-                            <AIAgentChat onApplyAction={handleApplyAction} />
+                            <AIAgentChat workflow={activeWorkflow} formId={attachedFormId} onApplyProposal={handleApplyAction} />
                         ) : (
                             <PropertyInspector activeNode={activeNode} onUpdateNode={handleUpdateNode} nodes={nodes} edges={edges} />
                         )

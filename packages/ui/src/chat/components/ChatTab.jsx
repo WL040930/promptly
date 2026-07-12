@@ -1,395 +1,129 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { gsap } from 'gsap';
-import { useGSAP } from '@gsap/react';
-import { BotIcon, UserIcon, SendIcon, PlusIcon, MessageSquareIcon } from './Icons';
-import { getChatSessions, getChatSession, sendChatMessage, updateChatSession, deleteChatSession } from '../../api/backend.js';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createForm, createWorkflow, getChatSession, getChatSessions, getWorkflow, getWorkflows, sendChatMessage, updateForm, updateWorkflow } from '../../api/backend.js';
 import { useToast } from '../../components/ToastContext.jsx';
-import MarkdownRenderer from '../../components/MarkdownRenderer';
-import ConfirmModal from '../../components/ConfirmModal.jsx';
+import Button from '../../components/Button.jsx';
+import AgentMessage from '../../components/AgentMessage.jsx';
 
-const ChatTab = () => {
-    const [messages, setMessages] = useState([
-        {
-            sender: 'bot',
-            text: `Hi there! I am your friendly Prompty Assistant. I am here to help you automate your tasks without writing a single line of code!\n\nType a question to get started.`
-        }
-    ]);
-    const [pastChats, setPastChats] = useState([]);
-    const [inputText, setInputText] = useState('');
-    const [isTyping, setIsTyping] = useState(false);
-    const [sidebarSearch, setSidebarSearch] = useState('');
-    const [activeChatId, setActiveChatId] = useState(null);
-    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [editingChatId, setEditingChatId] = useState(null);
-    const [editingTitle, setEditingTitle] = useState('');
-    const [chatToDelete, setChatToDelete] = useState(null);
-    const [isDeleting, setIsDeleting] = useState(false);
+const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I can build workflows and forms from a description. What would you like to automate?' };
+
+export default function ChatTab() {
     const toast = useToast();
-    const messagesEndRef = useRef(null);
-    const container = useRef(null);
+    const [messages, setMessages] = useState([welcome]);
+    const [sessions, setSessions] = useState([]);
+    const [sessionId, setSessionId] = useState(null);
+    const [workflows, setWorkflows] = useState([]);
+    const [targetWorkflow, setTargetWorkflow] = useState(null);
+    const [input, setInput] = useState('');
+    const [isTyping, setIsTyping] = useState(false);
+    const [progressLabel, setProgressLabel] = useState('Scanning node library');
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const endRef = useRef(null);
 
-    useGSAP(() => {
-        gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
-    }, { scope: container });
-
-    const fetchSessions = async () => {
-        try {
-            const data = await getChatSessions();
-            setPastChats(data || []);
-        } catch (error) {
-            console.error('Failed to fetch chat sessions:', error);
-        }
-    };
-
+    const loadSessions = async () => setSessions(await getChatSessions());
     useEffect(() => {
-        fetchSessions();
+        loadSessions();
+        getWorkflows().then(setWorkflows).catch(() => {});
     }, []);
+    useEffect(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages, isTyping]);
 
-    const filteredChats = sidebarSearch
-        ? pastChats.filter(c => c.title?.toLowerCase().includes(sidebarSearch.toLowerCase()))
-        : pastChats;
+    const targetSnapshot = useMemo(() => targetWorkflow ? {
+        nodes: (targetWorkflow.nodes || []).map(node => ({ id: node.id, title: node.title, type: node.type, subType: node.subType })),
+        edges: (targetWorkflow.edges || []).map(edge => ({ id: edge.id, source: edge.source, target: edge.target, sourceHandle: edge.sourceHandle || null, targetHandle: edge.targetHandle || null }))
+    } : null, [targetWorkflow]);
 
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const appendResponse = (response) => {
+        if (response?.sessionId) setSessionId(response.sessionId);
+        if (response?.reply) setMessages(previous => [...previous, response.reply]);
+        if (response?.sessionId) loadSessions();
     };
 
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages, isTyping]);
-
-    const handleSendMessage = async (text) => {
-        if (!text.trim()) return;
-
-        setMessages(prev => [...prev, { sender: 'user', text }]);
-        setInputText('');
+    const send = async (text, event = null) => {
+        if (!text?.trim() && !event) return;
+        if (text?.trim()) setMessages(previous => [...previous, { id: `local_${Date.now()}`, sender: 'user', kind: 'text', text }]);
+        setInput('');
+        if (text && /form/i.test(text)) setProgressLabel('Designing form');
+        else if (text && targetWorkflow && /\b(add|remove|change|modify|update|insert|delete|edit)\b/i.test(text)) setProgressLabel('Analysing current workflow');
+        else setProgressLabel(targetWorkflow ? 'Analysing current workflow' : 'Scanning node library');
         setIsTyping(true);
-
         try {
-            const res = await sendChatMessage(activeChatId, text);
-            if (res?.reply) {
-                setMessages(prev => [...prev, res.reply]);
-            }
-            if (res?.sessionId && activeChatId !== res.sessionId) {
-                setActiveChatId(res.sessionId);
-                fetchSessions(); // refresh the list to show the new chat
-            }
+            const response = await sendChatMessage(sessionId, text, { surface: 'chat', workflowId: targetWorkflow?.id || null, workflowSnapshot: targetSnapshot }, event);
+            appendResponse(response);
         } catch (error) {
-            console.error('Failed to send message:', error);
-            setMessages(prev => [...prev, { sender: 'bot', text: 'Sorry, I encountered an error. Please try again.' }]);
+            setMessages(previous => [...previous, { id: `error_${Date.now()}`, sender: 'bot', kind: 'error', text: error.message || 'Sorry, I could not process that request.' }]);
         } finally {
             setIsTyping(false);
         }
     };
 
-    const handleNewChat = (e) => {
-        setActiveChatId(null);
+    const handleApply = async (message) => {
+        const payload = message.payload || {};
+        let result;
+        if (message.kind === 'form_proposal') {
+            const schema = payload.schema || {};
+            const data = { title: schema.title || 'New Promptly Form', description: schema.description || '', settings: schema.settings || {}, fields: schema.fields || [] };
+            const saved = payload.formId ? await updateForm(payload.formId, data) : await createForm(data);
+            result = { formId: saved.id };
+        } else if (message.kind === 'workflow_diff') {
+            if (!targetWorkflow) throw new Error('Choose a workflow target before applying these changes.');
+            if (payload.baseWorkflowUpdatedAt && targetWorkflow.updatedAt && payload.baseWorkflowUpdatedAt !== targetWorkflow.updatedAt) throw new Error('This workflow changed while the proposal was open. Generate the changes again.');
+            await updateWorkflow(targetWorkflow.id, { nodes: payload.nodes, edges: payload.edges });
+            result = { workflowId: targetWorkflow.id };
+        } else if (message.kind === 'workflow_proposal') {
+            const saved = await createWorkflow({ name: payload.name || 'New Workflow', status: 'Draft', iconColor: 'text-indigo-600', iconBg: 'bg-indigo-100', nodes: payload.nodes || [], edges: payload.edges || [] });
+            setWorkflows(previous => [...previous, saved]);
+            result = { workflowId: saved.id };
+        }
+        setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied' } : item));
+        if (message.kind === 'form_proposal') await send(null, { type: 'form_saved', messageId: message.id, formId: result.formId });
+        else await send(null, { type: 'proposal_applied', messageId: message.id });
+        toast.success('Proposal applied.');
+    };
+
+    const handleIgnore = (message) => {
+        setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'ignored' } : item));
+        send(null, { type: 'proposal_ignored', messageId: message.id });
+    };
+
+    const handleOption = async (option) => {
+        if (option?.id && option?.name) {
+            const selected = await getWorkflow(option.id).catch(() => null);
+            if (selected) setTargetWorkflow(selected);
+            return send(null, { type: 'workflow_target_selected', workflowId: option.id });
+        }
+        if (option?.id && option?.title) return send(null, { type: 'form_target_selected', formId: option.id });
+        return send(typeof option === 'string' ? option : option?.label || option?.name || option?.title);
+    };
+
+    const newChat = () => { setSessionId(null); setMessages([welcome]); setTargetWorkflow(null); setIsSidebarOpen(false); };
+    const loadChat = async (id) => {
+        const session = await getChatSession(id);
+        setSessionId(id);
+        setMessages(session.messages?.length ? session.messages : [welcome]);
+        if (session.agentContext?.workflowId) {
+            const workflow = await getWorkflow(session.agentContext.workflowId).catch(() => null);
+            setTargetWorkflow(workflow);
+        }
         setIsSidebarOpen(false);
-        setMessages([
-            {
-                sender: 'bot',
-                text: `Started a new session! What would you like to automate next?`
-            }
-        ]);
-        if (e?.detail?.onComplete) e.detail.onComplete();
-    };
-
-    useEffect(() => {
-        window.addEventListener('create-chat', handleNewChat);
-        return () => window.removeEventListener('create-chat', handleNewChat);
-    }, []);
-
-    const loadPastChat = async (id, title) => {
-        if (editingChatId === id) return; // Don't navigate while editing
-        setActiveChatId(id);
-        setIsSidebarOpen(false);
-        setIsTyping(true);
-        setMessages([]); // clear current
-        
-        try {
-            const sessionData = await getChatSession(id);
-            setMessages(sessionData?.messages || []);
-        } catch (error) {
-            console.error('Failed to load chat:', error);
-            setMessages([
-                { sender: 'bot', text: `Sorry, I failed to load this session.` }
-            ]);
-        } finally {
-            setIsTyping(false);
-        }
-    };
-
-    const handleRenameSubmit = async (e, chatId) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!editingTitle.trim()) {
-            setEditingChatId(null);
-            return;
-        }
-        try {
-            await updateChatSession(chatId, editingTitle);
-            toast.success('Chat renamed successfully!');
-            setEditingChatId(null);
-            fetchSessions();
-        } catch (error) {
-            toast.error('Failed to rename chat.');
-        }
-    };
-
-    const handleDeleteChat = (e, chatId) => {
-        e.stopPropagation();
-        setChatToDelete(chatId);
-    };
-
-    const confirmDelete = async () => {
-        if (!chatToDelete) return;
-        setIsDeleting(true);
-        try {
-            await deleteChatSession(chatToDelete);
-            toast.success('Chat deleted successfully!');
-            if (activeChatId === chatToDelete) {
-                handleNewChat();
-            }
-            fetchSessions();
-        } catch (error) {
-            toast.error('Failed to delete chat.');
-        } finally {
-            setIsDeleting(false);
-            setChatToDelete(null);
-        }
     };
 
     return (
-        <div ref={container} className="tab-content flex w-full h-full bg-white relative font-sans overflow-hidden">
-            
-            {/* Mobile Overlay */}
-            {isSidebarOpen && (
-                <div className="absolute inset-0 bg-black/20 z-20 md:hidden" onClick={() => setIsSidebarOpen(false)}></div>
-            )}
-
-            {/* Chat History Internal Sidebar */}
-            <aside className={`w-[280px] border-r border-gray-200/60 bg-white/95 backdrop-blur-md flex flex-col shrink-0 z-30 absolute md:relative h-full transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}`}>
-                {/* Sidebar Header */}
-                <div className="p-4 flex items-center justify-between shrink-0">
-                    <h3 className="font-extrabold text-gray-900 text-[15px] tracking-tight pl-1">Chats</h3>
-                    <button
-                        onClick={handleNewChat}
-                        className="p-1.5 rounded-xl text-gray-400 hover:text-gray-900 hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-100 transition-all"
-                        title="New Chat"
-                    >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                        </svg>
-                    </button>
-                </div>
-
-                {/* Search */}
-                <div className="px-4 pb-3">
-                    <div className="relative group">
-                        <input
-                            type="text"
-                            value={sidebarSearch}
-                            onChange={e => setSidebarSearch(e.target.value)}
-                            placeholder="Search chats..."
-                            className="w-full bg-white/50 backdrop-blur-sm border border-gray-200/80 hover:border-gray-300 rounded-xl pl-9 pr-3 py-2 text-[13px] font-medium text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white transition-all shadow-inner"
-                        />
-                        <svg className="absolute left-3 top-2.5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                        </svg>
-                    </div>
-                </div>
-
-                {/* Chat List */}
-                <div className="flex-1 overflow-y-auto px-3 pb-4 flex flex-col gap-1">
-                    {filteredChats.map(chat => {
-                        const isActive = activeChatId === chat.id;
-                        return (
-                            <div 
-                                key={chat.id}
-                                onClick={() => loadPastChat(chat.id, chat.title)}
-                                className={`flex flex-col gap-1 px-3.5 py-3 rounded-xl cursor-pointer transition-all duration-300 group ${
-                                    isActive
-                                        ? 'bg-white shadow-md shadow-gray-200/40 border border-gray-100 scale-[1.02]'
-                                        : 'hover:bg-white/50 border border-transparent'
-                                }`}
-                            >
-                                <div className="flex items-center justify-between gap-2">
-                                    {editingChatId === chat.id ? (
-                                        <form 
-                                            onSubmit={(e) => handleRenameSubmit(e, chat.id)}
-                                            className="flex-1 mr-2"
-                                        >
-                                            <input
-                                                autoFocus
-                                                type="text"
-                                                value={editingTitle}
-                                                onChange={(e) => setEditingTitle(e.target.value)}
-                                                onBlur={(e) => handleRenameSubmit(e, chat.id)}
-                                                onClick={(e) => e.stopPropagation()}
-                                                className="w-full bg-slate-50 border border-slate-300 rounded px-2 py-0.5 text-[14px] text-gray-900 focus:outline-none focus:border-indigo-500"
-                                            />
-                                        </form>
-                                    ) : (
-                                        <span className={`truncate text-[14px] ${isActive ? 'font-bold text-gray-900' : 'font-medium text-gray-700 group-hover:text-indigo-600'}`}>
-                                            {chat.title}
-                                        </span>
-                                    )}
-                                    
-                                    {!editingChatId && (
-                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setEditingTitle(chat.title);
-                                                    setEditingChatId(chat.id);
-                                                }}
-                                                className="p-1 text-gray-400 hover:text-indigo-600 transition-colors"
-                                                title="Rename Chat"
-                                            >
-                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
-                                            </button>
-                                            <button
-                                                onClick={(e) => handleDeleteChat(e, chat.id)}
-                                                className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                                                title="Delete Chat"
-                                            >
-                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="flex items-center justify-between mt-0.5 gap-2">
-                                    <span className="text-xs font-normal text-gray-500 truncate flex-1">
-                                        Click to view chat...
-                                    </span>
-                                    <span className="text-[10px] font-medium text-gray-400 shrink-0">
-                                        {new Date(chat.updatedAt).toLocaleDateString()}
-                                    </span>
-                                </div>
-                            </div>
-                        );
-                    })}
-
-                    {filteredChats.length === 0 && sidebarSearch && (
-                        <div className="text-center py-10">
-                            <p className="text-[13px] font-bold text-gray-400">No chats match "{sidebarSearch}"</p>
-                        </div>
-                    )}
-                </div>
+        <div className="flex w-full h-full bg-white relative overflow-hidden">
+            <aside className={`w-[260px] border-r border-gray-200 bg-white flex flex-col shrink-0 absolute md:relative h-full z-20 transition-transform ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}`}>
+                <div className="p-4 flex items-center justify-between"><h3 className="font-extrabold text-gray-900">Chats</h3><Button variant="ghost" size="icon-md" onClick={newChat}>+</Button></div>
+                <div className="flex-1 overflow-y-auto px-3 pb-4 flex flex-col gap-1">{sessions.map(session => <button key={session.id} onClick={() => loadChat(session.id)} className={`text-left px-3 py-3 rounded-xl hover:bg-slate-50 ${session.id === sessionId ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700'}`}>{session.title}</button>)}</div>
             </aside>
-
-            {/* Main Chat Area */}
-            <div className="flex-1 flex flex-col h-full relative">
-                {/* Header (Mobile Only) */}
-                <div className="w-full flex items-center py-4 px-4 border-b border-slate-100 shadow-sm bg-white/90 backdrop-blur z-10 shrink-0 md:hidden">
-                    <button onClick={() => setIsSidebarOpen(true)} className="text-slate-500 hover:text-slate-800 p-1">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-                    </button>
+            <div className="flex-1 flex flex-col h-full">
+                <div className="border-b border-slate-100 px-4 py-3 flex items-center gap-3">
+                    <button className="md:hidden" onClick={() => setIsSidebarOpen(true)}>☰</button>
+                    <span className="text-sm font-bold text-slate-700">Workflow target</span>
+                    <select value={targetWorkflow?.id || ''} onChange={async event => { const id = event.target.value; setTargetWorkflow(id ? await getWorkflow(id) : null); }} className="text-sm border border-slate-200 rounded-lg px-2 py-1 bg-white">
+                        <option value="">Create new workflow</option>
+                        {workflows.map(workflow => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}
+                    </select>
                 </div>
-
-                {/* Message Log */}
-                <div className="flex-1 p-6 md:p-10 lg:px-[10%] overflow-y-auto flex flex-col gap-6 scroll-smooth bg-white">
-                    {messages.map((msg, i) => (
-                        <div key={i} className={`flex w-full ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-                            {/* Bot Avatar */}
-                            {msg.sender === 'bot' && (
-                                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-4 mr-2.5 shadow-sm border border-indigo-200/50">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="m12 3-1.9 5.8a2 2 0 0 1-1.29 1.29L3 12l5.8 1.9a2 2 0 0 1 1.29 1.29L12 21l1.9-5.8a2 2 0 0 1 1.29-1.29L21 12l-5.8-1.9a2 2 0 0 1-1.29-1.29L12 3Z"></path>
-                                    </svg>
-                                </div>
-                            )}
-
-                            <div className={`flex flex-col gap-1 ${msg.sender === 'user' ? 'items-end' : 'items-start'} max-w-[85%]`}>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
-                                    {msg.sender === 'user' ? 'You' : 'AI Assistant'}
-                                </span>
-                                
-                                <div className={`w-full rounded-2xl p-3.5 text-sm leading-relaxed ${
-                                    msg.sender === 'user'
-                                        ? 'bg-indigo-600 text-white font-medium rounded-tr-none shadow-sm whitespace-pre-wrap'
-                                        : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'
-                                }`}>
-                                    {msg.sender === 'user' ? (
-                                        msg.text
-                                    ) : (
-                                        <MarkdownRenderer content={msg.text} />
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-
-                    {/* Typing Indicator */}
-                    {isTyping && (
-                        <div className="flex w-full justify-start animate-fade-in">
-                            <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-4 mr-2.5 shadow-sm border border-indigo-200/50">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="m12 3-1.9 5.8a2 2 0 0 1-1.29 1.29L3 12l5.8 1.9a2 2 0 0 1 1.29 1.29L12 21l1.9-5.8a2 2 0 0 1 1.29-1.29L21 12l-5.8-1.9a2 2 0 0 1-1.29-1.29L12 3Z"></path>
-                                </svg>
-                            </div>
-                            <div className="flex flex-col gap-1 items-start max-w-[85%]">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
-                                    AI Assistant
-                                </span>
-                                <div className="bg-white border border-slate-200/60 rounded-2xl rounded-tl-none p-3.5 shadow-sm flex items-center gap-1.5 h-12">
-                                    <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></span>
-                                    <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
-                                    <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></span>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                    <div ref={messagesEndRef} />
-                </div>
-
-                {/* Footer Input Area */}
-                <div className="p-4 bg-white border-t border-slate-100 shrink-0 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.05)] z-10 relative lg:px-[10%]">
-                    <form 
-                        onSubmit={(e) => { e.preventDefault(); handleSendMessage(inputText); }}
-                        className="relative flex items-center w-full max-w-4xl mx-auto"
-                    >
-                        <input
-                            type="text"
-                            value={inputText}
-                            onChange={(e) => setInputText(e.target.value)}
-                            placeholder="Ask me anything: e.g. 'Can you draft a follow-up mail?'..."
-                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-full pl-5 pr-14 py-3.5 text-sm text-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 transition-all shadow-sm disabled:opacity-60"
-                            disabled={isTyping}
-                            autoFocus
-                        />
-                        <button
-                            type="submit"
-                            disabled={!inputText.trim() || isTyping}
-                            className={`absolute right-1.5 w-10 h-10 rounded-full grid place-items-center transition-all ${
-                                inputText.trim() && !isTyping
-                                    ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-700 hover:scale-105 active:scale-95'
-                                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                            }`}
-                        >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                <line x1="22" y1="2" x2="11" y2="13" />
-                                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                            </svg>
-                        </button>
-                    </form>
-                    <div className="text-center mt-2.5">
-                        <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">AI can make mistakes. Please verify.</span>
-                    </div>
-                </div>
+                <div className="flex-1 p-6 overflow-y-auto flex flex-col gap-6">{messages.map(message => <AgentMessage key={message.id} message={message} onApply={handleApply} onIgnore={handleIgnore} onOption={handleOption} />)}{isTyping && <div className="text-xs font-semibold text-slate-400 px-10">{progressLabel}…</div>}<div ref={endRef} /></div>
+                <div className="p-4 bg-white border-t border-slate-100"><form onSubmit={event => { event.preventDefault(); send(input); }} className="relative max-w-4xl mx-auto"><input value={input} onChange={event => setInput(event.target.value)} placeholder="Describe a workflow or form…" disabled={isTyping} className="w-full bg-slate-50 border border-slate-200 rounded-full pl-5 pr-14 py-3.5 text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10" /><button type="submit" disabled={!input.trim() || isTyping} className="absolute right-1.5 top-1.5 w-10 h-10 rounded-full bg-indigo-600 text-white disabled:bg-slate-100 disabled:text-slate-400">➤</button></form></div>
             </div>
-
-            <ConfirmModal
-                isOpen={!!chatToDelete}
-                onClose={() => setChatToDelete(null)}
-                onConfirm={confirmDelete}
-                title="Delete Chat?"
-                message="This action cannot be undone. Are you sure you want to permanently delete this conversation?"
-                confirmText="Delete"
-                confirmVariant="danger"
-                isLoading={isDeleting}
-            />
         </div>
     );
-};
-
-export default ChatTab;
+}

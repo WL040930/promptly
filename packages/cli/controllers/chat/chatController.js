@@ -1,89 +1,403 @@
-import { chatWithAgent } from '../../services/ai/aiService.js';
-import { ChatSession, ChatMessage } from '../../models/index.js';
+import { ChatSession, ChatMessage, Workflow, Form } from '../../models/index.js';
 import { Op } from 'sequelize';
 import asyncHandler from '../../utils/asyncHandler.js';
+import { generateFormFromPrompt } from '../../services/ai/aiFormsService.js';
+import NodeRegistry from '../../utils/NodeRegistry.js';
+import {
+    classifyRequest,
+    compactWorkflowSnapshot,
+    assembleWorkflow,
+    patchWorkflow,
+    tokenTotal
+} from '../../services/ai/workflowAgentService.js';
 
-export const sendMessage = asyncHandler(async (req, res) => {
-    const { sessionId, message } = req.body;
-    const userId = req.user.id;
+const tokenPayload = (...usages) => {
+    const stage1 = usages[0] || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    const stage2 = usages[1] || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    return {
+        stage1,
+        stage2,
+        total: {
+            promptTokens: stage1.promptTokens + stage2.promptTokens,
+            completionTokens: stage1.completionTokens + stage2.completionTokens,
+            totalTokens: tokenTotal(stage1, stage2)
+        }
+    };
+};
 
-    let session;
-    if (sessionId) {
-        session = await ChatSession.findOne({ where: { id: sessionId, userId } });
-    }
+const messagePayload = (message) => {
+    const json = message.toJSON();
+    return {
+        id: json.id,
+        sender: json.sender,
+        text: json.text,
+        createdAt: json.createdAt,
+        kind: json.kind || 'text',
+        payload: json.payload || null,
+        proposalStatus: json.proposalStatus || null,
+        tokenUsage: json.tokenUsage || null
+    };
+};
 
-    if (!session) {
-        // Generate title from first message
-        const title = message.substring(0, 40) + (message.length > 40 ? '...' : '');
-        session = await ChatSession.create({ userId, title });
-    }
+const saveReply = async (session, { text, kind = 'text', payload = null, tokenUsage = null, proposalStatus = null }) => {
+    const reply = await ChatMessage.create({
+        sessionId: session.id,
+        sender: 'bot',
+        text: text || '',
+        kind,
+        payload,
+        tokenUsage,
+        proposalStatus
+    });
+    return messagePayload(reply);
+};
 
-    // Persist the user message
-    await ChatMessage.create({ sessionId: session.id, sender: 'user', text: message });
+const saveUserMessage = async (session, message) => {
+    if (!message || !message.trim()) return null;
+    const saved = await ChatMessage.create({ sessionId: session.id, sender: 'user', text: message.trim(), kind: 'text' });
+    return messagePayload(saved);
+};
 
-    // Build conversation history for the AI (last 20 messages for context)
-    const history = await ChatMessage.findAll({
-        where: { sessionId: session.id },
-        order: [['createdAt', 'DESC']],
+const workflowForRequest = async (userId, workflowId) => {
+    if (!workflowId) return null;
+    return Workflow.findOne({ where: { id: workflowId, userId } });
+};
+
+const formForRequest = async (userId, formId) => {
+    if (!formId) return null;
+    return Form.findOne({ where: { id: formId, userId } });
+};
+
+const formHistory = async (sessionId) => {
+    const rows = await ChatMessage.findAll({
+        where: { sessionId },
+        order: [['createdAt', 'ASC']],
         limit: 20,
         attributes: ['sender', 'text']
     });
+    return rows.map(row => ({ sender: row.sender, text: row.text }));
+};
 
-    // Reverse to chronological order for the AI
-    const historyForAI = history.reverse().map(m => ({ sender: m.sender, text: m.text }));
-    const botReply = await chatWithAgent(historyForAI);
+const formResult = async ({ session, userId, request, formId, continuation = null, state = {} }) => {
+    const form = await formForRequest(userId, formId);
+    if (formId && !form) {
+        const reply = await saveReply(session, { text: 'I could not find that form. Please choose one of your existing forms.', kind: 'error' });
+        return { reply, tokenUsage: null };
+    }
+    const currentSchema = form ? form.toJSON() : state.currentSchema || {};
+    const result = await generateFormFromPrompt(request, currentSchema, await formHistory(session.id));
+    const tokenUsage = result.tokenUsage ? {
+        stage1: result.tokenUsage,
+        stage2: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        total: result.tokenUsage
+    } : null;
 
-    // Persist the bot reply
-    const savedReply = await ChatMessage.create({
-        sessionId: session.id,
-        sender: botReply.sender || 'bot',
-        text: botReply.text
+    if (result.type === 'message') {
+        const nextState = {
+            ...state,
+            status: 'awaiting_form_clarification',
+            formId: formId || null,
+            currentSchema,
+            continuation
+        };
+        await session.update({ agentState: nextState });
+        const reply = await saveReply(session, {
+            text: result.message || 'Please provide a little more detail.',
+            kind: 'clarification',
+            payload: { options: result.options || [] },
+            tokenUsage
+        });
+        return { reply, tokenUsage };
+    }
+
+    const nextState = {
+        ...state,
+        status: 'awaiting_form_approval',
+        formId: formId || null,
+        currentSchema,
+        continuation,
+        schema: result.schema || currentSchema
+    };
+    await session.update({ agentState: nextState });
+    const reply = await saveReply(session, {
+        text: result.message || 'I prepared the form for your review.',
+        kind: 'form_proposal',
+        payload: {
+            action: formId ? 'edit_form' : 'create_form',
+            formId: formId || null,
+            schema: result.schema || currentSchema,
+            patches: result.patches || []
+        },
+        tokenUsage,
+        proposalStatus: 'pending'
     });
+    return { reply, tokenUsage };
+};
 
-    res.json({ sessionId: session.id, reply: { id: savedReply.id, sender: savedReply.sender, text: savedReply.text } });
+const targetChoices = async (userId) => {
+    const [workflows, forms] = await Promise.all([
+        Workflow.findAll({ where: { userId }, attributes: ['id', 'name', 'updatedAt'], order: [['updatedAt', 'DESC']], limit: 50 }),
+        Form.findAll({ where: { userId }, attributes: ['id', 'title', 'updatedAt'], order: [['updatedAt', 'DESC']], limit: 50 })
+    ]);
+    return {
+        workflows: workflows.map(workflow => workflow.toJSON()),
+        forms: forms.map(form => form.toJSON())
+    };
+};
+
+const applyEvent = async (session, userId, event) => {
+    if (!event?.type) return null;
+    const state = session.agentState || {};
+    if (event.type === 'proposal_ignored') {
+        if (event.messageId) await ChatMessage.update({ proposalStatus: 'ignored' }, { where: { id: event.messageId, sessionId: session.id } });
+        await session.update({ agentState: {} });
+        return { reply: await saveReply(session, { text: 'Ignored.', kind: 'status', payload: { status: 'ignored' } }) };
+    }
+    if (event.type === 'proposal_applied') {
+        if (event.messageId) await ChatMessage.update({ proposalStatus: 'applied' }, { where: { id: event.messageId, sessionId: session.id } });
+        await session.update({ agentState: {} });
+        return { reply: await saveReply(session, { text: 'Applied.', kind: 'status', payload: { status: 'applied' } }) };
+    }
+    if (event.type === 'form_saved') {
+        if (!state.continuation?.workflow) {
+            if (state.proposalMessageId) await ChatMessage.update({ proposalStatus: 'applied' }, { where: { id: state.proposalMessageId, sessionId: session.id } });
+            await session.update({ agentState: {} });
+            return { reply: await saveReply(session, { text: 'Form saved.', kind: 'status', payload: { status: 'applied', formId: event.formId } }) };
+        }
+        const workflow = await workflowForRequest(userId, state.continuation.workflowId);
+        if (!workflow) throw new Error('Workflow not found while resuming agent');
+        const specs = NodeRegistry.getSchemasFor(state.continuation.specSubTypes);
+        const assembled = await assembleWorkflow({
+            message: state.continuation.request,
+            specs,
+            workflowName: state.continuation.workflowName,
+            formId: event.formId
+        });
+        await session.update({ agentState: {} });
+        const tokenUsage = tokenPayload(state.continuation.stage1Usage, assembled.tokenUsage);
+        return {
+            reply: await saveReply(session, {
+                text: 'The workflow is ready for your review.',
+                kind: 'workflow_proposal',
+                payload: {
+                    action: 'create_workflow',
+                    name: assembled.name,
+                    intent: state.continuation.intent,
+                    needsForm: true,
+                    formId: event.formId,
+                    nodes: assembled.nodes,
+                    edges: assembled.edges,
+                    plan: assembled.nodes.map(node => ({ subType: node.subType, title: node.title, reason: node.description })),
+                    baseWorkflowUpdatedAt: workflow.updatedAt
+                },
+                tokenUsage,
+                proposalStatus: 'pending'
+            }),
+            tokenUsage
+        };
+    }
+    if (event.type === 'workflow_target_selected' && session.agentState?.status === 'awaiting_workflow_target') {
+        return { resume: { message: session.agentState.originalRequest, context: { workflowId: event.workflowId } } };
+    }
+    if (event.type === 'form_target_selected' && session.agentState?.status === 'awaiting_form_target') {
+        return { resume: { message: session.agentState.originalRequest, context: { formId: event.formId } } };
+    }
+    return null;
+};
+
+export const sendMessage = asyncHandler(async (req, res) => {
+    let { sessionId, message, context = {}, event } = req.body || {};
+    const userId = req.user.id;
+    let session = sessionId ? await ChatSession.findOne({ where: { id: sessionId, userId } }) : null;
+    if (!session) {
+        const titleSource = message || 'New Agent Session';
+        session = await ChatSession.create({ userId, title: `${titleSource.substring(0, 40)}${titleSource.length > 40 ? '...' : ''}` });
+    }
+
+    if (event) {
+        const eventResult = await applyEvent(session, userId, event);
+        if (eventResult?.reply) return res.json({ sessionId: session.id, reply: eventResult.reply, tokenUsage: eventResult.tokenUsage || null });
+        if (eventResult?.resume) {
+            message = eventResult.resume.message;
+            context = { ...context, ...eventResult.resume.context };
+        } else if (!eventResult) {
+            return res.status(400).json({ message: 'Unsupported agent event' });
+        }
+    }
+
+    const userMessage = await saveUserMessage(session, message);
+    if (context.workflowId || context.formId) {
+        await session.update({ agentContext: { ...(session.agentContext || {}), ...(context.workflowId ? { workflowId: context.workflowId } : {}), ...(context.formId ? { formId: context.formId } : {}) } });
+    }
+    const state = session.agentState || {};
+    const workflow = await workflowForRequest(userId, context.workflowId || state.workflowId);
+    const formId = context.formId || state.formId || null;
+
+    if (state.status === 'awaiting_form_clarification' || state.status === 'awaiting_form_approval') {
+        const result = await formResult({
+            session,
+            userId,
+            request: message,
+            formId,
+            continuation: state.continuation,
+            state
+        });
+        if (result.reply) return res.json({ sessionId: session.id, userMessage, reply: result.reply, tokenUsage: result.tokenUsage });
+    }
+
+    if (context.surface === 'chat' && !workflow && context.workflowId) {
+        const reply = await saveReply(session, { text: 'That workflow is no longer available. Please choose another target.', kind: 'error' });
+        return res.json({ sessionId: session.id, userMessage, reply });
+    }
+
+    if (context.surface === 'chat' && !workflow && !context.workflowId && /\b(add|remove|change|modify|update|insert|delete|edit)\b/i.test(message || '')) {
+        const choices = await targetChoices(userId);
+        await session.update({ agentState: { status: 'awaiting_workflow_target', originalRequest: message } });
+        const reply = await saveReply(session, { text: 'Which workflow should I edit?', kind: 'clarification', payload: { options: choices.workflows } });
+        return res.json({ sessionId: session.id, userMessage, reply, tokenUsage: null });
+    }
+
+    let classification;
+    try {
+        classification = await classifyRequest({ message, snapshot: context.workflowSnapshot || compactWorkflowSnapshot(workflow) });
+    } catch (error) {
+        if (/Classifier returned|invalid JSON|empty response/i.test(error.message || '')) {
+            return res.status(400).json({ message: "I couldn't understand that request. Please rephrase it with a little more detail." });
+        }
+        throw error;
+    }
+
+    if (classification.action === 'create_form' || classification.action === 'edit_form') {
+        if (classification.action === 'edit_form' && !formId) {
+            const choices = await targetChoices(userId);
+            await session.update({ agentState: { status: 'awaiting_form_target', originalRequest: message } });
+            const reply = await saveReply(session, { text: 'Which form should I edit?', kind: 'clarification', payload: { options: choices.forms } });
+            return res.json({ sessionId: session.id, userMessage, reply, tokenUsage: null });
+        }
+        const result = await formResult({ session, userId, request: message, formId, state: { action: classification.action } });
+        if (result.reply?.kind === 'form_proposal') {
+            await session.update({ agentState: { ...(session.agentState || {}), proposalMessageId: result.reply.id } });
+        }
+        return res.json({ sessionId: session.id, userMessage, reply: result.reply, tokenUsage: result.tokenUsage });
+    }
+
+    if (classification.action === 'edit_workflow' && !workflow) {
+        const choices = await targetChoices(userId);
+        await session.update({ agentState: { status: 'awaiting_workflow_target', originalRequest: message } });
+        const reply = await saveReply(session, { text: 'Which workflow should I edit?', kind: 'clarification', payload: { options: choices.workflows } });
+        return res.json({ sessionId: session.id, userMessage, reply, tokenUsage: classification.tokenUsage });
+    }
+
+    if (classification.needsForm && !formId) {
+        const specs = NodeRegistry.getSchemasFor([...classification.selectedSubTypes, 'form-submission']);
+        const continuation = {
+            workflow: true,
+            workflowId: workflow?.id || null,
+            request: message,
+            workflowName: classification.workflowName,
+            intent: classification.intent,
+            specSubTypes: specs.map(spec => spec.subType),
+            stage1Usage: classification.tokenUsage
+        };
+        const result = await formResult({ session, userId, request: message, continuation, state: { workflowId: workflow?.id || null } });
+        const stateAfter = session.agentState || {};
+        if (result.reply && stateAfter.status === 'awaiting_form_approval') {
+            await session.update({ agentState: { ...stateAfter, proposalMessageId: result.reply.id } });
+        }
+        return res.json({ sessionId: session.id, userMessage, reply: result.reply, tokenUsage: tokenPayload(classification.tokenUsage, result.tokenUsage?.stage1) });
+    }
+
+    const selected = [...classification.selectedSubTypes];
+    if (classification.action === 'edit_workflow') {
+        const affected = (workflow.nodes || []).filter(node => classification.affectedNodeIds.includes(node.id)).map(node => node.subType);
+        selected.push(...affected);
+    }
+    const specs = NodeRegistry.getSchemasFor(selected);
+    if (classification.action === 'edit_workflow') {
+        let patched;
+        try {
+            patched = await patchWorkflow({ message, currentWorkflow: workflow.toJSON(), classification, specs });
+        } catch (error) {
+            if (/invalid JSON|invalid patch|cyclic|Assembler|Patcher/i.test(error.message || '')) {
+                return res.status(422).json({ message: 'I could not generate a valid workflow change. Please try a more specific request.' });
+            }
+            throw error;
+        }
+        const tokenUsage = tokenPayload(classification.tokenUsage, patched.tokenUsage);
+        const reply = await saveReply(session, {
+            text: 'I prepared the requested workflow changes for your review.',
+            kind: 'workflow_diff',
+            payload: {
+                action: 'edit_workflow',
+                workflowId: workflow.id,
+                nodes: patched.nodes,
+                edges: patched.edges,
+                diff: patched.diff,
+                baseWorkflowUpdatedAt: workflow.updatedAt
+            },
+            tokenUsage,
+            proposalStatus: 'pending'
+        });
+        await session.update({ agentState: { status: 'awaiting_workflow_approval', workflowId: workflow.id, proposalMessageId: reply.id } });
+        return res.json({ sessionId: session.id, userMessage, reply, tokenUsage });
+    }
+
+    let assembled;
+    try {
+        assembled = await assembleWorkflow({ message, specs, workflowName: classification.workflowName, formId });
+    } catch (error) {
+        if (/invalid JSON|invalid workflow|Assembler|cyclic/i.test(error.message || '')) {
+            return res.status(422).json({ message: 'I could not generate a valid workflow. Please try a more specific description.' });
+        }
+        throw error;
+    }
+    const tokenUsage = tokenPayload(classification.tokenUsage, assembled.tokenUsage);
+    const reply = await saveReply(session, {
+        text: 'The workflow is ready for your review.',
+        kind: 'workflow_proposal',
+        payload: {
+            action: 'create_workflow',
+            name: assembled.name,
+            intent: classification.intent,
+            needsForm: Boolean(formId),
+            formId,
+            nodes: assembled.nodes,
+            edges: assembled.edges,
+            plan: assembled.nodes.map(node => ({ subType: node.subType, title: node.title, reason: node.description })),
+            baseWorkflowUpdatedAt: workflow?.updatedAt || null
+        },
+        tokenUsage,
+        proposalStatus: 'pending'
+    });
+    await session.update({ agentState: { status: 'awaiting_workflow_approval', workflowId: workflow?.id || null, proposalMessageId: reply.id } });
+    return res.json({ sessionId: session.id, userMessage, reply, tokenUsage });
 });
 
 export const getSession = asyncHandler(async (req, res) => {
     const { sessionId } = req.params;
     const { limit = 50, before } = req.query;
-
     const session = await ChatSession.findOne({ where: { id: sessionId, userId: req.user.id } });
     if (!session) return res.status(404).json({ message: 'Session not found' });
-
     const whereClause = { sessionId };
     if (before) {
-        // Cursor-based pagination: fetch messages older than the given message id
         const cursorMsg = await ChatMessage.findByPk(before);
         if (cursorMsg) whereClause.createdAt = { [Op.lt]: cursorMsg.createdAt };
     }
-
-    const messages = await ChatMessage.findAll({
-        where: { sessionId },
-        order: [['createdAt', 'ASC']],
-        limit: parseInt(limit, 10),
-        attributes: ['id', 'sender', 'text', 'createdAt']
-    });
-
-    res.json({ ...session.toJSON(), messages });
+    const messages = await ChatMessage.findAll({ where: whereClause, order: [['createdAt', 'ASC']], limit: parseInt(limit, 10) });
+    res.json({ ...session.toJSON(), messages: messages.map(messagePayload) });
 });
 
 export const getSessions = asyncHandler(async (req, res) => {
-    const sessions = await ChatSession.findAll({
-        where: { userId: req.user.id },
-        order: [['updatedAt', 'DESC']],
-        attributes: ['id', 'title', 'updatedAt'],
-        limit: 50
-    });
+    const sessions = await ChatSession.findAll({ where: { userId: req.user.id }, order: [['updatedAt', 'DESC']], attributes: ['id', 'title', 'updatedAt', 'agentContext', 'agentState'], limit: 50 });
     res.json(sessions);
 });
 
 export const updateSession = asyncHandler(async (req, res) => {
     const { sessionId } = req.params;
-    const { title } = req.body;
+    const { title, agentContext } = req.body;
     const session = await ChatSession.findOne({ where: { id: sessionId, userId: req.user.id } });
     if (!session) return res.status(404).json({ message: 'Session not found' });
-
-    await session.update({ title });
+    await session.update({ title, ...(agentContext ? { agentContext } : {}) });
     res.json(session);
 });
 
@@ -91,7 +405,6 @@ export const deleteSession = asyncHandler(async (req, res) => {
     const { sessionId } = req.params;
     const session = await ChatSession.findOne({ where: { id: sessionId, userId: req.user.id } });
     if (!session) return res.status(404).json({ message: 'Session not found' });
-
-    await session.destroy(); // CASCADE deletes ChatMessages via association
+    await session.destroy();
     res.json({ message: 'Session deleted' });
 });
