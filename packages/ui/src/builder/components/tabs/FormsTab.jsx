@@ -7,12 +7,12 @@ import FormAIAssistant from '../../../forms/FormAIAssistant';
 import FormResponses from '../../../forms/FormResponses';
 import FormSettings from '../../../forms/FormSettings';
 import FormShareModal from '../../../forms/FormShareModal';
-import Button from '../../../components/Button.jsx';
+import Button from '../../../components/ui/Button.jsx';
 import { createField } from '../../../forms/fields/fieldTypes';
 import { useForms, useCreateForm, useUpdateForm, useDeleteForm } from '../../../api/hooks/useForms.js';
-import { useToast } from '../../../components/ToastContext.jsx';
+import { useToast } from '../../../context/ToastContext.jsx';
 import { parsePath, buildPath } from '../../../utils/router.js';
-import ConfirmModal from '../../../components/ConfirmModal.jsx';
+import ConfirmModal from '../../../components/modals/ConfirmModal.jsx';
 
 /**
  * FormsTab — main orchestrator for the form builder module.
@@ -243,7 +243,10 @@ const FormsTab = () => {
 
             {/* Mobile Overlay */}
             {isSidebarOpen && (
-                <div className="absolute inset-0 bg-black/20 z-20 md:hidden" onClick={() => setIsSidebarOpen(false)}></div>
+                <div 
+                    className="md:hidden absolute inset-0 z-20 bg-slate-900/40 backdrop-blur-sm transition-opacity" 
+                    onClick={() => setIsSidebarOpen(false)}
+                />
             )}
 
             {/* ═══ LEFT SIDEBAR ═══ */}
@@ -251,20 +254,34 @@ const FormsTab = () => {
                 {/* Sidebar Header */}
                 <div className="p-4 flex items-center justify-between shrink-0">
                     <h3 className="font-extrabold text-gray-900 text-[15px] tracking-tight pl-1">Forms</h3>
-                    <Button
-                        variant="ghost"
-                        size="icon-md"
-                        onClick={handleCreateForm}
-                        disabled={isCreatingForm}
-                        isLoading={isCreatingForm}
-                        className="rounded-xl border border-transparent hover:border-gray-100"
-                        title="Create new form"
-                        iconLeft={!isCreatingForm && (
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                            </svg>
-                        )}
-                    />
+                    <div className="flex items-center gap-1">
+                        <Button
+                            variant="ghost"
+                            size="icon-md"
+                            onClick={handleCreateForm}
+                            disabled={isCreatingForm}
+                            isLoading={isCreatingForm}
+                            className="rounded-xl border border-transparent hover:border-gray-100"
+                            title="Create new form"
+                            iconLeft={!isCreatingForm && (
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                                </svg>
+                            )}
+                        />
+                        <Button
+                            variant="ghost"
+                            size="icon-md"
+                            onClick={() => setIsSidebarOpen(false)}
+                            className="md:hidden rounded-xl border border-transparent hover:border-gray-100 text-gray-500"
+                            title="Close Sidebar"
+                            iconLeft={
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                                </svg>
+                            }
+                        />
+                    </div>
                 </div>
 
                 {/* Search */}

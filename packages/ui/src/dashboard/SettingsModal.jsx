@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { apiRequest } from '../api/client.js';
-import { useToast } from '../components/ToastContext.jsx';
-import Button from '../components/Button.jsx';
+import { useToast } from '../context/ToastContext.jsx';
+import Button from '../components/ui/Button.jsx';
 
 const SettingsModal = ({ user, onClose, onSwitchRole, onLogout, initialTab = 'general' }) => {
     const [activeTab, setActiveTab] = useState(initialTab);

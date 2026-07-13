@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
-import { useToast } from '../../components/ToastContext.jsx';
+import { useToast } from '../../context/ToastContext.jsx';
 import { getWorkflows, createWorkflow, deleteWorkflow, triggerWorkflow } from '../../api/backend.js';
 import { ICON_MAP } from '../../builder/utils/iconMap.jsx';
-import ConfirmModal from '../../components/ConfirmModal.jsx';
+import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 
 const WorkflowTab = () => {
     const toast = useToast();

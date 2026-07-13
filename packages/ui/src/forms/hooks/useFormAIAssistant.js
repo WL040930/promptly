@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { generateFormFromPrompt, getFormChatHistory, addFormChatMessage, updateFormChatMessage } from '../../api/backend.js';
-import { useToast } from '../../components/ToastContext.jsx';
+import { useToast } from '../../context/ToastContext.jsx';
 
 const LIMIT = 50;
 const defaultMessage = {

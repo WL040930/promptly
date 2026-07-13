@@ -1,5 +1,5 @@
 import React from 'react';
-import Switch from '../components/Switch';
+import Switch from '../components/ui/Switch.jsx';
 
 /**
  * FormSettings — settings panel for a form.

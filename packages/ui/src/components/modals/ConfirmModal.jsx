@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
-import Button from './Button';
+import Button from '../ui/Button.jsx';
 
 export default function ConfirmModal({ 
     isOpen, 

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useWorkflowVersions, useRestoreWorkflowVersion } from '../../../api/hooks/useWorkflows.js';
 import WorkflowDiffPreviewModal from '../modals/WorkflowDiffPreviewModal.jsx';
-import { useToast } from '../../../components/ToastContext.jsx';
-import Button from '../../../components/Button';
-import ConfirmModal from '../../../components/ConfirmModal';
+import { useToast } from '../../../context/ToastContext.jsx';
+import Button from '../../../components/ui/Button.jsx';
+import ConfirmModal from '../../../components/modals/ConfirmModal.jsx';
 
 export default function VersionHistorySidebar({ workflowId, currentWorkflow }) {
     const { data: versions = [], isLoading } = useWorkflowVersions(workflowId);

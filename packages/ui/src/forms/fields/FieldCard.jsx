@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { FIELD_TYPES, getTypesByCategory } from './fieldTypes';
 import FieldSettingsPanel from './components/FieldSettingsPanel';
-import Switch from '../../components/Switch';
+import Switch from '../../components/ui/Switch.jsx';
 
 const TypeIcon = ({ typeName, size = 16 }) => {
     const def = FIELD_TYPES[typeName];

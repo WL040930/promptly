@@ -2,6 +2,7 @@ import env from '../../config/env.js';
 import { GeminiProvider } from './providers/geminiProvider.js';
 import { OpenRouterProvider } from './providers/openRouterProvider.js';
 import { GroqProvider } from './providers/groqProvider.js';
+import { CerebrasProvider } from './providers/cerebrasProvider.js';
 
 let providerInstance = null;
 
@@ -13,6 +14,8 @@ export const getAIProvider = () => {
             providerInstance = new OpenRouterProvider();
         } else if (env.aiProvider === 'groq') {
             providerInstance = new GroqProvider();
+        } else if (env.aiProvider === 'cerebras') {
+            providerInstance = new CerebrasProvider();
         } else {
             providerInstance = new GeminiProvider();
         }  

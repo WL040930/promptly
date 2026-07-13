@@ -31,7 +31,8 @@ export function parsePath(pathname) {
     
     if (parts[0] === 'chat') {
         const chatTab = parts[1] || 'chat';
-        return { mode: 'chat', tab: chatTab };
+        const sessionId = parts[2] || null;
+        return { mode: 'chat', tab: chatTab, sessionId };
     }
 
     // Default to workflow mode
@@ -53,9 +54,9 @@ export function parsePath(pathname) {
 /**
  * Produce a URL from the current routing state.
  */
-export function buildPath({ mode, tab, viewMode, workflowId, formId, subTab } = {}) {
+export function buildPath({ mode, tab, viewMode, workflowId, formId, subTab, sessionId } = {}) {
     if (mode === 'chat') {
-        if (!tab || tab === 'chat') return '/chat/chat';
+        if (!tab || tab === 'chat') return sessionId ? `/chat/chat/${sessionId}` : '/chat/chat';
         return `/chat/${tab}`;
     }
 

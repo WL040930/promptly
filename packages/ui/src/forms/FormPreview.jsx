@@ -1,8 +1,8 @@
 import React from 'react';
 import FieldRenderer from './fields/FieldRenderer';
-import { useToast } from '../components/ToastContext.jsx';
+import { useToast } from '../context/ToastContext.jsx';
 import { useFormEngine } from './engine/useFormEngine';
-import MarkdownRenderer from '../components/MarkdownRenderer';
+import MarkdownRenderer from '../components/ui/MarkdownRenderer.jsx';
 
 /**
  * FormPreview — renders the form as respondents would see it.

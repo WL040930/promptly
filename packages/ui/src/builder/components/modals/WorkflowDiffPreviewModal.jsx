@@ -6,7 +6,7 @@ import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap } from '@xy
 import '@xyflow/react/dist/style.css';
 import DynamicNode from '../../../nodes/DynamicNode';
 import DeletableEdge from '../canvas/edges/DeletableEdge';
-import Button from '../../../components/Button';
+import Button from '../../../components/ui/Button.jsx';
 import { getIconByName, resolveNodeUi } from '../../utils/iconMap.jsx';
 
 const nodeTypes = {

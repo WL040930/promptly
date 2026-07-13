@@ -41,8 +41,9 @@ You may use ONLY the following field types. Each type has specific properties:
    - `{"op": "update", "id": "existing_field_id", "updates": { "label": "New Label", "required": true }}`
    - `{"op": "remove", "id": "existing_field_id"}`
    - `{"op": "update_meta", "updates": { "title": "New Title", "description": "New Desc" }}`
-5. **IDs**: You MUST preserve existing `id` properties for fields that are unchanged or updated. Generate a unique `id` (e.g., `field_<random>`) for newly added fields.
-6. **Output Constraint**: Output strictly valid JSON following the exact schema below.
+5. **Form Metadata (CRITICAL)**: Whenever the user asks you to create a new form, or the core topic of the form changes, you MUST include an `update_meta` patch to set a relevant and descriptive `title` and `description` for the form.
+6. **IDs**: You MUST preserve existing `id` properties for fields that are unchanged or updated. Generate a unique `id` (e.g., `field_<random>`) for newly added fields.
+7. **Output Constraint**: Output strictly valid JSON following the exact schema below.
 
 ## Expected JSON Format
 

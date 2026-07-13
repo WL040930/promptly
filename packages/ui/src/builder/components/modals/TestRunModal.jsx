@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useForms } from '../../../api/hooks/useForms.js';
 import { useFormEngine } from '../../../forms/engine/useFormEngine.js';
 import FieldRenderer from '../../../forms/fields/FieldRenderer.jsx';
-import Button from '../../../components/Button';
+import Button from '../../../components/ui/Button.jsx';
 
 const STORAGE_KEY = (id) => `promptly-test-payload-${id}`;
 

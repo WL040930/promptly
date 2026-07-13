@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useFormAIAssistant } from './hooks/useFormAIAssistant';
 import FormDiffPreviewModal from './FormDiffPreviewModal';
+import Button from '../components/ui/Button.jsx';
+import FormProposalWidget from '../components/chat/FormProposalWidget.jsx';
 
 const SUGGESTIONS = [
     "A customer satisfaction survey",
@@ -61,7 +63,7 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
     };
 
     return (
-        <div className="flex flex-col h-full bg-white relative">
+        <div className="flex flex-col h-full bg-transparent relative">
             {/* Chat Body */}
             <div
                 ref={scrollContainerRef}
@@ -90,15 +92,13 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
                         {/* Bot Avatar */}
                         {msg.sender === 'bot' && (
                             <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-4 mr-2.5 shadow-sm border border-indigo-200/50">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="m12 3-1.9 5.8a2 2 0 0 1-1.29 1.29L3 12l5.8 1.9a2 2 0 0 1 1.29 1.29L12 21l1.9-5.8a2 2 0 0 1 1.29-1.29L21 12l-5.8-1.9a2 2 0 0 1-1.29-1.29L12 3Z"></path>
-                                </svg>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="14" x="3" y="8" rx="2"/><path d="M12 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 5v3"/><path d="M8 14h.01"/><path d="M16 14h.01"/><path d="M9 19h6"/></svg>
                             </div>
                         )}
 
                         <div className={`flex flex-col gap-1 ${msg.sender === 'user' ? 'items-end' : 'items-start'} max-w-[85%]`}>
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
-                                {msg.sender === 'user' ? 'You' : 'AI Assistant'}
+                                {msg.sender === 'user' ? 'You' : 'Promptly AI'}
                             </span>
 
                             <div className={`w-full rounded-2xl p-3.5 text-sm leading-relaxed ${msg.sender === 'user'
@@ -127,141 +127,31 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
                             {msg.options && msg.options.length > 0 && (
                                 <div className="mt-2 flex flex-wrap gap-2 w-full max-w-[90%]">
                                     {msg.options.map((option, idx) => (
-                                        <button
+                                        <Button
                                             key={idx}
+                                            variant="secondary"
+                                            size="sm"
                                             onClick={() => handleSend(option)}
                                             disabled={isTyping}
-                                            className="text-xs font-medium bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 py-1.5 px-3 rounded-full transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed text-left"
+                                            className="text-left whitespace-normal h-auto"
                                         >
                                             {option}
-                                        </button>
+                                        </Button>
                                     ))}
                                 </div>
                             )}
 
                             {/* Proposal Confirmation Box */}
                             {msg.proposal && (
-                                <div className="mt-2 w-[90%] border border-slate-200 rounded-xl bg-slate-50 p-3 shadow-md flex flex-col gap-3">
-                                    <div className="flex items-center justify-between border-b border-slate-150 pb-2">
-                                        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Proposed Form Update</span>
-                                        <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
-                                            Schema
-                                        </span>
-                                    </div>
-
-                                    <div>
-                                        <h4 className="text-sm font-semibold text-slate-800">{msg.proposal.schema?.title || "Form Update"}</h4>
-
-                                        {/* Dynamic Summary */}
-                                        {(() => {
-                                            if (!msg.proposal.patches) {
-                                                return <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">Adds {msg.proposal.schema?.fields?.length || 0} fields to your canvas.</p>;
-                                            }
-                                            const adds = msg.proposal.patches.filter(p => p.op === 'add').length;
-                                            const removes = msg.proposal.patches.filter(p => p.op === 'remove').length;
-                                            const updates = msg.proposal.patches.filter(p => p.op === 'update' || p.op === 'update_meta').length;
-
-                                            const parts = [];
-                                            if (adds > 0) parts.push(`Added ${adds}`);
-                                            if (removes > 0) parts.push(`Removed ${removes}`);
-                                            if (updates > 0) parts.push(`Modified ${updates}`);
-
-                                            return <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">{parts.length > 0 ? parts.join(', ') + ' fields.' : 'No field changes.'}</p>;
-                                        })()}
-                                    </div>
-
-                                    {/* Visual Diff List */}
-                                    {msg.proposal.patches && msg.proposal.patches.length > 0 && (
-                                        <div className="flex flex-col gap-1.5 mt-1 border border-slate-100 rounded-lg p-2 bg-white">
-                                            {msg.proposal.patches.map((patch, idx) => {
-                                                if (patch.op === 'add') {
-                                                    return (
-                                                        <div key={idx} className="flex items-start gap-2 text-xs font-medium text-emerald-700 bg-emerald-50/50 px-2 py-1.5 rounded border border-emerald-100">
-                                                            <span className="font-bold text-emerald-600">+</span> Added: {patch.field?.label || patch.field?.title || 'Field'}
-                                                        </div>
-                                                    );
-                                                }
-                                                if (patch.op === 'remove') {
-                                                    return (
-                                                        <div key={idx} className="flex items-start gap-2 text-xs font-medium text-red-700 bg-red-50/50 px-2 py-1.5 rounded border border-red-100">
-                                                            <span className="font-bold text-red-600">-</span> Removed: {patch.label || 'Field'}
-                                                        </div>
-                                                    );
-                                                }
-                                                if (patch.op === 'update') {
-                                                    return (
-                                                        <div key={idx} className="flex items-start gap-2 text-xs font-medium text-amber-700 bg-amber-50/50 px-2 py-1.5 rounded border border-amber-100">
-                                                            <span className="font-bold text-amber-600">~</span> Modified: {patch.label || 'Field'}
-                                                        </div>
-                                                    );
-                                                }
-                                                if (patch.op === 'update_meta') {
-                                                    return (
-                                                        <div key={idx} className="flex items-start gap-2 text-xs font-medium text-amber-700 bg-amber-50/50 px-2 py-1.5 rounded border border-amber-100">
-                                                            <span className="font-bold text-amber-600">~</span> Modified Form Properties
-                                                        </div>
-                                                    );
-                                                }
-                                                return null;
-                                            })}
-                                        </div>
-                                    )}
-
-                                    {msg.proposal.status === 'accepted' ? (
-                                        <div className="flex items-center gap-1.5 justify-center py-1.5 px-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-xs font-semibold">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                            Added to Canvas
-                                        </div>
-                                    ) : msg.proposal.status === 'rejected' ? (
-                                        <div className="flex items-center gap-1.5 justify-center py-1.5 px-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-xs font-semibold">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                                            Proposal Rejected
-                                        </div>
-                                    ) : (
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => handleAcceptProposal(msg.id, msg.proposal.schema)}
-                                                disabled={acceptingProposalId === msg.id}
-                                                className={`flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs py-2 rounded-lg shadow-sm hover:shadow active:scale-98 transition-all flex items-center justify-center gap-1.5 ${acceptingProposalId === msg.id ? 'opacity-75 cursor-wait' : ''}`}
-                                            >
-                                                {acceptingProposalId === msg.id ? (
-                                                    <>
-                                                        <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                        </svg>
-                                                        Adding...
-                                                    </>
-                                                ) : (
-                                                    'Accept & Add'
-                                                )}
-                                            </button>
-                                            <button
-                                                onClick={() => setPreviewProposal(msg.proposal)}
-                                                className="flex-1 bg-white hover:bg-slate-50 text-indigo-600 border border-indigo-200 font-semibold text-xs py-2 rounded-lg transition-all"
-                                            >
-                                                Preview
-                                            </button>
-                                            <button
-                                                onClick={() => handleRejectProposal(msg.id)}
-                                                disabled={rejectingProposalId === msg.id}
-                                                className={`flex-1 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 font-semibold text-xs py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 ${rejectingProposalId === msg.id ? 'opacity-75 cursor-wait' : ''}`}
-                                            >
-                                                {rejectingProposalId === msg.id ? (
-                                                    <>
-                                                        <svg className="animate-spin h-3.5 w-3.5 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                        </svg>
-                                                        Ignoring...
-                                                    </>
-                                                ) : (
-                                                    'Ignore'
-                                                )}
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
+                                <FormProposalWidget
+                                    proposal={msg.proposal}
+                                    status={msg.proposal.status}
+                                    onAccept={() => handleAcceptProposal(msg.id, msg.proposal.schema)}
+                                    onIgnore={() => handleRejectProposal(msg.id)}
+                                    onPreview={() => setPreviewProposal(msg.proposal)}
+                                    accepting={acceptingProposalId === msg.id}
+                                    rejecting={rejectingProposalId === msg.id}
+                                />
                             )}
                         </div>
                     </div>
@@ -270,13 +160,11 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
                 {isTyping && (
                     <div className="flex w-full justify-start">
                         <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-4 mr-2.5 shadow-sm border border-indigo-200/50">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="m12 3-1.9 5.8a2 2 0 0 1-1.29 1.29L3 12l5.8 1.9a2 2 0 0 1 1.29 1.29L12 21l1.9-5.8a2 2 0 0 1 1.29-1.29L21 12l-5.8-1.9a2 2 0 0 1-1.29-1.29L12 3Z"></path>
-                            </svg>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="14" x="3" y="8" rx="2"/><path d="M12 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 5v3"/><path d="M8 14h.01"/><path d="M16 14h.01"/><path d="M9 19h6"/></svg>
                         </div>
                         <div className="flex flex-col gap-1 items-start max-w-[85%]">
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
-                                AI Assistant
+                                Promptly AI
                             </span>
                             <div className="bg-white border border-slate-200/60 rounded-2xl rounded-tl-none p-3.5 shadow-sm flex items-center gap-1.5 h-12">
                                 <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></span>
@@ -309,7 +197,7 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
             )}
 
             {/* Input Box */}
-            <div className="p-4 bg-white border-t border-slate-100 shrink-0 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.05)] z-10 relative">
+            <div className="p-4 bg-white/80 backdrop-blur-md border-t border-gray-200/60 shrink-0 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.05)] z-10 relative">
                 <form
                     onSubmit={(e) => { e.preventDefault(); handleSend(input); }}
                     className="relative flex items-center w-full"

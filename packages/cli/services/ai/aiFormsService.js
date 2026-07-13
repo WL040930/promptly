@@ -39,8 +39,17 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
         });
 
         const text = response.text;
-        const result = JSON.parse(text);
-        
+        let result;
+        try {
+            // Strip potential markdown code blocks
+            const cleanedText = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+            result = JSON.parse(cleanedText);
+        } catch (e) {
+            console.error('Failed to parse AI JSON response. Raw text length:', text.length, 'Text preview:', text.substring(0, 100) + '... (truncated)');
+            console.error('Full raw text:', text);
+            throw new Error('AI returned invalid JSON: ' + e.message);
+        }
+
         // Basic validation
         if (!result.type || !['message', 'proposal'].includes(result.type)) {
              throw new Error('Invalid response type generated');

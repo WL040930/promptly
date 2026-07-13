@@ -10,8 +10,6 @@ import {
     patchWorkflow,
     tokenTotal
 } from '../../services/ai/workflowAgentService.js';
-import { getAIProvider } from '../../services/ai/aiService.js';
-import env from '../../config/env.js';
 
 const tokenPayload = (...usages) => {
     const stage1 = usages[0] || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -136,6 +134,17 @@ const formResult = async ({ session, userId, request, formId, continuation = nul
     return { reply, tokenUsage };
 };
 
+const targetChoices = async (userId) => {
+    const [workflows, forms] = await Promise.all([
+        Workflow.findAll({ where: { userId }, attributes: ['id', 'name', 'updatedAt'], order: [['updatedAt', 'DESC']], limit: 50 }),
+        Form.findAll({ where: { userId }, attributes: ['id', 'title', 'updatedAt'], order: [['updatedAt', 'DESC']], limit: 50 })
+    ]);
+    return {
+        workflows: workflows.map(workflow => workflow.toJSON()),
+        forms: forms.map(form => form.toJSON())
+    };
+};
+
 const applyEvent = async (session, userId, event) => {
     if (!event?.type) return null;
     const state = session.agentState || {};
@@ -188,20 +197,14 @@ const applyEvent = async (session, userId, event) => {
             tokenUsage
         };
     }
+    if (event.type === 'workflow_target_selected' && session.agentState?.status === 'awaiting_workflow_target') {
+        return { resume: { message: session.agentState.originalRequest, context: { workflowId: event.workflowId } } };
+    }
+    if (event.type === 'form_target_selected' && session.agentState?.status === 'awaiting_form_target') {
+        return { resume: { message: session.agentState.originalRequest, context: { formId: event.formId } } };
+    }
     return null;
 };
-
-const systemInstruction = `You are Promptly Agent, an AI assistant helping users build automation workflows and forms.
-You have access to the following tools. If you need to use a tool, output exactly <TOOL>{"name": "tool_name", "args": {...}}</TOOL>.
-Wait for the system to reply with <TOOL_RESPONSE>...</TOOL_RESPONSE> before continuing. If no tools are needed, simply reply to the user.
-
-Tools available:
-- list_forms(): Returns a list of the user's forms with their IDs and titles. No arguments.
-- list_workflows(): Returns a list of the user's workflows with their IDs and names. No arguments.
-- get_form(formId: string): Returns the full schema of the specified form.
-- get_workflow(workflowId: string): Returns the full structure of the specified workflow.
-- propose_form_change(formId: string | null, prompt: string): Triggers the form builder to propose an edit or create a new form. If creating a new form, formId should be null.
-- propose_workflow_change(workflowId: string | null, prompt: string): Triggers the workflow builder to propose an edit or create a new workflow. If creating a new workflow, workflowId should be null.`;
 
 export const sendMessage = asyncHandler(async (req, res) => {
     let { sessionId, message, context = {}, event } = req.body || {};
@@ -227,127 +230,148 @@ export const sendMessage = asyncHandler(async (req, res) => {
     if (context.workflowId || context.formId) {
         await session.update({ agentContext: { ...(session.agentContext || {}), ...(context.workflowId ? { workflowId: context.workflowId } : {}), ...(context.formId ? { formId: context.formId } : {}) } });
     }
+    const state = session.agentState || {};
+    const workflow = await workflowForRequest(userId, context.workflowId || state.workflowId);
+    const formId = context.formId || state.formId || null;
 
-    const history = await ChatMessage.findAll({
-        where: { sessionId: session.id },
-        order: [['createdAt', 'ASC']],
-        limit: 20
-    });
-
-    const aiMessages = history.map(msg => ({
-        role: msg.sender === 'user' || msg.kind === 'tool_response' ? 'user' : 'model',
-        parts: [{ text: msg.kind === 'tool_response' ? `<TOOL_RESPONSE>${msg.text}</TOOL_RESPONSE>` : msg.text }]
-    }));
-
-    const provider = getAIProvider();
-
-    let loopCount = 0;
-    const maxLoops = 5;
-    let totalTokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-    let replyObj = null;
-
-    while (loopCount < maxLoops) {
-        loopCount++;
-        const response = await provider.generateContent(aiMessages, {
-            systemInstruction,
-            model: env.aiModel || 'gemini-2.5-pro'
+    if (state.status === 'awaiting_form_clarification' || state.status === 'awaiting_form_approval') {
+        const result = await formResult({
+            session,
+            userId,
+            request: message,
+            formId,
+            continuation: state.continuation,
+            state
         });
-
-        if (response.usageMetadata) {
-            totalTokenUsage.promptTokens += response.usageMetadata.promptTokens || response.usageMetadata.promptTokenCount || 0;
-            totalTokenUsage.completionTokens += response.usageMetadata.completionTokens || response.usageMetadata.candidatesTokenCount || 0;
-            totalTokenUsage.totalTokens = totalTokenUsage.promptTokens + totalTokenUsage.completionTokens;
-        }
-
-        const replyText = response.text;
-        const toolMatch = replyText.match(/<TOOL>(.*?)<\/TOOL>/s);
-
-        if (toolMatch) {
-            let toolCall;
-            try {
-                toolCall = JSON.parse(toolMatch[1]);
-            } catch (e) {
-                aiMessages.push({ role: 'model', parts: [{ text: replyText }] });
-                aiMessages.push({ role: 'user', parts: [{ text: `<TOOL_RESPONSE>{"error": "Invalid JSON in tool call"}</TOOL_RESPONSE>` }] });
-                continue;
-            }
-
-            const { name, args = {} } = toolCall;
-            let toolResult = '';
-
-            try {
-                if (name === 'list_forms') {
-                    const forms = await Form.findAll({ where: { userId }, attributes: ['id', 'title', 'updatedAt'], order: [['updatedAt', 'DESC']], limit: 50 });
-                    toolResult = JSON.stringify(forms);
-                } else if (name === 'list_workflows') {
-                    const workflows = await Workflow.findAll({ where: { userId }, attributes: ['id', 'name', 'updatedAt'], order: [['updatedAt', 'DESC']], limit: 50 });
-                    toolResult = JSON.stringify(workflows);
-                } else if (name === 'get_form') {
-                    const form = await Form.findOne({ where: { id: args.formId || args.id, userId } });
-                    toolResult = form ? JSON.stringify(form) : JSON.stringify({ error: 'Form not found' });
-                } else if (name === 'get_workflow') {
-                    const workflow = await Workflow.findOne({ where: { id: args.workflowId || args.id, userId } });
-                    toolResult = workflow ? JSON.stringify(workflow) : JSON.stringify({ error: 'Workflow not found' });
-                } else if (name === 'propose_form_change') {
-                    const result = await formResult({ session, userId, request: args.prompt, formId: args.formId, state: { action: args.formId ? 'edit_form' : 'create_form' } });
-                    if (result.reply?.kind === 'form_proposal') {
-                        await session.update({ agentState: { proposalMessageId: result.reply.id } });
-                    }
-                    replyObj = result.reply;
-                    break;
-                } else if (name === 'propose_workflow_change') {
-                    const classification = await classifyRequest({ message: args.prompt, snapshot: compactWorkflowSnapshot(await workflowForRequest(userId, args.workflowId)) });
-                    if (classification.action === 'edit_workflow' && args.workflowId) {
-                        const workflow = await workflowForRequest(userId, args.workflowId);
-                        const selected = [...classification.selectedSubTypes];
-                        const affected = (workflow.nodes || []).filter(node => classification.affectedNodeIds.includes(node.id)).map(node => node.subType);
-                        selected.push(...affected);
-                        const specs = NodeRegistry.getSchemasFor(selected);
-                        
-                        const patched = await patchWorkflow({ message: args.prompt, currentWorkflow: workflow.toJSON(), classification, specs });
-                        replyObj = await saveReply(session, {
-                            text: 'I prepared the requested workflow changes for your review.',
-                            kind: 'workflow_diff',
-                            payload: { action: 'edit_workflow', workflowId: workflow.id, nodes: patched.nodes, edges: patched.edges, diff: patched.diff, baseWorkflowUpdatedAt: workflow.updatedAt },
-                            proposalStatus: 'pending'
-                        });
-                        await session.update({ agentState: { status: 'awaiting_workflow_approval', workflowId: workflow.id, proposalMessageId: replyObj.id } });
-                        break;
-                    } else {
-                        const specs = NodeRegistry.getSchemasFor(classification.selectedSubTypes);
-                        const assembled = await assembleWorkflow({ message: args.prompt, specs, workflowName: classification.workflowName, formId: null });
-                        replyObj = await saveReply(session, {
-                            text: 'The workflow is ready for your review.',
-                            kind: 'workflow_proposal',
-                            payload: { action: 'create_workflow', name: assembled.name, intent: classification.intent, needsForm: false, nodes: assembled.nodes, edges: assembled.edges, plan: assembled.nodes.map(node => ({ subType: node.subType, title: node.title, reason: node.description })) },
-                            proposalStatus: 'pending'
-                        });
-                        await session.update({ agentState: { status: 'awaiting_workflow_approval', workflowId: null, proposalMessageId: replyObj.id } });
-                        break;
-                    }
-                } else {
-                    toolResult = JSON.stringify({ error: 'Unknown tool' });
-                }
-            } catch (err) {
-                toolResult = JSON.stringify({ error: err.message });
-            }
-
-            await ChatMessage.create({ sessionId: session.id, sender: 'bot', text: replyText, kind: 'tool_call' });
-            await ChatMessage.create({ sessionId: session.id, sender: 'user', text: toolResult, kind: 'tool_response' });
-            
-            aiMessages.push({ role: 'model', parts: [{ text: replyText }] });
-            aiMessages.push({ role: 'user', parts: [{ text: `<TOOL_RESPONSE>${toolResult}</TOOL_RESPONSE>` }] });
-        } else {
-            replyObj = await saveReply(session, { text: replyText, kind: 'text' });
-            break;
-        }
+        if (result.reply) return res.json({ sessionId: session.id, userMessage, reply: result.reply, tokenUsage: result.tokenUsage });
     }
 
-    if (!replyObj) {
-        replyObj = await saveReply(session, { text: "I'm sorry, I encountered an internal error while processing that.", kind: 'error' });
+    if (context.surface === 'chat' && !workflow && context.workflowId) {
+        const reply = await saveReply(session, { text: 'That workflow is no longer available. Please choose another target.', kind: 'error' });
+        return res.json({ sessionId: session.id, userMessage, reply });
     }
 
-    return res.json({ sessionId: session.id, userMessage, reply: replyObj, tokenUsage: totalTokenUsage });
+    if (context.surface === 'chat' && !workflow && !context.workflowId && /\b(add|remove|change|modify|update|insert|delete|edit)\b/i.test(message || '')) {
+        const choices = await targetChoices(userId);
+        await session.update({ agentState: { status: 'awaiting_workflow_target', originalRequest: message } });
+        const reply = await saveReply(session, { text: 'Which workflow should I edit?', kind: 'clarification', payload: { options: choices.workflows } });
+        return res.json({ sessionId: session.id, userMessage, reply, tokenUsage: null });
+    }
+
+    let classification;
+    try {
+        classification = await classifyRequest({ message, snapshot: context.workflowSnapshot || compactWorkflowSnapshot(workflow) });
+    } catch (error) {
+        if (/Classifier returned|invalid JSON|empty response/i.test(error.message || '')) {
+            return res.status(400).json({ message: "I couldn't understand that request. Please rephrase it with a little more detail." });
+        }
+        throw error;
+    }
+
+    if (classification.action === 'create_form' || classification.action === 'edit_form') {
+        if (classification.action === 'edit_form' && !formId) {
+            const choices = await targetChoices(userId);
+            await session.update({ agentState: { status: 'awaiting_form_target', originalRequest: message } });
+            const reply = await saveReply(session, { text: 'Which form should I edit?', kind: 'clarification', payload: { options: choices.forms } });
+            return res.json({ sessionId: session.id, userMessage, reply, tokenUsage: null });
+        }
+        const result = await formResult({ session, userId, request: message, formId, state: { action: classification.action } });
+        if (result.reply?.kind === 'form_proposal') {
+            await session.update({ agentState: { ...(session.agentState || {}), proposalMessageId: result.reply.id } });
+        }
+        return res.json({ sessionId: session.id, userMessage, reply: result.reply, tokenUsage: result.tokenUsage });
+    }
+
+    if (classification.action === 'edit_workflow' && !workflow) {
+        const choices = await targetChoices(userId);
+        await session.update({ agentState: { status: 'awaiting_workflow_target', originalRequest: message } });
+        const reply = await saveReply(session, { text: 'Which workflow should I edit?', kind: 'clarification', payload: { options: choices.workflows } });
+        return res.json({ sessionId: session.id, userMessage, reply, tokenUsage: classification.tokenUsage });
+    }
+
+    if (classification.needsForm && !formId) {
+        const specs = NodeRegistry.getSchemasFor([...classification.selectedSubTypes, 'form-submission']);
+        const continuation = {
+            workflow: true,
+            workflowId: workflow?.id || null,
+            request: message,
+            workflowName: classification.workflowName,
+            intent: classification.intent,
+            specSubTypes: specs.map(spec => spec.subType),
+            stage1Usage: classification.tokenUsage
+        };
+        const result = await formResult({ session, userId, request: message, continuation, state: { workflowId: workflow?.id || null } });
+        const stateAfter = session.agentState || {};
+        if (result.reply && stateAfter.status === 'awaiting_form_approval') {
+            await session.update({ agentState: { ...stateAfter, proposalMessageId: result.reply.id } });
+        }
+        return res.json({ sessionId: session.id, userMessage, reply: result.reply, tokenUsage: tokenPayload(classification.tokenUsage, result.tokenUsage?.stage1) });
+    }
+
+    const selected = [...classification.selectedSubTypes];
+    if (classification.action === 'edit_workflow') {
+        const affected = (workflow.nodes || []).filter(node => classification.affectedNodeIds.includes(node.id)).map(node => node.subType);
+        selected.push(...affected);
+    }
+    const specs = NodeRegistry.getSchemasFor(selected);
+    if (classification.action === 'edit_workflow') {
+        let patched;
+        try {
+            patched = await patchWorkflow({ message, currentWorkflow: workflow.toJSON(), classification, specs });
+        } catch (error) {
+            if (/invalid JSON|invalid patch|cyclic|Assembler|Patcher/i.test(error.message || '')) {
+                return res.status(422).json({ message: 'I could not generate a valid workflow change. Please try a more specific request.' });
+            }
+            throw error;
+        }
+        const tokenUsage = tokenPayload(classification.tokenUsage, patched.tokenUsage);
+        const reply = await saveReply(session, {
+            text: 'I prepared the requested workflow changes for your review.',
+            kind: 'workflow_diff',
+            payload: {
+                action: 'edit_workflow',
+                workflowId: workflow.id,
+                nodes: patched.nodes,
+                edges: patched.edges,
+                diff: patched.diff,
+                baseWorkflowUpdatedAt: workflow.updatedAt
+            },
+            tokenUsage,
+            proposalStatus: 'pending'
+        });
+        await session.update({ agentState: { status: 'awaiting_workflow_approval', workflowId: workflow.id, proposalMessageId: reply.id } });
+        return res.json({ sessionId: session.id, userMessage, reply, tokenUsage });
+    }
+
+    let assembled;
+    try {
+        assembled = await assembleWorkflow({ message, specs, workflowName: classification.workflowName, formId });
+    } catch (error) {
+        if (/invalid JSON|invalid workflow|Assembler|cyclic/i.test(error.message || '')) {
+            return res.status(422).json({ message: 'I could not generate a valid workflow. Please try a more specific description.' });
+        }
+        throw error;
+    }
+    const tokenUsage = tokenPayload(classification.tokenUsage, assembled.tokenUsage);
+    const reply = await saveReply(session, {
+        text: 'The workflow is ready for your review.',
+        kind: 'workflow_proposal',
+        payload: {
+            action: 'create_workflow',
+            name: assembled.name,
+            intent: classification.intent,
+            needsForm: Boolean(formId),
+            formId,
+            nodes: assembled.nodes,
+            edges: assembled.edges,
+            plan: assembled.nodes.map(node => ({ subType: node.subType, title: node.title, reason: node.description })),
+            baseWorkflowUpdatedAt: workflow?.updatedAt || null
+        },
+        tokenUsage,
+        proposalStatus: 'pending'
+    });
+    await session.update({ agentState: { status: 'awaiting_workflow_approval', workflowId: workflow?.id || null, proposalMessageId: reply.id } });
+    return res.json({ sessionId: session.id, userMessage, reply, tokenUsage });
 });
 
 export const getSession = asyncHandler(async (req, res) => {

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { sendChatMessage } from '../../../api/backend.js';
-import Button from '../../../components/Button.jsx';
-import AgentMessage from '../../../components/AgentMessage.jsx';
+import Button from '../../../components/ui/Button.jsx';
+import AgentMessage from '../../../components/chat/AgentMessage.jsx';
 
 const SUGGESTIONS = ['Add a Slack notification step', 'Filter for high urgency tickets', 'Add GPT response step to emails', 'Store results in database'];
 

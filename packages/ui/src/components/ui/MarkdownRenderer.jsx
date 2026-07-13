@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 /**
  * Premium Markdown Renderer using react-markdown.
@@ -15,6 +16,7 @@ export default function MarkdownRenderer({ content, className = '', inverted = f
     return (
         <div className={`prose max-w-none ${inverted ? 'text-white/90' : 'text-slate-800 dark:text-slate-200'} text-[14px] leading-relaxed ${className}`}>
             <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
                 components={{
                     // Headers
                     h1: ({ node, children, ...props }) => (
@@ -78,6 +80,40 @@ export default function MarkdownRenderer({ content, className = '', inverted = f
                         >
                             {children}
                         </blockquote>
+                    ),
+
+                    // Tables
+                    table: ({ node, children, ...props }) => (
+                        <div className={`w-full overflow-x-auto my-4 rounded-xl border shadow-sm ${inverted ? 'border-white/20' : 'border-slate-200'}`}>
+                            <table className="w-full text-left border-collapse text-[13.5px]" {...props}>
+                                {children}
+                            </table>
+                        </div>
+                    ),
+                    thead: ({ node, children, ...props }) => (
+                        <thead className={`border-b ${inverted ? 'bg-white/10 border-white/20' : 'bg-slate-50 border-slate-200'}`} {...props}>
+                            {children}
+                        </thead>
+                    ),
+                    tbody: ({ node, children, ...props }) => (
+                        <tbody className={`divide-y ${inverted ? 'divide-white/10' : 'divide-slate-100/80'}`} {...props}>
+                            {children}
+                        </tbody>
+                    ),
+                    tr: ({ node, children, ...props }) => (
+                        <tr className={`transition-colors ${inverted ? 'hover:bg-white/5' : 'hover:bg-slate-50/50'}`} {...props}>
+                            {children}
+                        </tr>
+                    ),
+                    th: ({ node, children, ...props }) => (
+                        <th className={`px-4 py-3 font-semibold whitespace-nowrap ${inverted ? 'text-white' : 'text-slate-700'}`} {...props}>
+                            {children}
+                        </th>
+                    ),
+                    td: ({ node, children, ...props }) => (
+                        <td className={`px-4 py-3 align-top ${inverted ? 'text-white/80' : 'text-slate-600'}`} {...props}>
+                            {children}
+                        </td>
                     ),
 
                     // Code

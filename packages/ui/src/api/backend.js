@@ -19,6 +19,7 @@ export const deleteFolder = (id) => apiRequest(`/api/folders/${id}`, { method: '
 
 // --- Forms ---
 export const getForms = () => apiRequest('/api/forms');
+export const getForm = (id) => apiRequest(`/api/forms/${id}`);
 export const createForm = (data) => apiRequest('/api/forms', { method: 'POST', body: JSON.stringify(data) });
 export const updateForm = (id, data) => apiRequest(`/api/forms/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 export const deleteForm = (id) => apiRequest(`/api/forms/${id}`, { method: 'DELETE' });

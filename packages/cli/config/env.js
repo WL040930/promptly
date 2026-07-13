@@ -60,10 +60,14 @@ const env = {
     groq: {
         apiKey: process.env.GROQ_API_KEY
     },
+    cerebras: {
+        apiKey: process.env.CEREBRAS_API_KEY
+    },
     aiProvider: process.env.AI_PROVIDER || 'gemini',
     aiModel: process.env.AI_MODEL || (
         process.env.AI_PROVIDER === 'openrouter' ? 'openai/gpt-4o-mini' : 
         process.env.AI_PROVIDER === 'groq' ? 'llama3-8b-8192' : 
+        process.env.AI_PROVIDER === 'cerebras' ? 'llama3.1-8b' : 
         'gemini-3.5-flash'
     ),
     supabase: {

@@ -21,7 +21,7 @@ import { useFolders } from '../api/hooks/useFolders.js';
 import { useRunWorkflow } from '../api/hooks/useRunWorkflow.js';
 import ExecutionPanel from './components/panels/ExecutionPanel';
 import { useUndoRedo } from '../hooks/useUndoRedo';
-import { useToast } from '../components/ToastContext.jsx';
+import { useToast } from '../context/ToastContext.jsx';
 import { createForm, updateForm } from '../api/backend.js';
 
 const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) => {

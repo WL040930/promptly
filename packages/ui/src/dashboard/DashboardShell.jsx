@@ -3,9 +3,9 @@ import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { clearAuthToken, clearAuthUser } from '../utils/storage.js';
 import { apiRequest } from '../api/client.js';
-import { useToast } from '../components/ToastContext.jsx';
+import { useToast } from '../context/ToastContext.jsx';
 import SettingsModal from './SettingsModal.jsx';
-import Button from '../components/Button.jsx';
+import Button from '../components/ui/Button.jsx';
 import { DashboardIcon, WorkflowIcon, LogsIcon } from '../chat/components/Icons';
 import { navigate, parsePath, buildPath } from '../utils/router.js';
 

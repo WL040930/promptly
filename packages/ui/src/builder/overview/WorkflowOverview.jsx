@@ -8,8 +8,8 @@ import WorkflowRow from './components/WorkflowRow';
 import { MODAL_TYPES, MODAL_CONFIG } from './constants.js';
 import { buildFoldersByParent, buildWorkflowsByFolder, collectDescendantIds } from '../utils/treeUtils';
 import { createFolder, updateFolder, deleteFolder, createWorkflow, updateWorkflow, deleteWorkflow } from '../../api/backend.js';
-import { useToast } from '../../components/ToastContext.jsx';
-import Button from '../../components/Button.jsx';
+import { useToast } from '../../context/ToastContext.jsx';
+import Button from '../../components/ui/Button.jsx';
 
 const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCreateWorkflow, onSelectWorkflow }) => {
     // ── State & refs ────────────────────────────────────────────────────────

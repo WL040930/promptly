@@ -5,7 +5,7 @@ import { createField } from './fields/fieldTypes';
 import { useFieldDnD } from './hooks/useFieldDnD';
 import FormEditorHeader from './components/FormEditorHeader';
 import AddFieldPopover from './components/AddFieldPopover';
-import { useToast } from '../components/ToastContext.jsx';
+import { useToast } from '../context/ToastContext.jsx';
 
 /**
  * FormEditor — the design-mode editor view.

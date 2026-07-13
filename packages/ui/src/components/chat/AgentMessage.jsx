@@ -1,5 +1,7 @@
 import React from 'react';
-import Button from './Button.jsx';
+import Button from '../ui/Button.jsx';
+import FormProposalWidget from './FormProposalWidget.jsx';
+import MarkdownRenderer from '../ui/MarkdownRenderer.jsx';
 
 const statusLabel = (status) => {
     if (status === 'applied') return 'Applied';
@@ -16,16 +18,16 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption }) {
     return (
         <div className={`flex w-full ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
             {message.sender !== 'user' && (
-                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-4 mr-2.5 border border-indigo-200/50">
-                    <span className="text-xs font-black">✦</span>
+                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-4 mr-2.5 shadow-sm border border-indigo-200/50">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="14" x="3" y="8" rx="2"/><path d="M12 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 5v3"/><path d="M8 14h.01"/><path d="M16 14h.01"/><path d="M9 19h6"/></svg>
                 </div>
             )}
-            <div className={`flex flex-col gap-1 ${message.sender === 'user' ? 'items-end' : 'items-start'} max-w-[90%]`}>
+            <div className={`flex flex-col gap-1 ${message.sender === 'user' ? 'items-end' : 'items-start'} max-w-[90%] min-w-0`}>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
-                    {message.sender === 'user' ? 'You' : 'AI Assistant'}
+                    {message.sender === 'user' ? 'You' : 'Promptly AI'}
                 </span>
-                <div className={`w-full rounded-2xl p-3.5 text-sm leading-relaxed whitespace-pre-wrap ${message.sender === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'}`}>
-                    {message.text}
+                <div className={`w-full min-w-0 overflow-x-auto rounded-2xl p-3.5 text-sm leading-relaxed whitespace-pre-wrap ${message.sender === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'}`}>
+                    <MarkdownRenderer content={message.text} inverted={message.sender === 'user'} />
                 </div>
 
                 {message.kind === 'clarification' && options.length > 0 && (
@@ -37,11 +39,21 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption }) {
                     </div>
                 )}
 
-                {isProposal && (
+                {isProposal && message.kind === 'form_proposal' && (
+                    <FormProposalWidget 
+                        proposal={payload}
+                        status={status}
+                        onAccept={() => onApply?.(message)}
+                        onIgnore={() => onIgnore?.(message)}
+                        onPreview={() => onOption?.({ type: 'preview_form', proposal: payload, formId: payload.formId })}
+                    />
+                )}
+
+                {isProposal && message.kind !== 'form_proposal' && (
                     <div className="mt-2 w-full border border-slate-200 rounded-xl bg-slate-50 p-3 flex flex-col gap-3">
                         <div className="flex items-center justify-between">
                             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                                {message.kind === 'workflow_diff' ? 'Workflow changes' : message.kind === 'form_proposal' ? 'Form proposal' : 'Workflow proposal'}
+                                {message.kind === 'workflow_diff' ? 'Workflow changes' : 'Workflow proposal'}
                             </span>
                             {payload.name && <span className="text-xs font-bold text-slate-700">{payload.name}</span>}
                         </div>
@@ -57,12 +69,6 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption }) {
                                 {(payload.diff?.updatedNodes || []).map(node => <div key={`u-${node.id}`} className="text-amber-700">~ {node.title}</div>)}
                                 {(payload.diff?.removedNodes || []).map(node => <div key={`r-${node.id}`} className="text-red-700">− {node.title}</div>)}
                                 {(payload.diff?.edges || []).length > 0 && <div className="text-indigo-700">↔ Edge connections changed</div>}
-                            </div>
-                        )}
-                        {message.kind === 'form_proposal' && (
-                            <div className="flex flex-col gap-1 text-xs text-slate-600">
-                                <div>{(payload.schema?.fields || []).length} field(s) prepared for review.</div>
-                                {(payload.schema?.fields || []).slice(0, 8).map(field => <div key={field.id || field.label} className="flex items-center justify-between border-b border-slate-200/70 pb-1"><span className="font-semibold text-slate-700">{field.label || field.title || 'Untitled field'}</span><span className="text-slate-400">{field.type}</span></div>)}
                             </div>
                         )}
                         {status ? (

@@ -2,7 +2,7 @@ import React from 'react';
 import { MODAL_TYPES } from '../constants.js';
 import { formatLastEdited } from '../../utils/timeUtils.js';
 import { ICON_MAP } from '../../utils/iconMap.jsx';
-import Switch from '../../../components/Switch';
+import Switch from '../../../components/ui/Switch.jsx';
 
 /**
  * A single draggable workflow row used in both the root-level list
