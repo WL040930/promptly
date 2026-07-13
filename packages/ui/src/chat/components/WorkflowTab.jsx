@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../../context/ToastContext.jsx';
 import { getWorkflows, createWorkflow, deleteWorkflow, triggerWorkflow } from '../../api/backend.js';
 import { ICON_MAP } from '../../builder/utils/iconMap.jsx';
@@ -9,90 +10,67 @@ import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 const WorkflowTab = () => {
     const toast = useToast();
     const container = useRef(null);
-    const [workflows, setWorkflows] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const queryClient = useQueryClient();
     const [workflowToDelete, setWorkflowToDelete] = useState(null);
-    const [isDeleting, setIsDeleting] = useState(false);
-    const [isCreating, setIsCreating] = useState(false);
-    const [runningWorkflowId, setRunningWorkflowId] = useState(null);
+
+    const { data: workflows = [], isLoading: loading } = useQuery({
+        queryKey: ['workflows'],
+        queryFn: getWorkflows
+    });
+
+    const createWorkflowMutation = useMutation({
+        mutationFn: createWorkflow,
+        onSuccess: () => {
+            queryClient.invalidateQueries(['workflows']);
+            toast.success('Workflow created successfully!');
+        },
+        onError: (err) => {
+            console.error("Failed to create workflow:", err);
+            toast.error('Failed to create workflow.');
+        }
+    });
+
+    const triggerWorkflowMutation = useMutation({
+        mutationFn: ({ id, payload }) => triggerWorkflow(id, payload),
+        onSuccess: () => toast.success(`Workflow triggered successfully!`),
+        onError: () => toast.error(`Failed to trigger workflow.`)
+    });
+
+    const deleteWorkflowMutation = useMutation({
+        mutationFn: deleteWorkflow,
+        onSuccess: () => {
+            queryClient.invalidateQueries(['workflows']);
+            toast.success('Workflow deleted successfully!');
+            setWorkflowToDelete(null);
+        },
+        onError: () => {
+            toast.error('Failed to delete workflow.');
+            setWorkflowToDelete(null);
+        }
+    });
 
     useGSAP(() => {
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
     }, { scope: container });
 
-    useEffect(() => {
-        const fetchWorkflows = async () => {
-            try {
-                const data = await getWorkflows();
-                if (data) setWorkflows(data);
-            } catch (err) {
-                console.error('Failed to fetch workflows:', err);
-                toast.error('Failed to load workflows.');
-            } finally {
-                setLoading(false);
-            }
+    const handleCreateWorkflow = () => {
+        const wfData = {
+            name: 'New Sequence Automation',
+            status: 'Draft',
+            iconColor: 'text-indigo-600',
+            iconBg: 'bg-indigo-100',
+            nodes: []
         };
-        fetchWorkflows();
-    }, []);
-
-    const fetchWorkflows = async () => {
-        setLoading(true);
-        try {
-            const data = await getWorkflows();
-            if (data) setWorkflows(data);
-        } catch (err) {
-            console.error('Failed to fetch workflows:', err);
-        } finally {
-            setLoading(false);
-        }
+        createWorkflowMutation.mutate(wfData);
     };
 
-    const handleCreateWorkflow = async () => {
-        setIsCreating(true);
-        try {
-            const wfData = {
-                name: 'New Sequence Automation',
-                status: 'Draft',
-                iconColor: 'text-indigo-600',
-                iconBg: 'bg-indigo-100',
-                nodes: []
-            };
-            const newWf = await createWorkflow(wfData);
-            setWorkflows(prev => [...prev, newWf]);
-            toast.success('Workflow created successfully!');
-        } catch (e) {
-            console.error("Failed to create workflow:", e);
-            toast.error('Failed to create workflow.');
-        } finally {
-            setIsCreating(false);
-        }
+    const handleRunNow = (id, name) => {
+        triggerWorkflowMutation.mutate({ id, payload: {} });
     };
 
-    const handleRunNow = async (id, name) => {
-        setRunningWorkflowId(id);
-        try {
-            await triggerWorkflow(id, {});
-            toast.success(`Workflow "${name}" triggered successfully!`);
-        } catch (error) {
-            toast.error(`Failed to trigger workflow "${name}".`);
-        } finally {
-            setRunningWorkflowId(null);
-        }
-    };
-
-    const confirmDeleteWorkflow = async () => {
+    const confirmDeleteWorkflow = () => {
         if (!workflowToDelete) return;
-        setIsDeleting(true);
-        try {
-            await deleteWorkflow(workflowToDelete);
-            toast.success('Workflow deleted successfully!');
-            setWorkflows(prev => prev.filter(w => w.id !== workflowToDelete));
-        } catch (error) {
-            toast.error('Failed to delete workflow.');
-        } finally {
-            setIsDeleting(false);
-            setWorkflowToDelete(null);
-        }
+        deleteWorkflowMutation.mutate(workflowToDelete);
     };
 
     return (
@@ -105,10 +83,10 @@ const WorkflowTab = () => {
                     </div>
                     <button 
                         onClick={handleCreateWorkflow}
-                        disabled={isCreating}
+                        disabled={createWorkflowMutation.isPending}
                         className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm rounded-xl transition-all shadow-md shadow-indigo-500/20 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center min-w-[110px]"
                     >
-                        {isCreating ? (
+                        {createWorkflowMutation.isPending ? (
                             <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -165,10 +143,10 @@ const WorkflowTab = () => {
                                 <div className="flex items-center gap-2">
                                     <button 
                                         onClick={() => handleRunNow(wf.id, wf.name)}
-                                        disabled={runningWorkflowId === wf.id}
+                                        disabled={triggerWorkflowMutation.variables?.id === wf.id && triggerWorkflowMutation.isPending}
                                         className="px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-medium text-sm rounded-lg transition-colors border border-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed min-w-[90px] flex justify-center"
                                     >
-                                        {runningWorkflowId === wf.id ? (
+                                        {triggerWorkflowMutation.variables?.id === wf.id && triggerWorkflowMutation.isPending ? (
                                             <svg className="animate-spin h-5 w-5 text-indigo-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -211,7 +189,7 @@ const WorkflowTab = () => {
                 message="This action cannot be undone. Are you sure you want to permanently delete this workflow?"
                 confirmText="Delete"
                 confirmVariant="danger"
-                isLoading={isDeleting}
+                isLoading={deleteWorkflowMutation.isPending}
             />
         </div>
     );

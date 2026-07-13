@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createForm, createWorkflow, getChatSession, getChatSessions, getWorkflow, getWorkflows, sendChatMessage, updateForm, updateWorkflow, deleteChatSession, getForm } from '../../api/backend.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import Button from '../../components/ui/Button.jsx';
@@ -11,10 +12,44 @@ const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I ca
 
 export default function ChatTab() {
     const toast = useToast();
+    const queryClient = useQueryClient();
+
+    const { data: sessions = [] } = useQuery({
+        queryKey: ['chatSessions'],
+        queryFn: getChatSessions
+    });
+
+    const { data: workflows = [] } = useQuery({
+        queryKey: ['workflows'],
+        queryFn: getWorkflows
+    });
+
+    const deleteChatSessionMutation = useMutation({
+        mutationFn: deleteChatSession,
+        onSuccess: () => {
+            queryClient.invalidateQueries(['chatSessions']);
+            toast.success('Chat deleted');
+            if (sessionId === chatToDelete?.id) {
+                newChat();
+            }
+            setChatToDelete(null);
+        },
+        onError: (error) => {
+            toast.error('Failed to delete chat: ' + error.message);
+            setChatToDelete(null);
+        }
+    });
+
+    const createFormMutation = useMutation({ mutationFn: createForm });
+    const updateFormMutation = useMutation({ mutationFn: ({id, data}) => updateForm(id, data) });
+    const updateWorkflowMutation = useMutation({ mutationFn: ({id, data}) => updateWorkflow(id, data) });
+    const createWorkflowMutation = useMutation({
+        mutationFn: createWorkflow,
+        onSuccess: () => queryClient.invalidateQueries(['workflows'])
+    });
+
     const [messages, setMessages] = useState([welcome]);
-    const [sessions, setSessions] = useState([]);
     const [sessionId, setSessionId] = useState(null);
-    const [workflows, setWorkflows] = useState([]);
     const [targetWorkflow, setTargetWorkflow] = useState(null);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
@@ -22,16 +57,11 @@ export default function ChatTab() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [sidebarSearch, setSidebarSearch] = useState('');
     const [chatToDelete, setChatToDelete] = useState(null);
-    const [isDeleting, setIsDeleting] = useState(false);
     const [previewProposal, setPreviewProposal] = useState(null);
     const [previewForm, setPreviewForm] = useState(null);
     const endRef = useRef(null);
 
-    const loadSessions = async () => setSessions(await getChatSessions());
     useEffect(() => {
-        loadSessions();
-        getWorkflows().then(setWorkflows).catch(() => { });
-        
         const parsed = parsePath(window.location.pathname);
         if (parsed.mode === 'chat' && parsed.tab === 'chat' && parsed.sessionId) {
             loadChat(parsed.sessionId);
@@ -60,7 +90,7 @@ export default function ChatTab() {
             }
         }
         if (response?.reply) setMessages(previous => [...previous, response.reply]);
-        if (response?.sessionId) loadSessions();
+        if (response?.sessionId) queryClient.invalidateQueries(['chatSessions']);
     };
 
     const send = async (text, event = null) => {
@@ -87,16 +117,15 @@ export default function ChatTab() {
         if (message.kind === 'form_proposal') {
             const schema = payload.schema || {};
             const data = { title: schema.title || 'New Promptly Form', description: schema.description || '', settings: schema.settings || {}, fields: schema.fields || [] };
-            const saved = payload.formId ? await updateForm(payload.formId, data) : await createForm(data);
+            const saved = payload.formId ? await updateFormMutation.mutateAsync({id: payload.formId, data}) : await createFormMutation.mutateAsync(data);
             result = { formId: saved.id };
         } else if (message.kind === 'workflow_diff') {
             if (!targetWorkflow) throw new Error('Choose a workflow target before applying these changes.');
             if (payload.baseWorkflowUpdatedAt && targetWorkflow.updatedAt && payload.baseWorkflowUpdatedAt !== targetWorkflow.updatedAt) throw new Error('This workflow changed while the proposal was open. Generate the changes again.');
-            await updateWorkflow(targetWorkflow.id, { nodes: payload.nodes, edges: payload.edges });
+            await updateWorkflowMutation.mutateAsync({id: targetWorkflow.id, data: { nodes: payload.nodes, edges: payload.edges }});
             result = { workflowId: targetWorkflow.id };
         } else if (message.kind === 'workflow_proposal') {
-            const saved = await createWorkflow({ name: payload.name || 'New Workflow', status: 'Draft', iconColor: 'text-indigo-600', iconBg: 'bg-indigo-100', nodes: payload.nodes || [], edges: payload.edges || [] });
-            setWorkflows(previous => [...previous, saved]);
+            const saved = await createWorkflowMutation.mutateAsync({ name: payload.name || 'New Workflow', status: 'Draft', iconColor: 'text-indigo-600', iconBg: 'bg-indigo-100', nodes: payload.nodes || [], edges: payload.edges || [] });
             result = { workflowId: saved.id };
         }
         setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied' } : item));
@@ -147,22 +176,9 @@ export default function ChatTab() {
         navigate(buildPath({ mode: 'chat', tab: 'chat', sessionId: id }));
     };
 
-    const confirmDelete = async () => {
+    const confirmDelete = () => {
         if (!chatToDelete) return;
-        setIsDeleting(true);
-        try {
-            await deleteChatSession(chatToDelete.id);
-            toast.success('Chat deleted');
-            if (sessionId === chatToDelete.id) {
-                newChat();
-            }
-            loadSessions();
-        } catch (error) {
-            toast.error('Failed to delete chat: ' + error.message);
-        } finally {
-            setIsDeleting(false);
-            setChatToDelete(null);
-        }
+        deleteChatSessionMutation.mutate(chatToDelete.id);
     };
 
     return (
@@ -352,7 +368,7 @@ export default function ChatTab() {
                 message={`Are you sure you want to delete the chat "${chatToDelete?.title}"? This action cannot be undone.`}
                 confirmText="Delete"
                 confirmVariant="dangerSolid"
-                isLoading={isDeleting}
+                isLoading={deleteChatSessionMutation.isPending}
             />
             <FormDiffPreviewModal
                 isOpen={!!previewProposal}
