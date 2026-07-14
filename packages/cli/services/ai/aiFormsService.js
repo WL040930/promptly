@@ -7,65 +7,113 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const instructionPath = path.resolve(__dirname, './instruction/form_instruction.md');
-let systemInstruction = 'You are an AI Form Designer. Output a full JSON form schema with title, description, and fields array.';
+const plannerInstructionPath = path.resolve(__dirname, './instruction/form/planner.md');
+const workerInstructionPath = path.resolve(__dirname, './instruction/form/worker.md');
+
+let plannerInstruction = 'You are an AI Form Planner.';
+let workerInstruction = 'You are an AI Form Worker.';
 try {
-    systemInstruction = fs.readFileSync(instructionPath, 'utf8');
+    plannerInstruction = fs.readFileSync(plannerInstructionPath, 'utf8');
+    workerInstruction = fs.readFileSync(workerInstructionPath, 'utf8');
 } catch (err) {
-    console.error('Failed to read form_instruction.md:', err);
+    console.error('Failed to read form instructions:', err);
 }
 
-export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory = []) => {
+export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory = [], onProgress = null) => {
     try {
+        const provider = getAIProvider();
 
-        // Map chat history to Gemini format
+        if (onProgress) onProgress({ status: 'analyzing', message: 'Analyzing requirements...' });
+
+        // 1. Prepare chat history for Planner Agent
         const contents = chatHistory.map(msg => ({
             role: msg.sender === 'user' ? 'user' : 'model',
             parts: [{ text: msg.text }]
         }));
 
-        // Append current request (minified JSON to save tokens and speed up AI processing)
         const currentRequestText = `Current Schema:\n${JSON.stringify(currentSchema || {})}\n\nUser Request:\n${prompt}`;
         contents.push({
             role: 'user',
             parts: [{ text: currentRequestText }]
         });
 
-        const provider = getAIProvider();
-        const response = await provider.generateContent(contents, {
-            systemInstruction: systemInstruction,
+        // 2. Call the Planner Agent
+        const plannerResponse = await provider.generateContent(contents, {
+            systemInstruction: plannerInstruction,
             responseMimeType: 'application/json',
             model: env.aiModel
         });
 
-        const text = response.text;
-        let result;
+        const plannerText = plannerResponse.text;
+        let plannerResult;
         try {
-            // Strip potential markdown code blocks
-            const cleanedText = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-            result = JSON.parse(cleanedText);
+            const cleanedText = plannerText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+            plannerResult = JSON.parse(cleanedText);
         } catch (e) {
-            console.error('Failed to parse AI JSON response. Raw text length:', text.length, 'Text preview:', text.substring(0, 100) + '... (truncated)');
-            console.error('Full raw text:', text);
-            throw new Error('AI returned invalid JSON: ' + e.message);
+            console.error('Failed to parse Planner JSON response:', plannerText);
+            throw new Error('Planner AI returned invalid JSON: ' + e.message);
         }
 
-        // Basic validation
-        if (!result.type || !['message', 'proposal'].includes(result.type)) {
-             throw new Error('Invalid response type generated');
+        if (!['message', 'plan_complete'].includes(plannerResult.type)) {
+             throw new Error('Invalid planner response type generated: ' + plannerResult.type);
         }
 
-        // Attach token usage
-        if (response.usageMetadata) {
-            result.tokenUsage = {
-                promptTokens: response.usageMetadata.promptTokenCount,
-                completionTokens: response.usageMetadata.candidatesTokenCount,
-                totalTokens: response.usageMetadata.totalTokenCount
+        let tokenUsage = {};
+        if (plannerResponse.usageMetadata) {
+            tokenUsage = {
+                promptTokens: plannerResponse.usageMetadata.promptTokenCount,
+                completionTokens: plannerResponse.usageMetadata.candidatesTokenCount,
+                totalTokens: plannerResponse.usageMetadata.totalTokenCount
             };
         }
 
-        // Apply patches to generate the full schema if it's a proposal
-        if (result.type === 'proposal') {
+        // If the planner needs to ask a question, return immediately
+        if (plannerResult.type === 'message') {
+            plannerResult.tokenUsage = tokenUsage;
+            return plannerResult;
+        }
+
+        // 3. If planner is complete, Call the Worker Agent
+        if (plannerResult.type === 'plan_complete') {
+            if (onProgress) onProgress({ status: 'building', message: 'Generating form schema...' });
+            const workerContents = [
+                {
+                    role: 'user',
+                    parts: [{ text: `Current Schema:\n${JSON.stringify(currentSchema || {})}\n\nInstructions from Planner:\n${plannerResult.instructionsForWorker}` }]
+                }
+            ];
+
+            const workerResponse = await provider.generateContent(workerContents, {
+                systemInstruction: workerInstruction,
+                responseMimeType: 'application/json',
+                model: env.aiModel
+            });
+
+            const workerText = workerResponse.text;
+            let result;
+            try {
+                const cleanedWorkerText = workerText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+                result = JSON.parse(cleanedWorkerText);
+            } catch (e) {
+                console.error('Failed to parse Worker JSON response:', workerText);
+                throw new Error('Worker AI returned invalid JSON: ' + e.message);
+            }
+
+            if (result.type !== 'proposal') {
+                throw new Error('Invalid worker response type generated: ' + result.type);
+            }
+
+            if (workerResponse.usageMetadata) {
+                tokenUsage.promptTokens += workerResponse.usageMetadata.promptTokenCount;
+                tokenUsage.completionTokens += workerResponse.usageMetadata.candidatesTokenCount;
+                tokenUsage.totalTokens += workerResponse.usageMetadata.totalTokenCount;
+            }
+
+            result.tokenUsage = tokenUsage;
+            // Override the worker's internal message with the conversational summary from the planner
+            result.message = plannerResult.summary || result.message;
+
+            // 4. Apply patches to generate the full schema
             let updatedSchema = { ...currentSchema };
             if (!updatedSchema.fields) updatedSchema.fields = [];
 
@@ -82,21 +130,32 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
                         updatedSchema.fields.push(patch.field);
                     }
                 } else if (patch.op === 'remove' && patch.id) {
-                    const existing = updatedSchema.fields.find(f => f.id === patch.id);
-                    if (existing) patch.label = existing.label || existing.title || patch.id;
-                    updatedSchema.fields = updatedSchema.fields.filter(f => f.id !== patch.id);
+                    const existingIndex = updatedSchema.fields.findIndex(f => f.id === patch.id);
+                    if (existingIndex !== -1) {
+                        const existing = updatedSchema.fields[existingIndex];
+                        patch.label = existing.label || existing.title || patch.id;
+                        patch.originalField = { ...existing };
+                        patch.originalIndex = existingIndex;
+                        updatedSchema.fields = updatedSchema.fields.filter(f => f.id !== patch.id);
+                    }
                 } else if (patch.op === 'update' && patch.id && patch.updates) {
-                    const existing = updatedSchema.fields.find(f => f.id === patch.id);
-                    if (existing) patch.label = existing.label || existing.title || patch.id;
-                    updatedSchema.fields = updatedSchema.fields.map(f => f.id === patch.id ? { ...f, ...patch.updates } : f);
+                    const existingIndex = updatedSchema.fields.findIndex(f => f.id === patch.id);
+                    if (existingIndex !== -1) {
+                        const existing = updatedSchema.fields[existingIndex];
+                        patch.label = existing.label || existing.title || patch.id;
+                        patch.originalField = { ...existing };
+                        patch.originalIndex = existingIndex;
+                        updatedSchema.fields = updatedSchema.fields.map(f => f.id === patch.id ? { ...f, ...patch.updates } : f);
+                    }
                 } else if (patch.op === 'update_meta' && patch.updates) {
+                    patch.originalMeta = { title: updatedSchema.title, description: updatedSchema.description };
                     Object.assign(updatedSchema, patch.updates);
                 }
             }
             result.schema = updatedSchema;
-        }
 
-        return result;
+            return result;
+        }
     } catch (error) {
         console.error('AI Service Error (Form Generation):', error);
         throw error;

@@ -6,57 +6,108 @@ export default function FormProposalWidget({
     status, 
     onAccept, 
     onIgnore, 
-    onPreview, 
+    onPreview,
+    onPreviewUpdate, 
     accepting, 
     rejecting 
 }) {
     const isAccepted = status === 'Applied' || status === 'accepted';
     const isRejected = status === 'Ignored' || status === 'rejected';
 
-    // Track which "add" patches are checked by the user
-    const [selectedAdds, setSelectedAdds] = useState({});
+    // Track which patches are checked by the user
+    const [selectedPatches, setSelectedPatches] = useState({});
 
-    // Initialize all "add" patches to true by default, unless they were previously unselected
+    // Initialize all patches to true by default, unless they were previously unselected
     useEffect(() => {
         if (proposal?.patches) {
             const initial = {};
             proposal.patches.forEach((patch, idx) => {
-                if (patch.op === 'add') {
-                    if (proposal.unselectedPatchIndices && proposal.unselectedPatchIndices.includes(idx)) {
-                        initial[idx] = false;
-                    } else {
-                        initial[idx] = true;
-                    }
+                if (proposal.unselectedPatchIndices && proposal.unselectedPatchIndices.includes(idx)) {
+                    initial[idx] = false;
+                } else {
+                    initial[idx] = true;
                 }
             });
-            setSelectedAdds(initial);
+            setSelectedPatches(initial);
         }
     }, [proposal]);
 
-    const handleToggleAdd = (idx) => {
+    const handleTogglePatch = (idx) => {
         if (isAccepted || isRejected) return;
-        setSelectedAdds(prev => ({ ...prev, [idx]: !prev[idx] }));
+        setSelectedPatches(prev => ({ ...prev, [idx]: !prev[idx] }));
+    };
+
+    const getFilteredProposal = () => {
+        const unselectedIndices = Object.keys(selectedPatches).filter(idx => !selectedPatches[idx]).map(Number);
+        
+        let filteredSchema = { ...proposal.schema };
+        if (!filteredSchema.fields) {
+            filteredSchema.fields = [];
+        } else {
+            filteredSchema.fields = [...filteredSchema.fields];
+        }
+        
+        if (unselectedIndices.length > 0 && proposal.patches) {
+            // Revert patches (process in reverse order of indices)
+            const sortedUnselected = [...unselectedIndices].sort((a, b) => b - a);
+
+            for (const idx of sortedUnselected) {
+                const patch = proposal.patches[idx];
+                if (!patch) continue;
+
+                if (patch.op === 'add') {
+                    filteredSchema.fields = filteredSchema.fields.filter(f => f.id !== patch.field?.id);
+                } else if (patch.op === 'remove') {
+                    if (patch.originalField) {
+                        const originalIndex = patch.originalIndex ?? filteredSchema.fields.length;
+                        filteredSchema.fields.splice(originalIndex, 0, patch.originalField);
+                    }
+                } else if (patch.op === 'update') {
+                    if (patch.originalField) {
+                        filteredSchema.fields = filteredSchema.fields.map(f => f.id === patch.id ? patch.originalField : f);
+                    }
+                } else if (patch.op === 'update_meta') {
+                    if (patch.originalMeta) {
+                        filteredSchema.title = patch.originalMeta.title;
+                        filteredSchema.description = patch.originalMeta.description;
+                    }
+                }
+            }
+        }
+
+        return {
+            filteredSchema,
+            unselectedIndices,
+            // Create a new proposal object that has the updated schema and patches
+            filteredProposal: {
+                ...proposal,
+                schema: filteredSchema,
+                // Only keep patches that were actually selected so the preview modal renders them correctly
+                patches: proposal.patches.filter((_, idx) => !unselectedIndices.includes(idx))
+            }
+        };
     };
 
     const handleAcceptClick = () => {
         if (!proposal?.schema) return onAccept();
 
-        // Filter out any "add" patches that were unchecked
-        const unselectedIndices = Object.keys(selectedAdds).filter(idx => !selectedAdds[idx]).map(Number);
-        
-        let filteredSchema = { ...proposal.schema };
-        
-        if (unselectedIndices.length > 0 && filteredSchema.fields) {
-            // Find the field IDs that were unchecked
-            const unselectedFieldIds = unselectedIndices.map(idx => proposal.patches[idx]?.field?.id).filter(Boolean);
-            
-            // Remove those fields from the schema
-            filteredSchema.fields = filteredSchema.fields.filter(f => !unselectedFieldIds.includes(f.id));
-        }
-
-        // Pass back the filtered schema and the unselected indices so we can persist them
+        const { filteredSchema, unselectedIndices } = getFilteredProposal();
         onAccept(filteredSchema, unselectedIndices);
     };
+
+    const handlePreviewClick = () => {
+        if (!proposal?.schema) return onPreview();
+        
+        const { filteredProposal } = getFilteredProposal();
+        onPreview(filteredProposal);
+    };
+
+    useEffect(() => {
+        if (onPreviewUpdate && proposal?.schema) {
+            const { filteredProposal } = getFilteredProposal();
+            onPreviewUpdate(filteredProposal);
+        }
+    }, [selectedPatches, onPreviewUpdate]); // Re-fire whenever selected patches change
 
     return (
         <div className="mt-2 w-full border border-slate-200 rounded-xl bg-slate-50 p-3 shadow-md flex flex-col gap-3">
@@ -90,15 +141,15 @@ export default function FormProposalWidget({
             {proposal?.patches && proposal.patches.length > 0 && (
                 <div className="flex flex-col gap-1.5 mt-1 border border-slate-100 rounded-lg p-2 bg-white">
                     {proposal.patches.map((patch, idx) => {
+                        const isChecked = selectedPatches[idx];
                         if (patch.op === 'add') {
-                            const isChecked = selectedAdds[idx];
                             return (
                                 <div key={idx} className={`flex items-start gap-2 text-xs font-medium px-2 py-1.5 rounded border transition-colors ${isChecked ? 'text-emerald-700 bg-emerald-50/50 border-emerald-100' : 'text-slate-400 bg-slate-50 border-slate-100'}`}>
                                     <label className="flex items-center gap-2 cursor-pointer w-full">
                                         <input 
                                             type="checkbox" 
                                             checked={!!isChecked} 
-                                            onChange={() => handleToggleAdd(idx)}
+                                            onChange={() => handleTogglePatch(idx)}
                                             disabled={isAccepted || isRejected}
                                             className="w-3.5 h-3.5 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 disabled:opacity-50"
                                         />
@@ -111,22 +162,37 @@ export default function FormProposalWidget({
                         }
                         if (patch.op === 'remove') {
                             return (
-                                <div key={idx} className="flex items-start gap-2 text-xs font-medium text-red-700 bg-red-50/50 px-2 py-1.5 rounded border border-red-100">
-                                    <span className="font-bold text-red-600">-</span> Removed: {patch.label || 'Field'}
+                                <div key={idx} className={`flex items-start gap-2 text-xs font-medium px-2 py-1.5 rounded border transition-colors ${isChecked ? 'text-red-700 bg-red-50/50 border-red-100' : 'text-slate-400 bg-slate-50 border-slate-100'}`}>
+                                    <label className="flex items-center gap-2 cursor-pointer w-full">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={!!isChecked} 
+                                            onChange={() => handleTogglePatch(idx)}
+                                            disabled={isAccepted || isRejected}
+                                            className="w-3.5 h-3.5 text-red-600 rounded border-slate-300 focus:ring-red-500 disabled:opacity-50"
+                                        />
+                                        <span className="flex-1">
+                                            <span className={`font-bold ${isChecked ? 'text-red-600' : 'text-slate-400'}`}>-</span> Removed: {patch.label || 'Field'}
+                                        </span>
+                                    </label>
                                 </div>
                             );
                         }
-                        if (patch.op === 'update') {
+                        if (patch.op === 'update' || patch.op === 'update_meta') {
                             return (
-                                <div key={idx} className="flex items-start gap-2 text-xs font-medium text-amber-700 bg-amber-50/50 px-2 py-1.5 rounded border border-amber-100">
-                                    <span className="font-bold text-amber-600">~</span> Modified: {patch.label || 'Field'}
-                                </div>
-                            );
-                        }
-                        if (patch.op === 'update_meta') {
-                            return (
-                                <div key={idx} className="flex items-start gap-2 text-xs font-medium text-amber-700 bg-amber-50/50 px-2 py-1.5 rounded border border-amber-100">
-                                    <span className="font-bold text-amber-600">~</span> Modified Form Properties
+                                <div key={idx} className={`flex items-start gap-2 text-xs font-medium px-2 py-1.5 rounded border transition-colors ${isChecked ? 'text-amber-700 bg-amber-50/50 border-amber-100' : 'text-slate-400 bg-slate-50 border-slate-100'}`}>
+                                    <label className="flex items-center gap-2 cursor-pointer w-full">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={!!isChecked} 
+                                            onChange={() => handleTogglePatch(idx)}
+                                            disabled={isAccepted || isRejected}
+                                            className="w-3.5 h-3.5 text-amber-600 rounded border-slate-300 focus:ring-amber-500 disabled:opacity-50"
+                                        />
+                                        <span className="flex-1">
+                                            <span className={`font-bold ${isChecked ? 'text-amber-600' : 'text-slate-400'}`}>~</span> {patch.op === 'update_meta' ? 'Modified Form Properties' : `Modified: ${patch.label || 'Field'}`}
+                                        </span>
+                                    </label>
                                 </div>
                             );
                         }
@@ -161,7 +227,7 @@ export default function FormProposalWidget({
                         variant="outline" 
                         size="sm" 
                         className="flex-1" 
-                        onClick={onPreview}
+                        onClick={handlePreviewClick}
                     >
                         Preview
                     </Button>

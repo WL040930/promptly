@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { generateFormFromPrompt, getFormChatHistory, addFormChatMessage, updateFormChatMessage } from '../../api/backend.js';
+import { getFormChatHistory, addFormChatMessage, updateFormChatMessage } from '../../api/backend.js';
+import { generateFormFromPromptStream } from '../../api/aiStream.js';
 import { useToast } from '../../context/ToastContext.jsx';
 
 const LIMIT = 50;
@@ -15,6 +16,7 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
     const toast = useToast();
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
+    const [progressLabel, setProgressLabel] = useState('Thinking...');
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
 
@@ -55,7 +57,9 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
             const savedUserMsg = await addFormChatMessage(form.id, { sender: 'user', text });
             
             // Generate AI response
-            const result = await generateFormFromPrompt(text, form, form.id);
+            const result = await generateFormFromPromptStream(text, form, form.id, (progress) => {
+                setProgressLabel(progress.message || 'Thinking...');
+            });
             
             // Save bot message to DB
             let botMsgData = { sender: 'bot', text: result.message };
@@ -66,8 +70,9 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
                     patches: result.patches,
                     status: 'pending' 
                 };
-            } else if (result.type === 'message' && result.options) {
-                botMsgData.options = result.options;
+            } else if (result.type === 'message') {
+                if (result.inputs) botMsgData.options = result.inputs;
+                else if (result.options) botMsgData.options = result.options;
             }
 
             if (result.tokenUsage) {
@@ -79,6 +84,7 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
         },
         onMutate: async (text) => {
             setIsTyping(true);
+            setProgressLabel('Thinking...');
             setInput('');
             await queryClient.cancelQueries({ queryKey });
 
@@ -248,6 +254,7 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
         handleAcceptProposal,
         handleRejectProposal,
         acceptingProposalId,
-        rejectingProposalId
+        rejectingProposalId,
+        progressLabel
     };
 };

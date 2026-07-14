@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createForm, createWorkflow, getChatSession, getChatSessions, getWorkflow, getWorkflows, sendChatMessage, updateForm, updateWorkflow, deleteChatSession, getForm } from '../../api/backend.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import Button from '../../components/ui/Button.jsx';
-import AgentMessage from '../../components/chat/AgentMessage.jsx';
+import GenericChatWidget from '../../components/chat/GenericChatWidget.jsx';
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 import FormDiffPreviewModal from '../../forms/FormDiffPreviewModal.jsx';
 import { navigate, parsePath, buildPath } from '../../utils/router.js';
@@ -152,6 +152,15 @@ export default function ChatTab() {
             setPreviewProposal(option.proposal);
             return;
         }
+        if (option?.type === 'preview_update') {
+            setPreviewProposal(prev => {
+                if (prev && prev.formId === option.proposal.formId) {
+                    return option.proposal;
+                }
+                return prev;
+            });
+            return;
+        }
         return send(typeof option === 'string' ? option : option?.label || option?.name || option?.title);
     };
 
@@ -298,66 +307,35 @@ export default function ChatTab() {
                         </select>
                     </div>
                 </div>
-                <div className="flex-1 p-6 overflow-y-auto flex flex-col gap-6 scroll-smooth">
-                    <div className="max-w-4xl mx-auto w-full flex flex-col gap-6">
-                        {messages.filter(msg => !['tool_call', 'tool_response'].includes(msg.kind)).map(message => (
-                            <AgentMessage
-                                key={message.id}
-                                message={message}
-                                onApply={handleApply}
-                                onIgnore={handleIgnore}
-                                onOption={handleOption}
-                            />
-                        ))}
-                        {isTyping && (
-                            <div className="flex w-full justify-start">
-                                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-4 mr-2.5 shadow-sm border border-indigo-200/50">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="14" x="3" y="8" rx="2"/><path d="M12 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 5v3"/><path d="M8 14h.01"/><path d="M16 14h.01"/><path d="M9 19h6"/></svg>
-                                </div>
-                                <div className="flex flex-col gap-1 items-start max-w-[85%]">
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
-                                        Promptly AI
-                                    </span>
-                                    <div className="bg-white border border-slate-200/60 rounded-2xl rounded-tl-none p-3.5 shadow-sm flex items-center gap-2 h-12">
-                                        <span className="flex items-center gap-1">
-                                            <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></span>
-                                            <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
-                                            <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></span>
-                                        </span>
-                                        <span className="text-xs text-slate-500 font-medium ml-1">{progressLabel}…</span>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                        <div ref={endRef} />
-                    </div>
-                </div>
-                <div className="p-4 bg-white/80 backdrop-blur-md border-t border-gray-200/60 shrink-0 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.05)] z-10 relative">
-                    <div className="max-w-4xl mx-auto w-full">
-                        <form onSubmit={event => { event.preventDefault(); send(input); }} className="relative flex items-center w-full">
-                            <input
-                                value={input}
-                                onChange={event => setInput(event.target.value)}
-                                placeholder="Describe what you want to build..."
-                                disabled={isTyping}
-                                className="w-full bg-white border border-slate-200 hover:border-slate-300 rounded-full pl-5 pr-14 py-3.5 text-[14px] text-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 transition-all shadow-sm disabled:opacity-60 font-medium placeholder:text-gray-400"
-                            />
-                            <button
-                                type="submit"
-                                disabled={!input.trim() || isTyping}
-                                className={`absolute right-1.5 w-10 h-10 p-0 rounded-full flex items-center justify-center transition-all ${input.trim() && !isTyping
-                                        ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-700 hover:scale-105 active:scale-95'
-                                        : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                    }`}
-                            >
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                            </button>
-                        </form>
-                        <div className="text-center mt-2.5">
-                            <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">AI can make mistakes. Please verify.</span>
-                        </div>
-                    </div>
-                </div>
+                <GenericChatWidget 
+                    messages={messages}
+                    input={input}
+                    setInput={setInput}
+                    isTyping={isTyping}
+                    handleSend={send}
+                    handleApply={(msg, filteredSchema, unselectedIndices) => {
+                        const updatedMessage = {
+                            ...msg,
+                            payload: {
+                                ...msg.payload,
+                                schema: filteredSchema || msg.payload?.schema,
+                                unselectedPatchIndices: unselectedIndices
+                            }
+                        };
+                        handleApply(updatedMessage);
+                        setPreviewProposal(null);
+                    }}
+                    handleIgnore={(msg) => {
+                        handleIgnore(msg);
+                        setPreviewProposal(null);
+                    }}
+                    handleOption={handleOption}
+                    progressLabel={progressLabel}
+                    placeholder="Describe what you want to build..."
+                    suggestions={[]}
+                    bottomNotice="AI can make mistakes. Please verify."
+                    innerClassName="max-w-4xl mx-auto w-full"
+                />
             </div>
             
             <ConfirmModal

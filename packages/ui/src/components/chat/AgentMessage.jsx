@@ -2,18 +2,20 @@ import React from 'react';
 import Button from '../ui/Button.jsx';
 import FormProposalWidget from './FormProposalWidget.jsx';
 import MarkdownRenderer from '../ui/MarkdownRenderer.jsx';
+import MessageOptionsWidget from './MessageOptionsWidget.jsx';
 
 const statusLabel = (status) => {
     if (status === 'applied') return 'Applied';
     if (status === 'ignored') return 'Ignored';
-    return null;
+    return status;
 };
 
-export default function AgentMessage({ message, onApply, onIgnore, onOption }) {
-    const payload = message.payload || {};
-    const isProposal = ['workflow_proposal', 'workflow_diff', 'form_proposal'].includes(message.kind);
-    const status = statusLabel(message.proposalStatus);
-    const options = payload.options || [];
+export default function AgentMessage({ message, onApply, onIgnore, onOption, isTyping, isAccepting, isRejecting }) {
+    const payload = message.payload || message.proposal || {};
+    const isProposal = message.proposal != null || ['workflow_proposal', 'workflow_diff', 'form_proposal'].includes(message.kind);
+    const status = statusLabel(message.proposalStatus || payload.status);
+    const options = message.options || payload.options || [];
+    const kind = message.kind || (message.proposal ? 'form_proposal' : (options.length > 0 ? 'clarification' : 'text'));
 
     return (
         <div className={`flex w-full ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -28,28 +30,41 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption }) {
                 </span>
                 <div className={`w-full min-w-0 overflow-x-auto rounded-2xl p-3.5 text-sm leading-relaxed whitespace-pre-wrap ${message.sender === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'}`}>
                     <MarkdownRenderer content={message.text} inverted={message.sender === 'user'} />
+                    {message.tokenUsage && (
+                        <div
+                            className="mt-2 text-[10px] text-slate-400 font-medium flex items-center justify-end cursor-help"
+                            title={`Prompt: ${message.tokenUsage.promptTokens} | Output: ${message.tokenUsage.completionTokens}`}
+                        >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="mr-1 text-yellow-500">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                            </svg>
+                            {message.tokenUsage.totalTokens?.toLocaleString()} tokens
+                        </div>
+                    )}
                 </div>
 
-                {message.kind === 'clarification' && options.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-2">
-                        {options.map((option, index) => {
-                            const label = typeof option === 'string' ? option : option.name || option.title || option.label;
-                            return <Button key={`${label}-${index}`} variant="secondary" size="sm" onClick={() => onOption?.(option)}>{label}</Button>;
-                        })}
-                    </div>
-                )}
-
-                {isProposal && message.kind === 'form_proposal' && (
-                    <FormProposalWidget 
-                        proposal={payload}
-                        status={status}
-                        onAccept={() => onApply?.(message)}
-                        onIgnore={() => onIgnore?.(message)}
-                        onPreview={() => onOption?.({ type: 'preview_form', proposal: payload, formId: payload.formId })}
+                {kind === 'clarification' && options.length > 0 && (
+                    <MessageOptionsWidget 
+                        options={options}
+                        onSend={(selected) => onOption?.(selected)}
+                        isTyping={isTyping}
                     />
                 )}
 
-                {isProposal && message.kind !== 'form_proposal' && (
+                {isProposal && kind === 'form_proposal' && (
+                    <FormProposalWidget 
+                        proposal={payload}
+                        status={status}
+                        onAccept={(filteredSchema, unselectedIndices) => onApply?.(message, filteredSchema, unselectedIndices)}
+                        onIgnore={() => onIgnore?.(message)}
+                        onPreview={() => onOption?.({ type: 'preview_form', proposal: payload, formId: payload.formId })}
+                        onPreviewUpdate={(filteredProposal) => onOption?.({ type: 'preview_update', proposal: filteredProposal, formId: payload.formId })}
+                        accepting={isAccepting}
+                        rejecting={isRejecting}
+                    />
+                )}
+
+                {isProposal && kind !== 'form_proposal' && (
                     <div className="mt-2 w-full border border-slate-200 rounded-xl bg-slate-50 p-3 flex flex-col gap-3">
                         <div className="flex items-center justify-between">
                             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">

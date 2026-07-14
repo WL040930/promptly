@@ -32,8 +32,30 @@ export const generateForm = asyncHandler(async (req, res) => {
         chatHistory = rawHistory.reverse();
     }
 
-    const generatedForm = await generateFormFromPrompt(prompt, currentSchema, chatHistory);
-    res.json(generatedForm);
+    const useSSE = req.headers.accept === 'text/event-stream';
+    
+    if (useSSE) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        
+        const onProgress = (data) => {
+            res.write(`data: ${JSON.stringify({ type: 'progress', ...data })}\n\n`);
+        };
+        
+        try {
+            const generatedForm = await generateFormFromPrompt(prompt, currentSchema, chatHistory, onProgress);
+            res.write(`data: ${JSON.stringify({ type: 'complete', result: generatedForm })}\n\n`);
+            res.end();
+        } catch (error) {
+            console.error('Error generating form:', error);
+            res.write(`data: ${JSON.stringify({ type: 'error', message: error.message })}\n\n`);
+            res.end();
+        }
+    } else {
+        const generatedForm = await generateFormFromPrompt(prompt, currentSchema, chatHistory);
+        res.json(generatedForm);
+    }
 });
 
 export const updateForm = asyncHandler(async (req, res) => {

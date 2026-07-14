@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { sendChatMessage } from '../../../api/backend.js';
-import Button from '../../../components/ui/Button.jsx';
-import AgentMessage from '../../../components/chat/AgentMessage.jsx';
+import GenericChatWidget from '../../../components/chat/GenericChatWidget.jsx';
 
 const SUGGESTIONS = ['Add a Slack notification step', 'Filter for high urgency tickets', 'Add GPT response step to emails', 'Store results in database'];
 
@@ -78,19 +77,20 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
 
     return (
         <div className="flex flex-col h-full bg-white relative">
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-6">
-                {messages.map(message => <AgentMessage key={message.id} message={message} onApply={handleApply} onIgnore={handleIgnore} onOption={handleOption} />)}
-                {isTyping && <div className="text-xs font-semibold text-slate-400 px-10">{progressLabel}…</div>}
-                <div ref={scrollRef} />
-            </div>
-            {messages.length === 1 && <div className="px-4 py-3 flex gap-2 overflow-x-auto border-t border-slate-100">{SUGGESTIONS.map(suggestion => <Button key={suggestion} variant="secondary" size="sm" onClick={() => send(suggestion)}>{suggestion}</Button>)}</div>}
-            <div className="p-4 bg-white border-t border-slate-100 shrink-0">
-                <form onSubmit={event => { event.preventDefault(); send(input); }} className="relative flex items-center w-full">
-                    <input type="text" value={input} onChange={event => setInput(event.target.value)} placeholder="Type a workflow instruction…" className="w-full bg-slate-50 border border-slate-200 rounded-full pl-5 pr-14 py-3.5 text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10" disabled={isTyping} autoFocus />
-                    <button type="submit" disabled={!input.trim() || isTyping} className="absolute right-1.5 w-10 h-10 rounded-full bg-indigo-600 text-white disabled:bg-slate-100 disabled:text-slate-400 grid place-items-center">➤</button>
-                </form>
-                <div className="text-center mt-2 text-[10px] text-slate-400 font-semibold uppercase tracking-wider">AI can make mistakes. Please verify.</div>
-            </div>
+            <GenericChatWidget 
+                messages={messages}
+                input={input}
+                setInput={setInput}
+                isTyping={isTyping}
+                handleSend={send}
+                handleApply={handleApply}
+                handleIgnore={handleIgnore}
+                handleOption={handleOption}
+                progressLabel={progressLabel}
+                placeholder="Type a workflow instruction…"
+                suggestions={SUGGESTIONS}
+                bottomNotice="AI can make mistakes. Please verify."
+            />
         </div>
     );
 }

@@ -39,4 +39,4 @@ const apiRequest = async (path, options = {}) => {
     return payload;
 };
 
-export { apiRequest };
+export { apiRequest, apiBase };

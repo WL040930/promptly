@@ -65,7 +65,7 @@ export const classifyRequest = async ({ message, snapshot }) => {
         ? `Current workflow nodes:\n${snapshot.nodes.map(n => `${n.id} | ${n.title} | ${n.type} | ${n.subType}`).join('\n')}\nEdges:\n${(snapshot.edges || []).map(e => `${e.id}: ${e.source} -> ${e.target}`).join('\n')}`
         : 'Current workflow: empty';
     const prompt = `Node catalogue:\n${catalogue}\n\n${current}\n\nUser request:\n${message}`;
-    const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow_classifier.md'));
+    const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow/classifier.md'));
     if (!validActions.has(value.action)) throw new Error('Classifier returned an unknown action');
 
     const known = new Set(NodeRegistry.getCompactCatalogue().map(n => n.subType));
@@ -115,7 +115,7 @@ const nodeUiFields = (spec) => ({
 
 export const assembleWorkflow = async ({ message, specs, workflowName, formId }) => {
     const prompt = `Node specifications:\n${specs.map(schemaBlock).join('\n---\n')}\n\n${formId ? `Use this approved form ID for the form trigger: ${formId}\n\n` : ''}Workflow request:\n${message}`;
-    const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow_assembler.md'));
+    const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow/assembler.md'));
     if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) throw new Error('Assembler returned an invalid workflow');
 
     const specsBySubType = new Map(specs.map(spec => [spec.subType, spec]));
@@ -249,7 +249,7 @@ export const applyWorkflowPatches = ({ currentNodes = [], currentEdges = [], pat
 
 export const patchWorkflow = async ({ message, currentWorkflow, classification, specs }) => {
     const prompt = `Current workflow:\n${JSON.stringify({ nodes: compactWorkflowSnapshot(currentWorkflow).nodes, edges: compactWorkflowSnapshot(currentWorkflow).edges })}\n\nNode specifications:\n${specs.map(schemaBlock).join('\n---\n')}\n\nEdit request:\n${message}`;
-    const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow_patcher.md'));
+    const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow/patcher.md'));
     if (!Array.isArray(value.patches)) throw new Error('Patcher returned an invalid patch list');
     const applied = applyWorkflowPatches({ currentNodes: currentWorkflow.nodes || [], currentEdges: currentWorkflow.edges || [], patches: value.patches, specs });
     const originalNodeIds = new Set((currentWorkflow.nodes || []).map(node => node.id));
