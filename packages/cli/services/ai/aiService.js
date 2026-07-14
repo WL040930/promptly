@@ -3,6 +3,7 @@ import { GeminiProvider } from './providers/geminiProvider.js';
 import { OpenRouterProvider } from './providers/openRouterProvider.js';
 import { GroqProvider } from './providers/groqProvider.js';
 import { CerebrasProvider } from './providers/cerebrasProvider.js';
+import { parseAiJson } from '../../utils/jsonParser.js';
 
 let providerInstance = null;
 
@@ -69,7 +70,7 @@ export const chatWithAgent = async (messages) => {
         const proposalMatch = reply.match(/<PROPOSAL>(.*?)<\/PROPOSAL>/s);
         if (proposalMatch) {
             try {
-                proposal = JSON.parse(proposalMatch[1]);
+                proposal = parseAiJson(proposalMatch[1]);
                 text = text.replace(proposalMatch[0], '').trim();
             } catch (e) {
                 console.error("Failed to parse proposal JSON", e);

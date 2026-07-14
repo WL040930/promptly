@@ -5,6 +5,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import './style.css'
 import App from './App.jsx'
 import { ToastProvider } from './context/ToastContext.jsx'
+import { AIStreamProvider } from './context/AIStreamContext.jsx'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,7 +20,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
         <QueryClientProvider client={queryClient}>
             <ToastProvider>
-                <App />
+                <AIStreamProvider>
+                    <App />
+                </AIStreamProvider>
             </ToastProvider>
             {import.meta.env.VITE_SHOW_DEVTOOLS === 'true' && <ReactQueryDevtools initialIsOpen={false} />}
         </QueryClientProvider>

@@ -2,6 +2,7 @@ import { getAIProvider } from './aiService.js';
 import env from '../../config/env.js';
 import fs from 'fs';
 import path from 'path';
+import { parseAiJson } from '../../utils/jsonParser.js';
 
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
@@ -47,8 +48,7 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
         const plannerText = plannerResponse.text;
         let plannerResult;
         try {
-            const cleanedText = plannerText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-            plannerResult = JSON.parse(cleanedText);
+            plannerResult = parseAiJson(plannerText);
         } catch (e) {
             console.error('Failed to parse Planner JSON response:', plannerText);
             throw new Error('Planner AI returned invalid JSON: ' + e.message);
@@ -92,8 +92,7 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
             const workerText = workerResponse.text;
             let result;
             try {
-                const cleanedWorkerText = workerText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-                result = JSON.parse(cleanedWorkerText);
+                result = parseAiJson(workerText);
             } catch (e) {
                 console.error('Failed to parse Worker JSON response:', workerText);
                 throw new Error('Worker AI returned invalid JSON: ' + e.message);

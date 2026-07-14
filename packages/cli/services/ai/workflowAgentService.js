@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { getAIProvider } from './aiService.js';
 import env from '../../config/env.js';
+import { parseAiJson } from '../../utils/jsonParser.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const instructionDir = path.join(__dirname, 'instruction');
@@ -19,10 +20,8 @@ const usage = (metadata) => ({
 });
 
 const parseModelJson = (text) => {
-    if (!text || typeof text !== 'string') throw new Error('AI returned an empty response');
-    const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
     try {
-        return JSON.parse(cleaned);
+        return parseAiJson(text);
     } catch (error) {
         throw new Error(`AI returned invalid JSON: ${error.message}`);
     }

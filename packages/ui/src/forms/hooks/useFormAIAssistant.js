@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-q
 import { getFormChatHistory, addFormChatMessage, updateFormChatMessage } from '../../api/backend.js';
 import { generateFormFromPromptStream } from '../../api/aiStream.js';
 import { useToast } from '../../context/ToastContext.jsx';
+import { useAIStream } from '../../context/AIStreamContext.jsx';
 
 const LIMIT = 50;
 const defaultMessage = {
@@ -15,10 +16,9 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
     const queryClient = useQueryClient();
     const toast = useToast();
     const [input, setInput] = useState('');
-    const [isTyping, setIsTyping] = useState(false);
-    const [progressLabel, setProgressLabel] = useState('Thinking...');
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
+    const { isTyping, progressLabel, setStreamState, clearStreamState } = useAIStream(form?.id);
 
     const queryKey = ['formChat', form?.id];
 
@@ -58,7 +58,7 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
             
             // Generate AI response
             const result = await generateFormFromPromptStream(text, form, form.id, (progress) => {
-                setProgressLabel(progress.message || 'Thinking...');
+                setStreamState({ progressLabel: progress.message || 'Thinking...' });
             });
             
             // Save bot message to DB
@@ -83,8 +83,7 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
             return { userMsg: savedUserMsg, botMsg: savedBotMsg };
         },
         onMutate: async (text) => {
-            setIsTyping(true);
-            setProgressLabel('Thinking...');
+            setStreamState({ isTyping: true, progressLabel: 'Thinking...' });
             setInput('');
             await queryClient.cancelQueries({ queryKey });
 
@@ -105,7 +104,7 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
             return { previousData, optimisticUserId };
         },
         onError: (err, variables, context) => {
-            setIsTyping(false);
+            clearStreamState();
             if (context?.previousData) {
                 queryClient.setQueryData(queryKey, context.previousData);
             }
@@ -128,12 +127,16 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
             });
         },
         onSuccess: (data, variables, context) => {
-            setIsTyping(false);
-            // Replace optimistic user message with actual, and append bot message
+            clearStreamState();
             queryClient.setQueryData(queryKey, (old) => {
                 if (!old) return old;
                 const newPages = [...old.pages];
-                let currentMessages = newPages[0].messages.filter(m => m.id !== context.optimisticUserId);
+                // Remove optimistic message and any existing copies of the userMsg/botMsg that might have been fetched from DB
+                let currentMessages = newPages[0].messages.filter(m => 
+                    m.id !== context.optimisticUserId && 
+                    m.id !== data.userMsg.id && 
+                    m.id !== data.botMsg.id
+                );
                 newPages[0] = {
                     ...newPages[0],
                     messages: [...currentMessages, data.userMsg, data.botMsg]
