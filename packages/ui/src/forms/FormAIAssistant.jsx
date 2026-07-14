@@ -11,6 +11,56 @@ const SUGGESTIONS = [
     "A product feedback questionnaire"
 ];
 
+const MessageOptionsWidget = ({ options, onSend, isTyping }) => {
+    const [selectedOptions, setSelectedOptions] = useState([]);
+
+    const handleToggle = (option) => {
+        setSelectedOptions(prev => 
+            prev.includes(option) ? prev.filter(o => o !== option) : [...prev, option]
+        );
+    };
+
+    return (
+        <div className="mt-2 flex flex-col gap-2 w-full max-w-[90%] bg-slate-50 border border-slate-200 p-2.5 rounded-xl">
+            <div className="flex flex-col gap-1.5">
+                {options.map((option, idx) => {
+                    const isChecked = selectedOptions.includes(option);
+                    return (
+                        <label 
+                            key={idx} 
+                            className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition-colors ${isChecked ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-200 hover:border-indigo-300'}`}
+                        >
+                            <input 
+                                type="checkbox" 
+                                checked={isChecked}
+                                disabled={isTyping}
+                                onChange={() => handleToggle(option)}
+                                className="mt-0.5 w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 disabled:opacity-50"
+                            />
+                            <span className={`text-sm ${isChecked ? 'text-indigo-900 font-medium' : 'text-slate-700'}`}>
+                                {option}
+                            </span>
+                        </label>
+                    );
+                })}
+            </div>
+            <Button 
+                variant="primary" 
+                size="sm" 
+                onClick={() => {
+                    if (selectedOptions.length > 0) {
+                        onSend(selectedOptions.join(', '));
+                    }
+                }}
+                disabled={selectedOptions.length === 0 || isTyping}
+                className="w-full mt-1"
+            >
+                Send Selected
+            </Button>
+        </div>
+    );
+};
+
 const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
     const {
         messages,
@@ -125,20 +175,11 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
 
                             {/* Quick Reply Options */}
                             {msg.options && msg.options.length > 0 && (
-                                <div className="mt-2 flex flex-wrap gap-2 w-full max-w-[90%]">
-                                    {msg.options.map((option, idx) => (
-                                        <Button
-                                            key={idx}
-                                            variant="secondary"
-                                            size="sm"
-                                            onClick={() => handleSend(option)}
-                                            disabled={isTyping}
-                                            className="text-left whitespace-normal h-auto"
-                                        >
-                                            {option}
-                                        </Button>
-                                    ))}
-                                </div>
+                                <MessageOptionsWidget 
+                                    options={msg.options}
+                                    onSend={handleSend}
+                                    isTyping={isTyping}
+                                />
                             )}
 
                             {/* Proposal Confirmation Box */}
@@ -146,7 +187,7 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
                                 <FormProposalWidget
                                     proposal={msg.proposal}
                                     status={msg.proposal.status}
-                                    onAccept={() => handleAcceptProposal(msg.id, msg.proposal.schema)}
+                                    onAccept={(filteredSchema, unselectedIndices) => handleAcceptProposal(msg.id, filteredSchema || msg.proposal.schema, unselectedIndices)}
                                     onIgnore={() => handleRejectProposal(msg.id)}
                                     onPreview={() => setPreviewProposal(msg.proposal)}
                                     accepting={acceptingProposalId === msg.id}

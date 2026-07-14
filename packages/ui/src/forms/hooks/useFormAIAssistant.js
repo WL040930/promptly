@@ -138,13 +138,19 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
     });
 
     const updateProposalMutation = useMutation({
-        mutationFn: async ({ msgId, status, schema }) => {
-            const updates = { proposal: { status } };
-            if (schema) updates.proposal.schema = schema;
+        mutationFn: async ({ msgId, originalProposal, status, schema, unselectedIndices }) => {
+            const updates = { 
+                proposal: { 
+                    ...originalProposal, 
+                    status,
+                    ...(schema ? { schema } : {}),
+                    ...(unselectedIndices ? { unselectedPatchIndices: unselectedIndices } : {})
+                } 
+            };
             await updateFormChatMessage(msgId, updates);
-            return { msgId, status };
+            return { msgId, status, updates };
         },
-        onMutate: async ({ msgId, status }) => {
+        onMutate: async ({ msgId, originalProposal, status, schema, unselectedIndices }) => {
             await queryClient.cancelQueries({ queryKey });
             const previousData = queryClient.getQueryData(queryKey);
 
@@ -156,7 +162,15 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
                     pages: old.pages.map(page => ({
                         ...page,
                         messages: page.messages.map(msg => 
-                            msg.id === msgId ? { ...msg, proposal: { ...msg.proposal, status } } : msg
+                            msg.id === msgId ? { 
+                                ...msg, 
+                                proposal: { 
+                                    ...msg.proposal, 
+                                    status,
+                                    ...(schema ? { schema } : {}),
+                                    ...(unselectedIndices ? { unselectedPatchIndices: unselectedIndices } : {})
+                                } 
+                            } : msg
                         )
                     }))
                 };
@@ -176,7 +190,7 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
         sendMessageMutation.mutate(text);
     }, [form?.id, isTyping, sendMessageMutation]);
 
-    const handleAcceptProposal = useCallback(async (msgId, proposalSchema) => {
+    const handleAcceptProposal = useCallback(async (msgId, proposalSchema, unselectedIndices) => {
         setAcceptingProposalId(msgId);
         try {
             // Ensure all fields have an ID
@@ -193,7 +207,16 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
                 fields: sanitizedFields
             });
 
-            updateProposalMutation.mutate({ msgId, status: 'accepted', schema: proposalSchema });
+            const msg = rawMessages.find(m => m.id === msgId);
+            const originalProposal = msg?.proposal || {};
+
+            updateProposalMutation.mutate({ 
+                msgId, 
+                originalProposal,
+                status: 'accepted', 
+                schema: proposalSchema,
+                unselectedIndices
+            });
             toast.success('Form updated successfully!');
         } catch (error) {
             console.error('Error applying proposal:', error);
@@ -201,14 +224,17 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
         } finally {
             setAcceptingProposalId(null);
         }
-    }, [onUpdateForm, updateProposalMutation, toast]);
+    }, [onUpdateForm, updateProposalMutation, toast, rawMessages]);
 
     const handleRejectProposal = useCallback((msgId) => {
         setRejectingProposalId(msgId);
-        updateProposalMutation.mutate({ msgId, status: 'rejected' }, {
+        const msg = rawMessages.find(m => m.id === msgId);
+        const originalProposal = msg?.proposal || {};
+        
+        updateProposalMutation.mutate({ msgId, originalProposal, status: 'rejected' }, {
             onSettled: () => setRejectingProposalId(null)
         });
-    }, [updateProposalMutation]);
+    }, [updateProposalMutation, rawMessages]);
 
     return {
         messages: rawMessages,

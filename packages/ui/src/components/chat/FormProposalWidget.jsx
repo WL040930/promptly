@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Button from '../ui/Button.jsx';
 
 export default function FormProposalWidget({ 
@@ -12,6 +12,51 @@ export default function FormProposalWidget({
 }) {
     const isAccepted = status === 'Applied' || status === 'accepted';
     const isRejected = status === 'Ignored' || status === 'rejected';
+
+    // Track which "add" patches are checked by the user
+    const [selectedAdds, setSelectedAdds] = useState({});
+
+    // Initialize all "add" patches to true by default, unless they were previously unselected
+    useEffect(() => {
+        if (proposal?.patches) {
+            const initial = {};
+            proposal.patches.forEach((patch, idx) => {
+                if (patch.op === 'add') {
+                    if (proposal.unselectedPatchIndices && proposal.unselectedPatchIndices.includes(idx)) {
+                        initial[idx] = false;
+                    } else {
+                        initial[idx] = true;
+                    }
+                }
+            });
+            setSelectedAdds(initial);
+        }
+    }, [proposal]);
+
+    const handleToggleAdd = (idx) => {
+        if (isAccepted || isRejected) return;
+        setSelectedAdds(prev => ({ ...prev, [idx]: !prev[idx] }));
+    };
+
+    const handleAcceptClick = () => {
+        if (!proposal?.schema) return onAccept();
+
+        // Filter out any "add" patches that were unchecked
+        const unselectedIndices = Object.keys(selectedAdds).filter(idx => !selectedAdds[idx]).map(Number);
+        
+        let filteredSchema = { ...proposal.schema };
+        
+        if (unselectedIndices.length > 0 && filteredSchema.fields) {
+            // Find the field IDs that were unchecked
+            const unselectedFieldIds = unselectedIndices.map(idx => proposal.patches[idx]?.field?.id).filter(Boolean);
+            
+            // Remove those fields from the schema
+            filteredSchema.fields = filteredSchema.fields.filter(f => !unselectedFieldIds.includes(f.id));
+        }
+
+        // Pass back the filtered schema and the unselected indices so we can persist them
+        onAccept(filteredSchema, unselectedIndices);
+    };
 
     return (
         <div className="mt-2 w-full border border-slate-200 rounded-xl bg-slate-50 p-3 shadow-md flex flex-col gap-3">
@@ -46,9 +91,21 @@ export default function FormProposalWidget({
                 <div className="flex flex-col gap-1.5 mt-1 border border-slate-100 rounded-lg p-2 bg-white">
                     {proposal.patches.map((patch, idx) => {
                         if (patch.op === 'add') {
+                            const isChecked = selectedAdds[idx];
                             return (
-                                <div key={idx} className="flex items-start gap-2 text-xs font-medium text-emerald-700 bg-emerald-50/50 px-2 py-1.5 rounded border border-emerald-100">
-                                    <span className="font-bold text-emerald-600">+</span> Added: {patch.field?.label || patch.field?.title || 'Field'}
+                                <div key={idx} className={`flex items-start gap-2 text-xs font-medium px-2 py-1.5 rounded border transition-colors ${isChecked ? 'text-emerald-700 bg-emerald-50/50 border-emerald-100' : 'text-slate-400 bg-slate-50 border-slate-100'}`}>
+                                    <label className="flex items-center gap-2 cursor-pointer w-full">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={!!isChecked} 
+                                            onChange={() => handleToggleAdd(idx)}
+                                            disabled={isAccepted || isRejected}
+                                            className="w-3.5 h-3.5 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 disabled:opacity-50"
+                                        />
+                                        <span className="flex-1">
+                                            <span className={`font-bold ${isChecked ? 'text-emerald-600' : 'text-slate-400'}`}>+</span> Added: {patch.field?.label || patch.field?.title || 'Field'}
+                                        </span>
+                                    </label>
                                 </div>
                             );
                         }
@@ -94,7 +151,7 @@ export default function FormProposalWidget({
                         variant="primary" 
                         size="sm" 
                         className="flex-1" 
-                        onClick={onAccept}
+                        onClick={handleAcceptClick}
                         isLoading={accepting}
                         loadingText="Adding..."
                     >
