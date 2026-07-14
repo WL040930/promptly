@@ -213,6 +213,7 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
             await onUpdateForm({
                 title: proposalSchema.title,
                 description: proposalSchema.description,
+                settings: proposalSchema.settings,
                 fields: sanitizedFields
             });
 

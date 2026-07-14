@@ -115,6 +115,10 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
             // 4. Apply patches to generate the full schema
             let updatedSchema = { ...currentSchema };
             if (!updatedSchema.fields) updatedSchema.fields = [];
+            
+            if (plannerResult.aiMemory) {
+                updatedSchema.settings = { ...(updatedSchema.settings || {}), aiMemory: plannerResult.aiMemory };
+            }
 
             for (const patch of result.patches || []) {
                 if (patch.op === 'add' && patch.field) {
