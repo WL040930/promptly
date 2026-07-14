@@ -488,10 +488,10 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     // ── GSAP entrance animation ───────────────────────────────────────────────
     const builderContainer = useRef(null);
     useGSAP(() => {
-        if (viewMode === 'builder') {
+        if (viewMode === 'builder' && builderContainer.current) {
             gsap.from(builderContainer.current, { opacity: 0, duration: 0.3, ease: 'power2.out' });
         }
-    }, { scope: builderContainer, dependencies: [viewMode] });
+    }, { dependencies: [viewMode] });
 
     // ── GSAP Right Panel Animations ───────────────────────────────────────────
     const rightPanelContentRef = useRef(null);

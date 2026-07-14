@@ -20,7 +20,9 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
     const [sessionId, setSessionId] = useState(null);
     const scrollRef = useRef(null);
 
-    useEffect(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages, isTyping]);
+    useEffect(() => {
+        scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages, isTyping]);
 
     const appendReply = (response) => {
         if (response?.reply) setMessages(previous => [...previous, response.reply]);

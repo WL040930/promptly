@@ -2,6 +2,30 @@ import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+const parseBr = (children) => {
+    if (typeof children === 'string') {
+        const parts = children.split(/<br\s*\/?>/gi);
+        if (parts.length === 1) return children;
+        return parts.map((part, index) => (
+            <React.Fragment key={index}>
+                {part}
+                {index < parts.length - 1 && <br className="my-1 block" />}
+            </React.Fragment>
+        ));
+    }
+    if (Array.isArray(children)) {
+        return children.map((child, index) => (
+            <React.Fragment key={index}>
+                {parseBr(child)}
+            </React.Fragment>
+        ));
+    }
+    if (React.isValidElement(children) && children.props && children.props.children) {
+        return React.cloneElement(children, { ...children.props, children: parseBr(children.props.children) });
+    }
+    return children;
+};
+
 /**
  * Premium Markdown Renderer using react-markdown.
  * Styled with Tailwind CSS to match Promptly's workspace theme.
@@ -38,7 +62,7 @@ export default function MarkdownRenderer({ content, className = '', inverted = f
                     // Paragraphs
                     p: ({ node, children, ...props }) => (
                         <p className={`mb-2.5 last:mb-0 leading-relaxed font-normal ${textClass}`} {...props}>
-                            {children}
+                            {parseBr(children)}
                         </p>
                     ),
 
@@ -107,12 +131,12 @@ export default function MarkdownRenderer({ content, className = '', inverted = f
                     ),
                     th: ({ node, children, ...props }) => (
                         <th className={`px-4 py-3 font-semibold whitespace-nowrap ${inverted ? 'text-white' : 'text-slate-700'}`} {...props}>
-                            {children}
+                            {parseBr(children)}
                         </th>
                     ),
                     td: ({ node, children, ...props }) => (
                         <td className={`px-4 py-3 align-top ${inverted ? 'text-white/80' : 'text-slate-600'}`} {...props}>
-                            {children}
+                            {parseBr(children)}
                         </td>
                     ),
 

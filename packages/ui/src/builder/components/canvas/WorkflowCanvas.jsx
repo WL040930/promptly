@@ -338,7 +338,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
   }, [nodes, draggedNode, dragPosition]);
 
   return (
-    <div className="flex-1 relative bg-[#f8fafc] overflow-hidden border border-slate-200 rounded-2xl shadow-inner min-h-[400px]" ref={reactFlowWrapper}>
+    <div className="flex-1 w-full h-full relative bg-[#f8fafc] overflow-hidden border border-slate-200 rounded-2xl shadow-inner min-h-[400px]" ref={reactFlowWrapper}>
       {/* Ghost line overlay for click-to-connect */}
       {pendingConnection && (
         <svg
