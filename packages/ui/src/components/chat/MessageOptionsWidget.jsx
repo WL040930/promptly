@@ -1,21 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import Button from '../ui/Button.jsx';
 
 export default function MessageOptionsWidget({ options, onSend, isTyping }) {
-    // Normalize options into a standard inputs array for backward compatibility
-    const inputs = useMemo(() => {
-        if (!options || options.length === 0) return [];
-        if (typeof options[0] === 'string') {
-            return [{
-                id: 'legacy_options',
-                type: 'multiple_choice',
-                label: 'Please select:',
-                options: options
-            }];
-        }
-        return options;
-    }, [options]);
-
     // Store state for each input field by its ID
     const [formState, setFormState] = useState({});
 
@@ -38,14 +24,14 @@ export default function MessageOptionsWidget({ options, onSend, isTyping }) {
 
     const handleSend = () => {
         const parts = [];
-        inputs.forEach(input => {
+        (options || []).forEach(input => {
             const val = formState[input.id];
             if (input.type === 'text') {
                 if (val && val.trim()) {
                     parts.push(input.label ? `${input.label}: ${val.trim()}` : val.trim());
                 }
             } else if (Array.isArray(val) && val.length > 0) {
-                if (input.label && input.id !== 'legacy_options') {
+                if (input.label) {
                     parts.push(`${input.label}: ${val.join(', ')}`);
                 } else {
                     parts.push(val.join(', '));
@@ -65,7 +51,7 @@ export default function MessageOptionsWidget({ options, onSend, isTyping }) {
 
     return (
         <div className="mt-2 flex flex-col gap-4 w-full max-w-[90%] bg-slate-50 border border-slate-200 p-3 rounded-xl">
-            {inputs.map((input, idx) => {
+            {(options || []).map((input, idx) => {
                 if (input.type === 'single_choice' || input.type === 'multiple_choice') {
                     const isSingle = input.type === 'single_choice';
                     const selectedOptions = formState[input.id] || [];
@@ -102,19 +88,29 @@ export default function MessageOptionsWidget({ options, onSend, isTyping }) {
                     return (
                         <div key={input.id || idx} className="flex flex-col gap-1.5">
                             {input.label && <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{input.label}</span>}
-                            <input 
-                                type="text"
-                                disabled={isTyping}
-                                placeholder={input.placeholder || "Type here..."}
-                                value={formState[input.id] || ''}
-                                onChange={(e) => handleTextChange(input.id, e.target.value)}
-                                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && isAnySelected && !isTyping) {
-                                        handleSend();
-                                    }
-                                }}
-                            />
+                            {input.type === 'textarea' || input.multiline || (input.placeholder && input.placeholder.includes('\n')) ? (
+                                <textarea
+                                    disabled={isTyping}
+                                    placeholder={input.placeholder || "Type here..."}
+                                    value={formState[input.id] || ''}
+                                    onChange={(e) => handleTextChange(input.id, e.target.value)}
+                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 min-h-[80px] resize-y"
+                                />
+                            ) : (
+                                <input 
+                                    type="text"
+                                    disabled={isTyping}
+                                    placeholder={input.placeholder || "Type here..."}
+                                    value={formState[input.id] || ''}
+                                    onChange={(e) => handleTextChange(input.id, e.target.value)}
+                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && isAnySelected && !isTyping) {
+                                            handleSend();
+                                        }
+                                    }}
+                                />
+                            )}
                         </div>
                     );
                 }
