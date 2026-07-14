@@ -205,12 +205,35 @@ const FormsTab = () => {
         updateForm({ fields });
     };
 
-    // ── Sidebar filtering ──────────────────────────────────────────────────────
+    // ── Sidebar filtering & sorting ────────────────────────────────────────────
+
+    const formatRelativeTime = (dateString) => {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffInSeconds = Math.floor((now - date) / 1000);
+
+        if (diffInSeconds < 60) return 'Just now';
+        
+        const diffInMinutes = Math.floor(diffInSeconds / 60);
+        if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+        
+        const diffInHours = Math.floor(diffInMinutes / 60);
+        if (diffInHours < 24) return `${diffInHours}h ago`;
+        
+        const diffInDays = Math.floor(diffInHours / 24);
+        if (diffInDays < 7) return `${diffInDays}d ago`;
+        
+        return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(date);
+    };
 
     const filteredForms = useMemo(() => {
-        return debouncedSearch
-            ? forms.filter(f => f.title.toLowerCase().includes(debouncedSearch.toLowerCase()))
-            : forms;
+        let result = forms;
+        if (debouncedSearch) {
+            result = result.filter(f => f.title.toLowerCase().includes(debouncedSearch.toLowerCase()));
+        }
+        // Sort by most recently updated (clone the array to avoid mutating state)
+        return [...result].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
     }, [forms, debouncedSearch]);
 
     // ── Sub-tab icons ──────────────────────────────────────────────────────────
@@ -301,27 +324,39 @@ const FormsTab = () => {
                 </div>
 
                 {/* Forms List */}
-                <div className="flex-1 overflow-y-auto px-3 pb-4 flex flex-col gap-1">
+                <div className="flex-1 overflow-y-auto px-3 pb-4 flex flex-col gap-1.5">
                     {filteredForms.map(form => {
                         const isActive = activeForm.id === form.id;
                         const formAccent = form.settings?.accentColor || '#4f46e5';
+                        const timeAgo = formatRelativeTime(form.updatedAt);
+                        
                         return (
                             <div
                                 key={form.id}
                                 onClick={() => { setActiveFormId(form.id); setIsPreviewMode(false); setActiveSubTab('questions'); setIsSidebarOpen(false); }}
-                                className={`flex items-center gap-3 px-3.5 py-3 rounded-xl cursor-pointer transition-all duration-300 group ${
+                                className={`flex items-start gap-3 px-3.5 py-3.5 rounded-xl cursor-pointer transition-all duration-300 group ${
                                     isActive
                                         ? 'bg-white shadow-md shadow-gray-200/40 border border-gray-100 scale-[1.02]'
                                         : 'text-gray-600 hover:bg-white/50 border border-transparent'
                                 }`}
                             >
                                 {/* Color dot */}
-                                <div className={`w-3 h-3 rounded-full shrink-0 transition-transform ${isActive ? 'scale-110 shadow-sm' : ''}`} style={{ backgroundColor: formAccent }} />
-                                <span className={`flex-1 truncate text-[14px] ${isActive ? 'font-bold text-gray-900' : 'font-medium'}`}>
-                                    {form.title}
-                                </span>
+                                <div className={`w-3 h-3 rounded-full shrink-0 mt-1 transition-transform ${isActive ? 'scale-110 shadow-sm' : ''}`} style={{ backgroundColor: formAccent }} />
+                                
+                                {/* Text Content */}
+                                <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                                    <span className={`truncate text-[14px] ${isActive ? 'font-bold text-gray-900' : 'font-semibold text-gray-700'}`}>
+                                        {form.title}
+                                    </span>
+                                    {timeAgo && (
+                                        <span className={`text-[11px] font-medium truncate ${isActive ? 'text-gray-500' : 'text-gray-400'}`}>
+                                            Edited {timeAgo}
+                                        </span>
+                                    )}
+                                </div>
+                                
                                 {/* Actions */}
-                                <div className={`flex items-center gap-0.5 transition-opacity duration-300 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                                <div className={`flex items-center shrink-0 -mt-0.5 -mr-1 transition-opacity duration-300 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                                     <button
                                         onClick={(e) => { e.stopPropagation(); handleDuplicateForm(form.id); }}
                                         className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
