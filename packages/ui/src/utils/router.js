@@ -9,6 +9,39 @@ export function navigate(path) {
     window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
+export function replacePath(path) {
+    window.history.replaceState({}, '', path)
+}
+
+const APP_ROUTE_PREFIXES = ['/workflow', '/chat'];
+
+export function getPathname(path) {
+    return path.split('?')[0];
+}
+
+export function isAppRoute(pathname) {
+    return APP_ROUTE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+export function getDashboardPath(user) {
+    return user?.experienceLevel === 'chat' ? '/chat/dashboard' : '/workflow/dashboard';
+}
+
+export function getRouteState(path) {
+    const pathname = getPathname(path);
+
+    return {
+        pathname,
+        isLogin: pathname === '/login',
+        isRegister: pathname === '/register',
+        isForgotPassword: pathname === '/forgot-password',
+        isResetPassword: pathname.startsWith('/reset-password/'),
+        isPublicForm: pathname.startsWith('/f/'),
+        isDashboard: isAppRoute(pathname),
+        isSecurity: pathname === '/landing/security' || pathname === '/security'
+    };
+}
+
 /**
  * Parse the current pathname into its routing segments.
  * Returns an object understood by DashboardShell / WorkflowBuilderView.

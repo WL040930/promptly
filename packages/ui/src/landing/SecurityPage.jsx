@@ -1,6 +1,7 @@
 import React from 'react'
 import Header from './components/Header'
 import Footer from './components/Footer'
+import CallToAction from './components/CallToAction'
 
 const SECURITY_FEATURES = [
   {
@@ -101,25 +102,12 @@ function SecurityPage({ onHome, onLogin }) {
           </div>
         </section>
 
-        <section className="py-24 bg-indigo-600 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2"></div>
-          <div className="absolute bottom-0 left-0 w-96 h-96 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2"></div>
-
-          <div className="max-w-4xl mx-auto px-4 text-center relative z-10">
-            <h2 className="text-4xl md:text-5xl font-bold text-white mb-6 leading-tight">Ready to build securely?</h2>
-            <p className="text-xl text-indigo-100 mb-10 max-w-2xl mx-auto">
-              Join Promptly today and start creating complex AI workflows with the peace of mind that your data is protected.
-            </p>
-            <div className="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-6">
-              <button 
-                onClick={onHome}
-                className="w-full sm:w-auto bg-white text-indigo-600 px-10 py-4 rounded-xl font-bold text-lg hover:bg-slate-50 transition-all shadow-2xl hover:scale-105 active:scale-95"
-              >
-                Get Started
-              </button>
-            </div>
-          </div>
-        </section>
+        <CallToAction
+          title="Ready to build securely?"
+          description="Join Promptly today and start creating complex AI workflows with the peace of mind that your data is protected."
+          primaryLabel="Get Started"
+          onPrimaryClick={onHome}
+        />
       </main>
       <Footer onSecurity={onHome} />
     </div>

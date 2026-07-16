@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { register } from '../api/auth.js'
+import AuthShell from './components/AuthShell.jsx'
 
 const RegisterPage = ({ onLogin, onLoginSuccess }) => {
     const [email, setEmail] = useState('')
@@ -33,24 +34,18 @@ const RegisterPage = ({ onLogin, onLoginSuccess }) => {
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4 font-sans relative overflow-hidden">
-            {/* Decorative background blobs */}
-            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-200/50 rounded-full blur-[100px] pointer-events-none" />
-            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-200/50 rounded-full blur-[100px] pointer-events-none" />
-
-            <div className="bg-white/80 backdrop-blur-xl border border-white shadow-2xl rounded-3xl p-8 sm:p-10 max-w-[420px] w-full relative z-10">
-                <div className="text-center mb-8">
-                    <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm border border-indigo-100/50">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                            <circle cx="9" cy="7" r="4" />
-                            <line x1="19" y1="8" x2="19" y2="14" />
-                            <line x1="22" y1="11" x2="16" y2="11" />
-                        </svg>
-                    </div>
-                    <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-2">Create Account</h2>
-                    <p className="text-slate-500 font-medium">Please enter your details to sign up.</p>
-                </div>
+        <AuthShell
+            icon={
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <line x1="19" y1="8" x2="19" y2="14" />
+                    <line x1="22" y1="11" x2="16" y2="11" />
+                </svg>
+            }
+            title="Create Account"
+            subtitle="Please enter your details to sign up."
+        >
 
                 <form onSubmit={handleSubmit} className="flex flex-col gap-6 animate-in fade-in duration-300">
                     <div className="space-y-1.5">
@@ -131,8 +126,7 @@ const RegisterPage = ({ onLogin, onLoginSuccess }) => {
                         Sign In
                     </button>
                 </div>
-            </div>
-        </div>
+        </AuthShell>
     )
 }
 

@@ -73,7 +73,7 @@ function InteractiveDemo() {
             <div className="space-y-4">
               <h4 className="text-sm font-bold text-slate-500 uppercase tracking-widest">Try a prompt</h4>
               <div className="flex flex-wrap gap-2">
-                {SUGGESTIONS.map((s, i) => (
+                {SUGGESTIONS.map((s) => (
                   <button
                     key={s}
                     onClick={() => handleSend(s)}

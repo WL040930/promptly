@@ -1,5 +1,7 @@
 import React, { useState } from 'react'
 import { login } from '../api/auth.js'
+import { navigate } from '../utils/router.js'
+import AuthShell from './components/AuthShell.jsx'
 
 const LoginPage = ({ onRegister, onLoginSuccess }) => {
     const [email, setEmail] = useState('')
@@ -25,23 +27,17 @@ const LoginPage = ({ onRegister, onLoginSuccess }) => {
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4 font-sans relative overflow-hidden">
-            {/* Decorative background blobs */}
-            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-200/50 rounded-full blur-[100px] pointer-events-none" />
-            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-200/50 rounded-full blur-[100px] pointer-events-none" />
-
-            <div className="bg-white/80 backdrop-blur-xl border border-white shadow-2xl rounded-3xl p-8 sm:p-10 max-w-[420px] w-full relative z-10">
-                <div className="text-center mb-8">
-                    <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm border border-indigo-100/50">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-                            <polyline points="10 17 15 12 10 7" />
-                            <line x1="15" y1="12" x2="3" y2="12" />
-                        </svg>
-                    </div>
-                    <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-2">Welcome Back</h2>
-                    <p className="text-slate-500 font-medium">Please enter your details to sign in.</p>
-                </div>
+        <AuthShell
+            icon={
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                    <polyline points="10 17 15 12 10 7" />
+                    <line x1="15" y1="12" x2="3" y2="12" />
+                </svg>
+            }
+            title="Welcome Back"
+            subtitle="Please enter your details to sign in."
+        >
 
                 <form onSubmit={handleSubmit} className="flex flex-col gap-6 animate-in fade-in duration-300">
                     <div className="space-y-1.5">
@@ -66,7 +62,7 @@ const LoginPage = ({ onRegister, onLoginSuccess }) => {
                             </label>
                             <button 
                                 type="button" 
-                                onClick={() => window.history.pushState({}, '', '/forgot-password') || window.dispatchEvent(new Event('popstate'))}
+                                onClick={() => navigate('/forgot-password')}
                                 className="text-sm font-bold text-indigo-600 hover:text-indigo-700 hover:underline transition-colors focus:outline-none"
                             >
                                 Forgot Password?
@@ -116,8 +112,7 @@ const LoginPage = ({ onRegister, onLoginSuccess }) => {
                         Sign Up
                     </button>
                 </div>
-            </div>
-        </div>
+        </AuthShell>
     )
 }
 

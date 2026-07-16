@@ -11,7 +11,8 @@ import Button from '../../../components/ui/Button.jsx';
 import { createField } from '../../../forms/fields/fieldTypes';
 import { useForms, useCreateForm, useUpdateForm, useDeleteForm } from '../../../api/hooks/useForms.js';
 import { useToast } from '../../../context/ToastContext.jsx';
-import { parsePath, buildPath } from '../../../utils/router.js';
+import { parsePath, buildPath, replacePath } from '../../../utils/router.js';
+import { formatCompactRelativeTime } from '../../../utils/time.js';
 import ConfirmModal from '../../../components/modals/ConfirmModal.jsx';
 
 /**
@@ -69,7 +70,7 @@ const FormsTab = () => {
             const currentSubTab = isPreviewMode ? 'preview' : activeSubTab;
             const newPath = buildPath({ mode: 'workflow', tab: 'forms', formId: activeFormId, subTab: currentSubTab });
             if (currentPath !== newPath) {
-                window.history.replaceState({}, '', newPath);
+                replacePath(newPath);
             }
         }
     }, [activeFormId, activeSubTab, isPreviewMode]);
@@ -207,26 +208,6 @@ const FormsTab = () => {
 
     // ── Sidebar filtering & sorting ────────────────────────────────────────────
 
-    const formatRelativeTime = (dateString) => {
-        if (!dateString) return '';
-        const date = new Date(dateString);
-        const now = new Date();
-        const diffInSeconds = Math.floor((now - date) / 1000);
-
-        if (diffInSeconds < 60) return 'Just now';
-        
-        const diffInMinutes = Math.floor(diffInSeconds / 60);
-        if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
-        
-        const diffInHours = Math.floor(diffInMinutes / 60);
-        if (diffInHours < 24) return `${diffInHours}h ago`;
-        
-        const diffInDays = Math.floor(diffInHours / 24);
-        if (diffInDays < 7) return `${diffInDays}d ago`;
-        
-        return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(date);
-    };
-
     const filteredForms = useMemo(() => {
         let result = forms;
         if (debouncedSearch) {
@@ -328,7 +309,7 @@ const FormsTab = () => {
                     {filteredForms.map(form => {
                         const isActive = activeForm.id === form.id;
                         const formAccent = form.settings?.accentColor || '#4f46e5';
-                        const timeAgo = formatRelativeTime(form.updatedAt);
+                        const timeAgo = formatCompactRelativeTime(form.updatedAt);
                         
                         return (
                             <div

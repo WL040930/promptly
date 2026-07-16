@@ -1,6 +1,7 @@
 import React, { useEffect, useState, Suspense } from 'react'
 import { getAuthUser, setAuthUser, getAuthToken, clearAuthUser, clearAuthToken } from './utils/storage.js'
 import { apiRequest } from './api/client.js'
+import { getDashboardPath, getRouteState, navigate } from './utils/router.js'
 
 const LandingPage = React.lazy(() => import('./landing/LandingPage.jsx'))
 const LoginPage = React.lazy(() => import('./auth/LoginPage.jsx'))
@@ -13,6 +14,14 @@ const ChatView = React.lazy(() => import('./chat/ChatView'))
 const WorkflowBuilderView = React.lazy(() => import('./builder/WorkflowBuilderView'))
 const SecurityPage = React.lazy(() => import('./landing/SecurityPage.jsx'))
 const PublicFormView = React.lazy(() => import('./forms/PublicFormView.jsx'))
+
+function AppLoadingFallback() {
+    return (
+        <div className="app-center-page">
+            <div className="app-loading-spinner"></div>
+        </div>
+    )
+}
 
 function App() {
     const [path, setPath] = useState(typeof window !== 'undefined' ? window.location.pathname : '/')
@@ -52,28 +61,28 @@ function App() {
     }, [])
 
     useEffect(() => {
-        // Recover session and redirect to dashboard if authenticated
-        const isAppPath = path.startsWith('/workflow') || path.startsWith('/chat');
-        const isResetPasswordPath = path.startsWith('/reset-password/');
-        const isPublicFormPath = path.startsWith('/f/');
-        
-        if (user && !isAppPath && !isResetPasswordPath && !isPublicFormPath) {
-            goTo(user.experienceLevel === 'chat' ? '/chat/dashboard' : '/workflow/dashboard')
-        } else if (!user && isAppPath) {
+        const route = getRouteState(path)
+
+        if (user && !route.isDashboard && !route.isResetPassword && !route.isPublicForm) {
+            goTo(getDashboardPath(user))
+        } else if (!user && route.isDashboard) {
             goTo('/login')
         }
     }, [user, path])
 
     const goTo = (nextPath) => {
-        window.history.pushState({}, '', nextPath)
-        setPath(nextPath)
+        navigate(nextPath)
+    }
+
+    const handleUserUpdate = (updatedUser) => {
+        setAuthUser(updatedUser)
+        setUser(updatedUser)
     }
 
     const handleLoginSuccess = (payload) => {
         if (payload?.user) {
-            setAuthUser(payload.user)
-            setUser(payload.user)
-            goTo(payload.user.experienceLevel === 'chat' ? '/chat/dashboard' : '/workflow/dashboard')
+            handleUserUpdate(payload.user)
+            goTo(getDashboardPath(payload.user))
         }
     }
 
@@ -82,36 +91,22 @@ function App() {
         goTo('/')
     }
 
-    const currentPathname = path.split('?')[0]
-    const isLogin = currentPathname === '/login'
-    const isRegister = currentPathname === '/register'
-    const isForgotPassword = currentPathname === '/forgot-password'
-    const isResetPassword = currentPathname.startsWith('/reset-password/')
-    const isPublicForm = currentPathname.startsWith('/f/')
-    const isDashboard = currentPathname.startsWith('/workflow') || currentPathname.startsWith('/chat')
-    const isSecurity = currentPathname === '/landing/security' || currentPathname === '/security'
+    const route = getRouteState(path)
 
-    if (isPublicForm) {
+    if (route.isPublicForm) {
         return <PublicFormView />
     }
 
     if (isLoading) {
-        return (
-            <div className="min-h-screen bg-[#f7f9fc] flex items-center justify-center">
-                <div className="w-8 h-8 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin"></div>
-            </div>
-        )
+        return <AppLoadingFallback />
     }
 
-    if (isDashboard && user) {
+    if (route.isDashboard && user) {
         if (!user.experienceLevel) {
             return (
                 <OnboardingPage
                     user={user}
-                    onOnboardingComplete={(updatedUser) => {
-                        setAuthUser(updatedUser)
-                        setUser(updatedUser)
-                    }}
+                    onOnboardingComplete={handleUserUpdate}
                 />
             )
         }
@@ -119,10 +114,7 @@ function App() {
         return (
             <DashboardShell
                 user={user}
-                onUserUpdate={(updatedUser) => {
-                    setAuthUser(updatedUser)
-                    setUser(updatedUser)
-                }}
+                onUserUpdate={handleUserUpdate}
                 onLogout={handleLogout}
             >
                 {user.experienceLevel === 'chat' ? (
@@ -134,36 +126,34 @@ function App() {
         )
     }
 
-    if (isLogin) {
+    if (route.isLogin) {
         return (
             <LoginPage
-                onBack={() => goTo('/')}
                 onRegister={() => goTo('/register')}
                 onLoginSuccess={handleLoginSuccess}
             />
         )
     }
 
-    if (isRegister) {
+    if (route.isRegister) {
         return (
             <RegisterPage
-                onBack={() => goTo('/')}
                 onLogin={() => goTo('/login')}
                 onLoginSuccess={handleLoginSuccess}
             />
         )
     }
 
-    if (isForgotPassword) {
+    if (route.isForgotPassword) {
         return <ForgotPasswordPage onLogin={() => goTo('/login')} />
     }
 
-    if (isResetPassword) {
-        const token = path.split('/').pop()
+    if (route.isResetPassword) {
+        const token = route.pathname.split('/').pop()
         return <ResetPasswordPage token={token} onLogin={() => goTo('/login')} />
     }
 
-    if (isSecurity) {
+    if (route.isSecurity) {
         return <SecurityPage onHome={() => goTo('/')} onLogin={() => goTo('/login')} />
     }
 
@@ -172,11 +162,7 @@ function App() {
 
 export default function RootApp() {
     return (
-        <Suspense fallback={
-            <div className="min-h-screen bg-[#f7f9fc] flex items-center justify-center">
-                <div className="w-8 h-8 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin"></div>
-            </div>
-        }>
+        <Suspense fallback={<AppLoadingFallback />}>
             <App />
         </Suspense>
     )

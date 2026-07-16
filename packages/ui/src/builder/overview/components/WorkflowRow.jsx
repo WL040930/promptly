@@ -1,6 +1,6 @@
 import React from 'react';
 import { MODAL_TYPES } from '../constants.js';
-import { formatLastEdited } from '../../utils/timeUtils.js';
+import { formatRelativeTime } from '../../../utils/time.js';
 import { ICON_MAP } from '../../utils/iconMap.jsx';
 import Switch from '../../../components/ui/Switch.jsx';
 
@@ -55,7 +55,7 @@ const WorkflowRow = ({
                     {workflow.isActive && <span className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_4px_rgba(34,197,94,0.6)]"></span>}
                     <span className="uppercase tracking-wide font-bold">{workflow.status || 'Saved'}</span>
                     <span>•</span>
-                    <span>Updated {formatLastEdited(workflow.updatedAt || workflow.createdAt, currentTime)}</span>
+                    <span>Updated {formatRelativeTime(workflow.updatedAt || workflow.createdAt, currentTime)}</span>
                 </span>
             </div>
 

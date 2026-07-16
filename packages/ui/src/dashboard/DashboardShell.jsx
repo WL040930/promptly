@@ -7,7 +7,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import SettingsModal from './SettingsModal.jsx';
 import Button from '../components/ui/Button.jsx';
 import { DashboardIcon, WorkflowIcon, LogsIcon } from '../chat/components/Icons';
-import { navigate, parsePath, buildPath } from '../utils/router.js';
+import { navigate, parsePath, buildPath, replacePath } from '../utils/router.js';
 
 // Icons
 const PanelLeftIcon = () => (
@@ -100,7 +100,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
             }
         }
 
-        window.history.replaceState({}, '', window.location.pathname);
+        replacePath(window.location.pathname);
     }, [toast]);
 
     // Navigate and update tab — used by sidebar buttons
