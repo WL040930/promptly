@@ -4,7 +4,7 @@ import { useExecutionLog } from '../../../api/hooks/useLogs.js';
 import { formatDuration, formatLogDate, getStatusClasses, getWorkflowName } from './logFormatters.js';
 import { LogInspectorSkeleton } from './LogsSkeleton.jsx';
 
-const LogInspector = ({ logId, onClose }) => {
+const LogInspector = ({ logId, isOpen = true, onClose }) => {
     const [hasCopied, setHasCopied] = useState(false);
     const { data: log, isPending, isError } = useExecutionLog(logId);
 
@@ -18,7 +18,8 @@ const LogInspector = ({ logId, onClose }) => {
     const statusClasses = getStatusClasses(log?.status);
 
     return (
-        <aside className="w-full lg:w-[420px] shrink-0 border-l border-slate-200 bg-white h-full flex flex-col shadow-2xl">
+        <div className={`shrink-0 overflow-hidden transition-[width] duration-300 ease-out motion-reduce:transition-none ${isOpen ? 'w-full lg:w-[420px]' : 'w-0'}`}>
+            <aside className={`w-full lg:w-[420px] h-full flex flex-col border-l border-slate-200 bg-white shadow-2xl transform transition-transform duration-300 ease-out will-change-transform motion-reduce:transition-none ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
             <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50 shrink-0">
                 <div className="min-w-0">
                     <h3 className="font-semibold text-slate-900 text-sm sm:text-base">Execution Inspector</h3>
@@ -123,7 +124,8 @@ const LogInspector = ({ logId, onClose }) => {
                     </div>
                 )}
             </div>
-        </aside>
+            </aside>
+        </div>
     );
 };
 

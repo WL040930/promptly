@@ -10,6 +10,7 @@ import LogPagination from './log-ui/LogPagination.jsx';
 import { LogsListSkeleton } from './log-ui/LogsSkeleton.jsx';
 
 const PAGE_SIZE = 10;
+const INSPECTOR_TRANSITION_MS = 300;
 
 const LogsTab = () => {
     const container = useRef(null);
@@ -19,6 +20,9 @@ const LogsTab = () => {
     const [workflowId, setWorkflowId] = useState('');
     const [page, setPage] = useState(1);
     const [selectedLogId, setSelectedLogId] = useState(null);
+    const [inspectorLogId, setInspectorLogId] = useState(null);
+    const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+    const inspectorOpenFrame = useRef(null);
 
     const { data: workflows = [] } = useWorkflows();
     const logsQuery = useExecutionLogs({ search, status, workflowId, page, pageSize: PAGE_SIZE });
@@ -26,6 +30,19 @@ const LogsTab = () => {
     const logs = response?.data || [];
     const pagination = response?.pagination;
     const showSkeleton = isFetching;
+
+    useEffect(() => {
+        if (isInspectorOpen || !inspectorLogId) return undefined;
+
+        const timer = window.setTimeout(() => setInspectorLogId(null), INSPECTOR_TRANSITION_MS);
+        return () => window.clearTimeout(timer);
+    }, [inspectorLogId, isInspectorOpen]);
+
+    useEffect(() => () => {
+        if (inspectorOpenFrame.current !== null) {
+            window.cancelAnimationFrame(inspectorOpenFrame.current);
+        }
+    }, []);
 
     useEffect(() => {
         const timer = window.setTimeout(() => setSearch(searchInput.trim()), 300);
@@ -44,13 +61,13 @@ const LogsTab = () => {
     const updateStatus = (value) => {
         setStatus(value);
         setPage(1);
-        setSelectedLogId(null);
+        closeInspector();
     };
 
     const updateWorkflow = (value) => {
         setWorkflowId(value);
         setPage(1);
-        setSelectedLogId(null);
+        closeInspector();
     };
 
     const clearFilters = () => {
@@ -59,13 +76,38 @@ const LogsTab = () => {
         setStatus('All');
         setWorkflowId('');
         setPage(1);
-        setSelectedLogId(null);
+        closeInspector();
     };
 
     const changePage = (nextPage) => {
         setPage(nextPage);
-        setSelectedLogId(null);
+        closeInspector();
     };
+
+    const openInspector = (logId) => {
+        setSelectedLogId(logId);
+
+        if (inspectorLogId) {
+            setInspectorLogId(logId);
+            setIsInspectorOpen(true);
+            return;
+        }
+
+        setInspectorLogId(logId);
+        inspectorOpenFrame.current = window.requestAnimationFrame(() => {
+            inspectorOpenFrame.current = null;
+            setIsInspectorOpen(true);
+        });
+    };
+
+    function closeInspector() {
+        if (inspectorOpenFrame.current !== null) {
+            window.cancelAnimationFrame(inspectorOpenFrame.current);
+            inspectorOpenFrame.current = null;
+        }
+        setSelectedLogId(null);
+        setIsInspectorOpen(false);
+    }
 
     return (
         <div ref={container} className="tab-content flex-1 flex min-h-0 overflow-hidden bg-slate-50/50 font-sans h-full">
@@ -104,15 +146,19 @@ const LogsTab = () => {
                         </div>
                     ) : (
                         <>
-                            <LogList logs={logs} selectedLogId={selectedLogId} onSelect={setSelectedLogId} />
+                            <LogList logs={logs} selectedLogId={selectedLogId} onSelect={openInspector} />
                             <LogPagination pagination={pagination} onPageChange={changePage} />
                         </>
                     )}
                 </div>
             </div>
 
-            {selectedLogId && (
-                <LogInspector logId={selectedLogId} onClose={() => setSelectedLogId(null)} />
+            {inspectorLogId && (
+                <LogInspector
+                    logId={inspectorLogId}
+                    isOpen={isInspectorOpen}
+                    onClose={closeInspector}
+                />
             )}
         </div>
     );
