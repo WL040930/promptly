@@ -1,5 +1,4 @@
 import React, { useRef, useEffect } from 'react';
-import Button from '../ui/Button.jsx';
 import AgentMessage from './AgentMessage.jsx';
 
 export default function GenericChatWidget({
@@ -23,7 +22,6 @@ export default function GenericChatWidget({
     innerClassName = "w-full"
 }) {
     const scrollContainerRef = useRef(null);
-    const messagesEndRef = useRef(null);
     const initialScrollDone = useRef(false);
 
     // Auto-scroll to bottom of chat
@@ -32,19 +30,19 @@ export default function GenericChatWidget({
 
         // Give React a tick to render the messages
         requestAnimationFrame(() => {
-            if (!scrollContainerRef.current || !messagesEndRef.current) return;
+            const scrollContainer = scrollContainerRef.current;
+            if (!scrollContainer) return;
             
             if (!initialScrollDone.current) {
-                // Force scroll to bottom on initial load
-                messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
+                scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'auto' });
                 initialScrollDone.current = true;
             } else {
                 // Only auto-scroll if near bottom or AI is typing
-                const { scrollHeight, scrollTop, clientHeight } = scrollContainerRef.current;
+                const { scrollHeight, scrollTop, clientHeight } = scrollContainer;
                 const isNearBottom = scrollHeight - scrollTop <= clientHeight + 150;
                 
                 if (isNearBottom || isTyping) {
-                    messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+                    scrollContainer.scrollTo({ top: scrollHeight, behavior: 'smooth' });
                 }
             }
         });
@@ -57,12 +55,12 @@ export default function GenericChatWidget({
     };
 
     return (
-        <div className="flex flex-col h-full w-full bg-transparent relative">
+        <div className="flex min-h-0 flex-1 flex-col w-full bg-transparent relative overflow-hidden">
             {/* Chat Body */}
             <div
                 ref={scrollContainerRef}
                 onScroll={handleScroll}
-                className="flex-1 overflow-y-auto p-4 flex flex-col gap-6"
+                className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-4 overscroll-contain"
             >
                 <div className={`flex flex-col gap-6 ${innerClassName}`}>
                 {isLoadingHistory && (
@@ -118,7 +116,6 @@ export default function GenericChatWidget({
                 )}
                 </div>
 
-                <div ref={messagesEndRef} />
             </div>
 
             {/* Quick Suggestions */}

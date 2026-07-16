@@ -30,7 +30,7 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
     const [previewProposal, setPreviewProposal] = useState(null);
 
     return (
-        <div className="flex flex-col h-full bg-transparent relative">
+        <div className="flex min-h-0 flex-col h-full bg-transparent relative overflow-hidden">
             <GenericChatWidget 
                 messages={messages}
                 input={input}

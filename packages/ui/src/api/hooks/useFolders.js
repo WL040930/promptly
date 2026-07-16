@@ -26,6 +26,7 @@ export const useUpdateFolder = () => {
         mutationFn: ({ id, data }) => updateFolder(id, data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['folders'] });
+            queryClient.invalidateQueries({ queryKey: ['workflows'] });
         },
     });
 };
@@ -37,6 +38,7 @@ export const useDeleteFolder = () => {
         mutationFn: deleteFolder,
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['folders'] });
+            queryClient.invalidateQueries({ queryKey: ['workflows'] });
         },
     });
 };

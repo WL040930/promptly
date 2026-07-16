@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
-import { apiRequest } from '../api/client.js';
+import { useChangePassword, useDisconnectGoogle, useGoogleConnect } from '../api/hooks/useAuth.js';
 import { useToast } from '../context/ToastContext.jsx';
 import Button from '../components/ui/Button.jsx';
 
@@ -14,7 +14,9 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout, initialTab = 'ge
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showNewPassword, setShowNewPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-    const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+    const changePasswordMutation = useChangePassword();
+    const disconnectGoogleMutation = useDisconnectGoogle();
+    const googleConnectMutation = useGoogleConnect();
     const modalRef = useRef(null);
     const overlayRef = useRef(null);
     const contentRef = useRef(null);
@@ -85,12 +87,8 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout, initialTab = 'ge
             return;
         }
 
-        setIsUpdatingPassword(true);
         try {
-            await apiRequest('/api/auth/change-password', {
-                method: 'PUT',
-                body: JSON.stringify({ newPassword })
-            });
+            await changePasswordMutation.mutateAsync(newPassword);
             toast.success('Password updated successfully.');
             setNewPassword('');
             setConfirmPassword('');
@@ -99,8 +97,6 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout, initialTab = 'ge
         } catch (err) {
             console.error('Failed to change password:', err);
             toast.error(err?.message || 'An error occurred while changing password.');
-        } finally {
-            setIsUpdatingPassword(false);
         }
     };
 
@@ -266,9 +262,9 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout, initialTab = 'ge
                         <Button
                             type="submit"
                             variant="primary"
-                            disabled={isUpdatingPassword || !isPasswordValid || !passwordsMatch}
+                            disabled={changePasswordMutation.isPending || !isPasswordValid || !passwordsMatch}
                             className="text-xs uppercase tracking-wider"
-                            isLoading={isUpdatingPassword}
+                            isLoading={changePasswordMutation.isPending}
                             loadingText="Updating..."
                         >
                             Update Password
@@ -346,11 +342,8 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout, initialTab = 'ge
                         <button
                             onClick={async () => {
                                 try {
-                                    await apiRequest('/api/auth/google/disconnect', {
-                                        method: 'POST'
-                                    });
+                                    await disconnectGoogleMutation.mutateAsync();
                                     toast.success('Successfully disconnected Google account.');
-                                    setTimeout(() => window.location.reload(), 1000);
                                 } catch (err) {
                                     console.error('Failed to disconnect Google account', err);
                                     toast.error(err?.message || 'An error occurred while disconnecting.');
@@ -364,7 +357,7 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout, initialTab = 'ge
                         <button
                             onClick={async () => {
                                 try {
-                                    const data = await apiRequest('/api/auth/google/connect');
+                                    const data = await googleConnectMutation.mutateAsync();
                                     if (data.url) {
                                         window.location.href = data.url;
                                     } else {

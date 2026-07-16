@@ -23,9 +23,9 @@ const ChatView = ({ user, activeTab = 'chat' }) => {
     };
 
     return (
-        <section className="flex w-full h-full bg-white relative font-sans overflow-hidden">
+        <section className="flex min-h-0 w-full h-full bg-white relative font-sans overflow-hidden">
             {/* Right Main Content Area dynamically rendering the selected tab */}
-            <div className="flex-1 flex flex-col h-full bg-white relative">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col h-full bg-white relative overflow-hidden">
                 {renderActiveTab()}
             </div>
         </section>

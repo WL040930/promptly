@@ -19,10 +19,10 @@ import { navigate, parsePath } from '../utils/router.js';
 import { useWorkflows, useWorkflow, useCreateWorkflow, useUpdateWorkflow, useSaveWorkflowVersion } from '../api/hooks/useWorkflows.js';
 import { useFolders } from '../api/hooks/useFolders.js';
 import { useRunWorkflow } from '../api/hooks/useRunWorkflow.js';
+import { useCreateForm, useUpdateForm } from '../api/hooks/useForms.js';
 import ExecutionPanel from './components/panels/ExecutionPanel';
 import { useUndoRedo } from '../hooks/useUndoRedo';
 import { useToast } from '../context/ToastContext.jsx';
-import { createForm, updateForm } from '../api/backend.js';
 
 const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) => {
     // ── Server data ──────────────────────────────────────────────────────────
@@ -48,6 +48,8 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     const createWorkflowMutation = useCreateWorkflow();
     const updateWorkflowMutation = useUpdateWorkflow();
     const saveVersionMutation = useSaveWorkflowVersion();
+    const createFormMutation = useCreateForm();
+    const updateFormMutation = useUpdateForm();
     const queryClient = useQueryClient();
     const toast = useToast();
 
@@ -56,16 +58,6 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         queryClient.setQueryData(['folders'], old => {
             const current = old || [];
             return typeof updater === 'function' ? updater(current) : updater;
-        });
-    };
-
-    const setWorkflows = (updater) => {
-        queryClient.setQueryData(['workflows'], old => {
-            const current = old || [];
-            const prevMap = {};
-            current.forEach(w => { prevMap[w.id] = w; });
-            const nextMap = typeof updater === 'function' ? updater(prevMap) : updater;
-            return Object.values(nextMap);
         });
     };
 
@@ -341,7 +333,9 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                 settings: schema.settings || {},
                 fields: schema.fields || []
             };
-            const saved = payload.formId ? await updateForm(payload.formId, formData) : await createForm(formData);
+            const saved = payload.formId
+                ? await updateFormMutation.mutateAsync({ id: payload.formId, data: formData })
+                : await createFormMutation.mutateAsync(formData);
             return { formId: saved.id };
         }
 
@@ -380,7 +374,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
             return { workflowId: targetWorkflowId };
         }
         return null;
-    }, [activeWorkflow, activeWorkflowId, createWorkflowMutation, nodes, toast, updateWorkflowMutation]);
+    }, [activeWorkflow, activeWorkflowId, createFormMutation, createWorkflowMutation, nodes, toast, updateFormMutation, updateWorkflowMutation]);
 
     const handleAddNode = useCallback((nodeData, position) => {
         const newNodeId = `${activeWorkflowId}-${Date.now()}`;
@@ -551,7 +545,6 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
                 folders={folders}
                 setFolders={setFolders}
                 workflows={workflows}
-                setWorkflows={setWorkflows}
                 onCreateWorkflow={handleCreateWorkflow}
                 onSelectWorkflow={handleSelectWorkflow}
             />

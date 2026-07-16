@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import FormPreview from './FormPreview';
 import PublicFormStatus from './components/PublicFormStatus';
-import { getPublicForm, submitFormResponse } from '../api/backend';
+import { usePublicForm, useSubmitFormResponse } from '../api/hooks/usePublicForms.js';
 
 const FORM_SUBMISSION_STORAGE_PREFIX = 'promptly_form_submitted_';
 
@@ -15,45 +15,27 @@ function getSubmissionStorageKey(formId) {
 }
 
 const PublicFormView = () => {
-    const [form, setForm] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
     const [hasSubmitted, setHasSubmitted] = useState(false);
+    const formId = getPublicFormId();
+    const { data: form, isLoading, isError } = usePublicForm(formId);
+    const submitMutation = useSubmitFormResponse();
 
     useEffect(() => {
-        const fetchForm = async () => {
-            try {
-                const id = getPublicFormId();
-
-                if (!id) {
-                    throw new Error('No form ID provided');
-                }
-
-                const data = await getPublicForm(id);
-                setForm(data);
-
-                if (data.settings?.limitOnePerBrowser && localStorage.getItem(getSubmissionStorageKey(id))) {
-                    setHasSubmitted(true);
-                }
-            } catch (err) {
-                console.error('Failed to load public form', err);
-                setError('This form is no longer available or the link is invalid.');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchForm();
-    }, []);
+        setHasSubmitted(Boolean(
+            form?.settings?.limitOnePerBrowser &&
+            formId &&
+            localStorage.getItem(getSubmissionStorageKey(formId))
+        ));
+    }, [form, formId]);
 
     const handleSubmit = async (values) => {
-        await submitFormResponse(form.id, values);
+        await submitMutation.mutateAsync({ formId: form.id, responseData: values });
         if (form.settings?.limitOnePerBrowser) {
             localStorage.setItem(getSubmissionStorageKey(form.id), 'true');
         }
     };
 
-    if (loading) {
+    if (isLoading) {
         return (
             <div className="app-center-page">
                 <div className="app-loading-spinner-lg"></div>
@@ -61,8 +43,8 @@ const PublicFormView = () => {
         );
     }
 
-    if (error || !form) {
-        return <PublicFormStatus status="notFound" message={error} />;
+    if (isError || !form) {
+        return <PublicFormStatus status="notFound" />;
     }
 
     if (form.settings?.acceptingResponses === false) {

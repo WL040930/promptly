@@ -1,32 +1,23 @@
 import React, { useState } from 'react';
-import { apiRequest } from '../api/client.js';
+import { useCompleteOnboarding } from '../api/hooks/useAuth.js';
 import WorkspaceSelectionStep from './WorkspaceSelectionStep';
 import TutorialStep from './TutorialStep';
 
 const OnboardingPage = ({ user, onOnboardingComplete }) => {
     const [step, setStep] = useState(1);
     const [selectedRole, setSelectedRole] = useState(null);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [error, setError] = useState(null);
+    const onboardingMutation = useCompleteOnboarding();
 
     const handleSubmit = async () => {
         if (!selectedRole) return;
-        setIsSubmitting(true);
-        setError(null);
-
         try {
-            const response = await apiRequest('/api/auth/onboarding', {
-                method: 'PUT',
-                body: JSON.stringify({ experienceLevel: selectedRole })
-            });
+            const response = await onboardingMutation.mutateAsync(selectedRole);
 
             if (onOnboardingComplete) {
                 onOnboardingComplete(response.user);
             }
-        } catch (err) {
-            setError(err?.message || 'Failed to save onboarding preference. Please try again.');
-        } finally {
-            setIsSubmitting(false);
+        } catch {
+            // The mutation error is rendered below.
         }
     };
 
@@ -68,8 +59,8 @@ const OnboardingPage = ({ user, onOnboardingComplete }) => {
                     onNext={() => setStep(step + 1)}
                     onBack={() => setStep(step - 1)} 
                     onSubmit={handleSubmit} 
-                    isSubmitting={isSubmitting} 
-                    error={error} 
+                    isSubmitting={onboardingMutation.isPending}
+                    error={onboardingMutation.error?.message || (onboardingMutation.isError ? 'Failed to save onboarding preference. Please try again.' : null)}
                 />
             )}
         </div>

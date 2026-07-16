@@ -1,18 +1,27 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
-import { getExecutionLogs } from '../../api/backend.js';
+import { useExecutionLogs } from '../../api/hooks/useLogs.js';
 
 const LogsTab = () => {
     const [selectedLog, setSelectedLog] = useState(null);
     const [displayedLog, setDisplayedLog] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('All'); // 'All' | 'Success' | 'Failed'
-    const [logs, setLogs] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [debouncedSearch, setDebouncedSearch] = useState('');
     const container = useRef(null);
     const drawerRef = useRef(null);
     const drawerWrapperRef = useRef(null);
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
+    const { data: logs = [], isError } = useExecutionLogs({
+        search: debouncedSearch,
+        status: statusFilter
+    });
 
     const { contextSafe } = useGSAP(() => {
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
@@ -67,21 +76,6 @@ const LogsTab = () => {
             setDisplayedLog(null);
         }
     });
-
-    useEffect(() => {
-        setLoading(true);
-        // Debounce simple fetch for now
-        const timer = setTimeout(() => {
-            getExecutionLogs(searchQuery, statusFilter).then(data => {
-                setLogs(data);
-                setLoading(false);
-            }).catch(err => {
-                console.error(err);
-                setLoading(false);
-            });
-        }, 300);
-        return () => clearTimeout(timer);
-    }, [searchQuery, statusFilter]);
 
     // Format for UI rendering
     const filteredLogs = useMemo(() => {
@@ -141,7 +135,12 @@ const LogsTab = () => {
                     </div>
 
                     {/* Developer Log Console List */}
-                    {filteredLogs.length === 0 ? (
+                    {isError ? (
+                        <div className="p-12 text-center border-2 border-dashed border-red-200 rounded-2xl flex flex-col items-center justify-center bg-red-50/50">
+                            <div className="text-red-600 font-semibold mb-1">Unable to load logs</div>
+                            <div className="text-red-500 text-sm">Please try again after checking your connection.</div>
+                        </div>
+                    ) : filteredLogs.length === 0 ? (
                         <div className="p-12 text-center border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center bg-white/50">
                             <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center mb-4">
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

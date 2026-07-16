@@ -6,12 +6,13 @@ import StatsCards from './components/StatsCards';
 import FolderNode from './components/FolderNode';
 import WorkflowRow from './components/WorkflowRow';
 import { MODAL_TYPES, MODAL_CONFIG } from './constants.js';
-import { buildFoldersByParent, buildWorkflowsByFolder, collectDescendantIds } from '../utils/treeUtils';
-import { createFolder, updateFolder, deleteFolder, createWorkflow, updateWorkflow, deleteWorkflow } from '../../api/backend.js';
+import { buildFoldersByParent, buildWorkflowsByFolder } from '../utils/treeUtils';
+import { useCreateFolder, useDeleteFolder, useUpdateFolder } from '../../api/hooks/useFolders.js';
+import { useCreateWorkflow, useDeleteWorkflow, useUpdateWorkflow } from '../../api/hooks/useWorkflows.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import Button from '../../components/ui/Button.jsx';
 
-const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCreateWorkflow, onSelectWorkflow }) => {
+const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, onSelectWorkflow }) => {
     // ── State & refs ────────────────────────────────────────────────────────
     const [searchQuery, setSearchQuery] = useState('');
     const [modal, setModal] = useState({ isOpen: false, type: null, data: null, inputValue: '', formData: {} });
@@ -27,6 +28,12 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
     const fileInputRef = useRef(null);
 
     const toast = useToast();
+    const createFolderMutation = useCreateFolder();
+    const updateFolderMutation = useUpdateFolder();
+    const deleteFolderMutation = useDeleteFolder();
+    const createWorkflowMutation = useCreateWorkflow();
+    const updateWorkflowMutation = useUpdateWorkflow();
+    const deleteWorkflowMutation = useDeleteWorkflow();
 
     // ── Effects ─────────────────────────────────────────────────────────────
     useEffect(() => {
@@ -69,16 +76,12 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
 
     const handleToggleActive = useCallback(async (workflowId, isActive) => {
         try {
-            await updateWorkflow(workflowId, { isActive });
-            setWorkflows(prev => ({
-                ...prev,
-                [workflowId]: { ...prev[workflowId], isActive }
-            }));
+            await updateWorkflowMutation.mutateAsync({ id: workflowId, data: { isActive } });
             toast.success(`Workflow ${isActive ? 'activated' : 'deactivated'}`);
         } catch (error) {
             toast.error('Failed to toggle workflow state');
         }
-    }, [setWorkflows, toast]);
+    }, [updateWorkflowMutation, toast]);
 
     // ── Modal helpers ────────────────────────────────────────────────────────
     const openModal = useCallback((type, data = null) => {
@@ -113,15 +116,14 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
             switch (modal.type) {
                 case MODAL_TYPES.NEW_FOLDER:
                     if (value) {
-                        const newFolder = await createFolder({ name: value, parentId: null });
-                        setFolders(prev => [...prev, { ...newFolder, isExpanded: true }]);
+                        await createFolderMutation.mutateAsync({ name: value, parentId: null });
                         toast.success('Folder created successfully');
                     }
                     break;
 
                 case MODAL_TYPES.NEW_WORKFLOW:
                     if (value && modal.data?.folderId) {
-                        const newWf = await createWorkflow({
+                        await createWorkflowMutation.mutateAsync({
                             folderId: modal.data.folderId,
                             name: value,
                             status: 'Saved',
@@ -130,74 +132,49 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                             iconBg: 'bg-indigo-100',
                             nodes: []
                         });
-                        setWorkflows(prev => ({ ...prev, [newWf.id]: newWf }));
                         toast.success('Workflow created successfully');
                     }
                     break;
 
                 case MODAL_TYPES.RENAME_FOLDER:
                     if (value && modal.data?.folderId) {
-                        await updateFolder(modal.data.folderId, { name: value });
-                        setFolders(prev => prev.map(f => f.id === modal.data.folderId ? { ...f, name: value } : f));
+                        await updateFolderMutation.mutateAsync({ id: modal.data.folderId, data: { name: value } });
                         toast.success('Folder renamed');
                     }
                     break;
 
                 case MODAL_TYPES.RENAME_WORKFLOW:
                     if (value && modal.data?.workflowId) {
-                        await updateWorkflow(modal.data.workflowId, { name: value });
-                        setWorkflows(prev => ({
-                            ...prev,
-                            [modal.data.workflowId]: { ...prev[modal.data.workflowId], name: value }
-                        }));
+                        await updateWorkflowMutation.mutateAsync({ id: modal.data.workflowId, data: { name: value } });
                         toast.success('Workflow renamed');
                     }
                     break;
 
                 case MODAL_TYPES.EDIT_WORKFLOW_PROPERTIES:
                     if (modal.formData.name && modal.data?.workflowId) {
-                        await updateWorkflow(modal.data.workflowId, { 
-                            name: modal.formData.name,
-                            icon: modal.formData.icon,
-                            iconColor: modal.formData.iconColor,
-                            iconBg: modal.formData.iconBg
-                        });
-                        setWorkflows(prev => ({
-                            ...prev,
-                            [modal.data.workflowId]: { 
-                                ...prev[modal.data.workflowId], 
+                        await updateWorkflowMutation.mutateAsync({
+                            id: modal.data.workflowId,
+                            data: {
                                 name: modal.formData.name,
                                 icon: modal.formData.icon,
                                 iconColor: modal.formData.iconColor,
                                 iconBg: modal.formData.iconBg
                             }
-                        }));
+                        });
                         toast.success('Workflow properties updated');
                     }
                     break;
 
                 case MODAL_TYPES.DELETE_FOLDER: {
                     if (!modal.data?.folderId) break;
-                    await deleteFolder(modal.data.folderId);
-                    const deleteIds = new Set(collectDescendantIds(folders, modal.data.folderId));
-                    setFolders(prev => prev.filter(f => !deleteIds.has(f.id)));
-                    setWorkflows(prev => {
-                        const next = { ...prev };
-                        Object.keys(next).forEach(id => { if (deleteIds.has(next[id].folderId)) delete next[id]; });
-                        return next;
-                    });
+                    await deleteFolderMutation.mutateAsync(modal.data.folderId);
                     toast.success('Folder deleted');
                     break;
                 }
 
                 case MODAL_TYPES.DELETE_WORKFLOW:
                     if (modal.data?.workflowId) {
-                        await deleteWorkflow(modal.data.workflowId);
-                        setWorkflows(prev => {
-                            const next = { ...prev };
-                            delete next[modal.data.workflowId];
-                            return next;
-                        });
+                        await deleteWorkflowMutation.mutateAsync(modal.data.workflowId);
                         toast.success('Workflow deleted');
                     }
                     break;
@@ -212,7 +189,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
             setIsSubmitting(false);
             closeModal();
         }
-    }, [modal, folders, setFolders, setWorkflows, closeModal, toast]);
+    }, [modal, setFolders, closeModal, toast, createFolderMutation, updateFolderMutation, deleteFolderMutation, createWorkflowMutation, updateWorkflowMutation, deleteWorkflowMutation]);
 
     // ── Drag-and-drop handlers ───────────────────────────────────────────────
     const onDragStart = useCallback((event, type, id) => {
@@ -257,12 +234,10 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
 
         try {
             if (dragInfo.type === 'WORKFLOW') {
-                await updateWorkflow(dragInfo.id, { folderId });
-                setWorkflows(prev => ({ ...prev, [dragInfo.id]: { ...prev[dragInfo.id], folderId } }));
+                await updateWorkflowMutation.mutateAsync({ id: dragInfo.id, data: { folderId } });
             } else if (dragInfo.type === 'FOLDER') {
                 if (!isDescendant(folderId, dragInfo.id)) {
-                    await updateFolder(dragInfo.id, { parentId: folderId });
-                    setFolders(prev => prev.map(f => f.id === dragInfo.id ? { ...f, parentId: folderId } : f));
+                    await updateFolderMutation.mutateAsync({ id: dragInfo.id, data: { parentId: folderId } });
                 }
             }
         } catch (e) {
@@ -270,21 +245,20 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
         }
 
         setDragInfo({ type: null, id: null });
-    }, [dragInfo, isDescendant, setFolders, setWorkflows]);
+    }, [dragInfo, isDescendant, updateFolderMutation, updateWorkflowMutation]);
 
     const handleRootDrop = useCallback(async (event) => {
         event.preventDefault();
         try {
             if (dragInfo.type === 'FOLDER') {
-                await updateFolder(dragInfo.id, { parentId: null });
-                setFolders(prev => prev.map(f => f.id === dragInfo.id ? { ...f, parentId: null } : f));
+                await updateFolderMutation.mutateAsync({ id: dragInfo.id, data: { parentId: null } });
             }
         } catch (e) {
             console.error('Failed to move to root', e);
         }
         setDragInfo({ type: null, id: null });
         setDragOverFolderId(null);
-    }, [dragInfo, setFolders]);
+    }, [dragInfo, updateFolderMutation]);
 
     // ── JSON import ──────────────────────────────────────────────────────────
     const handleImportJson = async (event) => {
@@ -296,7 +270,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
             const data = JSON.parse(text);
             if (!data.nodes || !Array.isArray(data.nodes)) throw new Error('Invalid workflow JSON format');
 
-            const newWf = await createWorkflow({
+            const newWf = await createWorkflowMutation.mutateAsync({
                 name: data.name || 'Imported Workflow',
                 folderId: null,
                 status: data.status || 'Draft',
@@ -304,7 +278,6 @@ const WorkflowOverview = ({ folders, setFolders, workflows, setWorkflows, onCrea
                 iconBg: data.iconBg || 'bg-indigo-100',
                 nodes: data.nodes
             });
-            setWorkflows(prev => ({ ...prev, [newWf.id]: newWf }));
             toast.success('Workflow imported successfully');
             if (onSelectWorkflow) onSelectWorkflow(newWf.id);
         } catch (error) {

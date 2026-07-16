@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getForms, createForm, updateForm, deleteForm, getFormResponses } from '../backend.js';
+import { getForms, getForm, createForm, updateForm, deleteForm, getFormResponses } from '../backend.js';
 
 export const useFormResponses = (formId) => {
     return useQuery({
@@ -14,6 +14,15 @@ export const useForms = () => {
     return useQuery({
         queryKey: ['forms'],
         queryFn: getForms,
+    });
+};
+
+export const useForm = (formId) => {
+    return useQuery({
+        queryKey: ['forms', formId],
+        queryFn: () => getForm(formId),
+        enabled: !!formId,
+        retry: false,
     });
 };
 
@@ -47,8 +56,11 @@ export const useUpdateForm = () => {
                 queryClient.setQueryData(['forms'], context.previousForms);
             }
         },
-        onSettled: () => {
+        onSettled: (data, error, variables) => {
             queryClient.invalidateQueries({ queryKey: ['forms'] });
+            if (variables?.id) {
+                queryClient.invalidateQueries({ queryKey: ['forms', variables.id] });
+            }
         },
     });
 };

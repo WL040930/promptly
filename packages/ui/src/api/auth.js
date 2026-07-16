@@ -41,4 +41,35 @@ const resetPassword = async (token, password) => {
     });
 };
 
-export { login, register, forgotPassword, resetPassword };
+const completeOnboarding = (experienceLevel) => apiRequest('/api/auth/onboarding', {
+    method: 'PUT',
+    body: JSON.stringify({ experienceLevel })
+});
+
+const switchExperienceLevel = (experienceLevel) => apiRequest('/api/auth/mode', {
+    method: 'PUT',
+    body: JSON.stringify({ experienceLevel })
+});
+
+const changePassword = (newPassword) => apiRequest('/api/auth/change-password', {
+    method: 'PUT',
+    body: JSON.stringify({ newPassword })
+});
+
+const disconnectGoogle = () => apiRequest('/api/auth/google/disconnect', {
+    method: 'POST'
+});
+
+const getGoogleConnectUrl = () => apiRequest('/api/auth/google/connect');
+
+export {
+    login,
+    register,
+    forgotPassword,
+    resetPassword,
+    completeOnboarding,
+    switchExperienceLevel,
+    changePassword,
+    disconnectGoogle,
+    getGoogleConnectUrl
+};

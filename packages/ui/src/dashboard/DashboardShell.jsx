@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { clearAuthToken, clearAuthUser } from '../utils/storage.js';
-import { apiRequest } from '../api/client.js';
+import { useSwitchExperienceLevel } from '../api/hooks/useAuth.js';
 import { useToast } from '../context/ToastContext.jsx';
 import SettingsModal from './SettingsModal.jsx';
 import Button from '../components/ui/Button.jsx';
@@ -47,6 +47,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
     const [hoveredTab, setHoveredTab] = useState(null);
     const container = useRef(null);
     const toast = useToast();
+    const switchRoleMutation = useSwitchExperienceLevel();
 
     useGSAP(() => {
         gsap.from('.dashboard-sidebar', {
@@ -121,10 +122,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
 
     const handleSwitchRole = async (newRole) => {
         try {
-            const data = await apiRequest('/api/auth/mode', {
-                method: 'PUT',
-                body: JSON.stringify({ experienceLevel: newRole })
-            });
+            const data = await switchRoleMutation.mutateAsync(newRole);
             if (onUserUpdate && data?.user) {
                 onUserUpdate(data.user);
                 
@@ -136,6 +134,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
         } catch (err) {
             console.error('Failed to update experience level:', err);
             toast.error('Failed to save settings. Please try again.');
+            throw err;
         }
     };
 
@@ -320,7 +319,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
             </aside>
 
             {/* Main Application Area */}
-            <main className="dashboard-main flex-1 flex flex-col relative w-full h-full overflow-hidden bg-white">
+            <main className="dashboard-main flex min-h-0 min-w-0 flex-1 flex-col relative w-full h-full overflow-hidden bg-white">
                 {React.Children.map(children, child => {
                     if (React.isValidElement(child)) {
                         return React.cloneElement(child, {

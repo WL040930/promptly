@@ -1,56 +1,22 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { createForm, createWorkflow, getChatSession, getChatSessions, getWorkflow, getWorkflows, sendChatMessage, updateForm, updateWorkflow, deleteChatSession, getForm } from '../../api/backend.js';
 import { useToast } from '../../context/ToastContext.jsx';
+import { useChatSession, useChatSessions, useDeleteChatSession, useSendChatMessage } from '../../api/hooks/useChat.js';
+import { useCreateForm, useForm, useUpdateForm } from '../../api/hooks/useForms.js';
+import { useCreateWorkflow, useUpdateWorkflow, useWorkflow, useWorkflows } from '../../api/hooks/useWorkflows.js';
 import Button from '../../components/ui/Button.jsx';
 import GenericChatWidget from '../../components/chat/GenericChatWidget.jsx';
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 import FormDiffPreviewModal from '../../forms/FormDiffPreviewModal.jsx';
 import { navigate, parsePath, buildPath } from '../../utils/router.js';
+import { formatCompactRelativeTime } from '../../utils/time.js';
 
 const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I can build workflows and forms from a description. What would you like to automate?' };
 
 export default function ChatTab() {
     const toast = useToast();
-    const queryClient = useQueryClient();
-
-    const { data: sessions = [] } = useQuery({
-        queryKey: ['chatSessions'],
-        queryFn: getChatSessions
-    });
-
-    const { data: workflows = [] } = useQuery({
-        queryKey: ['workflows'],
-        queryFn: getWorkflows
-    });
-
-    const deleteChatSessionMutation = useMutation({
-        mutationFn: deleteChatSession,
-        onSuccess: () => {
-            queryClient.invalidateQueries(['chatSessions']);
-            toast.success('Chat deleted');
-            if (sessionId === chatToDelete?.id) {
-                newChat();
-            }
-            setChatToDelete(null);
-        },
-        onError: (error) => {
-            toast.error('Failed to delete chat: ' + error.message);
-            setChatToDelete(null);
-        }
-    });
-
-    const createFormMutation = useMutation({ mutationFn: createForm });
-    const updateFormMutation = useMutation({ mutationFn: ({id, data}) => updateForm(id, data) });
-    const updateWorkflowMutation = useMutation({ mutationFn: ({id, data}) => updateWorkflow(id, data) });
-    const createWorkflowMutation = useMutation({
-        mutationFn: createWorkflow,
-        onSuccess: () => queryClient.invalidateQueries(['workflows'])
-    });
-
     const [messages, setMessages] = useState([welcome]);
-    const [sessionId, setSessionId] = useState(null);
-    const [targetWorkflow, setTargetWorkflow] = useState(null);
+    const [sessionId, setSessionId] = useState(() => parsePath(window.location.pathname).sessionId || null);
+    const [targetWorkflowId, setTargetWorkflowId] = useState(null);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [progressLabel, setProgressLabel] = useState('Scanning node library');
@@ -58,17 +24,28 @@ export default function ChatTab() {
     const [sidebarSearch, setSidebarSearch] = useState('');
     const [chatToDelete, setChatToDelete] = useState(null);
     const [previewProposal, setPreviewProposal] = useState(null);
-    const [previewForm, setPreviewForm] = useState(null);
-    const endRef = useRef(null);
+    const [previewFormId, setPreviewFormId] = useState(null);
+    const loadedSessionIdRef = useRef(null);
+
+    const { data: sessions = [] } = useChatSessions();
+    const { data: session } = useChatSession(sessionId);
+    const { data: workflows = [] } = useWorkflows();
+    const { data: targetWorkflow } = useWorkflow(targetWorkflowId);
+    const { data: previewForm } = useForm(previewFormId);
+    const sendChatMessageMutation = useSendChatMessage();
+    const deleteChatSessionMutation = useDeleteChatSession();
+    const createFormMutation = useCreateForm();
+    const updateFormMutation = useUpdateForm();
+    const updateWorkflowMutation = useUpdateWorkflow();
+    const createWorkflowMutation = useCreateWorkflow();
 
     useEffect(() => {
-        const parsed = parsePath(window.location.pathname);
-        if (parsed.mode === 'chat' && parsed.tab === 'chat' && parsed.sessionId) {
-            loadChat(parsed.sessionId);
-        }
-    }, []);
-    useEffect(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages, isTyping]);
-
+        if (!session || loadedSessionIdRef.current === sessionId) return;
+        loadedSessionIdRef.current = sessionId;
+        setMessages(session.messages?.length ? session.messages : [welcome]);
+        setTargetWorkflowId(session.agentContext?.workflowId || null);
+        setIsSidebarOpen(false);
+    }, [session, sessionId]);
     const filteredSessions = useMemo(() => {
         return sidebarSearch
             ? sessions.filter(s => s.title?.toLowerCase().includes(sidebarSearch.toLowerCase()))
@@ -90,7 +67,6 @@ export default function ChatTab() {
             }
         }
         if (response?.reply) setMessages(previous => [...previous, response.reply]);
-        if (response?.sessionId) queryClient.invalidateQueries(['chatSessions']);
     };
 
     const send = async (text, event = null) => {
@@ -102,7 +78,12 @@ export default function ChatTab() {
         else setProgressLabel(targetWorkflow ? 'Analysing current workflow' : 'Scanning node library');
         setIsTyping(true);
         try {
-            const response = await sendChatMessage(sessionId, text, { surface: 'chat', workflowId: targetWorkflow?.id || null, workflowSnapshot: targetSnapshot }, event);
+            const response = await sendChatMessageMutation.mutateAsync({
+                sessionId,
+                message: text,
+                context: { surface: 'chat', workflowId: targetWorkflow?.id || null, workflowSnapshot: targetSnapshot },
+                event
+            });
             appendResponse(response);
         } catch (error) {
             setMessages(previous => [...previous, { id: `error_${Date.now()}`, sender: 'bot', kind: 'error', text: error.message || 'Sorry, I could not process that request.' }]);
@@ -139,16 +120,14 @@ export default function ChatTab() {
         send(null, { type: 'proposal_ignored', messageId: message.id });
     };
 
-    const handleOption = async (option) => {
+    const handleOption = (option) => {
         if (option?.id && option?.name) {
-            const selected = await getWorkflow(option.id).catch(() => null);
-            if (selected) setTargetWorkflow(selected);
+            setTargetWorkflowId(option.id);
             return send(null, { type: 'workflow_target_selected', workflowId: option.id });
         }
         if (option?.id && option?.title) return send(null, { type: 'form_target_selected', formId: option.id });
         if (option?.type === 'preview_form') {
-            const current = option.formId ? await getForm(option.formId).catch(() => ({})) : {};
-            setPreviewForm(current);
+            setPreviewFormId(option.formId || null);
             setPreviewProposal(option.proposal);
             return;
         }
@@ -167,38 +146,43 @@ export default function ChatTab() {
     const newChat = () => { 
         setSessionId(null); 
         setMessages([welcome]); 
-        setTargetWorkflow(null); 
+        setTargetWorkflowId(null);
+        setPreviewFormId(null);
+        loadedSessionIdRef.current = null;
         setIsSidebarOpen(false); 
         navigate(buildPath({ mode: 'chat', tab: 'chat' }));
     };
     
-    const loadChat = async (id) => {
-        const session = await getChatSession(id).catch(() => null);
-        if (!session) return;
+    const loadChat = (id) => {
+        loadedSessionIdRef.current = null;
         setSessionId(id);
-        setMessages(session.messages?.length ? session.messages : [welcome]);
-        if (session.agentContext?.workflowId) {
-            const workflow = await getWorkflow(session.agentContext.workflowId).catch(() => null);
-            setTargetWorkflow(workflow);
-        }
+        setMessages([welcome]);
         setIsSidebarOpen(false);
         navigate(buildPath({ mode: 'chat', tab: 'chat', sessionId: id }));
     };
 
-    const confirmDelete = () => {
+    const confirmDelete = async () => {
         if (!chatToDelete) return;
-        deleteChatSessionMutation.mutate(chatToDelete.id);
+        try {
+            await deleteChatSessionMutation.mutateAsync(chatToDelete.id);
+            toast.success('Chat deleted');
+            if (sessionId === chatToDelete.id) newChat();
+        } catch (error) {
+            toast.error('Failed to delete chat: ' + error.message);
+        } finally {
+            setChatToDelete(null);
+        }
     };
 
     return (
-        <div className="flex w-full h-full bg-[#f4f7f9] relative overflow-hidden font-sans">
+        <div className="flex min-h-0 w-full h-full bg-[#f4f7f9] relative overflow-hidden font-sans">
             {isSidebarOpen && (
                 <div 
                     className="md:hidden absolute inset-0 z-20 bg-slate-900/40 backdrop-blur-sm transition-opacity"
                     onClick={() => setIsSidebarOpen(false)}
                 />
             )}
-            <aside className={`w-[280px] border-r border-gray-200/60 bg-white/95 backdrop-blur-md flex flex-col shrink-0 z-30 absolute md:relative h-full transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}`}>
+            <aside className={`w-[280px] min-h-0 border-r border-gray-200/60 bg-white/95 backdrop-blur-md flex flex-col shrink-0 z-30 absolute md:relative h-full overflow-hidden transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}`}>
                 {/* Sidebar Header */}
                 <div className="p-4 flex items-center justify-between shrink-0">
                     <h3 className="font-extrabold text-gray-900 text-[15px] tracking-tight pl-1">Chats</h3>
@@ -247,21 +231,29 @@ export default function ChatTab() {
                 </div>
 
                 {/* Chat List */}
-                <div className="flex-1 overflow-y-auto px-3 pb-4 flex flex-col gap-1">
+                <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 pb-4 overscroll-contain">
                     {filteredSessions.map(session => {
                         const isActive = session.id === sessionId;
+                        const lastActive = formatCompactRelativeTime(session.updatedAt);
                         return (
                             <div
                                 key={session.id}
                                 onClick={() => loadChat(session.id)}
-                                className={`flex items-center gap-3 px-3.5 py-3 rounded-xl cursor-pointer transition-all duration-300 group ${isActive
+                                className={`flex items-start gap-3 px-3.5 py-3 rounded-xl cursor-pointer transition-all duration-300 group ${isActive
                                         ? 'bg-white shadow-md shadow-gray-200/40 border border-gray-100 scale-[1.02]'
                                         : 'text-gray-600 hover:bg-white/50 border border-transparent'
                                     }`}
                             >
-                                <span className={`flex-1 truncate text-[14px] ${isActive ? 'font-bold text-gray-900' : 'font-medium'}`}>
-                                    {session.title}
-                                </span>
+                                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                                    <span className={`truncate text-[14px] ${isActive ? 'font-bold text-gray-900' : 'font-semibold text-gray-700'}`}>
+                                        {session.title}
+                                    </span>
+                                    {lastActive && (
+                                        <span className={`truncate text-[11px] font-medium ${isActive ? 'text-gray-500' : 'text-gray-400'}`}>
+                                            Last active {lastActive}
+                                        </span>
+                                    )}
+                                </div>
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -284,8 +276,8 @@ export default function ChatTab() {
             </aside>
 
             {/* Main Chat Area */}
-            <div className="flex-1 flex flex-col h-full bg-transparent">
-                <div className="h-16 border-b border-gray-200/60 px-6 flex items-center justify-between bg-white/80 backdrop-blur-md sticky top-0 z-10 shrink-0 shadow-sm">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col h-full bg-transparent overflow-hidden">
+                <div className="h-16 border-b border-gray-200/60 px-6 flex items-center justify-between bg-white/80 backdrop-blur-md z-10 shrink-0 shadow-sm">
                     <div className="flex items-center gap-3">
                         <button className="md:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" onClick={() => setIsSidebarOpen(true)}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
@@ -299,7 +291,7 @@ export default function ChatTab() {
                         <span className="hidden sm:inline text-xs font-semibold text-gray-400 uppercase tracking-wider">Target</span>
                         <select
                             value={targetWorkflow?.id || ''}
-                            onChange={async event => { const id = event.target.value; setTargetWorkflow(id ? await getWorkflow(id) : null); }}
+                            onChange={event => setTargetWorkflowId(event.target.value || null)}
                             className="text-[13px] font-bold border border-gray-200 rounded-xl px-3 py-1.5 bg-white shadow-sm hover:border-gray-300 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-gray-700 max-w-[150px] sm:max-w-[200px]"
                         >
                             <option value="">Create new workflow</option>

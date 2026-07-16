@@ -1,6 +1,7 @@
 import React, { useEffect, useState, Suspense } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { getAuthUser, setAuthUser, getAuthToken, clearAuthUser, clearAuthToken } from './utils/storage.js'
-import { apiRequest } from './api/client.js'
+import { useMe } from './api/hooks/useMe.js'
 import { getDashboardPath, getRouteState, navigate } from './utils/router.js'
 
 const LandingPage = React.lazy(() => import('./landing/LandingPage.jsx'))
@@ -25,34 +26,12 @@ function AppLoadingFallback() {
 
 function App() {
     const [path, setPath] = useState(typeof window !== 'undefined' ? window.location.pathname : '/')
-    const [user, setUser] = useState(getAuthUser())
-    const [isLoading, setIsLoading] = useState(!!getAuthToken())
-
-    useEffect(() => {
-        const syncUser = async () => {
-            if (getAuthToken()) {
-                try {
-                    const data = await apiRequest('/api/auth/me');
-                    if (data?.user) {
-                        setAuthUser(data.user);
-                        setUser(data.user);
-                    }
-                } catch (err) {
-                    console.error('Failed to sync user from database:', err);
-                    if (err.status === 401) {
-                        setUser(null);
-                        clearAuthUser();
-                        clearAuthToken();
-                    }
-                } finally {
-                    setIsLoading(false);
-                }
-            } else {
-                setIsLoading(false);
-            }
-        };
-        syncUser();
-    }, []);
+    const queryClient = useQueryClient()
+    const hasAuthToken = Boolean(getAuthToken())
+    const cachedUser = getAuthUser()
+    const { data: remoteUser, isPending: isUserLoading } = useMe({ enabled: hasAuthToken })
+    const user = hasAuthToken ? (remoteUser ?? cachedUser) : null
+    const isLoading = hasAuthToken && isUserLoading && !cachedUser
 
     useEffect(() => {
         const handler = () => setPath(window.location.pathname)
@@ -76,7 +55,7 @@ function App() {
 
     const handleUserUpdate = (updatedUser) => {
         setAuthUser(updatedUser)
-        setUser(updatedUser)
+        queryClient.setQueryData(['me'], updatedUser)
     }
 
     const handleLoginSuccess = (payload) => {
@@ -87,7 +66,9 @@ function App() {
     }
 
     const handleLogout = () => {
-        setUser(null)
+        clearAuthUser()
+        clearAuthToken()
+        queryClient.setQueryData(['me'], null)
         goTo('/')
     }
 
