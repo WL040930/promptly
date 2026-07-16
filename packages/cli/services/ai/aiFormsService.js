@@ -20,6 +20,52 @@ try {
     console.error('Failed to read form instructions:', err);
 }
 
+const applySchemaPatches = (currentSchema, patches, plannerResult) => {
+    let updatedSchema = { ...currentSchema };
+    if (!updatedSchema.fields) updatedSchema.fields = [];
+    
+    if (plannerResult && plannerResult.aiMemory) {
+        updatedSchema.settings = { ...(updatedSchema.settings || {}), aiMemory: plannerResult.aiMemory };
+    }
+
+    for (const patch of patches || []) {
+        if (patch.op === 'add' && patch.field) {
+            if (patch.insertAfter) {
+                const index = updatedSchema.fields.findIndex(f => f.id === patch.insertAfter);
+                if (index !== -1) {
+                    updatedSchema.fields.splice(index + 1, 0, patch.field);
+                } else {
+                    updatedSchema.fields.push(patch.field);
+                }
+            } else {
+                updatedSchema.fields.push(patch.field);
+            }
+        } else if (patch.op === 'remove' && patch.id) {
+            const existingIndex = updatedSchema.fields.findIndex(f => f.id === patch.id);
+            if (existingIndex !== -1) {
+                const existing = updatedSchema.fields[existingIndex];
+                patch.label = existing.label || existing.title || patch.id;
+                patch.originalField = { ...existing };
+                patch.originalIndex = existingIndex;
+                updatedSchema.fields = updatedSchema.fields.filter(f => f.id !== patch.id);
+            }
+        } else if (patch.op === 'update' && patch.id && patch.updates) {
+            const existingIndex = updatedSchema.fields.findIndex(f => f.id === patch.id);
+            if (existingIndex !== -1) {
+                const existing = updatedSchema.fields[existingIndex];
+                patch.label = existing.label || existing.title || patch.id;
+                patch.originalField = { ...existing };
+                patch.originalIndex = existingIndex;
+                updatedSchema.fields = updatedSchema.fields.map(f => f.id === patch.id ? { ...f, ...patch.updates } : f);
+            }
+        } else if (patch.op === 'update_meta' && patch.updates) {
+            patch.originalMeta = { title: updatedSchema.title, description: updatedSchema.description };
+            Object.assign(updatedSchema, patch.updates);
+        }
+    }
+    return updatedSchema;
+};
+
 export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory = [], onProgress = null) => {
     try {
         const provider = getAIProvider();
@@ -113,49 +159,7 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
             result.message = plannerResult.summary || result.message;
 
             // 4. Apply patches to generate the full schema
-            let updatedSchema = { ...currentSchema };
-            if (!updatedSchema.fields) updatedSchema.fields = [];
-            
-            if (plannerResult.aiMemory) {
-                updatedSchema.settings = { ...(updatedSchema.settings || {}), aiMemory: plannerResult.aiMemory };
-            }
-
-            for (const patch of result.patches || []) {
-                if (patch.op === 'add' && patch.field) {
-                    if (patch.insertAfter) {
-                        const index = updatedSchema.fields.findIndex(f => f.id === patch.insertAfter);
-                        if (index !== -1) {
-                            updatedSchema.fields.splice(index + 1, 0, patch.field);
-                        } else {
-                            updatedSchema.fields.push(patch.field);
-                        }
-                    } else {
-                        updatedSchema.fields.push(patch.field);
-                    }
-                } else if (patch.op === 'remove' && patch.id) {
-                    const existingIndex = updatedSchema.fields.findIndex(f => f.id === patch.id);
-                    if (existingIndex !== -1) {
-                        const existing = updatedSchema.fields[existingIndex];
-                        patch.label = existing.label || existing.title || patch.id;
-                        patch.originalField = { ...existing };
-                        patch.originalIndex = existingIndex;
-                        updatedSchema.fields = updatedSchema.fields.filter(f => f.id !== patch.id);
-                    }
-                } else if (patch.op === 'update' && patch.id && patch.updates) {
-                    const existingIndex = updatedSchema.fields.findIndex(f => f.id === patch.id);
-                    if (existingIndex !== -1) {
-                        const existing = updatedSchema.fields[existingIndex];
-                        patch.label = existing.label || existing.title || patch.id;
-                        patch.originalField = { ...existing };
-                        patch.originalIndex = existingIndex;
-                        updatedSchema.fields = updatedSchema.fields.map(f => f.id === patch.id ? { ...f, ...patch.updates } : f);
-                    }
-                } else if (patch.op === 'update_meta' && patch.updates) {
-                    patch.originalMeta = { title: updatedSchema.title, description: updatedSchema.description };
-                    Object.assign(updatedSchema, patch.updates);
-                }
-            }
-            result.schema = updatedSchema;
+            result.schema = applySchemaPatches(currentSchema, result.patches, plannerResult);
 
             return result;
         }
