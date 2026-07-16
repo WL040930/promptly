@@ -55,6 +55,7 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
     const patches = proposal?.patches || [];
     const proposedSchema = proposal?.schema || {};
     const metaUpdate = patches.find(p => p.op === 'update_meta');
+    const memoryUpdate = patches.find(p => p.op === 'update_memory');
 
     const diffFields = useMemo(() => {
         if (!proposal) return [];
@@ -125,6 +126,15 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
                                 <p className="text-base text-slate-500 mt-2 font-medium">{proposedSchema.description}</p>
                             )}
                         </div>
+
+                        {memoryUpdate && (
+                            <div className="mb-8 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
+                                <div className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider mb-1">Persistent Form Memory</div>
+                                <p className="text-sm text-indigo-900 font-medium">
+                                    {memoryUpdate.updates?.memory?.summary || 'The saved form memory will be cleared.'}
+                                </p>
+                            </div>
+                        )}
 
                         {/* Form Fields */}
                         <div className="flex flex-col gap-8">

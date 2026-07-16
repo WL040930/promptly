@@ -3,6 +3,7 @@ import env from '../../config/env.js';
 import fs from 'fs';
 import path from 'path';
 import { parseAiJson } from '../../utils/jsonParser.js';
+import { buildPlannerContext, buildWorkerContext, createMemoryPatch } from './formContext.js';
 
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
@@ -20,13 +21,12 @@ try {
     console.error('Failed to read form instructions:', err);
 }
 
-const applySchemaPatches = (currentSchema, patches, plannerResult) => {
-    let updatedSchema = { ...currentSchema };
-    if (!updatedSchema.fields) updatedSchema.fields = [];
-    
-    if (plannerResult && plannerResult.aiMemory) {
-        updatedSchema.settings = { ...(updatedSchema.settings || {}), aiMemory: plannerResult.aiMemory };
-    }
+const applySchemaPatches = (currentSchema, patches) => {
+    let updatedSchema = {
+        ...currentSchema,
+        settings: { ...(currentSchema.settings || {}) },
+        fields: Array.isArray(currentSchema.fields) ? [...currentSchema.fields] : []
+    };
 
     for (const patch of patches || []) {
         if (patch.op === 'add' && patch.field) {
@@ -61,6 +61,12 @@ const applySchemaPatches = (currentSchema, patches, plannerResult) => {
         } else if (patch.op === 'update_meta' && patch.updates) {
             patch.originalMeta = { title: updatedSchema.title, description: updatedSchema.description };
             Object.assign(updatedSchema, patch.updates);
+        } else if (patch.op === 'update_memory') {
+            if (patch.updates?.memory) {
+                updatedSchema.settings.aiMemory = patch.updates.memory;
+            } else {
+                delete updatedSchema.settings.aiMemory;
+            }
         }
     }
     return updatedSchema;
@@ -72,17 +78,12 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
 
         if (onProgress) onProgress({ status: 'analyzing', message: 'Analyzing requirements...' });
 
-        // 1. Prepare chat history for Planner Agent
-        const contents = chatHistory.map(msg => ({
-            role: msg.sender === 'user' ? 'user' : 'model',
-            parts: [{ text: msg.text }]
-        }));
-
-        const currentRequestText = `Current Schema:\n${JSON.stringify(currentSchema || {})}\n\nUser Request:\n${prompt}`;
-        contents.push({
+        // 1. Prepare one bounded context block for the Planner Agent.
+        const currentRequestText = buildPlannerContext({ schema: currentSchema || {}, chatHistory, prompt });
+        const contents = [{
             role: 'user',
             parts: [{ text: currentRequestText }]
-        });
+        }];
 
         // 2. Call the Planner Agent
         const plannerResponse = await provider.generateContent(contents, {
@@ -125,7 +126,7 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
             const workerContents = [
                 {
                     role: 'user',
-                    parts: [{ text: `Current Schema:\n${JSON.stringify(currentSchema || {})}\n\nInstructions from Planner:\n${plannerResult.instructionsForWorker}` }]
+                    parts: [{ text: buildWorkerContext({ schema: currentSchema || {}, instructions: plannerResult.instructionsForWorker }) }]
                 }
             ];
 
@@ -154,12 +155,16 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
                 tokenUsage.totalTokens += workerResponse.usageMetadata.totalTokenCount;
             }
 
+            const memoryPatch = createMemoryPatch(currentSchema || {}, plannerResult);
+            const patches = memoryPatch ? [memoryPatch, ...(result.patches || [])] : (result.patches || []);
+
+            result.patches = patches;
             result.tokenUsage = tokenUsage;
             // Override the worker's internal message with the conversational summary from the planner
             result.message = plannerResult.summary || result.message;
 
             // 4. Apply patches to generate the full schema
-            result.schema = applySchemaPatches(currentSchema, result.patches, plannerResult);
+            result.schema = applySchemaPatches(currentSchema || {}, result.patches);
 
             return result;
         }

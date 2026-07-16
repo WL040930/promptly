@@ -1,6 +1,7 @@
 import sequelize from '../../db/index.js';
 import { Form, FormResponse, FormChatMessage, Workflow } from '../../models/index.js';
 import { generateFormFromPrompt } from '../../services/ai/aiFormsService.js';
+import { FORM_AI_HISTORY_LIMIT } from '../../services/ai/formContext.js';
 import asyncHandler from '../../utils/asyncHandler.js';
 import { executeWorkflow } from '../../services/engine/executionEngine.js';
 
@@ -21,12 +22,17 @@ export const generateForm = asyncHandler(async (req, res) => {
         return res.status(400).json({ message: 'Prompt is required' });
     }
     
+    let formSchema = currentSchema;
     let chatHistory = [];
     if (formId) {
+        const form = await Form.findOne({ where: { id: formId, userId: req.user.id } });
+        if (!form) return res.status(404).json({ message: 'Form not found' });
+
+        formSchema = form.toJSON();
         const rawHistory = await FormChatMessage.findAll({
             where: { formId },
             order: [['createdAt', 'DESC']],
-            limit: 4 // Reduced from 12 to save tokens and speed up generation
+            limit: FORM_AI_HISTORY_LIMIT
         });
         // Reverse so they are in chronological order for the AI
         chatHistory = rawHistory.reverse();
@@ -44,7 +50,7 @@ export const generateForm = asyncHandler(async (req, res) => {
         };
         
         try {
-            const generatedForm = await generateFormFromPrompt(prompt, currentSchema, chatHistory, onProgress);
+            const generatedForm = await generateFormFromPrompt(prompt, formSchema, chatHistory, onProgress);
             res.write(`data: ${JSON.stringify({ type: 'complete', result: generatedForm })}\n\n`);
             res.end();
         } catch (error) {
@@ -53,7 +59,7 @@ export const generateForm = asyncHandler(async (req, res) => {
             res.end();
         }
     } else {
-        const generatedForm = await generateFormFromPrompt(prompt, currentSchema, chatHistory);
+        const generatedForm = await generateFormFromPrompt(prompt, formSchema, chatHistory);
         res.json(generatedForm);
     }
 });

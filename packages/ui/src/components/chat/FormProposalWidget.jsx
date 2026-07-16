@@ -40,7 +40,10 @@ export default function FormProposalWidget({
     const getFilteredProposal = () => {
         const unselectedIndices = Object.keys(selectedPatches).filter(idx => !selectedPatches[idx]).map(Number);
         
-        let filteredSchema = { ...proposal.schema };
+        let filteredSchema = {
+            ...proposal.schema,
+            settings: { ...(proposal.schema.settings || {}) }
+        };
         if (!filteredSchema.fields) {
             filteredSchema.fields = [];
         } else {
@@ -70,6 +73,12 @@ export default function FormProposalWidget({
                     if (patch.originalMeta) {
                         filteredSchema.title = patch.originalMeta.title;
                         filteredSchema.description = patch.originalMeta.description;
+                    }
+                } else if (patch.op === 'update_memory') {
+                    if (patch.updates?.memory) {
+                        filteredSchema.settings.aiMemory = patch.updates.memory;
+                    } else {
+                        delete filteredSchema.settings.aiMemory;
                     }
                 }
             }
@@ -128,13 +137,19 @@ export default function FormProposalWidget({
                     const adds = proposal.patches.filter(p => p.op === 'add').length;
                     const removes = proposal.patches.filter(p => p.op === 'remove').length;
                     const updates = proposal.patches.filter(p => p.op === 'update' || p.op === 'update_meta').length;
+                    const memoryUpdates = proposal.patches.filter(p => p.op === 'update_memory').length;
 
                     const parts = [];
                     if (adds > 0) parts.push(`Added ${adds}`);
                     if (removes > 0) parts.push(`Removed ${removes}`);
                     if (updates > 0) parts.push(`Modified ${updates}`);
 
-                    return <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">{parts.length > 0 ? parts.join(', ') + ' fields.' : 'No field changes.'}</p>;
+                    return (
+                        <div className="flex flex-col gap-1">
+                            <p className="text-xs text-slate-500 font-medium leading-relaxed">{parts.length > 0 ? parts.join(', ') + ' fields.' : 'No field changes.'}</p>
+                            {memoryUpdates > 0 && <p className="text-xs text-indigo-600 font-medium leading-relaxed">A persistent form preference is also proposed.</p>}
+                        </div>
+                    );
                 })()}
             </div>
 
@@ -191,6 +206,26 @@ export default function FormProposalWidget({
                                         />
                                         <span className="flex-1">
                                             <span className={`font-bold ${isChecked ? 'text-amber-600' : 'text-slate-400'}`}>~</span> {patch.op === 'update_meta' ? 'Modified Form Properties' : `Modified: ${patch.label || 'Field'}`}
+                                        </span>
+                                    </label>
+                                </div>
+                            );
+                        }
+                        if (patch.op === 'update_memory') {
+                            const memory = patch.updates?.memory;
+                            return (
+                                <div key={idx} className={`flex items-start gap-2 text-xs font-medium px-2 py-1.5 rounded border transition-colors ${isChecked ? 'text-indigo-700 bg-indigo-50/50 border-indigo-100' : 'text-slate-400 bg-slate-50 border-slate-100'}`}>
+                                    <label className="flex items-center gap-2 cursor-pointer w-full">
+                                        <input
+                                            type="checkbox"
+                                            checked={!!isChecked}
+                                            onChange={() => handleTogglePatch(idx)}
+                                            disabled={isAccepted || isRejected}
+                                            className="w-3.5 h-3.5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 disabled:opacity-50"
+                                        />
+                                        <span className="flex-1">
+                                            <span className={`font-bold ${isChecked ? 'text-indigo-600' : 'text-slate-400'}`}>*</span>{' '}
+                                            {memory ? `Remember: ${memory.summary}` : 'Clear persistent form memory'}
                                         </span>
                                     </label>
                                 </div>

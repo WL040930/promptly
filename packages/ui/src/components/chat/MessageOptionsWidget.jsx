@@ -26,7 +26,7 @@ export default function MessageOptionsWidget({ options, onSend, isTyping }) {
         const parts = [];
         (options || []).forEach(input => {
             const val = formState[input.id];
-            if (input.type === 'text') {
+            if (input.type === 'text' || input.type === 'textarea') {
                 if (val && val.trim()) {
                     parts.push(input.label ? `${input.label}: ${val.trim()}` : val.trim());
                 }
@@ -106,7 +106,7 @@ export default function MessageOptionsWidget({ options, onSend, isTyping }) {
                             </div>
                         </div>
                     );
-                } else if (input.type === 'text') {
+                } else if (input.type === 'text' || input.type === 'textarea') {
                     return (
                         <div key={input.id || idx} className="flex flex-col gap-1.5">
                             {input.label && <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{input.label}</span>}
