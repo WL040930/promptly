@@ -26,7 +26,7 @@ import WorkflowOverviewLoadingSkeleton from './overview/WorkflowOverviewLoadingS
 import { useUndoRedo } from '../hooks/useUndoRedo';
 import { useToast } from '../context/ToastContext.jsx';
 
-const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) => {
+const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setSidebarCollapsed }) => {
     // ── Server data ──────────────────────────────────────────────────────────
     const getViewStateFromUrl = () => {
         const parsed = parsePath(window.location.pathname);
@@ -83,6 +83,28 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     const [draggedNode, setDraggedNode] = useState(null);
     const [modal, setModal] = useState({ isOpen: false, type: null, data: null, inputValue: '', formData: {} });
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const previousGlobalSidebarState = useRef(null);
+    const wasBuilderRoute = useRef(false);
+
+    // The builder temporarily collapses the global sidebar, then restores the
+    // state the user had before entering it.
+    useEffect(() => {
+        if (viewMode === 'builder') {
+            if (!wasBuilderRoute.current) {
+                previousGlobalSidebarState.current = isSidebarCollapsed;
+                wasBuilderRoute.current = true;
+            }
+
+            setSidebarCollapsed?.(true);
+            return;
+        }
+
+        if (wasBuilderRoute.current) {
+            setSidebarCollapsed?.(previousGlobalSidebarState.current ?? false);
+            previousGlobalSidebarState.current = null;
+            wasBuilderRoute.current = false;
+        }
+    }, [viewMode, setSidebarCollapsed]);
 
     // ── Execution panel state ─────────────────────────────────────────────
     const [isExecutionPanelOpen, setIsExecutionPanelOpen] = useState(false);
@@ -126,7 +148,6 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
         navigate(`/workflow/builder/${wfId}`);
         setViewModeState('builder');
         setActiveWorkflowId(wfId);
-        if (setSidebarCollapsed) setSidebarCollapsed(true);
     };
 
     const navigateToOverview = () => {
