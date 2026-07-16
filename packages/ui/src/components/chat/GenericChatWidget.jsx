@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import AgentMessage from './AgentMessage.jsx';
+import ChatHistorySkeleton from './ChatHistorySkeleton.jsx';
 
 export default function GenericChatWidget({
     messages = [],
@@ -63,36 +64,22 @@ export default function GenericChatWidget({
                 className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-4 overscroll-contain"
             >
                 <div className={`flex flex-col gap-6 ${innerClassName}`}>
-                {isLoadingHistory && (
-                    <div className="flex flex-col gap-4 py-4 w-full animate-pulse">
-                        <div className="flex w-full justify-start">
-                            <div className="w-8 h-8 rounded-full bg-slate-200 shrink-0 mt-4 mr-2.5"></div>
-                            <div className="flex flex-col gap-2 w-full max-w-[85%] mt-4">
-                                <div className="h-2.5 w-20 bg-slate-200 rounded"></div>
-                                <div className="h-20 w-3/4 bg-slate-100 rounded-2xl rounded-tl-none border border-slate-200/50"></div>
-                            </div>
-                        </div>
-                        <div className="flex w-full justify-end">
-                            <div className="flex flex-col gap-2 w-full items-end max-w-[85%] mt-4">
-                                <div className="h-2.5 w-12 bg-slate-200 rounded"></div>
-                                <div className="h-12 w-2/3 bg-slate-100 rounded-2xl rounded-tr-none"></div>
-                            </div>
-                        </div>
-                    </div>
+                {isLoadingHistory ? (
+                    <ChatHistorySkeleton />
+                ) : (
+                    messages.filter(msg => !['tool_call', 'tool_response'].includes(msg.kind)).map(message => (
+                        <AgentMessage
+                            key={message.id}
+                            message={message}
+                            onApply={handleApply}
+                            onIgnore={handleIgnore}
+                            onOption={handleOption}
+                            isTyping={isTyping}
+                            isAccepting={acceptingProposalId === message.id}
+                            isRejecting={rejectingProposalId === message.id}
+                        />
+                    ))
                 )}
-                
-                {messages.filter(msg => !['tool_call', 'tool_response'].includes(msg.kind)).map(message => (
-                    <AgentMessage
-                        key={message.id}
-                        message={message}
-                        onApply={handleApply}
-                        onIgnore={handleIgnore}
-                        onOption={handleOption}
-                        isTyping={isTyping}
-                        isAccepting={acceptingProposalId === message.id}
-                        isRejecting={rejectingProposalId === message.id}
-                    />
-                ))}
 
                 {isTyping && (
                     <div className="flex w-full justify-start">

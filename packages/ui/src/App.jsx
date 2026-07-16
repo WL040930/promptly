@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { getAuthUser, setAuthUser, getAuthToken, clearAuthUser, clearAuthToken } from './utils/storage.js'
 import { useMe } from './api/hooks/useMe.js'
 import { getDashboardPath, getRouteState, navigate } from './utils/router.js'
+import AppLoadingSkeleton from './components/ui/AppLoadingSkeleton.jsx'
 
 const LandingPage = React.lazy(() => import('./landing/LandingPage.jsx'))
 const LoginPage = React.lazy(() => import('./auth/LoginPage.jsx'))
@@ -17,11 +18,7 @@ const SecurityPage = React.lazy(() => import('./landing/SecurityPage.jsx'))
 const PublicFormView = React.lazy(() => import('./forms/PublicFormView.jsx'))
 
 function AppLoadingFallback() {
-    return (
-        <div className="app-center-page">
-            <div className="app-loading-spinner"></div>
-        </div>
-    )
+    return <AppLoadingSkeleton />
 }
 
 function App() {

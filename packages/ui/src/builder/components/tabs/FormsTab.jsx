@@ -14,6 +14,7 @@ import { useToast } from '../../../context/ToastContext.jsx';
 import { parsePath, buildPath, replacePath } from '../../../utils/router.js';
 import { formatCompactRelativeTime } from '../../../utils/time.js';
 import ConfirmModal from '../../../components/modals/ConfirmModal.jsx';
+import FormsLoadingSkeleton from './FormsLoadingSkeleton.jsx';
 
 /**
  * FormsTab — main orchestrator for the form builder module.
@@ -216,6 +217,10 @@ const FormsTab = () => {
         // Sort by most recently updated (clone the array to avoid mutating state)
         return [...result].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
     }, [forms, debouncedSearch]);
+
+    if (isFormsLoading && forms.length === 0) {
+        return <FormsLoadingSkeleton />;
+    }
 
     // ── Sub-tab icons ──────────────────────────────────────────────────────────
 

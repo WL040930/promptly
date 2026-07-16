@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import FormPreview from './FormPreview';
 import PublicFormStatus from './components/PublicFormStatus';
+import PublicFormLoadingSkeleton from './PublicFormLoadingSkeleton.jsx';
 import { usePublicForm, useSubmitFormResponse } from '../api/hooks/usePublicForms.js';
 
 const FORM_SUBMISSION_STORAGE_PREFIX = 'promptly_form_submitted_';
@@ -36,11 +37,7 @@ const PublicFormView = () => {
     };
 
     if (isLoading) {
-        return (
-            <div className="app-center-page">
-                <div className="app-loading-spinner-lg"></div>
-            </div>
-        );
+        return <PublicFormLoadingSkeleton />;
     }
 
     if (isError || !form) {

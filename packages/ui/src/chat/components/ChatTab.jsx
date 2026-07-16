@@ -11,6 +11,7 @@ import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 import FormDiffPreviewModal from '../../forms/FormDiffPreviewModal.jsx';
 import { navigate, parsePath, buildPath } from '../../utils/router.js';
 import { formatCompactRelativeTime } from '../../utils/time.js';
+import ChatSessionsSkeleton from '../../components/chat/ChatSessionsSkeleton.jsx';
 
 const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I can build workflows and forms from a description. What would you like to automate?' };
 
@@ -30,8 +31,8 @@ export default function ChatTab() {
     const [previewFormId, setPreviewFormId] = useState(null);
     const loadedSessionIdRef = useRef(null);
 
-    const { data: sessions = [] } = useChatSessions();
-    const { data: session } = useChatSession(sessionId);
+    const { data: sessions = [], isPending: isSessionsPending } = useChatSessions();
+    const { data: session, isPending: isSessionPending } = useChatSession(sessionId);
     const { data: targetWorkflow } = useWorkflow(targetWorkflowId);
     const { data: previewForm } = useForm(previewFormId);
     const sendChatMessageMutation = useSendChatMessage();
@@ -239,7 +240,9 @@ export default function ChatTab() {
 
                 {/* Chat List */}
                 <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 pb-4 overscroll-contain">
-                    {filteredSessions.map(session => {
+                    {isSessionsPending ? (
+                        <ChatSessionsSkeleton />
+                    ) : filteredSessions.map(session => {
                         const isActive = session.id === sessionId;
                         const lastActive = formatCompactRelativeTime(session.updatedAt);
                         return (
@@ -300,6 +303,7 @@ export default function ChatTab() {
                     input={input}
                     setInput={setInput}
                     isTyping={isTyping}
+                    isLoadingHistory={Boolean(sessionId && isSessionPending)}
                     handleSend={send}
                     handleApply={(msg, filteredSchema, unselectedIndices) => {
                         const updatedMessage = {

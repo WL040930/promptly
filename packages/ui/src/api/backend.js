@@ -33,13 +33,18 @@ export const addFormChatMessage = (formId, messageData) => apiRequest(`/api/form
 export const updateFormChatMessage = (messageId, updates) => apiRequest(`/api/forms/chat/${messageId}`, { method: 'PUT', body: JSON.stringify(updates) });
 
 // --- Logs ---
-export const getExecutionLogs = (search = '', status = 'All') => {
+export const getExecutionLogs = ({ search = '', status = 'All', workflowId = '', page = 1, pageSize = 10 } = {}) => {
     const params = new URLSearchParams();
     if (search) params.append('search', search);
     if (status && status !== 'All') params.append('status', status);
+    if (workflowId) params.append('workflowId', workflowId);
+    params.append('page', page);
+    params.append('pageSize', pageSize);
     const queryString = params.toString();
     return apiRequest(`/api/logs${queryString ? '?' + queryString : ''}`);
 };
+
+export const getExecutionLog = (id) => apiRequest(`/api/logs/${id}`);
 
 // --- Dashboard ---
 export const getDashboardMetrics = () => apiRequest('/api/dashboard/metrics');

@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { useFormResponses } from '../api/hooks/useForms.js';
 import { useToast } from '../context/ToastContext.jsx';
+import FormResponsesSkeleton from './FormResponsesSkeleton.jsx';
 
 const renderValue = (val, toast) => {
     if (val === undefined || val === null || val === '') return <span className="text-gray-300">—</span>;
@@ -190,6 +191,10 @@ const FormResponses = ({ form }) => {
         document.body.removeChild(link);
     };
 
+    if (loading) {
+        return <FormResponsesSkeleton />;
+    }
+
     return (
         <div className="flex flex-col gap-6 animate-slide-up-fade pb-16">
             {/* Summary Stats */}
@@ -209,11 +214,7 @@ const FormResponses = ({ form }) => {
             </div>
 
             {/* Loading / Error States */}
-            {loading ? (
-                <div className="flex items-center justify-center p-12 bg-white rounded-3xl shadow-sm border border-gray-100">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                </div>
-            ) : error ? (
+            {error ? (
                 <div className="bg-red-50 text-red-600 p-6 rounded-3xl text-center shadow-sm border border-red-100">
                     <p className="font-bold">{error.message || 'Failed to load responses'}</p>
                 </div>

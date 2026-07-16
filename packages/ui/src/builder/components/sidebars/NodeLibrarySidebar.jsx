@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { getIconByName, resolveNodeUi } from '../../utils/iconMap.jsx';
 import { useNodeLibrary } from '../../hooks/useNodeLibrary.js';
+import NodeLibrarySkeleton from './NodeLibrarySkeleton.jsx';
 
 /**
  * The left-hand node library sidebar in the workflow builder.
@@ -36,9 +37,7 @@ const NodeLibrarySidebar = ({ isOpen, onDragStart, onDragEnd }) => {
             {/* Node list */}
             <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-5">
                 {isLoading ? (
-                    <div className="flex items-center justify-center h-full">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
-                    </div>
+                    <NodeLibrarySkeleton />
                 ) : (
                     nodeLibrary.map((section) => {
                         const filteredGroups = section.groups.map(group => {

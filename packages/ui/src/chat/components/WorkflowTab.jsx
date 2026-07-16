@@ -6,6 +6,7 @@ import { useCreateWorkflow, useDeleteWorkflow, useWorkflows } from '../../api/ho
 import { useRunWorkflow } from '../../api/hooks/useRunWorkflow.js';
 import { ICON_MAP } from '../../builder/utils/iconMap.jsx';
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
+import Skeleton from '../../components/ui/Skeleton.jsx';
 
 const WorkflowTab = () => {
     const toast = useToast();
@@ -88,12 +89,12 @@ const WorkflowTab = () => {
                         [1, 2, 3].map(i => (
                             <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4">
                                 <div className="flex items-center gap-5">
-                                    <div className="w-12 h-12 rounded-xl bg-slate-200 animate-pulse shrink-0"></div>
+                                    <Skeleton className="w-12 h-12 rounded-xl shrink-0" />
                                     <div>
-                                        <div className="h-5 w-40 bg-slate-200 animate-pulse rounded mb-2"></div>
+                                        <Skeleton className="h-5 w-40 rounded mb-2" />
                                         <div className="flex items-center gap-3">
-                                            <div className="h-4 w-20 bg-slate-200 animate-pulse rounded"></div>
-                                            <div className="h-4 w-16 bg-slate-200 animate-pulse rounded"></div>
+                                            <Skeleton className="h-4 w-20 rounded" />
+                                            <Skeleton className="h-4 w-16 rounded" />
                                         </div>
                                     </div>
                                 </div>

@@ -4,6 +4,7 @@ import WorkflowDiffPreviewModal from '../modals/WorkflowDiffPreviewModal.jsx';
 import { useToast } from '../../../context/ToastContext.jsx';
 import Button from '../../../components/ui/Button.jsx';
 import ConfirmModal from '../../../components/modals/ConfirmModal.jsx';
+import VersionHistorySkeleton from './VersionHistorySkeleton.jsx';
 
 export default function VersionHistorySidebar({ workflowId, currentWorkflow }) {
     const { data: versions = [], isLoading } = useWorkflowVersions(workflowId);
@@ -17,7 +18,7 @@ export default function VersionHistorySidebar({ workflowId, currentWorkflow }) {
     return (
         <div className="flex flex-col h-full bg-slate-50">
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {isLoading && <div className="text-sm text-slate-500 text-center py-4">Loading history...</div>}
+                {isLoading && <VersionHistorySkeleton />}
                 {!isLoading && versions.length === 0 && (
                     <div className="text-sm text-slate-500 text-center py-4">No saved versions yet.</div>
                 )}

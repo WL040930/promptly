@@ -2,6 +2,9 @@ import React, { useMemo, useRef } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useDashboardMetrics } from '../../../api/hooks/useDashboard.js';
+import Skeleton from '../../../components/ui/Skeleton.jsx';
+
+const SKELETON_BAR_HEIGHTS = [36, 58, 44, 72, 52, 66, 48];
 
 const INTEGRATIONS = [
     { name: 'OpenAI GPT-4o', category: 'Language Model', status: 'Healthy', uptime: '99.9%', color: 'indigo' },
@@ -125,7 +128,7 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, simplified }) => {
                                 </div>
                                 <div className="flex items-baseline gap-2.5">
                                     {loading ? (
-                                        <div className="h-9 w-20 bg-slate-200 animate-pulse rounded-md mt-1"></div>
+                                        <Skeleton className="h-9 w-20 rounded-md mt-1" />
                                     ) : (
                                         <>
                                             <span className="text-3xl font-semibold text-slate-900 tracking-tight">
@@ -158,30 +161,35 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, simplified }) => {
                             </span>
                         </div>
 
-                        <div className="w-full h-[180px] flex items-end gap-3 px-1">
+                        <div className="w-full h-[180px] flex items-stretch gap-3 px-1">
                             {loading ? (
                                 Array.from({ length: 7 }).map((_, i) => (
-                                    <div key={i} className="flex-1 flex flex-col items-center gap-2">
-                                        <div className="w-full max-w-[40px] bg-slate-200 animate-pulse rounded-lg" style={{ height: `${20 + Math.random() * 60}%` }}></div>
-                                        <div className="h-3 w-6 bg-slate-200 animate-pulse rounded"></div>
+                                    <div key={i} className="flex-1 h-full min-h-0 flex flex-col items-center gap-2">
+                                        <div className="flex-1 min-h-0 w-full max-w-[40px] flex items-end">
+                                            <Skeleton className="w-full rounded-lg" style={{ height: `${SKELETON_BAR_HEIGHTS[i]}%` }} />
+                                        </div>
+                                        <Skeleton className="h-3 w-6 rounded" />
                                     </div>
                                 ))
                             ) : metrics.weeklyData.map((data, index) => {
                                 const heightPct = (data.runs / maxRuns) * 100;
                                 const isHighest = data.runs === maxRuns;
                                 return (
-                                    <div key={index} className="flex-1 flex flex-col items-center gap-2 group relative">
+                                    <div key={index} className="flex-1 h-full min-h-0 flex flex-col items-center gap-2 group relative">
                                         {/* Tooltip */}
                                         <div className="opacity-0 group-hover:opacity-100 absolute -top-8 bg-slate-800 text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-lg transition-opacity pointer-events-none z-10 whitespace-nowrap">
                                             {data.runs} runs
                                         </div>
                                         {/* Bar */}
-                                        <div className="w-full max-w-[40px] relative" style={{ height: `${heightPct}%`, minHeight: '16px' }}>
-                                            <div className={`w-full h-full rounded-lg transition-all duration-300 ${
-                                                isHighest
-                                                    ? 'bg-indigo-500 group-hover:bg-indigo-600'
-                                                    : 'bg-indigo-200 group-hover:bg-indigo-400'
-                                            }`}></div>
+                                        <div className="flex-1 min-h-0 w-full max-w-[40px] flex items-end">
+                                            <div
+                                                className={`w-full rounded-lg transition-all duration-300 ${
+                                                    isHighest
+                                                        ? 'bg-indigo-500 group-hover:bg-indigo-600'
+                                                        : 'bg-indigo-200 group-hover:bg-indigo-400'
+                                                }`}
+                                                style={{ height: `${Math.max(heightPct, 6)}%`, minHeight: '16px' }}
+                                            />
                                         </div>
                                         {/* Label */}
                                         <span className="text-[11px] font-medium text-slate-400">{data.day}</span>
@@ -285,10 +293,10 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, simplified }) => {
                             {loading ? (
                                 Array.from({ length: 4 }).map((_, i) => (
                                     <div key={i} className={`flex gap-4 items-start py-3.5 ${i < 3 ? 'border-b border-slate-100' : ''}`}>
-                                        <div className="w-8 h-8 rounded-lg bg-slate-200 animate-pulse shrink-0"></div>
+                                        <Skeleton className="w-8 h-8 rounded-lg shrink-0" />
                                         <div className="flex-1 space-y-2 mt-1">
-                                            <div className="h-4 bg-slate-200 animate-pulse rounded w-1/3"></div>
-                                            <div className="h-3 bg-slate-200 animate-pulse rounded w-2/3"></div>
+                                            <Skeleton className="h-4 rounded w-1/3" />
+                                            <Skeleton className="h-3 rounded w-2/3" />
                                         </div>
                                     </div>
                                 ))

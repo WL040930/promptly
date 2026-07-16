@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import DashboardTab from '../builder/components/tabs/DashboardTab.jsx';
 import ChatTab from './components/ChatTab.jsx';
 import WorkflowTab from './components/WorkflowTab.jsx';
-import LogsTab from './components/LogsTab.jsx';
 import FormsTab from '../builder/components/tabs/FormsTab.jsx';
+import LogsTabFallback from './components/log-ui/LogsSkeleton.jsx';
+
+const LogsTab = React.lazy(() => import('./components/LogsTab.jsx'));
 
 const ChatView = ({ user, activeTab = 'chat' }) => {
     const renderActiveTab = () => {
@@ -15,7 +17,11 @@ const ChatView = ({ user, activeTab = 'chat' }) => {
             case 'forms':
                 return <FormsTab />;
             case 'logs':
-                return <LogsTab />;
+                return (
+                    <Suspense fallback={<LogsTabFallback />}>
+                        <LogsTab />
+                    </Suspense>
+                );
             case 'chat':
             default:
                 return <ChatTab />;
