@@ -22,6 +22,7 @@ import { useRunWorkflow } from '../api/hooks/useRunWorkflow.js';
 import { useCreateForm, useUpdateForm } from '../api/hooks/useForms.js';
 import ExecutionPanel from './components/panels/ExecutionPanel';
 import BuilderLoadingSkeleton from './components/layout/BuilderLoadingSkeleton.jsx';
+import WorkflowOverviewLoadingSkeleton from './overview/WorkflowOverviewLoadingSkeleton.jsx';
 import { useUndoRedo } from '../hooks/useUndoRedo';
 import { useToast } from '../context/ToastContext.jsx';
 
@@ -505,7 +506,9 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, setSidebarCollapsed }) =
     if (activeTab === 'logs') return <LogsTab />;
 
     if (loading) {
-        return <BuilderLoadingSkeleton />;
+        return viewMode === 'overview'
+            ? <WorkflowOverviewLoadingSkeleton />
+            : <BuilderLoadingSkeleton />;
     }
 
     if (viewMode === 'overview') {

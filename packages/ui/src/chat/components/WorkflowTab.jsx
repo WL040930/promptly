@@ -6,7 +6,7 @@ import { useCreateWorkflow, useDeleteWorkflow, useWorkflows } from '../../api/ho
 import { useRunWorkflow } from '../../api/hooks/useRunWorkflow.js';
 import { ICON_MAP } from '../../builder/utils/iconMap.jsx';
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
-import Skeleton from '../../components/ui/Skeleton.jsx';
+import WorkflowListSkeleton from './WorkflowListSkeleton.jsx';
 
 const WorkflowTab = () => {
     const toast = useToast();
@@ -86,20 +86,7 @@ const WorkflowTab = () => {
 
                 <div className="grid grid-cols-1 gap-4">
                     {loading ? (
-                        [1, 2, 3].map(i => (
-                            <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4">
-                                <div className="flex items-center gap-5">
-                                    <Skeleton className="w-12 h-12 rounded-xl shrink-0" />
-                                    <div>
-                                        <Skeleton className="h-5 w-40 rounded mb-2" />
-                                        <div className="flex items-center gap-3">
-                                            <Skeleton className="h-4 w-20 rounded" />
-                                            <Skeleton className="h-4 w-16 rounded" />
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        ))
+                        <WorkflowListSkeleton />
                     ) : workflows.length > 0 ? (
                         workflows.map(wf => (
                             <div key={wf.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex items-center justify-between flex-wrap gap-4">
