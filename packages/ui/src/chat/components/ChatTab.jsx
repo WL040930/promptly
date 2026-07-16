@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useChatSession, useChatSessions, useDeleteChatSession, useSendChatMessage } from '../../api/hooks/useChat.js';
 import { useCreateForm, useForm, useUpdateForm } from '../../api/hooks/useForms.js';
-import { useCreateWorkflow, useUpdateWorkflow, useWorkflow, useWorkflows } from '../../api/hooks/useWorkflows.js';
+import { useCreateWorkflow, useUpdateWorkflow, useWorkflow } from '../../api/hooks/useWorkflows.js';
 import Button from '../../components/ui/Button.jsx';
 import GenericChatWidget from '../../components/chat/GenericChatWidget.jsx';
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
@@ -14,6 +16,7 @@ const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I ca
 
 export default function ChatTab() {
     const toast = useToast();
+    const container = useRef(null);
     const [messages, setMessages] = useState([welcome]);
     const [sessionId, setSessionId] = useState(() => parsePath(window.location.pathname).sessionId || null);
     const [targetWorkflowId, setTargetWorkflowId] = useState(null);
@@ -29,7 +32,6 @@ export default function ChatTab() {
 
     const { data: sessions = [] } = useChatSessions();
     const { data: session } = useChatSession(sessionId);
-    const { data: workflows = [] } = useWorkflows();
     const { data: targetWorkflow } = useWorkflow(targetWorkflowId);
     const { data: previewForm } = useForm(previewFormId);
     const sendChatMessageMutation = useSendChatMessage();
@@ -38,6 +40,10 @@ export default function ChatTab() {
     const updateFormMutation = useUpdateForm();
     const updateWorkflowMutation = useUpdateWorkflow();
     const createWorkflowMutation = useCreateWorkflow();
+
+    useGSAP(() => {
+        gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
+    }, { scope: container });
 
     useEffect(() => {
         if (!session || loadedSessionIdRef.current === sessionId) return;
@@ -101,10 +107,11 @@ export default function ChatTab() {
             const saved = payload.formId ? await updateFormMutation.mutateAsync({id: payload.formId, data}) : await createFormMutation.mutateAsync(data);
             result = { formId: saved.id };
         } else if (message.kind === 'workflow_diff') {
-            if (!targetWorkflow) throw new Error('Choose a workflow target before applying these changes.');
-            if (payload.baseWorkflowUpdatedAt && targetWorkflow.updatedAt && payload.baseWorkflowUpdatedAt !== targetWorkflow.updatedAt) throw new Error('This workflow changed while the proposal was open. Generate the changes again.');
-            await updateWorkflowMutation.mutateAsync({id: targetWorkflow.id, data: { nodes: payload.nodes, edges: payload.edges }});
-            result = { workflowId: targetWorkflow.id };
+            const workflowId = payload.workflowId || targetWorkflow?.id || targetWorkflowId;
+            if (!workflowId) throw new Error('Choose a workflow target before applying these changes.');
+            if (payload.baseWorkflowUpdatedAt && targetWorkflow?.updatedAt && payload.baseWorkflowUpdatedAt !== targetWorkflow.updatedAt) throw new Error('This workflow changed while the proposal was open. Generate the changes again.');
+            await updateWorkflowMutation.mutateAsync({id: workflowId, data: { nodes: payload.nodes, edges: payload.edges }});
+            result = { workflowId };
         } else if (message.kind === 'workflow_proposal') {
             const saved = await createWorkflowMutation.mutateAsync({ name: payload.name || 'New Workflow', status: 'Draft', iconColor: 'text-indigo-600', iconBg: 'bg-indigo-100', nodes: payload.nodes || [], edges: payload.edges || [] });
             result = { workflowId: saved.id };
@@ -175,7 +182,7 @@ export default function ChatTab() {
     };
 
     return (
-        <div className="flex min-h-0 w-full h-full bg-[#f4f7f9] relative overflow-hidden font-sans">
+        <div ref={container} className="flex min-h-0 w-full h-full bg-[#f4f7f9] relative overflow-hidden font-sans">
             {isSidebarOpen && (
                 <div 
                     className="md:hidden absolute inset-0 z-20 bg-slate-900/40 backdrop-blur-sm transition-opacity"
@@ -277,7 +284,7 @@ export default function ChatTab() {
 
             {/* Main Chat Area */}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col h-full bg-transparent overflow-hidden">
-                <div className="h-16 border-b border-gray-200/60 px-6 flex items-center justify-between bg-white/80 backdrop-blur-md z-10 shrink-0 shadow-sm">
+                <div className="h-16 border-b border-gray-200/60 px-6 flex items-center bg-white/80 backdrop-blur-md z-10 shrink-0 shadow-sm">
                     <div className="flex items-center gap-3">
                         <button className="md:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" onClick={() => setIsSidebarOpen(true)}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
@@ -286,17 +293,6 @@ export default function ChatTab() {
                             <h2 className="text-[15px] font-extrabold text-gray-900 tracking-tight">AI Assistant</h2>
                             <p className="text-[11px] text-gray-500 font-medium">Chat to build workflows and forms</p>
                         </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <span className="hidden sm:inline text-xs font-semibold text-gray-400 uppercase tracking-wider">Target</span>
-                        <select
-                            value={targetWorkflow?.id || ''}
-                            onChange={event => setTargetWorkflowId(event.target.value || null)}
-                            className="text-[13px] font-bold border border-gray-200 rounded-xl px-3 py-1.5 bg-white shadow-sm hover:border-gray-300 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-gray-700 max-w-[150px] sm:max-w-[200px]"
-                        >
-                            <option value="">Create new workflow</option>
-                            {workflows.map(workflow => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}
-                        </select>
                     </div>
                 </div>
                 <GenericChatWidget 

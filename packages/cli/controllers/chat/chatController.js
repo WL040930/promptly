@@ -28,7 +28,7 @@ export const sendMessage = asyncHandler(async (req, res) => {
         await session.update({ agentContext: { ...(session.agentContext || {}), ...(context.workflowId ? { workflowId: context.workflowId } : {}), ...(context.formId ? { formId: context.formId } : {}) } });
     }
 
-    const { replyObj, totalTokenUsage } = await processChatMessage({ session, userId });
+    const { replyObj, totalTokenUsage } = await processChatMessage({ session, userId, context });
 
     return res.json({ sessionId: session.id, userMessage, reply: replyObj, tokenUsage: totalTokenUsage });
 });

@@ -137,6 +137,25 @@ const formResult = async ({ session, userId, request, formId, continuation = nul
 export const applyEvent = async (session, userId, event) => {
     if (!event?.type) return null;
     const state = session.agentState || {};
+    if (event.type === 'workflow_target_selected') {
+        const workflow = await workflowForRequest(userId, event.workflowId);
+        const request = state.continuation?.request;
+        if (!workflow || !request) {
+            return { reply: await saveReply(session, { text: 'I could not resume that workflow request. Please send it again.', kind: 'error' }) };
+        }
+
+        await session.update({
+            agentContext: { ...(session.agentContext || {}), workflowId: workflow.id },
+            agentState: {}
+        });
+
+        return {
+            resume: {
+                message: request,
+                context: { workflowId: workflow.id }
+            }
+        };
+    }
     if (event.type === 'proposal_ignored') {
         if (event.messageId) await ChatMessage.update({ proposalStatus: 'ignored' }, { where: { id: event.messageId, sessionId: session.id } });
         await session.update({ agentState: {} });
@@ -195,13 +214,16 @@ Wait for the system to reply with <TOOL_RESPONSE>...</TOOL_RESPONSE> before cont
 
 Tools available:
 - list_forms(): Returns a list of the user's forms with their IDs and titles. No arguments.
-- list_workflows(): Returns a list of the user's workflows with their IDs and names. No arguments.
+- list_workflows(purpose: "choose_target" | "list"): Returns a list of the user's workflows with their IDs and names.
 - get_form(formId: string): Returns the full schema of the specified form.
 - get_workflow(workflowId: string): Returns the full structure of the specified workflow.
 - propose_form_change(formId: string | null, prompt: string): Triggers the form builder to propose an edit or create a new form. If creating a new form, formId should be null.
-- propose_workflow_change(workflowId: string | null, prompt: string): Triggers the workflow builder to propose an edit or create a new workflow. If creating a new workflow, workflowId should be null.`;
+- propose_workflow_change(workflowId: string | null, prompt: string): Triggers the workflow builder to propose an edit or create a new workflow. If creating a new workflow, workflowId should be null.
 
-export const processChatMessage = async ({ session, userId }) => {
+When the user clearly asks to create a new workflow, call propose_workflow_change with a null workflowId.
+When the user asks to edit, update, or modify an existing workflow without identifying which one, call list_workflows with purpose "choose_target" first. The system will present the workflows as choices; do not guess a workflow.`;
+
+export const processChatMessage = async ({ session, userId, context = {} }) => {
     const history = await ChatMessage.findAll({
         where: { sessionId: session.id },
         order: [['createdAt', 'ASC']],
@@ -219,11 +241,15 @@ export const processChatMessage = async ({ session, userId }) => {
     const maxLoops = 5;
     let totalTokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
     let replyObj = null;
+    const selectedWorkflow = context.workflowId ? await workflowForRequest(userId, context.workflowId) : null;
+    const selectedWorkflowInstruction = selectedWorkflow
+        ? `\n\nThe user selected this existing workflow: ${selectedWorkflow.name} (ID: ${selectedWorkflow.id}). Use this workflow ID when proposing changes.`
+        : '';
 
     while (loopCount < maxLoops) {
         loopCount++;
         const response = await provider.generateContent(aiMessages, {
-            systemInstruction,
+            systemInstruction: `${systemInstruction}${selectedWorkflowInstruction}`,
             model: env.aiModel || 'gemini-2.5-pro'
         });
 
@@ -255,6 +281,34 @@ export const processChatMessage = async ({ session, userId }) => {
                     toolResult = JSON.stringify(forms);
                 } else if (name === 'list_workflows') {
                     const workflows = await Workflow.findAll({ where: { userId }, attributes: ['id', 'name', 'updatedAt'], order: [['updatedAt', 'DESC']], limit: 50 });
+                    const request = [...history]
+                        .reverse()
+                        .find(message => message.sender === 'user' && message.kind === 'text')?.text;
+                    const likelyEditIntent = /\b(edit|update|modify|change|remove|delete|add|append|fix|adjust|existing|current)\b/i.test(request || '');
+                    const shouldChooseTarget = args.purpose === 'choose_target' || likelyEditIntent;
+
+                    if (workflows.length > 0 && request && shouldChooseTarget) {
+                        await session.update({
+                            agentState: {
+                                status: 'awaiting_workflow_target',
+                                continuation: { request }
+                            }
+                        });
+                        replyObj = await saveReply(session, {
+                            text: 'Which workflow would you like me to work on?',
+                            kind: 'clarification',
+                            payload: {
+                                options: [{
+                                    id: 'workflow-target',
+                                    type: 'workflow_choice',
+                                    label: 'Choose a workflow',
+                                    options: workflows.map(workflow => ({ id: workflow.id, name: workflow.name }))
+                                }]
+                            }
+                        });
+                        break;
+                    }
+
                     toolResult = JSON.stringify(workflows);
                 } else if (name === 'get_form') {
                     const form = await Form.findOne({ where: { id: args.formId || args.id, userId } });

@@ -48,10 +48,32 @@ export default function MessageOptionsWidget({ options, onSend, isTyping }) {
         if (Array.isArray(val)) return val.length > 0;
         return typeof val === 'string' && val.trim().length > 0;
     });
+    const hasDirectChoice = (options || []).some(input => input.type === 'workflow_choice');
 
     return (
         <div className="mt-2 flex flex-col gap-4 w-full max-w-[90%] bg-slate-50 border border-slate-200 p-3 rounded-xl">
             {(options || []).map((input, idx) => {
+                if (input.type === 'workflow_choice') {
+                    return (
+                        <div key={input.id || idx} className="flex flex-col gap-1.5">
+                            {input.label && <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{input.label}</span>}
+                            <div className="flex flex-col gap-1.5">
+                                {(input.options || []).map((workflow) => (
+                                    <button
+                                        key={workflow.id}
+                                        type="button"
+                                        disabled={isTyping}
+                                        onClick={() => onSend?.(workflow)}
+                                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-900 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        {workflow.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                }
+
                 if (input.type === 'single_choice' || input.type === 'multiple_choice') {
                     const isSingle = input.type === 'single_choice';
                     const selectedOptions = formState[input.id] || [];
@@ -117,15 +139,17 @@ export default function MessageOptionsWidget({ options, onSend, isTyping }) {
                 return null;
             })}
             
-            <Button 
-                variant="primary" 
-                size="sm" 
-                onClick={handleSend}
-                disabled={!isAnySelected || isTyping}
-                className="w-full mt-1"
-            >
-                Send Selected
-            </Button>
+            {!hasDirectChoice && (
+                <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleSend}
+                    disabled={!isAnySelected || isTyping}
+                    className="w-full mt-1"
+                >
+                    Send Selected
+                </Button>
+            )}
         </div>
     );
 }
