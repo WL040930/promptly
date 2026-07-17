@@ -2,6 +2,7 @@ import { ChatSession, ChatMessage } from '../../models/index.js';
 import { Op } from 'sequelize';
 import asyncHandler from '../../utils/asyncHandler.js';
 import { processChatMessage, applyEvent, saveUserMessage } from '../../services/chat/chatAgentService.js';
+import { mergeAgentContext } from '../../services/chat/resourceResolver.js';
 
 export const sendMessage = asyncHandler(async (req, res) => {
     let { sessionId, message, context = {}, event } = req.body || {};
@@ -24,8 +25,9 @@ export const sendMessage = asyncHandler(async (req, res) => {
     }
 
     const userMessage = await saveUserMessage(session, message);
-    if (context.workflowId || context.formId) {
-        await session.update({ agentContext: { ...(session.agentContext || {}), ...(context.workflowId ? { workflowId: context.workflowId } : {}), ...(context.formId ? { formId: context.formId } : {}) } });
+    const nextAgentContext = mergeAgentContext(session.agentContext || {}, context);
+    if (JSON.stringify(nextAgentContext) !== JSON.stringify(session.agentContext || {})) {
+        await session.update({ agentContext: nextAgentContext });
     }
 
     const { replyObj, totalTokenUsage } = await processChatMessage({ session, userId, context });

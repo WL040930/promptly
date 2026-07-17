@@ -1,8 +1,11 @@
 import { BaseAIProvider } from './baseProvider.js';
 import env from '../../../config/env.js';
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
+import { applyToolOptions, normalizeToolCalls, toChatCompletionMessages } from './chatCompletionMessageMapper.js';
 
 export class CerebrasProvider extends BaseAIProvider {
+    supportsToolCalls = true;
+
     constructor() {
         super();
         this.apiKey = env.cerebras.apiKey;
@@ -24,22 +27,7 @@ export class CerebrasProvider extends BaseAIProvider {
             maxCompletionTokens
         } = options;
 
-        const messages = [];
-        if (systemInstruction) {
-            messages.push({ role: 'system', content: systemInstruction });
-        }
-
-        // Map Gemini style contents to OpenAI style messages
-        for (const content of contents) {
-            if (typeof content === 'string') {
-                messages.push({ role: 'user', content });
-                continue;
-            }
-            
-            const role = content.role === 'model' ? 'assistant' : 'user';
-            const text = Array.isArray(content.parts) ? content.parts.map(p => p.text).join('\n') : content.parts || '';
-            messages.push({ role, content: text });
-        }
+        const messages = toChatCompletionMessages(contents, systemInstruction);
 
         const body = {
             model,
@@ -52,13 +40,15 @@ export class CerebrasProvider extends BaseAIProvider {
         if (Number.isInteger(maxCompletionTokens) && maxCompletionTokens > 0) {
             body.max_completion_tokens = maxCompletionTokens;
         }
+        applyToolOptions(body, options);
 
         try {
             const response = await this.client.chat.completions.create(body, {
                 timeout: env.aiTimeoutMs,
             });
 
-            const text = response.choices?.[0]?.message?.content || '';
+            const message = response.choices?.[0]?.message || {};
+            const text = message.content || '';
             const usage = response.usage;
 
             return {
@@ -67,7 +57,8 @@ export class CerebrasProvider extends BaseAIProvider {
                     promptTokenCount: usage.prompt_tokens,
                     candidatesTokenCount: usage.completion_tokens,
                     totalTokenCount: usage.total_tokens
-                } : null
+                } : null,
+                toolCalls: normalizeToolCalls(message)
             };
         } catch (error) {
             console.error('Cerebras Provider Error:', error);

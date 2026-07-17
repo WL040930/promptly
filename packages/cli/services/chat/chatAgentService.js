@@ -1,4 +1,4 @@
-import { ChatSession, ChatMessage, Workflow, Form } from '../../models/index.js';
+import { ChatSession, ChatMessage, Workflow, Form, ExecutionLog } from '../../models/index.js';
 import { generateFormFromPrompt } from '../ai/aiFormsService.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import {
@@ -10,6 +10,7 @@ import {
 } from '../ai/workflowAgentService.js';
 import { getAIProvider } from '../ai/aiService.js';
 import env from '../../config/env.js';
+import { mergeAgentContext, resolveResource } from './resourceResolver.js';
 
 const tokenPayload = (...usages) => {
     const stage1 = usages[0] || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -66,6 +67,48 @@ const workflowForRequest = async (userId, workflowId) => {
 const formForRequest = async (userId, formId) => {
     if (!formId) return null;
     return Form.findOne({ where: { id: formId, userId } });
+};
+
+const compactWorkflowContext = (workflow) => {
+    if (!workflow) return { error: 'Workflow not found' };
+    const value = workflow.toJSON ? workflow.toJSON() : workflow;
+    return {
+        id: value.id,
+        name: value.name,
+        status: value.status,
+        isActive: value.isActive,
+        updatedAt: value.updatedAt,
+        nodes: (value.nodes || []).map(node => ({
+            id: node.id,
+            title: node.title,
+            type: node.type,
+            subType: node.subType
+        })),
+        edges: (value.edges || []).map(edge => ({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            sourceHandle: edge.sourceHandle || null,
+            targetHandle: edge.targetHandle || null
+        }))
+    };
+};
+
+const compactFormContext = (form) => {
+    if (!form) return { error: 'Form not found' };
+    const value = form.toJSON ? form.toJSON() : form;
+    return {
+        id: value.id,
+        title: value.title,
+        description: value.description || '',
+        updatedAt: value.updatedAt,
+        fields: (value.fields || []).map(field => ({
+            id: field.id,
+            label: field.label || field.name || '',
+            type: field.type,
+            required: Boolean(field.required)
+        }))
+    };
 };
 
 const formHistory = async (sessionId) => {
@@ -157,6 +200,25 @@ export const applyEvent = async (session, userId, event) => {
             }
         };
     }
+    if (event.type === 'form_target_selected') {
+        const form = await formForRequest(userId, event.formId);
+        const request = state.continuation?.request;
+        if (!form || !request) {
+            return { reply: await saveReply(session, { text: 'I could not resume that form request. Please send it again.', kind: 'error' }) };
+        }
+
+        await session.update({
+            agentContext: mergeAgentContext(session.agentContext || {}, { formId: form.id }),
+            agentState: {}
+        });
+
+        return {
+            resume: {
+                message: request,
+                context: { formId: form.id }
+            }
+        };
+    }
     if (event.type === 'proposal_ignored') {
         if (event.messageId) await ChatMessage.update({ proposalStatus: 'ignored' }, { where: { id: event.messageId, sessionId: session.id } });
         await session.update({ agentState: {} });
@@ -210,48 +272,234 @@ export const applyEvent = async (session, userId, event) => {
 };
 
 const systemInstruction = `You are Promptly Agent, an AI assistant helping users build automation workflows and forms.
-You have access to the following tools. If you need to use a tool, output exactly <TOOL>{"name": "tool_name", "args": {...}}</TOOL>.
-Wait for the system to reply with <TOOL_RESPONSE>...</TOOL_RESPONSE> before continuing. If no tools are needed, simply reply to the user.
+You have access to tools for finding resources, reading their definitions, and preparing safe proposals. Use a tool whenever you need facts from the user's account.
+If native function calling is unavailable, output a tool request exactly as <TOOL>{"name":"tool_name","args":{...}}</TOOL> and wait for <TOOL_RESPONSE>...</TOOL_RESPONSE> before continuing.
 
 Tools available:
 - list_forms(): Returns a list of the user's forms with their IDs and titles. No arguments.
 - list_workflows(purpose: "choose_target" | "list"): Returns a list of the user's workflows with their IDs and names.
+- search_resources(resourceType: "form" | "workflow", query: string): Finds compact matches by ID or name. Use this before editing when the user names a resource.
+- get_form_context(formId: string): Returns a compact form definition for understanding an existing form.
+- get_workflow_context(workflowId: string): Returns compact workflow nodes and connections for understanding an existing workflow.
+- get_execution_summary(workflowId: string | null, status: "All" | "Success" | "Failed", limit: number): Returns recent compact run summaries.
+- get_execution_details(logId: string): Returns one execution log with step details for troubleshooting.
 - get_form(formId: string): Returns the full schema of the specified form.
 - get_workflow(workflowId: string): Returns the full structure of the specified workflow.
 - propose_form_change(formId: string | null, prompt: string): Triggers the form builder to propose an edit or create a new form. If creating a new form, formId should be null.
 - propose_workflow_change(workflowId: string | null, prompt: string): Triggers the workflow builder to propose an edit or create a new workflow. If creating a new workflow, workflowId should be null.
 
 When the user clearly asks to create a new workflow, call propose_workflow_change with a null workflowId.
-When the user asks to edit, update, or modify an existing workflow without identifying which one, call list_workflows with purpose "choose_target" first. The system will present the workflows as choices; do not guess a workflow.`;
+When the user asks to edit, update, or modify an existing workflow without identifying which one, call list_workflows with purpose "choose_target" first. The system will present the workflows as choices; do not guess a workflow.
+When the user names a workflow or form, call search_resources with that name before proposing a change. Never invent an ID.`;
+
+const agentTools = [
+    {
+        type: 'function',
+        function: {
+            name: 'list_forms',
+            description: 'List the user forms as compact summaries, newest first.',
+            strict: true,
+            parameters: { type: 'object', properties: {}, required: [], additionalProperties: false }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'list_workflows',
+            description: 'List the user workflows as compact summaries, newest first.',
+            strict: true,
+            parameters: {
+                type: 'object',
+                properties: { purpose: { type: 'string', enum: ['choose_target', 'list'] } },
+                required: ['purpose'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'search_resources',
+            description: 'Find a form or workflow by its ID or name. Use this before editing a named resource.',
+            strict: true,
+            parameters: {
+                type: 'object',
+                properties: {
+                    resourceType: { type: 'string', enum: ['form', 'workflow'] },
+                    query: { type: 'string' }
+                },
+                required: ['resourceType', 'query'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_form',
+            description: 'Get the full schema for one form after its target is resolved.',
+            strict: true,
+            parameters: {
+                type: 'object',
+                properties: { formId: { type: 'string' } },
+                required: ['formId'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_workflow',
+            description: 'Get the full structure for one workflow after its target is resolved.',
+            strict: true,
+            parameters: {
+                type: 'object',
+                properties: { workflowId: { type: 'string' } },
+                required: ['workflowId'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_form_context',
+            description: 'Get a compact definition of one form without loading response data.',
+            strict: true,
+            parameters: {
+                type: 'object',
+                properties: { formId: { type: 'string' } },
+                required: ['formId'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_workflow_context',
+            description: 'Get compact workflow metadata, nodes, and edges without loading version history.',
+            strict: true,
+            parameters: {
+                type: 'object',
+                properties: { workflowId: { type: 'string' } },
+                required: ['workflowId'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_execution_summary',
+            description: 'List recent execution results for troubleshooting, with step payloads excluded.',
+            strict: true,
+            parameters: {
+                type: 'object',
+                properties: {
+                    workflowId: { type: ['string', 'null'] },
+                    status: { type: 'string', enum: ['All', 'Success', 'Failed'] },
+                    limit: { type: 'integer', minimum: 1, maximum: 10 }
+                },
+                required: ['workflowId', 'status', 'limit'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_execution_details',
+            description: 'Get one execution log including its step details and error.',
+            strict: true,
+            parameters: {
+                type: 'object',
+                properties: { logId: { type: 'string' } },
+                required: ['logId'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'propose_form_change',
+            description: 'Prepare a reviewable form creation or form change proposal. Do not apply changes.',
+            strict: true,
+            parameters: {
+                type: 'object',
+                properties: {
+                    formId: { type: ['string', 'null'] },
+                    prompt: { type: 'string' }
+                },
+                required: ['formId', 'prompt'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'propose_workflow_change',
+            description: 'Prepare a reviewable workflow creation or workflow change proposal. Do not apply changes.',
+            strict: true,
+            parameters: {
+                type: 'object',
+                properties: {
+                    workflowId: { type: ['string', 'null'] },
+                    prompt: { type: 'string' }
+                },
+                required: ['workflowId', 'prompt'],
+                additionalProperties: false
+            }
+        }
+    }
+];
 
 export const processChatMessage = async ({ session, userId, context = {} }) => {
+    const effectiveContext = mergeAgentContext(session.agentContext || {}, context);
     const history = await ChatMessage.findAll({
         where: { sessionId: session.id },
         order: [['createdAt', 'ASC']],
         limit: 20
     });
 
-    const aiMessages = history.map(msg => ({
-        role: msg.sender === 'user' || msg.kind === 'tool_response' ? 'user' : 'model',
-        parts: [{ text: msg.kind === 'tool_response' ? `<TOOL_RESPONSE>${msg.text}</TOOL_RESPONSE>` : msg.text }]
-    }));
+    const aiMessages = history.map(msg => {
+        if (msg.kind === 'tool_call' && msg.payload?.toolCalls) {
+            return { role: 'model', parts: [{ text: msg.text }], toolCalls: msg.payload.toolCalls };
+        }
+        if (msg.kind === 'tool_response' && msg.payload?.toolCallId) {
+            return { role: 'tool', toolCallId: msg.payload.toolCallId, name: msg.payload.name, content: msg.text };
+        }
+        return {
+            role: msg.sender === 'user' || msg.kind === 'tool_response' ? 'user' : 'model',
+            parts: [{ text: msg.kind === 'tool_response' ? `<TOOL_RESPONSE>${msg.text}</TOOL_RESPONSE>` : msg.text }]
+        };
+    });
 
     const provider = getAIProvider();
+    const useNativeTools = provider.supportsToolCalls === true;
 
     let loopCount = 0;
     const maxLoops = 5;
     let totalTokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
     let replyObj = null;
-    const selectedWorkflow = context.workflowId ? await workflowForRequest(userId, context.workflowId) : null;
+    const selectedWorkflow = effectiveContext.workflowId ? await workflowForRequest(userId, effectiveContext.workflowId) : null;
+    const selectedForm = effectiveContext.formId ? await formForRequest(userId, effectiveContext.formId) : null;
     const selectedWorkflowInstruction = selectedWorkflow
         ? `\n\nThe user selected this existing workflow: ${selectedWorkflow.name} (ID: ${selectedWorkflow.id}). Use this workflow ID when proposing changes.`
+        : '';
+    const selectedFormInstruction = selectedForm
+        ? `\nThe user selected this existing form: ${selectedForm.title} (ID: ${selectedForm.id}). Use this form ID when proposing changes.`
         : '';
 
     while (loopCount < maxLoops) {
         loopCount++;
         const response = await provider.generateContent(aiMessages, {
-            systemInstruction: `${systemInstruction}${selectedWorkflowInstruction}`,
-            model: env.aiModel || 'gemini-2.5-pro'
+            systemInstruction: `${systemInstruction}${selectedWorkflowInstruction}${selectedFormInstruction}`,
+            model: env.aiModel || 'gemini-2.5-pro',
+            ...(useNativeTools ? { tools: agentTools } : {})
         });
 
         if (response.usageMetadata) {
@@ -260,17 +508,25 @@ export const processChatMessage = async ({ session, userId, context = {} }) => {
             totalTokenUsage.totalTokens = totalTokenUsage.promptTokens + totalTokenUsage.completionTokens;
         }
 
-        const replyText = response.text;
+        const replyText = response.text || '';
+        // The dispatcher executes one tool per turn; keep the reconstructed
+        // assistant message aligned with the single tool response we send.
+        const nativeToolCalls = response.toolCalls?.slice(0, 1) || [];
+        const nativeToolCall = nativeToolCalls[0] || null;
         const toolMatch = replyText.match(/<TOOL>(.*?)<\/TOOL>/s);
 
-        if (toolMatch) {
+        if (nativeToolCall || toolMatch) {
             let toolCall;
-            try {
-                toolCall = JSON.parse(toolMatch[1]);
-            } catch (e) {
-                aiMessages.push({ role: 'model', parts: [{ text: replyText }] });
-                aiMessages.push({ role: 'user', parts: [{ text: `<TOOL_RESPONSE>{"error": "Invalid JSON in tool call"}</TOOL_RESPONSE>` }] });
-                continue;
+            if (nativeToolCall) {
+                toolCall = nativeToolCall;
+            } else {
+                try {
+                    toolCall = JSON.parse(toolMatch[1]);
+                } catch (e) {
+                    aiMessages.push({ role: 'model', parts: [{ text: replyText }] });
+                    aiMessages.push({ role: 'user', parts: [{ text: `<TOOL_RESPONSE>{"error": "Invalid JSON in tool call"}</TOOL_RESPONSE>` }] });
+                    continue;
+                }
             }
 
             const { name, args = {} } = toolCall;
@@ -280,6 +536,36 @@ export const processChatMessage = async ({ session, userId, context = {} }) => {
                 if (name === 'list_forms') {
                     const forms = await Form.findAll({ where: { userId }, attributes: ['id', 'title', 'updatedAt'], order: [['updatedAt', 'DESC']], limit: 50 });
                     toolResult = JSON.stringify(forms);
+                } else if (name === 'search_resources') {
+                    const type = args.resourceType === 'form' ? 'form' : 'workflow';
+                    const resolution = await resolveResource({ userId, type, reference: args.query || '' });
+                    if (resolution.status === 'ambiguous') {
+                        const request = [...history]
+                            .reverse()
+                            .find(message => message.sender === 'user' && message.kind === 'text')?.text;
+                        await session.update({
+                            agentState: {
+                                status: `awaiting_${type}_target`,
+                                continuation: { request }
+                            }
+                        });
+                        replyObj = await saveReply(session, {
+                            text: `I found multiple ${type}s that match. Which one should I use?`,
+                            kind: 'clarification',
+                            payload: {
+                                options: [{
+                                    id: `${type}-target`,
+                                    type: `${type}_choice`,
+                                    label: `Choose a ${type}`,
+                                    options: resolution.candidates.map(candidate => type === 'form'
+                                        ? { id: candidate.id, title: candidate.name }
+                                        : { id: candidate.id, name: candidate.name })
+                                }]
+                            }
+                        });
+                        break;
+                    }
+                    toolResult = JSON.stringify({ resourceType: type, ...resolution });
                 } else if (name === 'list_workflows') {
                     const workflows = await Workflow.findAll({ where: { userId }, attributes: ['id', 'name', 'updatedAt'], order: [['updatedAt', 'DESC']], limit: 50 });
                     const request = [...history]
@@ -317,17 +603,49 @@ export const processChatMessage = async ({ session, userId, context = {} }) => {
                 } else if (name === 'get_workflow') {
                     const workflow = await Workflow.findOne({ where: { id: args.workflowId || args.id, userId } });
                     toolResult = workflow ? JSON.stringify(workflow) : JSON.stringify({ error: 'Workflow not found' });
+                } else if (name === 'get_form_context') {
+                    const form = await formForRequest(userId, args.formId);
+                    toolResult = JSON.stringify(compactFormContext(form));
+                } else if (name === 'get_workflow_context') {
+                    const workflow = await workflowForRequest(userId, args.workflowId);
+                    toolResult = JSON.stringify(compactWorkflowContext(workflow));
+                } else if (name === 'get_execution_summary') {
+                    const where = { userId };
+                    if (args.workflowId) where.workflowId = args.workflowId;
+                    if (args.status && args.status !== 'All') where.status = args.status;
+                    const logs = await ExecutionLog.findAll({
+                        where,
+                        attributes: ['id', 'time', 'durationMs', 'status', 'trigger', 'workflowId', 'error'],
+                        include: [{ model: Workflow, as: 'workflow', attributes: ['id', 'name'], required: false }],
+                        order: [['time', 'DESC'], ['id', 'DESC']],
+                        limit: Math.min(Math.max(Number(args.limit) || 5, 1), 10)
+                    });
+                    toolResult = JSON.stringify(logs.map(log => {
+                        const value = log.toJSON ? log.toJSON() : log;
+                        return {
+                            ...value,
+                            error: value.error ? String(value.error).slice(0, 500) : null
+                        };
+                    }));
+                } else if (name === 'get_execution_details') {
+                    const log = await ExecutionLog.findOne({
+                        where: { id: args.logId, userId },
+                        include: [{ model: Workflow, as: 'workflow', attributes: ['id', 'name'], required: false }]
+                    });
+                    toolResult = log ? JSON.stringify(log) : JSON.stringify({ error: 'Execution log not found' });
                 } else if (name === 'propose_form_change') {
-                    const result = await formResult({ session, userId, request: args.prompt, formId: args.formId, state: { action: args.formId ? 'edit_form' : 'create_form' } });
+                    const formId = args.formId || effectiveContext.formId || null;
+                    const result = await formResult({ session, userId, request: args.prompt, formId, state: { action: formId ? 'edit_form' : 'create_form' } });
                     if (result.reply?.kind === 'form_proposal') {
                         await session.update({ agentState: { proposalMessageId: result.reply.id } });
                     }
                     replyObj = result.reply;
                     break;
                 } else if (name === 'propose_workflow_change') {
-                    const classification = await classifyRequest({ message: args.prompt, snapshot: compactWorkflowSnapshot(await workflowForRequest(userId, args.workflowId)) });
-                    if (classification.action === 'edit_workflow' && args.workflowId) {
-                        const workflow = await workflowForRequest(userId, args.workflowId);
+                    const workflowId = args.workflowId || effectiveContext.workflowId || null;
+                    const workflow = await workflowForRequest(userId, workflowId);
+                    const classification = await classifyRequest({ message: args.prompt, snapshot: compactWorkflowSnapshot(workflow) });
+                    if (classification.action === 'edit_workflow' && workflowId) {
                         const selected = [...classification.selectedSubTypes];
                         const affected = (workflow.nodes || []).filter(node => classification.affectedNodeIds.includes(node.id)).map(node => node.subType);
                         selected.push(...affected);
@@ -361,11 +679,28 @@ export const processChatMessage = async ({ session, userId, context = {} }) => {
                 toolResult = JSON.stringify({ error: err.message });
             }
 
-            await ChatMessage.create({ sessionId: session.id, sender: 'bot', text: replyText, kind: 'tool_call' });
-            await ChatMessage.create({ sessionId: session.id, sender: 'user', text: toolResult, kind: 'tool_response' });
-            
-            aiMessages.push({ role: 'model', parts: [{ text: replyText }] });
-            aiMessages.push({ role: 'user', parts: [{ text: `<TOOL_RESPONSE>${toolResult}</TOOL_RESPONSE>` }] });
+            await ChatMessage.create({
+                sessionId: session.id,
+                sender: 'bot',
+                text: replyText,
+                kind: 'tool_call',
+                ...(nativeToolCall ? { payload: { toolCalls: nativeToolCalls } } : {})
+            });
+            await ChatMessage.create({
+                sessionId: session.id,
+                sender: 'user',
+                text: toolResult,
+                kind: 'tool_response',
+                ...(nativeToolCall ? { payload: { toolCallId: nativeToolCall.id, name: nativeToolCall.name } } : {})
+            });
+
+            if (nativeToolCall) {
+                aiMessages.push({ role: 'model', parts: [{ text: replyText }], toolCalls: nativeToolCalls });
+                aiMessages.push({ role: 'tool', toolCallId: nativeToolCall.id, name: nativeToolCall.name, content: toolResult });
+            } else {
+                aiMessages.push({ role: 'model', parts: [{ text: replyText }] });
+                aiMessages.push({ role: 'user', parts: [{ text: `<TOOL_RESPONSE>${toolResult}</TOOL_RESPONSE>` }] });
+            }
         } else {
             replyObj = await saveReply(session, { text: replyText, kind: 'text' });
             break;

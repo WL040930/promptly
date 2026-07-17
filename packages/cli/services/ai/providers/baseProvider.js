@@ -1,4 +1,6 @@
 export class BaseAIProvider {
+    supportsToolCalls = false;
+
     /**
      * Generate content from the model.
      * @param {Array<{role: string, parts: Array<{text: string}>}>} contents - The messages.
