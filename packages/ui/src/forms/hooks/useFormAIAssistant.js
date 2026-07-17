@@ -4,6 +4,8 @@ import { acceptFormProposal, getFormChatHistory, addFormChatMessage, updateFormC
 import { generateFormFromPromptStream } from '../../api/aiStream.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useAIStream } from '../../context/AIStreamContext.jsx';
+import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
+import { getClarificationModePreference, setClarificationModePreference } from '../../utils/storage.js';
 
 const LIMIT = 50;
 const RETRYABLE_ERROR_CODES = new Set([
@@ -34,11 +36,17 @@ export const useFormAIAssistant = (form) => {
     const queryClient = useQueryClient();
     const toast = useToast();
     const [input, setInput] = useState('');
+    const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
     const { isTyping, progressLabel, setStreamState, clearStreamState } = useAIStream(form?.id);
 
     const queryKey = ['formChat', form?.id];
+
+    const updateClarificationMode = useCallback(mode => {
+        setClarificationMode(mode);
+        setClarificationModePreference(mode);
+    }, []);
 
     const {
         data,
@@ -77,7 +85,7 @@ export const useFormAIAssistant = (form) => {
             // Generate AI response
             const result = await generateFormFromPromptStream(text, form, form.id, (progress) => {
                 setStreamState({ progressLabel: progress.message || 'Thinking...' });
-            });
+            }, { clarificationMode });
             
             // Save bot message to DB
             let botMsgData = { sender: 'bot', text: result.message };
@@ -315,6 +323,8 @@ export const useFormAIAssistant = (form) => {
         messages: rawMessages,
         input,
         setInput,
+        clarificationMode,
+        setClarificationMode: updateClarificationMode,
         isTyping,
         isLoadingHistory: isLoadingHistory && rawMessages.length === 1 && rawMessages[0].id === 'init', // Only show main loader on first ever fetch
         hasMore: !!hasNextPage,

@@ -4,7 +4,8 @@ import {
     validateFormPatches,
     validateFormSchema,
     validatePlannerResult,
-    validateWorkerResult
+    validateWorkerResult,
+    validateVerifierResult
 } from './formSchemaValidator.js';
 
 const form = {
@@ -64,4 +65,28 @@ test('validateFormPatches identifies when the form ID is used as a field target'
 test('validatePlannerResult and validateWorkerResult reject malformed model contracts', () => {
     assert.ok(validatePlannerResult({ type: 'plan_complete' }).length > 0);
     assert.ok(validateWorkerResult({ type: 'proposal', patches: [{ op: 'add', field: { type: 'text' } }] }).length > 0);
+});
+
+test('validatePlannerResult requires usable clarification inputs', () => {
+    assert.ok(validatePlannerResult({ type: 'message', message: 'Need details.', inputs: [] }).some(issue => issue.code === 'INVALID_CLARIFICATION_INPUTS'));
+    assert.ok(validatePlannerResult({
+        type: 'message',
+        message: 'Need details.',
+        inputs: [{ id: 'q1', type: 'multiple_choice', label: 'Fields?', options: [] }]
+    }).some(issue => issue.code === 'INVALID_CLARIFICATION_OPTIONS'));
+    assert.deepEqual(validatePlannerResult({
+        type: 'message',
+        message: 'Need details.',
+        inputs: [{ id: 'q1', type: 'multiple_choice', label: 'Fields?', options: ['Name', 'Email'] }]
+    }), []);
+});
+
+test('validateVerifierResult enforces fulfilled requirements and issue shape', () => {
+    assert.ok(validateVerifierResult({ status: 'pass', fulfilledRequirements: [], issues: [{ message: 'Unexpected change.' }] }).some(issue => issue.code === 'PASS_WITH_VERIFIER_ISSUES'));
+    assert.ok(validateVerifierResult({ status: 'repair', fulfilledRequirements: [], issues: [{}] }).some(issue => issue.path === 'issues[0].message'));
+    assert.deepEqual(validateVerifierResult({
+        status: 'pass',
+        fulfilledRequirements: ['req_1'],
+        issues: []
+    }), []);
 });

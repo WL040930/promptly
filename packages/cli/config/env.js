@@ -34,6 +34,55 @@ const getOptionalPositiveInteger = (key) => {
     return Number.isInteger(value) && value > 0 ? value : null;
 };
 
+const getAiThinkingLevel = () => {
+    const value = String(process.env.AI_THINKING_LEVEL || 'minimal').trim().toLowerCase();
+    return ['minimal', 'low', 'medium', 'high'].includes(value) ? value : 'minimal';
+};
+
+const supportedAiProviders = new Set(['gemini', 'openrouter', 'groq', 'cerebras']);
+
+const normalizeAiProvider = value => supportedAiProviders.has(value) ? value : 'gemini';
+
+const getDefaultAiModel = provider => {
+    if (provider === 'openrouter') return 'openai/gpt-4o-mini';
+    if (provider === 'groq') return 'llama3-8b-8192';
+    if (provider === 'cerebras') return 'llama3.1-8b';
+    return 'gemini-3.5-flash';
+};
+
+const configuredProvider = normalizeAiProvider(process.env.AI_DEFAULT_PROVIDER || 'gemini');
+const defaultAiModel = process.env.AI_DEFAULT_MODEL || getDefaultAiModel(configuredProvider);
+const fastProvider = normalizeAiProvider(process.env.AI_FAST_PROVIDER || configuredProvider);
+const qualityProvider = normalizeAiProvider(process.env.AI_QUALITY_PROVIDER || configuredProvider);
+const fastModel = process.env.AI_FAST_MODEL || getDefaultAiModel(fastProvider);
+const qualityModel = process.env.AI_QUALITY_MODEL || (
+    qualityProvider === configuredProvider ? defaultAiModel : getDefaultAiModel(qualityProvider)
+);
+
+const getAiTaskTier = (key, fallback) => {
+    const value = String(process.env[`AI_TASK_${key}`] || fallback).trim().toLowerCase();
+    return ['default', 'fast', 'quality'].includes(value) ? value : fallback;
+};
+
+const aiTiers = {
+    default: { provider: configuredProvider, model: defaultAiModel },
+    fast: { provider: fastProvider, model: fastModel },
+    quality: { provider: qualityProvider, model: qualityModel }
+};
+
+const aiTasks = {
+    chat: getAiTaskTier('CHAT', 'fast'),
+    intent: getAiTaskTier('INTENT', 'fast'),
+    plan: getAiTaskTier('PLAN', 'fast'),
+    formPlanner: getAiTaskTier('FORM_PLANNER', 'fast'),
+    formWorker: getAiTaskTier('FORM_WORKER', 'quality'),
+    formVerifier: getAiTaskTier('FORM_VERIFIER', 'fast'),
+    workflowClassifier: getAiTaskTier('WORKFLOW_CLASSIFIER', 'fast'),
+    workflowAssembler: getAiTaskTier('WORKFLOW_ASSEMBLER', 'quality'),
+    workflowPatcher: getAiTaskTier('WORKFLOW_PATCHER', 'quality'),
+    node: getAiTaskTier('NODE', 'quality')
+};
+
 const env = {
     app: {
         port: Number(process.env.PORT || 3000),
@@ -77,21 +126,16 @@ const env = {
     cerebras: {
         apiKey: process.env.CEREBRAS_API_KEY
     },
-    aiProvider: process.env.AI_PROVIDER || 'gemini',
-    aiModel: process.env.AI_MODEL || (
-        process.env.AI_PROVIDER === 'openrouter' ? 'openai/gpt-4o-mini' : 
-        process.env.AI_PROVIDER === 'groq' ? 'llama3-8b-8192' : 
-        process.env.AI_PROVIDER === 'cerebras' ? 'llama3.1-8b' : 
-        'gemini-3.5-flash'
-    ),
-    aiVerifierModel: process.env.AI_VERIFIER_MODEL || process.env.AI_MODEL || (
-        process.env.AI_PROVIDER === 'openrouter' ? 'openai/gpt-4o-mini' :
-        process.env.AI_PROVIDER === 'groq' ? 'llama3-8b-8192' :
-        process.env.AI_PROVIDER === 'cerebras' ? 'llama3.1-8b' :
-        'gemini-3.5-flash'
-    ),
+    ai: {
+        tiers: aiTiers,
+        tasks: aiTasks
+    },
+    aiThinkingLevel: getAiThinkingLevel(),
     aiTimeoutMs: getAiTimeoutMs(),
     aiMaxCompletionTokens: getOptionalPositiveInteger('AI_MAX_COMPLETION_TOKENS'),
+    aiChatMaxCompletionTokens: getOptionalPositiveInteger('AI_CHAT_MAX_COMPLETION_TOKENS') || 700,
+    aiWorkflowMaxCompletionTokens: getOptionalPositiveInteger('AI_WORKFLOW_MAX_COMPLETION_TOKENS') || 1200,
+    aiNodeMaxCompletionTokens: getOptionalPositiveInteger('AI_NODE_MAX_COMPLETION_TOKENS') || 1000,
     supabase: {
         url: requireEnv('SUPABASE_URL'),
         anonKey: requireEnv('SUPABASE_ANON_KEY')

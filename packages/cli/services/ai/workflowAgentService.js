@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import NodeRegistry from '../../utils/NodeRegistry.js';
-import { getAIProvider } from './aiService.js';
+import { getAITaskConfig, getAIProviderForTask } from './aiService.js';
 import env from '../../config/env.js';
 import { parseAiJson } from '../../utils/jsonParser.js';
 import { validateWorkflow } from '../engine/workflowValidator.js';
@@ -28,12 +28,22 @@ const parseModelJson = (text) => {
     }
 };
 
-const providerJson = async (prompt, systemInstruction) => {
-    const provider = getAIProvider();
+const getWorkflowTask = operation => operation === 'classifier'
+    ? 'workflowClassifier'
+    : operation === 'assembler'
+        ? 'workflowAssembler'
+        : 'workflowPatcher';
+
+const providerJson = async (prompt, systemInstruction, operation) => {
+    const task = getWorkflowTask(operation);
+    const taskConfig = getAITaskConfig(task);
+    const provider = getAIProviderForTask(task);
     const response = await provider.generateContent([{ role: 'user', parts: [{ text: prompt }] }], {
         systemInstruction,
         responseMimeType: 'application/json',
-        model: env.aiModel
+        model: taskConfig.model,
+        maxCompletionTokens: env.aiWorkflowMaxCompletionTokens,
+        operation: `workflow:${operation}`
     });
     return { value: parseModelJson(response.text), tokenUsage: usage(response.usageMetadata) };
 };
@@ -67,7 +77,7 @@ export const classifyRequest = async ({ message, snapshot }) => {
         ? `Current workflow nodes:\n${snapshot.nodes.map(n => `${n.id} | ${n.title} | ${n.type} | ${n.subType}`).join('\n')}\nEdges:\n${(snapshot.edges || []).map(e => `${e.id}: ${e.source} -> ${e.target}`).join('\n')}`
         : 'Current workflow: empty';
     const prompt = `Node catalogue:\n${catalogue}\n\n${current}\n\nUser request:\n${message}`;
-    const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow/classifier.md'));
+    const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow/classifier.md'), 'classifier');
     if (!validActions.has(value.action)) throw new Error('Classifier returned an unknown action');
 
     const knownNodeKeys = new Set(catalogueEntries.map(node => node.nodeKey));
@@ -133,9 +143,46 @@ const assertWorkflowDefinition = (nodes, edges, isActive = false) => {
     }
 };
 
+export const layoutWorkflowNodes = (nodes = [], edges = []) => {
+    const indegree = new Map(nodes.map(node => [node.id, 0]));
+    const adjacency = new Map(nodes.map(node => [node.id, []]));
+    edges.forEach(edge => {
+        if (!adjacency.has(edge.source) || !adjacency.has(edge.target)) return;
+        adjacency.get(edge.source).push(edge.target);
+        indegree.set(edge.target, indegree.get(edge.target) + 1);
+    });
+
+    const depth = new Map(nodes.map(node => [node.id, 0]));
+    const queue = [...indegree.entries()]
+        .filter(([, degree]) => degree === 0)
+        .map(([id]) => id);
+    let visited = 0;
+    while (queue.length) {
+        const id = queue.shift();
+        visited += 1;
+        adjacency.get(id).forEach(target => {
+            depth.set(target, Math.max(depth.get(target), depth.get(id) + 1));
+            indegree.set(target, indegree.get(target) - 1);
+            if (indegree.get(target) === 0) queue.push(target);
+        });
+    }
+    if (visited !== nodes.length) throw new Error('Assembler returned a cyclic workflow');
+
+    const siblingRows = new Map();
+    return nodes.map(node => {
+        const layer = depth.get(node.id) || 0;
+        const row = siblingRows.get(layer) || 0;
+        siblingRows.set(layer, row + 1);
+        return {
+            ...node,
+            position: { x: 100 + layer * 350, y: 150 + row * 200 }
+        };
+    });
+};
+
 export const assembleWorkflow = async ({ message, specs, workflowName, formId }) => {
     const prompt = `Node specifications:\n${specs.map(schemaBlock).join('\n---\n')}\n\n${formId ? `Use this approved form ID for the form trigger: ${formId}\n\n` : ''}Workflow request:\n${message}`;
-    const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow/assembler.md'));
+    const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow/assembler.md'), 'assembler');
     if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) throw new Error('Assembler returned an invalid workflow');
 
     const specsByNodeKey = new Map(specs.map(spec => [spec.nodeKey || `${spec.type}:${spec.subType}`, spec]));
@@ -157,10 +204,7 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId })
             title: typeof node.title === 'string' && node.title.trim() ? node.title.trim() : spec.title,
             description: spec.description,
             config,
-            position: {
-                x: 100 + index * 350,
-                y: Number.isFinite(node.position?.y) ? node.position.y : 150
-            },
+            position: { x: 100, y: 150 },
             ...nodeUiFields(spec)
         };
     }).filter(Boolean);
@@ -182,55 +226,56 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId })
     });
     if (!nodes.length) throw new Error('Assembler returned no valid nodes');
     if (nodes[0].type !== 'trigger') throw new Error('Assembler must place a trigger first');
-    const indegree = new Map(nodes.map(node => [node.id, 0]));
-    const adjacency = new Map(nodes.map(node => [node.id, []]));
-    edges.forEach(edge => {
-        adjacency.get(edge.source).push(edge.target);
-        indegree.set(edge.target, indegree.get(edge.target) + 1);
-    });
-    const queue = [...indegree.entries()].filter(([, degree]) => degree === 0).map(([id]) => id);
-    let visited = 0;
-    while (queue.length) {
-        const id = queue.shift();
-        visited += 1;
-        adjacency.get(id).forEach(target => {
-            indegree.set(target, indegree.get(target) - 1);
-            if (indegree.get(target) === 0) queue.push(target);
-        });
-    }
-    if (visited !== nodes.length) throw new Error('Assembler returned a cyclic workflow');
-    assertWorkflowDefinition(nodes, edges);
+    const positionedNodes = layoutWorkflowNodes(nodes, edges);
+    assertWorkflowDefinition(positionedNodes, edges);
 
-    return { name: workflowName || 'New Workflow', nodes, edges, tokenUsage };
+    return { name: workflowName || 'New Workflow', nodes: positionedNodes, edges, tokenUsage };
 };
 
 const newId = (prefix) => `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`;
 
 const resolveId = (id, placeholders) => placeholders.get(id) || id;
 
+const throwPatchError = (patch, message) => {
+    const error = new Error(message);
+    error.code = 'WORKFLOW_PATCH_INVALID';
+    error.patch = patch;
+    throw error;
+};
+
+const assertConnectionHandle = (node, handle, direction, patch) => {
+    if (handle === null || handle === undefined || !Array.isArray(node?.schema?.[direction])) return;
+    const validHandles = node.schema[direction]
+        .filter(item => item?.isConnection)
+        .map(item => item.name)
+        .filter(Boolean);
+    if (!validHandles.includes(handle)) {
+        throwPatchError(patch, `Unknown ${direction === 'outputs' ? 'source' : 'target'} handle '${handle}' for node '${node.id}'.`);
+    }
+};
+
 export const applyWorkflowPatches = ({ currentNodes = [], currentEdges = [], patches = [], specs = [] }) => {
     const nodes = JSON.parse(JSON.stringify(currentNodes));
     const edges = JSON.parse(JSON.stringify(currentEdges));
     const placeholders = new Map();
     const specsByNodeKey = new Map(specs.map(spec => [spec.nodeKey || `${spec.type}:${spec.subType}`, spec]));
-    const specsByUniqueSubType = new Map();
-    for (const spec of specs) {
-        if (specsByUniqueSubType.has(spec.subType)) specsByUniqueSubType.set(spec.subType, null);
-        else specsByUniqueSubType.set(spec.subType, spec);
-    }
     const resolveSpec = (patch) => {
-        if (patch.nodeKey && specsByNodeKey.has(patch.nodeKey)) return specsByNodeKey.get(patch.nodeKey);
-        return specsByUniqueSubType.get(patch.subType) || null;
+        if (!patch.nodeKey) throwPatchError(patch, 'Every add_node patch requires a canonical nodeKey.');
+        const spec = specsByNodeKey.get(patch.nodeKey);
+        if (!spec) throwPatchError(patch, `Unknown nodeKey '${patch.nodeKey}'.`);
+        return spec;
     };
 
     for (const patch of patches) {
-        if (!patch || typeof patch.op !== 'string') continue;
+        if (!patch || typeof patch.op !== 'string') throwPatchError(patch, 'Every workflow patch requires an operation.');
         if (patch.op === 'add_node') {
             const spec = resolveSpec(patch);
-            if (!spec) continue;
+            if (!patch.id || typeof patch.id !== 'string') throwPatchError(patch, 'Every add_node patch requires a placeholder id.');
             const id = newId('node');
-            if (patch.id) placeholders.set(patch.id, id);
-            const after = nodes.find(node => node.id === patch.afterNodeId);
+            placeholders.set(patch.id, id);
+            const afterNodeId = patch.afterNodeId ? resolveId(patch.afterNodeId, placeholders) : null;
+            const after = afterNodeId ? nodes.find(node => node.id === afterNodeId) : null;
+            if (patch.afterNodeId && !after) throwPatchError(patch, `afterNodeId '${patch.afterNodeId}' does not reference an existing node or earlier placeholder.`);
             const x = after ? (after.position?.x || 100) + 350 : Math.max(0, ...nodes.map(node => node.position?.x || 0)) + 350;
             if (after) {
                 nodes.forEach(node => {
@@ -249,14 +294,16 @@ export const applyWorkflowPatches = ({ currentNodes = [], currentEdges = [], pat
                 ...nodeUiFields(spec)
             });
         } else if (patch.op === 'remove_node') {
-            const before = nodes.length;
+            if (!patch.id) throwPatchError(patch, 'Every remove_node patch requires a node id.');
             const id = resolveId(patch.id, placeholders);
+            if (!nodes.some(node => node.id === id)) throwPatchError(patch, `Node '${patch.id}' does not exist.`);
             nodes.splice(0, nodes.length, ...nodes.filter(node => node.id !== id));
-            if (nodes.length !== before) edges.splice(0, edges.length, ...edges.filter(edge => edge.source !== id && edge.target !== id));
+            edges.splice(0, edges.length, ...edges.filter(edge => edge.source !== id && edge.target !== id));
         } else if (patch.op === 'update_node') {
+            if (!patch.id) throwPatchError(patch, 'Every update_node patch requires a node id.');
             const id = resolveId(patch.id, placeholders);
             const index = nodes.findIndex(node => node.id === id);
-            if (index === -1) continue;
+            if (index === -1) throwPatchError(patch, `Node '${patch.id}' does not exist.`);
             const current = nodes[index];
             const updates = patch.updates || {};
             nodes[index] = {
@@ -265,24 +312,31 @@ export const applyWorkflowPatches = ({ currentNodes = [], currentEdges = [], pat
                 config: updates.config ? { ...(current.config || {}), ...updates.config } : current.config
             };
         } else if (patch.op === 'add_edge') {
+            if (!patch.source || !patch.target) throwPatchError(patch, 'Every add_edge patch requires source and target ids.');
             const source = resolveId(patch.source, placeholders);
             const target = resolveId(patch.target, placeholders);
-            if (!nodes.some(node => node.id === source) || !nodes.some(node => node.id === target)) continue;
+            const sourceNode = nodes.find(node => node.id === source);
+            const targetNode = nodes.find(node => node.id === target);
+            if (!sourceNode || !targetNode) throwPatchError(patch, `Edge references a missing node: ${patch.source} -> ${patch.target}.`);
+            assertConnectionHandle(sourceNode, patch.sourceHandle, 'outputs', patch);
+            assertConnectionHandle(targetNode, patch.targetHandle, 'inputs', patch);
             const id = patch.id && !edges.some(edge => edge.id === patch.id) ? patch.id : newId('edge');
             if (!edges.some(edge => edge.source === source && edge.target === target && (edge.sourceHandle || null) === (patch.sourceHandle || null))) {
                 edges.push({ id, source, target, sourceHandle: patch.sourceHandle || null, targetHandle: patch.targetHandle || null, type: patch.type || 'deletable' });
             }
         } else if (patch.op === 'remove_edge') {
+            if (!patch.id) throwPatchError(patch, 'Every remove_edge patch requires an edge id.');
             const id = resolveId(patch.id, placeholders);
+            if (!edges.some(edge => edge.id === id)) throwPatchError(patch, `Edge '${patch.id}' does not exist.`);
             edges.splice(0, edges.length, ...edges.filter(edge => edge.id !== id));
-        }
+        } else throwPatchError(patch, `Unsupported workflow patch operation '${patch.op}'.`);
     }
     return { nodes, edges, placeholders };
 };
 
 export const patchWorkflow = async ({ message, currentWorkflow, classification, specs }) => {
     const prompt = `Current workflow:\n${JSON.stringify({ nodes: compactWorkflowSnapshot(currentWorkflow).nodes, edges: compactWorkflowSnapshot(currentWorkflow).edges })}\n\nNode specifications:\n${specs.map(schemaBlock).join('\n---\n')}\n\nEdit request:\n${message}`;
-    const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow/patcher.md'));
+    const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow/patcher.md'), 'patcher');
     if (!Array.isArray(value.patches)) throw new Error('Patcher returned an invalid patch list');
     const applied = applyWorkflowPatches({ currentNodes: currentWorkflow.nodes || [], currentEdges: currentWorkflow.edges || [], patches: value.patches, specs });
     assertWorkflowDefinition(applied.nodes, applied.edges, Boolean(currentWorkflow.isActive));

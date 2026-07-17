@@ -13,6 +13,7 @@ import {
 const issue = (code, path, message) => ({ code, path, message });
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const CLARIFICATION_INPUT_TYPES = Object.freeze(['multiple_choice', 'single_choice', 'text', 'textarea']);
 
 const validateText = (value, path, { required = false, max = FORM_MAX_TEXT_LENGTH } = {}) => {
     if (value === undefined || value === null) {
@@ -68,6 +69,42 @@ const validateField = (field, path = 'field') => {
     if (field.type === 'rating' && field.maxRating !== undefined && (!Number.isInteger(field.maxRating) || field.maxRating < 1 || field.maxRating > 10)) {
         issues.push(issue('INVALID_RATING', `${path}.maxRating`, 'Maximum rating must be an integer between 1 and 10.'));
     }
+
+    return issues;
+};
+
+const validateClarificationInputs = (inputs = []) => {
+    const issues = [];
+    if (!Array.isArray(inputs) || inputs.length === 0) {
+        return [issue('INVALID_CLARIFICATION_INPUTS', 'inputs', 'A clarification message must contain at least one input.')];
+    }
+
+    const ids = new Set();
+    inputs.forEach((input, index) => {
+        const path = `inputs[${index}]`;
+        if (!isPlainObject(input)) {
+            issues.push(issue('INVALID_CLARIFICATION_INPUT', path, 'Clarification input must be an object.'));
+            return;
+        }
+
+        issues.push(...validateText(input.id, `${path}.id`, { required: true, max: 100 }));
+        issues.push(...validateText(input.label, `${path}.label`, { required: true, max: 500 }));
+        if (!CLARIFICATION_INPUT_TYPES.includes(input.type)) {
+            issues.push(issue('INVALID_CLARIFICATION_INPUT_TYPE', `${path}.type`, `Unsupported clarification input type. Expected one of: ${CLARIFICATION_INPUT_TYPES.join(', ')}.`));
+        }
+        if (input.id && ids.has(input.id)) issues.push(issue('DUPLICATE_CLARIFICATION_INPUT_ID', `${path}.id`, `Clarification input ID '${input.id}' is duplicated.`));
+        if (input.id) ids.add(input.id);
+
+        if (input.type === 'multiple_choice' || input.type === 'single_choice') {
+            if (!Array.isArray(input.options) || input.options.length === 0) {
+                issues.push(issue('INVALID_CLARIFICATION_OPTIONS', `${path}.options`, 'Choice inputs require at least one option.'));
+            } else {
+                input.options.forEach((option, optionIndex) => {
+                    issues.push(...validateText(option, `${path}.options[${optionIndex}]`, { required: true, max: 500 }));
+                });
+            }
+        }
+    });
 
     return issues;
 };
@@ -188,7 +225,7 @@ export const validatePlannerResult = (result = {}) => {
 
     if (result.type === 'message') {
         issues.push(...validateText(result.message, 'message', { required: true, max: 4000 }));
-        if (result.inputs !== undefined && !Array.isArray(result.inputs)) issues.push(issue('INVALID_CLARIFICATION_INPUTS', 'inputs', 'Clarification inputs must be an array.'));
+        issues.push(...validateClarificationInputs(result.inputs));
     }
 
     if (result.type === 'plan_complete') {
@@ -231,7 +268,34 @@ export const validateVerifierResult = (result = {}) => {
     const issues = [];
     if (!isPlainObject(result)) return [issue('INVALID_VERIFIER_RESPONSE', '', 'Verifier response must be an object.')];
     if (!['pass', 'repair'].includes(result.status)) issues.push(issue('INVALID_VERIFIER_STATUS', 'status', 'Verifier status must be pass or repair.'));
-    if (result.issues !== undefined && !Array.isArray(result.issues)) issues.push(issue('INVALID_VERIFIER_ISSUES', 'issues', 'Verifier issues must be an array.'));
-    if (result.status === 'repair' && (!Array.isArray(result.issues) || result.issues.length === 0)) issues.push(issue('MISSING_VERIFIER_ISSUES', 'issues', 'A repair result must include at least one issue.'));
+    if (!Array.isArray(result.fulfilledRequirements)) {
+        issues.push(issue('INVALID_FULFILLED_REQUIREMENTS', 'fulfilledRequirements', 'fulfilledRequirements must be an array of requirement IDs.'));
+    } else {
+        const requirementIds = new Set();
+        result.fulfilledRequirements.forEach((requirementId, index) => {
+            issues.push(...validateText(requirementId, `fulfilledRequirements[${index}]`, { required: true, max: 100 }));
+            if (requirementId && requirementIds.has(requirementId)) issues.push(issue('DUPLICATE_FULFILLED_REQUIREMENT', `fulfilledRequirements[${index}]`, `Requirement ID '${requirementId}' is duplicated.`));
+            if (requirementId) requirementIds.add(requirementId);
+        });
+    }
+    if (!Array.isArray(result.issues)) {
+        issues.push(issue('INVALID_VERIFIER_ISSUES', 'issues', 'Verifier issues must be an array.'));
+    } else {
+        result.issues.forEach((verifierIssue, index) => {
+            const path = `issues[${index}]`;
+            if (!isPlainObject(verifierIssue)) {
+                issues.push(issue('INVALID_VERIFIER_ISSUE', path, 'Verifier issue must be an object.'));
+                return;
+            }
+            issues.push(...validateText(verifierIssue.message, `${path}.message`, { required: true, max: 1000 }));
+            if (verifierIssue.requirementId !== undefined) issues.push(...validateText(verifierIssue.requirementId, `${path}.requirementId`, { max: 100 }));
+        });
+    }
+    if (result.status === 'pass' && Array.isArray(result.issues) && result.issues.length > 0) {
+        issues.push(issue('PASS_WITH_VERIFIER_ISSUES', 'issues', 'A passing verification must not contain issues.'));
+    }
+    if (result.status === 'repair' && (!Array.isArray(result.issues) || result.issues.length === 0)) {
+        issues.push(issue('MISSING_VERIFIER_ISSUES', 'issues', 'A repair result must include at least one issue.'));
+    }
     return issues;
 };

@@ -23,7 +23,7 @@ export const createForm = asyncHandler(async (req, res) => {
 });
 
 export const generateForm = asyncHandler(async (req, res) => {
-    const { prompt, currentSchema, formId } = req.body;
+    const { prompt, currentSchema, formId, clarificationMode } = req.body;
     if (!prompt) {
         return res.status(400).json({ message: 'Prompt is required' });
     }
@@ -57,7 +57,7 @@ export const generateForm = asyncHandler(async (req, res) => {
         };
         
         try {
-            const generatedForm = await generateFormFromPrompt(prompt, formSchema, chatHistory, onProgress);
+            const generatedForm = await generateFormFromPrompt(prompt, formSchema, chatHistory, onProgress, { clarificationMode });
             if (sourceForm && generatedForm) generatedForm.baseFormUpdatedAt = sourceForm.updatedAt;
             res.write(`data: ${JSON.stringify({ type: 'complete', result: generatedForm })}\n\n`);
             res.end();
@@ -67,7 +67,7 @@ export const generateForm = asyncHandler(async (req, res) => {
             res.end();
         }
     } else {
-        const generatedForm = await generateFormFromPrompt(prompt, formSchema, chatHistory);
+        const generatedForm = await generateFormFromPrompt(prompt, formSchema, chatHistory, null, { clarificationMode });
         if (sourceForm && generatedForm) generatedForm.baseFormUpdatedAt = sourceForm.updatedAt;
         res.json(generatedForm);
     }

@@ -3,6 +3,7 @@ import { useApproveAgentRun, useRejectAgentRun, useSendChatMessage } from '../..
 import GenericChatWidget from '../../../components/chat/GenericChatWidget.jsx';
 import ClarificationModeSelect from '../../../components/chat/ClarificationModeSelect.jsx';
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../../shared/agentContract.js';
+import { getClarificationModePreference, setClarificationModePreference } from '../../../utils/storage.js';
 
 const SUGGESTIONS = ['Add a Slack notification step', 'Filter for high urgency tickets', 'Add GPT response step to emails', 'Store results in database'];
 
@@ -19,7 +20,7 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
     const [isTyping, setIsTyping] = useState(false);
     const [progressLabel, setProgressLabel] = useState('Scanning node library');
     const [sessionId, setSessionId] = useState(null);
-    const [clarificationMode, setClarificationMode] = useState(DEFAULT_CLARIFICATION_MODE);
+    const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
     const sendChatMessageMutation = useSendChatMessage();
     const approveAgentRunMutation = useApproveAgentRun();
     const rejectAgentRunMutation = useRejectAgentRun();
@@ -105,11 +106,13 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
         return send(typeof option === 'string' ? option : option?.label || option?.name || option?.title);
     };
 
+    const handleClarificationModeChange = (mode) => {
+        setClarificationMode(mode);
+        setClarificationModePreference(mode);
+    };
+
     return (
         <div className="flex min-h-0 flex-col h-full bg-white relative overflow-hidden">
-            <div className="flex shrink-0 justify-end border-b border-gray-100 px-3 py-2">
-                <ClarificationModeSelect value={clarificationMode} onChange={setClarificationMode} />
-            </div>
             <GenericChatWidget 
                 messages={messages}
                 input={input}
@@ -120,6 +123,7 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
                 handleIgnore={handleIgnore}
                 handleOption={handleOption}
                 progressLabel={progressLabel}
+                inputAccessory={<ClarificationModeSelect value={clarificationMode} onChange={handleClarificationModeChange} />}
                 placeholder="Type a workflow instruction…"
                 suggestions={SUGGESTIONS}
                 bottomNotice="AI can make mistakes. Please verify."

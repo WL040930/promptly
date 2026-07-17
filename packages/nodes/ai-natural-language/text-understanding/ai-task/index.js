@@ -1,5 +1,5 @@
 import { BaseNode } from '../../../BaseNode.js';
-import { getAIProvider } from '../../../../cli/services/ai/aiService.js';
+import { getAITaskConfig, getAIProviderForTask } from '../../../../cli/services/ai/aiService.js';
 import env from '../../../../cli/config/env.js';
 import { parseAiJson } from '../../../../cli/utils/jsonParser.js';
 
@@ -30,14 +30,17 @@ export default class AITaskNode extends BaseNode {
     async execute(context) {
         const config = this.getResolvedConfig(context);
         const taskType = config.taskType || 'custom';
-        const model = config.model || env.aiModel;
+        const taskConfig = getAITaskConfig('node');
+        const model = config.model || taskConfig.model;
         const prompt = buildPrompt(taskType, config.prompt, config.extractionSchema, config.categories, config.inputData || context.initialPayload);
         const systemPrompt = config.systemPrompt || SYSTEM_PROMPTS[taskType] || '';
-        const provider = getAIProvider();
+        const provider = getAIProviderForTask('node');
         const response = await provider.generateContent([{ role: 'user', parts: [{ text: prompt }] }], {
             systemInstruction: systemPrompt,
             model,
-            responseMimeType: structuredTasks.has(taskType) ? 'application/json' : undefined
+            responseMimeType: structuredTasks.has(taskType) ? 'application/json' : undefined,
+            maxCompletionTokens: env.aiNodeMaxCompletionTokens,
+            operation: 'node:ai-task'
         });
 
         const responseText = String(response.text || '').trim();

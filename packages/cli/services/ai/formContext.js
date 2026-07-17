@@ -1,11 +1,14 @@
 import { FORM_AI_MEMORY_LIMIT as SHARED_FORM_AI_MEMORY_LIMIT } from '../../../shared/formContract.js';
-import { normalizeClarificationMode } from '../../../shared/agentContract.js';
+import { getClarificationModeInstruction, normalizeClarificationMode } from '../../../shared/agentContract.js';
 
 export const FORM_AI_HISTORY_LIMIT = 12;
 export const FORM_AI_MEMORY_LIMIT = SHARED_FORM_AI_MEMORY_LIMIT;
 export const FORM_AI_CONTEXT_LIMIT = 12000;
 
 const clampText = (value, limit) => String(value || '').trim().slice(0, limit);
+const EMPTY_MEMORY_SUMMARY = /^(?:none|no durable form(?:-specific)? rules? have been set|no persistent form(?:-specific)? rules? have been set|no form memory has been set)\.?$/i;
+
+const isEmptyMemorySummary = summary => !summary || EMPTY_MEMORY_SUMMARY.test(summary.trim());
 
 export const readFormMemory = (schema = {}) => {
     const storedMemory = schema.settings?.aiMemory;
@@ -71,8 +74,8 @@ export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarific
         'Current Form Schema:',
         JSON.stringify(compactFormSchema(schema)),
         '',
-        'Clarification Mode:',
-        normalizeClarificationMode(clarificationMode),
+        'Clarification:',
+        `${normalizeClarificationMode(clarificationMode)} - ${getClarificationModeInstruction(clarificationMode)}`,
         '',
         'Recent Conversation:',
         recentConversation.length > 0 ? recentConversation.join('\n') : '(none)',
@@ -158,12 +161,13 @@ export const getMemoryUpdate = (plannerResult = {}) => {
 
     if (requestedUpdate?.action === 'replace') {
         const summary = clampText(requestedUpdate.summary, FORM_AI_MEMORY_LIMIT);
-        return summary ? { action: 'replace', summary } : { action: 'clear' };
+        return isEmptyMemorySummary(summary) ? { action: 'none' } : { action: 'replace', summary };
     }
 
     // Keep compatibility with the previous planner response shape.
     if (typeof plannerResult.aiMemory === 'string' && plannerResult.aiMemory.trim()) {
-        return { action: 'replace', summary: clampText(plannerResult.aiMemory, FORM_AI_MEMORY_LIMIT) };
+        const summary = clampText(plannerResult.aiMemory, FORM_AI_MEMORY_LIMIT);
+        return isEmptyMemorySummary(summary) ? { action: 'none' } : { action: 'replace', summary };
     }
 
     return { action: 'none' };
@@ -173,11 +177,15 @@ export const createMemoryPatch = (schema, plannerResult) => {
     const update = getMemoryUpdate(plannerResult);
     if (update.action === 'none') return null;
 
+    const currentMemory = readFormMemory(schema);
+    if (update.action === 'clear' && !currentMemory) return null;
+    if (update.action === 'replace' && currentMemory?.summary === update.summary) return null;
+
     return {
         op: 'update_memory',
         updates: update.action === 'clear'
             ? { memory: null }
             : { memory: { version: 1, summary: update.summary } },
-        originalMemory: readFormMemory(schema)
+        originalMemory: currentMemory
     };
 };

@@ -11,3 +11,15 @@ export const isClarificationMode = value => Object.values(CLARIFICATION_MODES).i
 export const normalizeClarificationMode = value => (
     isClarificationMode(value) ? value : DEFAULT_CLARIFICATION_MODE
 );
+
+export const getClarificationModeInstruction = value => {
+    switch (normalizeClarificationMode(value)) {
+        case CLARIFICATION_MODES.ASK_EVERYTHING:
+            return 'Ask before choosing any unspecified meaningful detail.';
+        case CLARIFICATION_MODES.DECIDE_EVERYTHING:
+            return 'Choose sensible defaults; ask only if execution or safety is blocked.';
+        case CLARIFICATION_MODES.IMPORTANT_ONLY:
+        default:
+            return 'Ask only high-impact questions; infer low-risk details.';
+    }
+};

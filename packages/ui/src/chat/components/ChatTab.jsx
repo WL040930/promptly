@@ -14,6 +14,7 @@ import { formatCompactRelativeTime } from '../../utils/time.js';
 import ChatSessionsSkeleton from '../../components/chat/ChatSessionsSkeleton.jsx';
 import ClarificationModeSelect from '../../components/chat/ClarificationModeSelect.jsx';
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
+import { getClarificationModePreference, setClarificationModePreference } from '../../utils/storage.js';
 
 const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I can build workflows and forms from a description. What would you like to automate?' };
 
@@ -23,7 +24,7 @@ export default function ChatTab() {
     const [messages, setMessages] = useState([welcome]);
     const [sessionId, setSessionId] = useState(() => parsePath(window.location.pathname).sessionId || null);
     const [targetWorkflowId, setTargetWorkflowId] = useState(null);
-    const [clarificationMode, setClarificationMode] = useState(DEFAULT_CLARIFICATION_MODE);
+    const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [progressLabel, setProgressLabel] = useState('Scanning node library');
@@ -56,7 +57,7 @@ export default function ChatTab() {
         loadedSessionIdRef.current = sessionId;
         setMessages(session.messages?.length ? session.messages : [welcome]);
         setTargetWorkflowId(session.agentContext?.workflowId || null);
-        setClarificationMode(session.agentContext?.clarificationMode || DEFAULT_CLARIFICATION_MODE);
+        setClarificationMode(getClarificationModePreference() || session.agentContext?.clarificationMode || DEFAULT_CLARIFICATION_MODE);
         setIsSidebarOpen(false);
     }, [session, sessionId]);
     const filteredSessions = useMemo(() => {
@@ -80,6 +81,11 @@ export default function ChatTab() {
             }
         }
         if (response?.reply) setMessages(previous => [...previous, response.reply]);
+    };
+
+    const handleClarificationModeChange = (mode) => {
+        setClarificationMode(mode);
+        setClarificationModePreference(mode);
     };
 
     const send = async (text, event = null) => {
@@ -200,7 +206,7 @@ export default function ChatTab() {
         setSessionId(null); 
         setMessages([welcome]); 
         setTargetWorkflowId(null);
-        setClarificationMode(DEFAULT_CLARIFICATION_MODE);
+        setClarificationMode(getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
         setPreviewFormId(null);
         loadedSessionIdRef.current = null;
         setIsSidebarOpen(false); 
@@ -211,7 +217,7 @@ export default function ChatTab() {
         loadedSessionIdRef.current = null;
         setSessionId(id);
         setMessages([welcome]);
-        setClarificationMode(DEFAULT_CLARIFICATION_MODE);
+        setClarificationMode(getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
         setIsSidebarOpen(false);
         navigate(buildPath({ mode: 'chat', tab: 'chat', sessionId: id }));
     };
@@ -344,7 +350,6 @@ export default function ChatTab() {
                             <p className="text-[11px] text-gray-500 font-medium">Chat to build workflows and forms</p>
                         </div>
                     </div>
-                    <ClarificationModeSelect value={clarificationMode} onChange={setClarificationMode} className="ml-auto" />
                 </div>
                 <GenericChatWidget 
                     messages={messages}
@@ -371,6 +376,7 @@ export default function ChatTab() {
                     }}
                     handleOption={handleOption}
                     progressLabel={progressLabel}
+                    inputAccessory={<ClarificationModeSelect value={clarificationMode} onChange={handleClarificationModeChange} />}
                     placeholder="Describe what you want to build..."
                     suggestions={[]}
                     bottomNotice="AI can make mistakes. Please verify."

@@ -6,6 +6,7 @@ import {
     buildPlannerContext,
     compactFormSchema,
     createMemoryPatch,
+    getMemoryUpdate,
     readFormMemory
 } from './formContext.js';
 
@@ -31,7 +32,7 @@ test('buildPlannerContext keeps recent conversation bounded and separates memory
 
     assert.match(context, /Persistent Form Memory:\nUse a professional tone\./);
     assert.match(context, /Current Request:\nAdd an email field\./);
-    assert.match(context, /Clarification Mode:\nimportant_only/);
+    assert.match(context, /Clarification:\nimportant_only - Ask only high-impact questions; infer low-risk details\./);
     assert.doesNotMatch(context, /message-0/);
     assert.match(context, /message-15/);
     assert.ok(context.length <= FORM_AI_CONTEXT_LIMIT + 2000);
@@ -55,4 +56,14 @@ test('createMemoryPatch supports replacement, clearing, and legacy memory', () =
         updates: { memory: null },
         originalMemory: { version: 1, summary: 'Use short labels.' }
     });
+});
+
+test('empty or unchanged memory proposals do not create selectable patches', () => {
+    assert.deepEqual(getMemoryUpdate({
+        memoryUpdate: { action: 'replace', summary: 'No durable form-specific rules have been set.' }
+    }), { action: 'none' });
+    assert.equal(createMemoryPatch({ settings: {} }, { memoryUpdate: { action: 'clear' } }), null);
+    assert.equal(createMemoryPatch({ settings: { aiMemory: { version: 1, summary: 'Use short labels.' } } }, {
+        memoryUpdate: { action: 'replace', summary: 'Use short labels.' }
+    }), null);
 });

@@ -10,7 +10,7 @@ import NodeRegistry from '../../utils/NodeRegistry.js';
 import { resolveResource } from '../chat/resourceResolver.js';
 import { addUsage, requestAgentJson } from './agentAi.js';
 import { makeError, makeIntent, makePlan } from './agentContracts.js';
-import { DEFAULT_CLARIFICATION_MODE, normalizeClarificationMode } from '../../../shared/agentContract.js';
+import { DEFAULT_CLARIFICATION_MODE, getClarificationModeInstruction, normalizeClarificationMode } from '../../../shared/agentContract.js';
 import {
     completeStep,
     createArtifact,
@@ -170,7 +170,7 @@ const planSolution = async ({ intent, resources, clarificationMode = DEFAULT_CLA
                 '',
                 'Resolved resources:', JSON.stringify(resources.map(item => item.resource)),
                 '',
-                'Clarification mode:', clarificationMode,
+                'Clarification:', `${clarificationMode} - ${getClarificationModeInstruction(clarificationMode)}`,
                 '',
                 'Create a short dependency-aware plan. Include verification and approval.'
             ].join('\n')

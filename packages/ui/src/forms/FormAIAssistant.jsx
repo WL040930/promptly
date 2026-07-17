@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useFormAIAssistant } from './hooks/useFormAIAssistant';
 import FormDiffPreviewModal from './FormDiffPreviewModal';
 import GenericChatWidget from '../components/chat/GenericChatWidget.jsx';
+import ClarificationModeSelect from '../components/chat/ClarificationModeSelect.jsx';
 
 const SUGGESTIONS = [
     "A customer satisfaction survey",
@@ -15,6 +16,8 @@ const FormAIAssistant = ({ form, accentColor = '#4f46e5' }) => {
         messages,
         input,
         setInput,
+        clarificationMode,
+        setClarificationMode,
         isTyping,
         isLoadingHistory,
         hasMore,
@@ -65,6 +68,7 @@ const FormAIAssistant = ({ form, accentColor = '#4f46e5' }) => {
                 acceptingProposalId={acceptingProposalId}
                 rejectingProposalId={rejectingProposalId}
                 progressLabel={progressLabel}
+                inputAccessory={<ClarificationModeSelect value={clarificationMode} onChange={setClarificationMode} />}
                 placeholder="Ask AI to build or modify form..."
                 suggestions={SUGGESTIONS}
                 bottomNotice="AI can make mistakes. Please verify."

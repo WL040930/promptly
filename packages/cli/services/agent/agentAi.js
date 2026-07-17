@@ -1,8 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import env from '../../config/env.js';
-import { getAIProvider } from '../ai/aiService.js';
+import { getAITaskConfig, getAIProviderForTask } from '../ai/aiService.js';
 import { parseAiJson } from '../../utils/jsonParser.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -14,13 +13,17 @@ const usage = (metadata) => ({
     totalTokens: metadata?.totalTokenCount || metadata?.total_tokens || 0
 });
 
-export const requestAgentJson = async ({ label, prompt, instruction, maxCompletionTokens = 1200, provider = getAIProvider() }) => {
+export const requestAgentJson = async ({ label, prompt, instruction, maxCompletionTokens = 1200, provider = null }) => {
     const systemInstruction = instruction || await fs.readFile(path.join(instructionDir, `${label}.md`), 'utf8');
-    const response = await provider.generateContent([{ role: 'user', parts: [{ text: prompt }] }], {
+    const task = ['intent', 'plan'].includes(label) ? label : 'plan';
+    const taskConfig = getAITaskConfig(task);
+    const selectedProvider = provider || getAIProviderForTask(task);
+    const response = await selectedProvider.generateContent([{ role: 'user', parts: [{ text: prompt }] }], {
         systemInstruction,
         responseMimeType: 'application/json',
-        model: env.aiModel,
-        maxCompletionTokens
+        model: taskConfig.model,
+        maxCompletionTokens,
+        operation: `agent:${label}`
     });
     let value;
     try {

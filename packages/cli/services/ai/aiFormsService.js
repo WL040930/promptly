@@ -1,4 +1,4 @@
-import { getAIProvider } from './aiService.js';
+import { getAITaskConfig, getAIProviderForTask } from './aiService.js';
 import env from '../../config/env.js';
 import fs from 'fs';
 import path from 'path';
@@ -19,6 +19,7 @@ import {
     validateVerifierResult,
     validateWorkerResult
 } from './formSchemaValidator.js';
+import { FORM_FIELD_TYPES } from '../../../shared/formContract.js';
 
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
@@ -41,7 +42,7 @@ let workerInstruction = 'You are an AI Form Worker.';
 let verifierInstruction = 'You are a Form Proposal Verifier.';
 try {
     plannerInstruction = fs.readFileSync(plannerInstructionPath, 'utf8');
-    workerInstruction = fs.readFileSync(workerInstructionPath, 'utf8');
+    workerInstruction = `${fs.readFileSync(workerInstructionPath, 'utf8')}\n\nAuthoritative supported field types: ${FORM_FIELD_TYPES.join(', ')}.`;
     verifierInstruction = fs.readFileSync(verifierInstructionPath, 'utf8');
 } catch (err) {
     console.error('Failed to read form instructions:', err);
@@ -121,15 +122,25 @@ const getRetryAfterSeconds = (error) => {
 
 const getCompletionLimit = (label) => env.aiMaxCompletionTokens || defaultCompletionLimits[label] || 1024;
 
+const getFormTask = label => label.startsWith('planner')
+    ? 'formPlanner'
+    : label.startsWith('worker')
+        ? 'formWorker'
+        : 'formVerifier';
+
 const requestJson = async ({ provider, contents, systemInstruction, model, label }) => {
+    const task = getFormTask(label);
+    const taskConfig = getAITaskConfig(task);
+    const selectedProvider = provider || getAIProviderForTask(task);
     let response;
     try {
         response = await withTimeout(
-            provider.generateContent(contents, {
+            selectedProvider.generateContent(contents, {
                 systemInstruction,
                 responseMimeType: 'application/json',
-                model,
-                maxCompletionTokens: getCompletionLimit(label)
+                model: model || taskConfig.model,
+                maxCompletionTokens: getCompletionLimit(label),
+                operation: `form:${label}`
             }),
             env.aiTimeoutMs,
             label
@@ -178,7 +189,6 @@ const repairPlanner = async ({ provider, rawText, issues, tokenUsage }) => {
         provider,
         contents: [{ role: 'user', parts: [{ text: buildPlannerRepairContext({ response: rawText, issues: summarizeValidationIssues(issues) }) }] }],
         systemInstruction: plannerInstruction,
-        model: env.aiModel,
         label: 'planner repair'
     });
     return {
@@ -197,7 +207,6 @@ const repairWorker = async ({ provider, schema, requirements, rawText, issues, t
             issues: summarizeValidationIssues(issues)
         }) }] }],
         systemInstruction: workerInstruction,
-        model: env.aiModel,
         label: 'worker repair'
     });
     return {
@@ -243,7 +252,6 @@ const verifyProposal = async ({ provider, requirements, patches, tokenUsage }) =
         provider,
         contents: [{ role: 'user', parts: [{ text: buildVerifierContext({ requirements, patches }) }] }],
         systemInstruction: verifierInstruction,
-        model: env.aiVerifierModel,
         label: 'verifier'
     });
     return {
@@ -254,7 +262,7 @@ const verifyProposal = async ({ provider, requirements, patches, tokenUsage }) =
 
 export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory = [], onProgress = null, options = {}) => {
     try {
-        const provider = options.provider || getAIProvider();
+        const provider = options.provider || null;
 
         if (onProgress) onProgress({ status: 'analyzing', message: 'Analyzing requirements...' });
 
@@ -275,7 +283,6 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
             provider,
             contents,
             systemInstruction: plannerInstruction,
-            model: env.aiModel,
             label: 'planner'
         });
 
@@ -320,7 +327,6 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
                 provider,
                 contents: workerContents,
                 systemInstruction: workerInstruction,
-                model: env.aiModel,
                 label: 'worker'
             });
             tokenUsage = addTokenUsage(tokenUsage, workerCall.response, 'worker');

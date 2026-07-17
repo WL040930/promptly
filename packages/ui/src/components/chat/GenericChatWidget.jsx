@@ -1,4 +1,5 @@
 import React, { useRef, useEffect } from 'react';
+import { ArrowUp, LoaderCircle } from 'lucide-react';
 import AgentMessage from './AgentMessage.jsx';
 import ChatHistorySkeleton from './ChatHistorySkeleton.jsx';
 
@@ -20,7 +21,8 @@ export default function GenericChatWidget({
     placeholder = "Type a message...",
     suggestions = [],
     bottomNotice = "AI can make mistakes. Please verify.",
-    innerClassName = "w-full"
+    innerClassName = "w-full",
+    inputAccessory = null
 }) {
     const scrollContainerRef = useRef(null);
     const inputRef = useRef(null);
@@ -143,11 +145,11 @@ export default function GenericChatWidget({
             )}
 
             {/* Input Box */}
-            <div className="p-4 bg-white/80 backdrop-blur-md border-t border-gray-200/60 shrink-0 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.05)] z-10 relative">
+            <div className="p-4 bg-white/80 backdrop-blur-md border-t border-gray-200/60 shrink-0 z-10 relative">
                 <div className={innerClassName}>
                     <form
                         onSubmit={(e) => { e.preventDefault(); handleSend(input); }}
-                        className="relative flex items-center w-full"
+                        className="relative w-full overflow-hidden rounded-[24px] border border-slate-300/80 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)] transition focus-within:border-slate-400 focus-within:shadow-[0_3px_18px_rgba(15,23,42,0.1)]"
                     >
                         <textarea
                             ref={inputRef}
@@ -156,23 +158,26 @@ export default function GenericChatWidget({
                             onKeyDown={handleInputKeyDown}
                             placeholder={placeholder}
                             rows={1}
-                            className="max-h-36 min-h-[48px] w-full resize-none overflow-y-auto rounded-3xl border border-slate-200 bg-white px-5 py-3.5 pr-14 text-[14px] font-medium text-slate-800 shadow-sm transition-all placeholder:text-gray-400 hover:border-slate-300 focus:border-indigo-400 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 disabled:opacity-60"
+                            className="max-h-36 min-h-[56px] w-full resize-none overflow-y-auto bg-transparent px-5 pb-1 pt-3 text-[15px] leading-6 font-normal text-slate-800 outline-none placeholder:text-slate-400 disabled:opacity-60"
                             disabled={isTyping}
                             autoFocus
                         />
-                        <button
-                            type="submit"
-                            disabled={!input.trim() || isTyping}
-                            className={`absolute right-1.5 w-10 h-10 p-0 rounded-full flex items-center justify-center transition-all ${input.trim() && !isTyping
-                                    ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-700 hover:scale-105 active:scale-95'
+                        <div className="flex min-h-10 items-center justify-between gap-3 px-3 pb-2">
+                            <div className="min-w-0 flex-1">
+                                {inputAccessory}
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={!input.trim() || isTyping}
+                                aria-label={isTyping ? 'Generating response' : 'Send message'}
+                                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all ${input.trim() && !isTyping
+                                    ? 'bg-slate-900 text-white shadow-sm hover:bg-slate-700 active:scale-95'
                                     : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                                 }`}
-                        >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                <line x1="22" y1="2" x2="11" y2="13" />
-                                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                            </svg>
-                        </button>
+                            >
+                                {isTyping ? <LoaderCircle size={18} className="animate-spin" aria-hidden="true" /> : <ArrowUp size={19} strokeWidth={2.2} aria-hidden="true" />}
+                            </button>
+                        </div>
                     </form>
                     {bottomNotice && (
                         <div className="text-center mt-2.5">

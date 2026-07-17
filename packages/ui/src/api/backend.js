@@ -27,7 +27,7 @@ export const deleteForm = (id) => apiRequest(`/api/forms/${id}`, { method: 'DELE
 export const submitFormResponse = (formId, responseData) => apiRequest(`/api/forms/${formId}/responses`, { method: 'POST', body: JSON.stringify({ responseData }) });
 export const getFormResponses = (formId) => apiRequest(`/api/forms/${formId}/responses`);
 export const getPublicForm = (id) => apiRequest(`/api/forms/public/${id}`);
-export const generateFormFromPrompt = (prompt, currentSchema, formId) => apiRequest('/api/forms/generate', { method: 'POST', body: JSON.stringify({ prompt, currentSchema, formId }) });
+export const generateFormFromPrompt = (prompt, currentSchema, formId, options = {}) => apiRequest('/api/forms/generate', { method: 'POST', body: JSON.stringify({ prompt, currentSchema, formId, clarificationMode: options.clarificationMode }) });
 
 export const getFormChatHistory = (formId, limit = 50, offset = 0) => apiRequest(`/api/forms/${formId}/chat?limit=${limit}&offset=${offset}`);
 export const addFormChatMessage = (formId, messageData) => apiRequest(`/api/forms/${formId}/chat`, { method: 'POST', body: JSON.stringify(messageData) });

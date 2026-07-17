@@ -8,11 +8,11 @@ import {
     patchWorkflow,
     tokenTotal
 } from '../ai/workflowAgentService.js';
-import { getAIProvider } from '../ai/aiService.js';
+import { getAITaskConfig, getAIProviderForTask } from '../ai/aiService.js';
 import env from '../../config/env.js';
 import { mergeAgentContext, resolveResource } from './resourceResolver.js';
 import { processAgenticTurn, resumeAgentAfterClarification, resumeAgentAfterForm, resumeAgentAfterPlanReview } from '../agent/agentOrchestrator.js';
-import { normalizeClarificationMode } from '../../../shared/agentContract.js';
+import { getClarificationModeInstruction, normalizeClarificationMode } from '../../../shared/agentContract.js';
 
 const tokenPayload = (...usages) => {
     const stage1 = usages[0] || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -554,7 +554,8 @@ export const processChatMessage = async ({ session, userId, context = {} }) => {
         };
     });
 
-    const provider = getAIProvider();
+    const chatTaskConfig = getAITaskConfig('chat');
+    const provider = getAIProviderForTask('chat');
     const useNativeTools = provider.supportsToolCalls === true;
 
     let loopCount = 0;
@@ -574,8 +575,10 @@ export const processChatMessage = async ({ session, userId, context = {} }) => {
         loopCount++;
         const response = await provider.generateContent(aiMessages, {
             systemInstruction: `${systemInstruction}
-Clarification mode for form requirements: ${normalizeClarificationMode(effectiveContext.clarificationMode)}. The form planner must follow this mode and avoid asking low-impact questions in important_only or decide_everything mode.${selectedWorkflowInstruction}${selectedFormInstruction}`,
-            model: env.aiModel || 'gemini-2.5-pro',
+Clarification for form requirements: ${normalizeClarificationMode(effectiveContext.clarificationMode)} - ${getClarificationModeInstruction(effectiveContext.clarificationMode)}${selectedWorkflowInstruction}${selectedFormInstruction}`,
+            model: chatTaskConfig.model,
+            maxCompletionTokens: env.aiChatMaxCompletionTokens,
+            operation: 'chat',
             ...(useNativeTools ? { tools: agentTools } : {})
         });
 

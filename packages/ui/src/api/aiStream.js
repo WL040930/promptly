@@ -9,7 +9,7 @@ const createStreamError = (message, code) => {
     return error;
 };
 
-export const generateFormFromPromptStream = async (prompt, currentSchema, formId, onProgress) => {
+export const generateFormFromPromptStream = async (prompt, currentSchema, formId, onProgress, options = {}) => {
     const headers = {
         'Content-Type': 'application/json',
         'Accept': 'text/event-stream'
@@ -31,7 +31,7 @@ export const generateFormFromPromptStream = async (prompt, currentSchema, formId
         const response = await fetch(`${apiBase}/api/forms/generate`, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ prompt, currentSchema, formId }),
+            body: JSON.stringify({ prompt, currentSchema, formId, clarificationMode: options.clarificationMode }),
             signal: controller.signal
         });
 
