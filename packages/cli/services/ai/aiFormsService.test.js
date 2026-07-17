@@ -84,6 +84,66 @@ test('generateFormFromPrompt repairs a semantically incorrect proposal once', as
     assert.deepEqual(requestOptions.map(options => options.maxCompletionTokens), [800, 2048, 600, 2048, 600]);
 });
 
+test('recovers user-facing labels when the worker and its repair omit them', async () => {
+    const { generateFormFromPrompt } = await import('./aiFormsService.js');
+    const outputs = [
+        {
+            type: 'plan_complete',
+            summary: 'Building the registration form.',
+            requirements: [{ id: 'req_1', description: 'Add first name, email, and attendance type fields.' }],
+            instructionsForWorker: 'Add first name, email, and attendance type fields.',
+            memoryUpdate: { action: 'none' }
+        },
+        {
+            type: 'proposal',
+            message: 'Built the registration form.',
+            patches: [
+                { op: 'add', field: { id: 'f_first_name', type: 'text', required: true } },
+                { op: 'add', field: { id: 'f_email', type: 'email', required: true } },
+                { op: 'add', field: { id: 'f_attendance_type', type: 'select', choices: ['In-person', 'Virtual'] } }
+            ]
+        },
+        {
+            type: 'proposal',
+            message: 'Built the registration form.',
+            patches: [
+                { op: 'add', field: { id: 'f_first_name', type: 'text', required: true } },
+                { op: 'add', field: { id: 'f_email', type: 'email', required: true } },
+                { op: 'add', field: { id: 'f_attendance_type', type: 'select', choices: ['In-person', 'Virtual'] } }
+            ]
+        },
+        {
+            type: 'proposal',
+            message: 'Built the registration form.',
+            patches: [
+                { op: 'update_meta', updates: { title: 'Event Registration', description: '' } },
+                { op: 'add', field: { id: 'f_first_name', type: 'text', label: 'First Name', required: true } },
+                { op: 'add', field: { id: 'f_email', type: 'email', label: 'Email', required: true } },
+                { op: 'add', field: { id: 'f_attendance_type', type: 'select', label: 'Attendance Type', choices: ['In-person', 'Virtual'] } }
+            ]
+        },
+        { status: 'pass', fulfilledRequirements: ['req_1'], issues: [] }
+    ];
+    const provider = {
+        async generateContent() {
+            const output = outputs.shift();
+            assert.ok(output, 'The fake provider received an unexpected request.');
+            return { text: JSON.stringify(output) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Create an event registration form.',
+        { id: 'form_1', title: '', description: '', settings: {}, fields: [] },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.deepEqual(result.schema.fields.map(field => field.label), ['First Name', 'Email', 'Attendance Type']);
+    assert.equal(result.verification.status, 'pass');
+});
+
 test('generateFormFromPrompt fails instead of hanging when a model stage never resolves', async () => {
     const { generateFormFromPrompt } = await import('./aiFormsService.js');
     const plannerResponse = {

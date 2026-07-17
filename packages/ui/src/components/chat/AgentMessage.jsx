@@ -101,6 +101,43 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                     </div>
                 )}
 
+                {message.sender !== 'user' && kind === 'agent_plan_review' && (
+                    <div className="w-full rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-3 text-xs text-slate-600">
+                        <div className="mb-1 font-semibold text-slate-800">Plan for review</div>
+                        {planSummary && <div className="mb-2 text-slate-600">{planSummary}</div>}
+                        {planSteps.length > 0 && (
+                            <div className="mb-3 flex flex-col gap-1">
+                                {planSteps.map((step, index) => (
+                                    <div key={step.id || `${step.title || step.type}-${index}`} className="flex gap-2">
+                                        <span className="font-semibold text-indigo-600">{index + 1}.</span>
+                                        <span>{step.title || step.reason || step.type}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <div className="flex gap-2">
+                            <Button
+                                variant="primary"
+                                size="sm"
+                                className="flex-1"
+                                onClick={() => onOption?.({ type: 'agent_plan_approved', runId: payload.runId })}
+                                disabled={!payload.runId || isTyping}
+                            >
+                                Proceed
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1"
+                                onClick={() => onOption?.({ type: 'agent_plan_rejected', runId: payload.runId })}
+                                disabled={!payload.runId || isTyping}
+                            >
+                                Cancel
+                            </Button>
+                        </div>
+                    </div>
+                )}
+
                 {kind === 'clarification' && options.length > 0 && (
                     <MessageOptionsWidget 
                         options={options}

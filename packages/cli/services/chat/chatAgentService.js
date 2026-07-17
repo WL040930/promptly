@@ -11,7 +11,8 @@ import {
 import { getAIProvider } from '../ai/aiService.js';
 import env from '../../config/env.js';
 import { mergeAgentContext, resolveResource } from './resourceResolver.js';
-import { processAgenticTurn, resumeAgentAfterForm } from '../agent/agentOrchestrator.js';
+import { processAgenticTurn, resumeAgentAfterClarification, resumeAgentAfterForm, resumeAgentAfterPlanReview } from '../agent/agentOrchestrator.js';
+import { normalizeClarificationMode } from '../../../shared/agentContract.js';
 
 const tokenPayload = (...usages) => {
     const stage1 = usages[0] || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -122,14 +123,20 @@ const formHistory = async (sessionId) => {
     return rows.map(row => ({ sender: row.sender, text: row.text }));
 };
 
-const formResult = async ({ session, userId, request, formId, continuation = null, state = {} }) => {
+const formResult = async ({ session, userId, request, formId, continuation = null, state = {}, clarificationMode }) => {
     const form = await formForRequest(userId, formId);
     if (formId && !form) {
         const reply = await saveReply(session, { text: 'I could not find that form. Please choose one of your existing forms.', kind: 'error' });
         return { reply, tokenUsage: null };
     }
     const currentSchema = form ? form.toJSON() : state.currentSchema || {};
-    const result = await generateFormFromPrompt(request, currentSchema, await formHistory(session.id));
+    const result = await generateFormFromPrompt(
+        request,
+        currentSchema,
+        await formHistory(session.id),
+        null,
+        { clarificationMode: normalizeClarificationMode(clarificationMode) }
+    );
     const tokenUsage = result.tokenUsage ? {
         stage1: result.tokenUsage,
         stage2: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
@@ -182,6 +189,23 @@ const formResult = async ({ session, userId, request, formId, continuation = nul
 export const applyEvent = async (session, userId, event) => {
     if (!event?.type) return null;
     const state = session.agentState || {};
+    if (event.type === 'agent_plan_approved' && event.runId) {
+        const run = await AgentRun.findOne({ where: { id: event.runId, sessionId: session.id, userId } });
+        if (!run || state.status !== 'awaiting_agent_plan_review' || state.runId !== run.id) {
+            return { reply: await saveReply(session, { text: 'That plan is no longer waiting for approval. Please send the request again.', kind: 'error' }) };
+        }
+        const resumed = await resumeAgentAfterPlanReview({ run, session, userId });
+        return { reply: resumed.replyObj, tokenUsage: resumed.totalTokenUsage };
+    }
+    if (event.type === 'agent_plan_rejected' && event.runId) {
+        const run = await AgentRun.findOne({ where: { id: event.runId, sessionId: session.id, userId } });
+        if (!run || state.status !== 'awaiting_agent_plan_review' || state.runId !== run.id) {
+            return { reply: await saveReply(session, { text: 'That plan is no longer waiting for approval.', kind: 'error' }) };
+        }
+        await run.update({ status: 'blocked', currentStep: null, error: { code: 'AGENT_PLAN_REJECTED', message: 'The user chose not to continue with the proposed plan.' } });
+        await session.update({ agentState: {} });
+        return { reply: await saveReply(session, { text: 'I stopped before making any form or workflow changes.', kind: 'status', payload: { status: 'cancelled', runId: run.id } }) };
+    }
     if (event.type === 'form_saved' && event.runId) {
         const run = await AgentRun.findOne({ where: { id: event.runId, sessionId: session.id, userId } });
         if (!run) return { reply: await saveReply(session, { text: 'That agent run is no longer available.', kind: 'error' }) };
@@ -469,6 +493,45 @@ const agentTools = [
 export const processChatMessage = async ({ session, userId, context = {} }) => {
     const effectiveContext = mergeAgentContext(session.agentContext || {}, context);
     const latestUserMessage = await ChatMessage.findOne({ where: { sessionId: session.id, sender: 'user' }, order: [['createdAt', 'DESC']] });
+
+    const pendingAgentState = session.agentState || {};
+    if (pendingAgentState.status === 'awaiting_agent_plan_review' && pendingAgentState.runId) {
+        const run = await AgentRun.findOne({ where: { id: pendingAgentState.runId, sessionId: session.id, userId } });
+        const answer = String(latestUserMessage?.text || '');
+        if (run && /\b(proceed|approve|continue|yes|go ahead)\b/i.test(answer)) {
+            const resumed = await resumeAgentAfterPlanReview({ run, session, userId });
+            return { replyObj: resumed.replyObj, totalTokenUsage: resumed.totalTokenUsage };
+        }
+        if (run && /\b(cancel|reject|stop|no)\b/i.test(answer)) {
+            await run.update({ status: 'blocked', currentStep: null, error: { code: 'AGENT_PLAN_REJECTED', message: 'The user chose not to continue with the proposed plan.' } });
+            await session.update({ agentState: {} });
+            const reply = await saveReply(session, { text: 'I stopped before making any form or workflow changes.', kind: 'status', payload: { status: 'cancelled', runId: run.id } });
+            return { replyObj: reply, totalTokenUsage: null };
+        }
+        if (run) {
+            const reply = await saveReply(session, {
+                text: 'Please review the plan above and choose Proceed or Cancel before I continue.',
+                kind: 'agent_plan_review',
+                payload: { runId: run.id, plan: run.plan }
+            });
+            return { replyObj: reply, totalTokenUsage: null };
+        }
+    }
+    if (pendingAgentState.status === 'awaiting_agent_clarification' && pendingAgentState.runId) {
+        const run = await AgentRun.findOne({ where: { id: pendingAgentState.runId, sessionId: session.id, userId } });
+        if (!run) {
+            await session.update({ agentState: {} });
+            const reply = await saveReply(session, {
+                text: 'That pending request is no longer available. Please send the request again.',
+                kind: 'error'
+            });
+            return { replyObj: reply, totalTokenUsage: null };
+        }
+
+        const resumed = await resumeAgentAfterClarification({ run, session, userId, context: effectiveContext });
+        return { replyObj: resumed.replyObj, totalTokenUsage: resumed.totalTokenUsage };
+    }
+
     const agenticResult = await processAgenticTurn({ session, userId, message: latestUserMessage?.text || '', context: effectiveContext });
     if (agenticResult.handled) return { replyObj: agenticResult.replyObj, totalTokenUsage: agenticResult.totalTokenUsage };
 
@@ -510,7 +573,8 @@ export const processChatMessage = async ({ session, userId, context = {} }) => {
     while (loopCount < maxLoops) {
         loopCount++;
         const response = await provider.generateContent(aiMessages, {
-            systemInstruction: `${systemInstruction}${selectedWorkflowInstruction}${selectedFormInstruction}`,
+            systemInstruction: `${systemInstruction}
+Clarification mode for form requirements: ${normalizeClarificationMode(effectiveContext.clarificationMode)}. The form planner must follow this mode and avoid asking low-impact questions in important_only or decide_everything mode.${selectedWorkflowInstruction}${selectedFormInstruction}`,
             model: env.aiModel || 'gemini-2.5-pro',
             ...(useNativeTools ? { tools: agentTools } : {})
         });
@@ -648,7 +712,7 @@ export const processChatMessage = async ({ session, userId, context = {} }) => {
                     toolResult = log ? JSON.stringify(log) : JSON.stringify({ error: 'Execution log not found' });
                 } else if (name === 'propose_form_change') {
                     const formId = args.formId || effectiveContext.formId || null;
-                    const result = await formResult({ session, userId, request: args.prompt, formId, state: { action: formId ? 'edit_form' : 'create_form' } });
+                    const result = await formResult({ session, userId, request: args.prompt, formId, clarificationMode: effectiveContext.clarificationMode, state: { action: formId ? 'edit_form' : 'create_form' } });
                     if (result.reply?.kind === 'form_proposal') {
                         await session.update({ agentState: { proposalMessageId: result.reply.id } });
                     }

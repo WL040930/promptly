@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useApproveAgentRun, useRejectAgentRun, useSendChatMessage } from '../../../api/hooks/useChat.js';
 import GenericChatWidget from '../../../components/chat/GenericChatWidget.jsx';
+import ClarificationModeSelect from '../../../components/chat/ClarificationModeSelect.jsx';
+import { DEFAULT_CLARIFICATION_MODE } from '../../../../../shared/agentContract.js';
 
 const SUGGESTIONS = ['Add a Slack notification step', 'Filter for high urgency tickets', 'Add GPT response step to emails', 'Store results in database'];
 
@@ -17,6 +19,7 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
     const [isTyping, setIsTyping] = useState(false);
     const [progressLabel, setProgressLabel] = useState('Scanning node library');
     const [sessionId, setSessionId] = useState(null);
+    const [clarificationMode, setClarificationMode] = useState(DEFAULT_CLARIFICATION_MODE);
     const sendChatMessageMutation = useSendChatMessage();
     const approveAgentRunMutation = useApproveAgentRun();
     const rejectAgentRunMutation = useRejectAgentRun();
@@ -42,7 +45,13 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
             const response = await sendChatMessageMutation.mutateAsync({
                 sessionId,
                 message: text,
-                context: { surface: 'builder', workflowId: workflow?.id || null, workflowSnapshot: snapshot, formId: formId || null },
+                context: {
+                    surface: 'builder',
+                    workflowId: workflow?.id || null,
+                    workflowSnapshot: snapshot,
+                    formId: formId || null,
+                    clarificationMode
+                },
                 event
             });
             appendReply(response);
@@ -88,6 +97,9 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
     };
 
     const handleOption = (option) => {
+        if (option?.type === 'agent_plan_approved' || option?.type === 'agent_plan_rejected') {
+            return send(null, { type: option.type, runId: option.runId });
+        }
         if (option?.id && option?.title) return send(null, { type: 'form_target_selected', formId: option.id });
         if (option?.id && option?.name) return send(null, { type: 'workflow_target_selected', workflowId: option.id });
         return send(typeof option === 'string' ? option : option?.label || option?.name || option?.title);
@@ -95,6 +107,9 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
 
     return (
         <div className="flex min-h-0 flex-col h-full bg-white relative overflow-hidden">
+            <div className="flex shrink-0 justify-end border-b border-gray-100 px-3 py-2">
+                <ClarificationModeSelect value={clarificationMode} onChange={setClarificationMode} />
+            </div>
             <GenericChatWidget 
                 messages={messages}
                 input={input}

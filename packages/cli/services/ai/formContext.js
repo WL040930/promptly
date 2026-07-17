@@ -1,4 +1,5 @@
 import { FORM_AI_MEMORY_LIMIT as SHARED_FORM_AI_MEMORY_LIMIT } from '../../../shared/formContract.js';
+import { normalizeClarificationMode } from '../../../shared/agentContract.js';
 
 export const FORM_AI_HISTORY_LIMIT = 12;
 export const FORM_AI_MEMORY_LIMIT = SHARED_FORM_AI_MEMORY_LIMIT;
@@ -59,7 +60,7 @@ const selectRecentMessages = (messages = []) => {
     return selected;
 };
 
-export const buildPlannerContext = ({ schema, chatHistory = [], prompt }) => {
+export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarificationMode }) => {
     const memory = readFormMemory(schema);
     const recentConversation = selectRecentMessages(chatHistory);
 
@@ -69,6 +70,9 @@ export const buildPlannerContext = ({ schema, chatHistory = [], prompt }) => {
         '',
         'Current Form Schema:',
         JSON.stringify(compactFormSchema(schema)),
+        '',
+        'Clarification Mode:',
+        normalizeClarificationMode(clarificationMode),
         '',
         'Recent Conversation:',
         recentConversation.length > 0 ? recentConversation.join('\n') : '(none)',
@@ -85,6 +89,7 @@ export const buildWorkerContext = ({ schema, instructions, requirements = [] }) 
     'Existing Field IDs (these are the only valid targets for update/remove):',
     JSON.stringify((Array.isArray(schema.fields) ? schema.fields : []).map(field => field.id).filter(Boolean)),
     'The form ID is not a field ID. Never use it as a patch id.',
+    'Every add patch must include a complete field object with non-empty id, type, and label.',
     '',
     'Planner Requirements:',
     JSON.stringify(requirements),
@@ -132,6 +137,7 @@ export const buildWorkerRepairContext = ({ schema, requirements = [], response, 
     'Existing Field IDs (these are the only valid targets for update/remove):',
     JSON.stringify((Array.isArray(schema.fields) ? schema.fields : []).map(field => field.id).filter(Boolean)),
     'The form ID is not a field ID. Never use it as a patch id. If a requested field is not listed, use an add patch instead of update/remove.',
+    'Repair every listed issue. Every add patch must include a complete field object with non-empty id, type, and label. Do not repeat an omitted label.',
     '',
     'Planner Requirements:',
     JSON.stringify(requirements),

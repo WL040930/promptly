@@ -1,4 +1,5 @@
 import { Form, Workflow } from '../../models/index.js';
+import { normalizeClarificationMode } from '../../../shared/agentContract.js';
 
 const RESOURCE_CONFIG = {
     workflow: { model: Workflow, labelField: 'name' },
@@ -101,6 +102,9 @@ export const mergeAgentContext = (stored = {}, incoming = {}) => {
     }
     if (Object.prototype.hasOwnProperty.call(incoming, 'activeResource')) {
         merged.activeResource = incoming.activeResource || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(incoming, 'clarificationMode')) {
+        merged.clarificationMode = normalizeClarificationMode(incoming.clarificationMode);
     }
     return merged;
 };

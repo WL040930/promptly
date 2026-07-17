@@ -12,6 +12,7 @@ import {
     createMemoryPatch
 } from './formContext.js';
 import { applyFormPatches } from './formPatchEngine.js';
+import { normalizeClarificationMode } from '../../../shared/agentContract.js';
 import {
     summarizeValidationIssues,
     validatePlannerResult,
@@ -74,7 +75,18 @@ const addTokenUsage = (total = {}, response, stage = null) => {
 };
 
 const createAIOutputError = (message, code, issues = []) => {
-    const error = new Error(message);
+    const unsafeProposalMessage = code === 'FORM_AI_UNSAFE_PROPOSAL'
+        ? `I could not safely prepare this form because the generated changes did not satisfy the form rules. ${issues.some(issue => issue.path?.includes('.field.label'))
+            ? 'One or more fields were missing a user-facing label.'
+            : issues.some(issue => issue.path === 'title' || issue.path?.includes('.updates.title'))
+                ? 'The form title was missing or invalid.'
+                : issues.some(issue => issue.code === 'INVALID_CHOICES' || issue.path?.includes('.choices'))
+                    ? 'A choice field did not contain valid options.'
+                    : issues.some(issue => issue.code === 'UNKNOWN_FIELD')
+                        ? 'A change referred to a field that does not exist.'
+                        : 'The proposal contained an invalid field or change.'} I tried to correct it, but the result was still invalid. No changes were applied.`
+        : message;
+    const error = new Error(unsafeProposalMessage);
     error.code = code;
     error.issues = issues;
     return error;
@@ -194,6 +206,38 @@ const repairWorker = async ({ provider, schema, requirements, rawText, issues, t
     };
 };
 
+const humanizeFieldId = (field = {}) => {
+    const source = [field.label, field.name, field.title, field.id]
+        .find(value => typeof value === 'string' && value.trim());
+    if (!source) return null;
+
+    return source
+        .trim()
+        .replace(/^(?:f|field)[_-]+/i, '')
+        .replace(/[_-]+/g, ' ')
+        .replace(/\b\w/g, character => character.toUpperCase())
+        .slice(0, 255);
+};
+
+const recoverMissingWorkerLabels = (result, issues = []) => {
+    if (!result || !Array.isArray(result.patches) || issues.length === 0) return result;
+    if (issues.some(item => item.code !== 'REQUIRED' || !/^patches\[\d+\]\.field\.label$/.test(item.path || ''))) return result;
+
+    const missingPaths = new Set(issues.map(item => item.path));
+    let recovered = false;
+    const patches = result.patches.map((patch, index) => {
+        const path = `patches[${index}].field.label`;
+        if (!missingPaths.has(path) || patch?.op !== 'add' || !patch.field || patch.field.label !== undefined) return patch;
+
+        const label = humanizeFieldId(patch.field);
+        if (!label) return patch;
+        recovered = true;
+        return { ...patch, field: { ...patch.field, label } };
+    });
+
+    return recovered ? { ...result, patches } : result;
+};
+
 const verifyProposal = async ({ provider, requirements, patches, tokenUsage }) => {
     const verification = await requestJson({
         provider,
@@ -215,7 +259,12 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
         if (onProgress) onProgress({ status: 'analyzing', message: 'Analyzing requirements...' });
 
         // 1. Prepare one bounded context block for the Planner Agent.
-        const currentRequestText = buildPlannerContext({ schema: currentSchema || {}, chatHistory, prompt });
+        const currentRequestText = buildPlannerContext({
+            schema: currentSchema || {},
+            chatHistory,
+            prompt,
+            clarificationMode: normalizeClarificationMode(options.clarificationMode)
+        });
         const contents = [{
             role: 'user',
             parts: [{ text: currentRequestText }]
@@ -278,9 +327,9 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
 
             let result = workerCall.value;
             let workerIssues = getOutputIssues({ ...workerCall, validate: validateWorkerResult });
-            let repairUsed = false;
-            if (workerIssues.length > 0) {
-                repairUsed = true;
+            let repairAttempts = 0;
+            while (workerIssues.length > 0 && repairAttempts < 2) {
+                repairAttempts += 1;
                 if (onProgress) onProgress({ status: 'repairing', message: 'Checking and correcting the form changes...' });
                 workerCall = await repairWorker({
                     provider,
@@ -293,10 +342,10 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
                 tokenUsage = workerCall.tokenUsage;
                 result = workerCall.value;
                 workerIssues = getOutputIssues({ ...workerCall, validate: validateWorkerResult });
-                if (workerIssues.length > 0) {
-                    throw createAIOutputError('I could not create a safe form proposal.', 'FORM_AI_UNSAFE_PROPOSAL', workerIssues);
-                }
+                result = recoverMissingWorkerLabels(result, workerIssues);
+                workerIssues = getOutputIssues({ value: result, validate: validateWorkerResult });
             }
+            if (workerIssues.length > 0) throw createAIOutputError('I could not create a safe form proposal.', 'FORM_AI_UNSAFE_PROPOSAL', workerIssues);
 
             if (onProgress) onProgress({ status: 'checking', message: 'Checking generated form...' });
             const memoryPatch = createMemoryPatch(currentSchema || {}, plannerResult);
@@ -306,8 +355,8 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
             try {
                 appliedProposal = applyFormPatches({ currentSchema: currentSchema || {}, patches });
             } catch (error) {
-                if (repairUsed) throw createAIOutputError('I could not create a safe form proposal.', 'FORM_AI_UNSAFE_PROPOSAL', error.issues || []);
-                repairUsed = true;
+                if (repairAttempts >= 2) throw createAIOutputError('I could not create a safe form proposal.', 'FORM_AI_UNSAFE_PROPOSAL', error.issues || []);
+                repairAttempts += 1;
                 if (onProgress) onProgress({ status: 'repairing', message: 'Checking and correcting the form changes...' });
                 workerCall = await repairWorker({
                     provider,
@@ -320,6 +369,8 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
                 tokenUsage = workerCall.tokenUsage;
                 result = workerCall.value;
                 workerIssues = getOutputIssues({ ...workerCall, validate: validateWorkerResult });
+                result = recoverMissingWorkerLabels(result, workerIssues);
+                workerIssues = getOutputIssues({ value: result, validate: validateWorkerResult });
                 if (workerIssues.length > 0) throw createAIOutputError('I could not create a safe form proposal.', 'FORM_AI_UNSAFE_PROPOSAL', workerIssues);
                 const repairedMemoryPatch = createMemoryPatch(currentSchema || {}, plannerResult);
                 const repairedPatches = repairedMemoryPatch ? [repairedMemoryPatch, ...(result.patches || [])] : (result.patches || []);
@@ -345,10 +396,10 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
 
             let verification = verificationCall.value;
             if (verification.status === 'repair') {
-                if (repairUsed) {
+                if (repairAttempts >= 2) {
                     throw createAIOutputError('I could not create a form proposal that follows the request.', 'FORM_AI_UNSAFE_PROPOSAL', verification.issues || []);
                 }
-                repairUsed = true;
+                repairAttempts += 1;
                 if (onProgress) onProgress({ status: 'repairing', message: 'Correcting the form changes to match your request...' });
                 workerCall = await repairWorker({
                     provider,
@@ -361,6 +412,8 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
                 tokenUsage = workerCall.tokenUsage;
                 result = workerCall.value;
                 workerIssues = getOutputIssues({ ...workerCall, validate: validateWorkerResult });
+                result = recoverMissingWorkerLabels(result, workerIssues);
+                workerIssues = getOutputIssues({ value: result, validate: validateWorkerResult });
                 if (workerIssues.length > 0) throw createAIOutputError('I could not create a safe form proposal.', 'FORM_AI_UNSAFE_PROPOSAL', workerIssues);
                 const repairedMemoryPatch = createMemoryPatch(currentSchema || {}, plannerResult);
                 const repairedPatches = repairedMemoryPatch ? [repairedMemoryPatch, ...(result.patches || [])] : (result.patches || []);

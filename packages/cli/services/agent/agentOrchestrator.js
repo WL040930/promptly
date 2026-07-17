@@ -10,6 +10,7 @@ import NodeRegistry from '../../utils/NodeRegistry.js';
 import { resolveResource } from '../chat/resourceResolver.js';
 import { addUsage, requestAgentJson } from './agentAi.js';
 import { makeError, makeIntent, makePlan } from './agentContracts.js';
+import { DEFAULT_CLARIFICATION_MODE, normalizeClarificationMode } from '../../../shared/agentContract.js';
 import {
     completeStep,
     createArtifact,
@@ -23,8 +24,14 @@ import {
 
 const buildRequestPattern = /\b(create|build|design|make|set up|setup|automate|connect|modify|update|change|add|remove|delete|edit|improve|i need|i want|help me|when .* then|after .* send)\b/i;
 const domainPattern = /\b(form|survey|workflow|automation|trigger|field|email|sheet|sheets|webhook|database)\b/i;
+const planReviewPattern = /(?:\b(show|give|provide|present|review|explain|outline|draft)\b.{0,50}\b(plan|steps|approach)\b|\b(plan|steps|approach)\b.{0,50}\b(before|first|review|approve|proceed)\b|\bplan first\b)/i;
 
-export const shouldUseAgenticPath = message => Boolean(String(message || '').match(buildRequestPattern) && String(message || '').match(domainPattern));
+export const shouldPauseForPlanReview = message => planReviewPattern.test(String(message || ''));
+
+export const shouldUseAgenticPath = message => Boolean(
+    String(message || '').match(domainPattern)
+    && (String(message || '').match(buildRequestPattern) || shouldPauseForPlanReview(message))
+);
 
 const messagePayload = message => {
     const value = message.toJSON ? message.toJSON() : message;
@@ -148,7 +155,7 @@ const research = async ({ userId, intent, context }) => {
 
 const resourceByType = (resources, type) => resources.find(item => item.type === type)?.full || null;
 
-const planSolution = async ({ intent, resources }) => {
+const planSolution = async ({ intent, resources, clarificationMode = DEFAULT_CLARIFICATION_MODE }) => {
     const needsModelPlan = intent.goal === 'modify'
         || intent.risk === 'high'
         || intent.domains.length > 1
@@ -162,6 +169,8 @@ const planSolution = async ({ intent, resources }) => {
                 'Typed intent:', JSON.stringify(intent),
                 '',
                 'Resolved resources:', JSON.stringify(resources.map(item => item.resource)),
+                '',
+                'Clarification mode:', clarificationMode,
                 '',
                 'Create a short dependency-aware plan. Include verification and approval.'
             ].join('\n')
@@ -182,11 +191,17 @@ const formHistory = async sessionId => {
     return messages.reverse().map(message => ({ sender: message.sender, text: message.text }));
 };
 
-const designForm = async ({ run, session, message, form }) => {
+const designForm = async ({ run, session, message, form, clarificationMode = DEFAULT_CLARIFICATION_MODE }) => {
     const step = await createStep(run, { stepKey: 'design_form', type: 'design_form' });
     await startStep(step);
     try {
-        const result = await generateFormFromPrompt(message, form?.toJSON?.() || form || {}, await formHistory(session.id));
+        const result = await generateFormFromPrompt(
+            message,
+            form?.toJSON?.() || form || {},
+            await formHistory(session.id),
+            null,
+            { clarificationMode }
+        );
         if (result.type === 'message') {
             await completeStep(step, { result, tokenUsage: result.tokenUsage || {} });
             return { status: 'clarification', result, tokenUsage: result.tokenUsage || {} };
@@ -302,16 +317,26 @@ const saveClarification = async ({ session, run, type, candidates, text }) => {
     });
 };
 
-export const processAgenticTurn = async ({ session, userId, message, context = {} }) => {
-    if (!shouldUseAgenticPath(message)) return { handled: false };
+export const processAgenticTurn = async ({ session, userId, message, context = {}, run: existingRun = null, force = false, skipPlanReview = false }) => {
+    if (!force && !shouldUseAgenticPath(message)) return { handled: false };
 
     const persistedContext = {
         surface: context.surface || 'chat',
         formId: context.formId || null,
         workflowId: context.workflowId || null,
-        activeResource: context.activeResource || null
+        activeResource: context.activeResource || null,
+        clarificationMode: normalizeClarificationMode(context.clarificationMode)
     };
-    const run = await createRun({ sessionId: session.id, userId, metadata: { request: message, context: persistedContext } });
+    const run = existingRun || await createRun({ sessionId: session.id, userId, metadata: { request: message, context: persistedContext } });
+    if (existingRun) {
+        await updateRun(run, {
+            metadata: {
+                ...(run.metadata || {}),
+                request: message,
+                context: persistedContext
+            }
+        });
+    }
     let totalUsage = {};
     try {
         await updateRun(run, { status: 'understanding', currentStep: 'understand' });
@@ -344,12 +369,32 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         }
         await completeStep(researchStep, { result: researched.resources.map(item => item.resource) });
 
-        const { plan, tokenUsage: planUsage } = await planSolution({ intent: analyzed.intent, resources: researched.resources });
+        const { plan, tokenUsage: planUsage } = await planSolution({
+            intent: analyzed.intent,
+            resources: researched.resources,
+            clarificationMode: persistedContext.clarificationMode
+        });
         totalUsage = addUsage(totalUsage, planUsage);
         await updateRun(run, { status: 'planning', plan, tokenUsage: totalUsage });
         const planStep = await createStep(run, { stepKey: 'plan', type: 'plan' });
         await startStep(planStep);
         await completeStep(planStep, { result: plan, tokenUsage: planUsage });
+
+        if (!skipPlanReview && shouldPauseForPlanReview(message)) {
+            await updateRun(run, {
+                status: 'awaiting_clarification',
+                currentStep: 'plan_review',
+                metadata: { ...(run.metadata || {}), planReviewRequested: true }
+            });
+            await session.update({ agentState: { status: 'awaiting_agent_plan_review', runId: run.id } });
+            const reply = await saveReply(session, {
+                text: plan.summary || 'I prepared a plan for your review before continuing.',
+                kind: 'agent_plan_review',
+                payload: { runId: run.id, plan },
+                tokenUsage: totalUsage
+            });
+            return { handled: true, replyObj: reply, totalTokenUsage: totalUsage };
+        }
 
         await updateRun(run, { status: 'designing', currentStep: 'design' });
         const form = resourceByType(researched.resources, 'form');
@@ -357,7 +402,13 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         let formResult = null;
         let workflowResult = null;
         if (analyzed.intent.domains.includes('form')) {
-            formResult = await designForm({ run, session, message, form });
+            formResult = await designForm({
+                run,
+                session,
+                message,
+                form,
+                clarificationMode: persistedContext.clarificationMode
+            });
             totalUsage = addUsage(totalUsage, formResult.tokenUsage);
             if (formResult.status === 'clarification') {
                 await updateRun(run, { status: 'awaiting_clarification', tokenUsage: totalUsage });
@@ -444,6 +495,37 @@ export const resumeAgentAfterForm = async ({ run, session, userId, formId }) => 
     });
     await updateRun(run, { metadata: { ...metadata, formId, proposalMessageId: reply.id } });
     return { reply, tokenUsage: result.tokenUsage };
+};
+
+export const resumeAgentAfterClarification = async ({ run, session, userId, context = null }) => {
+    const metadata = run.metadata || {};
+    const request = metadata.request;
+    if (!request) throw new Error('The pending agent request is no longer available.');
+
+    return processAgenticTurn({
+        run,
+        session,
+        userId,
+        message: request,
+        context: context || metadata.context || {},
+        force: true
+    });
+};
+
+export const resumeAgentAfterPlanReview = async ({ run, session, userId }) => {
+    const metadata = run.metadata || {};
+    const request = metadata.request;
+    if (!request) throw new Error('The pending plan request is no longer available.');
+
+    return processAgenticTurn({
+        run,
+        session,
+        userId,
+        message: request,
+        context: metadata.context || {},
+        force: true,
+        skipPlanReview: true
+    });
 };
 
 export { saveReply as saveAgentReply, messagePayload as agentMessagePayload };

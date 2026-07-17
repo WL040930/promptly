@@ -55,3 +55,14 @@ test('mergeAgentContext clears a target when the UI explicitly sends null', () =
         { workflowId: null, formId: null }
     );
 });
+
+test('mergeAgentContext stores a supported clarification mode and normalizes invalid values', () => {
+    assert.equal(
+        mergeAgentContext({}, { clarificationMode: 'ask_everything' }).clarificationMode,
+        'ask_everything'
+    );
+    assert.equal(
+        mergeAgentContext({}, { clarificationMode: 'unsupported' }).clarificationMode,
+        'important_only'
+    );
+});

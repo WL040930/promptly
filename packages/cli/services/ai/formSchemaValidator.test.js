@@ -29,6 +29,17 @@ test('validateFormSchema rejects unsupported field types and invalid choices', (
     assert.ok(issues.some(issue => issue.code === 'INVALID_CHOICES'));
 });
 
+test('required form text rejects blank titles and field labels', () => {
+    const issues = validateFormSchema({
+        ...form,
+        title: '   ',
+        fields: [{ id: 'email', type: 'email', label: '  ' }]
+    });
+
+    assert.ok(issues.some(issue => issue.path === 'title' && issue.code === 'REQUIRED'));
+    assert.ok(issues.some(issue => issue.path === 'fields[0].label' && issue.code === 'REQUIRED'));
+});
+
 test('validateFormPatches rejects duplicate IDs, unknown targets, and conflicting updates', () => {
     const issues = validateFormPatches(form, [
         { op: 'add', field: { id: 'email', type: 'text', label: 'Duplicate' } },

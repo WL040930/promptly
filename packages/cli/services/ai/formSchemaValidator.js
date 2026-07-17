@@ -19,6 +19,7 @@ const validateText = (value, path, { required = false, max = FORM_MAX_TEXT_LENGT
         return required ? [issue('REQUIRED', path, 'A value is required.')] : [];
     }
     if (typeof value !== 'string') return [issue('INVALID_TEXT', path, 'Expected a string.')];
+    if (required && value.trim().length === 0) return [issue('REQUIRED', path, 'A value is required.')];
     if (value.length > max) return [issue('TEXT_TOO_LONG', path, `Text must be ${max} characters or fewer.`)];
     return [];
 };

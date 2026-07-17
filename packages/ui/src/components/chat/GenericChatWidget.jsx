@@ -23,7 +23,22 @@ export default function GenericChatWidget({
     innerClassName = "w-full"
 }) {
     const scrollContainerRef = useRef(null);
+    const inputRef = useRef(null);
     const initialScrollDone = useRef(false);
+
+    const handleInputChange = (event) => {
+        setInput(event.target.value);
+        const inputElement = inputRef.current;
+        if (!inputElement) return;
+        inputElement.style.height = 'auto';
+        inputElement.style.height = `${Math.min(inputElement.scrollHeight, 144)}px`;
+    };
+
+    const handleInputKeyDown = (event) => {
+        if (event.key !== 'Enter' || event.shiftKey) return;
+        event.preventDefault();
+        if (input?.trim() && !isTyping) handleSend(input);
+    };
 
     // Auto-scroll to bottom of chat
     useEffect(() => {
@@ -48,6 +63,10 @@ export default function GenericChatWidget({
             }
         });
     }, [messages, isTyping, isLoadingHistory]);
+
+    useEffect(() => {
+        if (inputRef.current && !input) inputRef.current.style.height = 'auto';
+    }, [input]);
 
     const handleScroll = () => {
         if (scrollContainerRef.current && scrollContainerRef.current.scrollTop === 0 && hasMore && !isLoadingHistory) {
@@ -130,12 +149,14 @@ export default function GenericChatWidget({
                         onSubmit={(e) => { e.preventDefault(); handleSend(input); }}
                         className="relative flex items-center w-full"
                     >
-                        <input
-                            type="text"
+                        <textarea
+                            ref={inputRef}
                             value={input}
-                            onChange={(e) => setInput(e.target.value)}
+                            onChange={handleInputChange}
+                            onKeyDown={handleInputKeyDown}
                             placeholder={placeholder}
-                            className="w-full bg-white border border-slate-200 hover:border-slate-300 rounded-full pl-5 pr-14 py-3.5 text-[14px] text-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 transition-all shadow-sm disabled:opacity-60 font-medium placeholder:text-gray-400"
+                            rows={1}
+                            className="max-h-36 min-h-[48px] w-full resize-none overflow-y-auto rounded-3xl border border-slate-200 bg-white px-5 py-3.5 pr-14 text-[14px] font-medium text-slate-800 shadow-sm transition-all placeholder:text-gray-400 hover:border-slate-300 focus:border-indigo-400 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 disabled:opacity-60"
                             disabled={isTyping}
                             autoFocus
                         />

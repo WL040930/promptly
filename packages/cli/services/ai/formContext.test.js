@@ -25,11 +25,13 @@ test('buildPlannerContext keeps recent conversation bounded and separates memory
             fields: [{ id: 'f_name', type: 'text', label: 'Name' }]
         },
         chatHistory,
-        prompt: 'Add an email field.'
+        prompt: 'Add an email field.',
+        clarificationMode: 'important_only'
     });
 
     assert.match(context, /Persistent Form Memory:\nUse a professional tone\./);
     assert.match(context, /Current Request:\nAdd an email field\./);
+    assert.match(context, /Clarification Mode:\nimportant_only/);
     assert.doesNotMatch(context, /message-0/);
     assert.match(context, /message-15/);
     assert.ok(context.length <= FORM_AI_CONTEXT_LIMIT + 2000);
