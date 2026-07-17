@@ -14,8 +14,12 @@ ui:
 # Database Action Node
 
 ## When to use this node
-SQL/NoSQL operations
+Read or mutate the authenticated user's Promptly-owned forms, workflows, folders, and execution logs.
 
 ## Configuration Schema
 The LLM must configure this node with the following JSON schema:
-- (Define schema here)
+- `resource`: `forms`, `workflows`, `folders`, or `executionLogs`.
+- `operation`: `select`, `insert`, `update`, or `delete`.
+- `filters`: simple JSON equality filters. Updates and deletes require an exact `id`.
+- `data`: JSON fields for inserts and updates. User ownership and IDs are controlled by the runtime.
+- Reads are capped at 100 records and never execute arbitrary SQL.

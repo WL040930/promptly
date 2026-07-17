@@ -1,131 +1,121 @@
 import { BaseNode } from '../../../BaseNode.js';
+import {
+    addCalendarDays,
+    formatDate,
+    getNestedValue,
+    nodeFailure,
+    parseAssignment,
+    parseFiniteNumber,
+    parseInteger,
+    parseJsonValue,
+    setNestedValue,
+    valueType
+} from '../../shared/logicValues.js';
 
-function toTitleCase(str) {
-    return String(str).replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
-}
+const textValue = value => String(value ?? '');
 
-function getNestedValue(obj, path) {
-    return path.split('.').reduce((acc, key) => (acc != null ? acc[key] : undefined), obj);
-}
-
-function setNestedValue(obj, path, value) {
-    const keys = path.split('.');
-    const result = { ...obj };
-    let cursor = result;
-    for (let i = 0; i < keys.length - 1; i++) {
-        cursor[keys[i]] = { ...cursor[keys[i]] };
-        cursor = cursor[keys[i]];
+const parseReplaceOperand = operand => {
+    if (operand && typeof operand === 'object') {
+        return { find: textValue(operand.find), replacement: textValue(operand.replacement) };
     }
-    cursor[keys[keys.length - 1]] = value;
-    return result;
-}
+    const text = textValue(operand);
+    const separator = text.indexOf('|');
+    if (separator < 0) throw new Error('Replace requires an operand in find|replacement format.');
+    return { find: text.slice(0, separator), replacement: text.slice(separator + 1) };
+};
+
+const executeTransform = (config) => {
+    const operation = config.operation || 'uppercase';
+    const inputValue = config.value !== undefined ? config.value : (config.input1 ?? '');
+    const operand = config.operand ?? '';
+    let result;
+
+    switch (operation) {
+        case 'uppercase': result = textValue(inputValue).toUpperCase(); break;
+        case 'lowercase': result = textValue(inputValue).toLowerCase(); break;
+        case 'titlecase': result = textValue(inputValue).replace(/\b\w/g, letter => letter.toUpperCase()).replace(/\B\w/g, letter => letter.toLowerCase()); break;
+        case 'trim': result = textValue(inputValue).trim(); break;
+        case 'replace': {
+            const { find, replacement } = parseReplaceOperand(operand);
+            if (!find) throw new Error('Replace requires a non-empty search value.');
+            result = textValue(inputValue).replaceAll(find, replacement);
+            break;
+        }
+        case 'split': {
+            const separator = textValue(operand || ',');
+            if (!separator) throw new Error('Split requires a non-empty separator.');
+            result = textValue(inputValue).split(separator);
+            break;
+        }
+        case 'slice': {
+            const [rawStart, rawEnd] = textValue(operand).split(':');
+            const start = rawStart === '' ? 0 : parseInteger(rawStart, 'Slice start');
+            const end = rawEnd === undefined || rawEnd === '' ? undefined : parseInteger(rawEnd, 'Slice end');
+            result = textValue(inputValue).slice(start, end);
+            break;
+        }
+        case 'add': result = parseFiniteNumber(inputValue, 'Input value') + parseFiniteNumber(operand || 0, 'Operand'); break;
+        case 'subtract': result = parseFiniteNumber(inputValue, 'Input value') - parseFiniteNumber(operand || 0, 'Operand'); break;
+        case 'multiply': result = parseFiniteNumber(inputValue, 'Input value') * parseFiniteNumber(operand || 1, 'Operand'); break;
+        case 'divide': {
+            const divisor = parseFiniteNumber(operand, 'Operand');
+            if (divisor === 0) throw new Error('Division by zero.');
+            result = parseFiniteNumber(inputValue, 'Input value') / divisor;
+            break;
+        }
+        case 'round': result = Math.round(parseFiniteNumber(inputValue, 'Input value')); break;
+        case 'floor': result = Math.floor(parseFiniteNumber(inputValue, 'Input value')); break;
+        case 'ceil': result = Math.ceil(parseFiniteNumber(inputValue, 'Input value')); break;
+        case 'abs': result = Math.abs(parseFiniteNumber(inputValue, 'Input value')); break;
+        case 'toFixed': {
+            const decimals = parseInteger(config.decimals ?? 2, 'Decimal places', { min: 0, max: 20 });
+            result = parseFiniteNumber(inputValue, 'Input value').toFixed(decimals);
+            break;
+        }
+        case 'now': result = new Date().toISOString(); break;
+        case 'formatDate': result = formatDate(inputValue, operand || 'YYYY-MM-DD', config.timezone || 'UTC'); break;
+        case 'addDays': result = addCalendarDays(inputValue, parseFiniteNumber(operand || 0, 'Days')); break;
+        case 'subtractDays': result = addCalendarDays(inputValue, -parseFiniteNumber(operand || 0, 'Days')); break;
+        case 'parse': result = parseJsonValue(inputValue, 'Input value'); break;
+        case 'stringify': result = JSON.stringify(inputValue, null, 2); break;
+        case 'get': result = getNestedValue(inputValue, operand); break;
+        case 'set': {
+            const { path, value } = parseAssignment(operand);
+            result = setNestedValue(parseJsonValue(inputValue, 'Input value'), path, value);
+            break;
+        }
+        case 'keys': {
+            const parsed = parseJsonValue(inputValue, 'Input value');
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Keys requires a JSON object.');
+            result = Object.keys(parsed);
+            break;
+        }
+        default: throw new Error(`Unsupported transform operation "${operation}".`);
+    }
+
+    return {
+        success: true,
+        outputData: result,
+        result,
+        outputType: valueType(result),
+        inputValue
+    };
+};
 
 export default class DataTransformNode extends BaseNode {
     async execute(context) {
-        const config     = this.getResolvedConfig(context);
-        const { operation = 'uppercase', operand = '', decimals = 2 } = config;
-        const inputValue = config.value ?? '';
-
-        let result;
-
+        const config = this.getResolvedConfig(context);
         try {
-            switch (operation) {
-                // ── Text ────────────────────────────────────────────────────────────
-                case 'uppercase':   result = String(inputValue).toUpperCase(); break;
-                case 'lowercase':   result = String(inputValue).toLowerCase(); break;
-                case 'titlecase':   result = toTitleCase(inputValue); break;
-                case 'trim':        result = String(inputValue).trim(); break;
-                case 'replace': {
-                    const [find, replace] = String(operand).split('|');
-                    result = String(inputValue).replaceAll(find ?? '', replace ?? '');
-                    break;
-                }
-                case 'split':       result = String(inputValue).split(operand || ','); break;
-                case 'slice': {
-                    const [start, end] = String(operand).split(':').map(Number);
-                    result = String(inputValue).slice(start || 0, end || undefined);
-                    break;
-                }
-
-                // ── Number ──────────────────────────────────────────────────────────
-                case 'add':         result = Number(inputValue) + Number(operand || 0); break;
-                case 'subtract':    result = Number(inputValue) - Number(operand || 0); break;
-                case 'multiply':    result = Number(inputValue) * Number(operand || 1); break;
-                case 'divide': {
-                    const divisor = Number(operand);
-                    if (divisor === 0) throw new Error('Division by zero');
-                    result = Number(inputValue) / divisor;
-                    break;
-                }
-                case 'round':       result = Math.round(Number(inputValue)); break;
-                case 'floor':       result = Math.floor(Number(inputValue)); break;
-                case 'ceil':        result = Math.ceil(Number(inputValue)); break;
-                case 'abs':         result = Math.abs(Number(inputValue)); break;
-                case 'toFixed':     result = Number(inputValue).toFixed(Number(decimals) || 2); break;
-
-                // ── Date ────────────────────────────────────────────────────────────
-                case 'now':         result = new Date().toISOString(); break;
-                case 'formatDate': {
-                    const d = inputValue ? new Date(inputValue) : new Date();
-                    // Simple format pattern: YYYY-MM-DD HH:mm:ss
-                    const fmt = String(operand || 'YYYY-MM-DD');
-                    result = fmt
-                        .replace('YYYY', d.getFullYear())
-                        .replace('MM', String(d.getMonth() + 1).padStart(2, '0'))
-                        .replace('DD', String(d.getDate()).padStart(2, '0'))
-                        .replace('HH', String(d.getHours()).padStart(2, '0'))
-                        .replace('mm', String(d.getMinutes()).padStart(2, '0'))
-                        .replace('ss', String(d.getSeconds()).padStart(2, '0'));
-                    break;
-                }
-                case 'addDays': {
-                    const d = inputValue ? new Date(inputValue) : new Date();
-                    d.setDate(d.getDate() + Number(operand || 0));
-                    result = d.toISOString();
-                    break;
-                }
-                case 'subtractDays': {
-                    const d = inputValue ? new Date(inputValue) : new Date();
-                    d.setDate(d.getDate() - Number(operand || 0));
-                    result = d.toISOString();
-                    break;
-                }
-
-                // ── JSON ────────────────────────────────────────────────────────────
-                case 'parse':       result = JSON.parse(String(inputValue)); break;
-                case 'stringify':   result = JSON.stringify(inputValue, null, 2); break;
-                case 'get':         result = getNestedValue(inputValue, String(operand)); break;
-                case 'set': {
-                    const [path, value] = String(operand).split('=');
-                    result = setNestedValue(
-                        typeof inputValue === 'object' ? inputValue : JSON.parse(String(inputValue)),
-                        path.trim(),
-                        value?.trim()
-                    );
-                    break;
-                }
-                case 'keys':
-                    result = Object.keys(typeof inputValue === 'object' ? inputValue : JSON.parse(String(inputValue)));
-                    break;
-
-                default:
-                    result = inputValue;
-            }
-        } catch (err) {
-            return {
-                success: false,
-                error: err.message,
+            return executeTransform(config);
+        } catch (error) {
+            return nodeFailure('TRANSFORM_FAILED', error.message, {
+                outputData: null,
                 result: null,
                 outputType: 'null',
-                inputValue,
-            };
+                inputValue: config.value ?? config.input1 ?? null
+            });
         }
-
-        return {
-            success: true,
-            result,
-            outputType: Array.isArray(result) ? 'array' : typeof result,
-            inputValue,
-        };
     }
 }
+
+export { executeTransform };

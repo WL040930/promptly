@@ -8,6 +8,10 @@ import ChatSession from './ChatSession.js';
 import ChatMessage from './ChatMessage.js';
 import FormChatMessage from './FormChatMessage.js';
 import WorkflowVersion from './WorkflowVersion.js';
+import EmailDelivery from './EmailDelivery.js';
+import TriggerSubscription from './TriggerSubscription.js';
+import TriggerEvent from './TriggerEvent.js';
+import DatabaseChangeEvent from './DatabaseChangeEvent.js';
 
 // --- Folder Associations ---
 Folder.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -78,5 +82,9 @@ export {
     ChatSession,
     ChatMessage,
     FormChatMessage,
-    WorkflowVersion
+    WorkflowVersion,
+    EmailDelivery,
+    TriggerSubscription,
+    TriggerEvent,
+    DatabaseChangeEvent
 };

@@ -1,68 +1,64 @@
 import { BaseNode } from '../../../BaseNode.js';
+import { getAIProvider } from '../../../../cli/services/ai/aiService.js';
+import env from '../../../../cli/config/env.js';
+import { parseAiJson } from '../../../../cli/utils/jsonParser.js';
 
-// Default system prompts per task type
 const SYSTEM_PROMPTS = {
     summarize: 'You are a summarization assistant. Produce a concise, accurate summary of the provided text. Return only the summary, no preamble.',
     extract: 'You are a data extraction assistant. Extract the requested fields from the provided text and return a valid JSON object matching the schema provided. Return only the JSON object, no preamble or markdown.',
     sentiment: 'You are a sentiment analysis assistant. Analyze the sentiment of the provided text. Return a JSON object with two keys: "sentiment" (one of: "positive", "negative", "neutral") and "confidence" (a number from 0 to 1). Return only the JSON, no preamble.',
     categorize: 'You are a text classification assistant. Categorize the provided text into exactly one of the categories listed. Return a JSON object with two keys: "category" (the matched category string) and "confidence" (a number from 0 to 1). Return only the JSON, no preamble.',
-    custom: '',
+    custom: ''
 };
 
-// Build the full prompt for each task type
-function buildPrompt(taskType, userPrompt, extractionSchema, categories) {
+const buildPrompt = (taskType, userPrompt, extractionSchema, categories, inputData) => {
+    const source = userPrompt || '{{inputData}}';
+    const resolvedSource = source.replaceAll('{{inputData}}', typeof inputData === 'string' ? inputData : JSON.stringify(inputData ?? ''));
     switch (taskType) {
-        case 'summarize':
-            return userPrompt || 'Summarize the following text:\n\n{{inputData}}';
-        case 'extract':
-            return `Extract the following fields from the text below.\n\nSchema: ${extractionSchema || '{}'}\n\nText:\n${userPrompt || '{{inputData}}'}`;
-        case 'sentiment':
-            return `Analyze the sentiment of the following text:\n\n${userPrompt || '{{inputData}}'}`;
-        case 'categorize':
-            return `Categorize the following text into one of these categories: ${categories || 'general'}.\n\nText:\n${userPrompt || '{{inputData}}'}`;
+        case 'extract': return `Extract the following fields from the text below.\n\nSchema: ${extractionSchema || '{}'}\n\nText:\n${resolvedSource}`;
+        case 'sentiment': return `Analyze the sentiment of the following text:\n\n${resolvedSource}`;
+        case 'categorize': return `Categorize the following text into one of these categories: ${categories || 'general'}.\n\nText:\n${resolvedSource}`;
+        case 'summarize': return resolvedSource;
         case 'custom':
-        default:
-            return userPrompt || '';
+        default: return resolvedSource;
     }
-}
+};
+
+const structuredTasks = new Set(['extract', 'sentiment', 'categorize']);
 
 export default class AITaskNode extends BaseNode {
     async execute(context) {
         const config = this.getResolvedConfig(context);
-        const {
-            taskType    = 'custom',
-            prompt      = '',
-            model       = 'gpt-4o',
-            systemPrompt,
-            extractionSchema,
-            categories,
-        } = config;
+        const taskType = config.taskType || 'custom';
+        const model = config.model || env.aiModel;
+        const prompt = buildPrompt(taskType, config.prompt, config.extractionSchema, config.categories, config.inputData || context.initialPayload);
+        const systemPrompt = config.systemPrompt || SYSTEM_PROMPTS[taskType] || '';
+        const provider = getAIProvider();
+        const response = await provider.generateContent([{ role: 'user', parts: [{ text: prompt }] }], {
+            systemInstruction: systemPrompt,
+            model,
+            responseMimeType: structuredTasks.has(taskType) ? 'application/json' : undefined
+        });
 
-        const builtPrompt  = buildPrompt(taskType, prompt, extractionSchema, categories);
-        const finalSystem  = systemPrompt || SYSTEM_PROMPTS[taskType] || '';
+        const responseText = String(response.text || '').trim();
+        let parsedResponse = null;
+        if (structuredTasks.has(taskType)) {
+            try {
+                parsedResponse = parseAiJson(responseText);
+            } catch (error) {
+                throw new Error(`AI Task expected JSON output but received invalid JSON: ${error.message}`);
+            }
+        }
 
-        // ── Actual LLM call would go here ─────────────────────────────────────
-        // Example integration point:
-        //
-        // const { response, tokensUsed } = await callLLM({
-        //     model,
-        //     systemPrompt: finalSystem,
-        //     userPrompt: builtPrompt,
-        // });
-        //
-        // For now we return a structured stub so the variable picker has
-        // real field paths to work with (response, tokensUsed, model, taskType).
-        // ──────────────────────────────────────────────────────────────────────
-
-        const stubResponse  = `[AI Task stub] taskType=${taskType} model=${model} prompt="${builtPrompt.slice(0, 80)}..."`;
-        const stubTokens    = Math.floor(builtPrompt.length / 4); // rough estimate
-
+        const usage = response.usageMetadata || {};
+        const tokensUsed = usage.totalTokenCount || ((usage.promptTokenCount || 0) + (usage.candidatesTokenCount || 0));
         return {
-            success:   true,
+            success: true,
             taskType,
             model,
-            response:  stubResponse,
-            tokensUsed: stubTokens,
+            response: responseText,
+            parsedResponse,
+            tokensUsed
         };
     }
 }

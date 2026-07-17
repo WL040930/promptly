@@ -1,156 +1,196 @@
 import Workflow from '../../models/Workflow.js';
 import ExecutionLog from '../../models/ExecutionLog.js';
+import NodeRegistry from '../../utils/NodeRegistry.js';
 import { NodeFactory } from '../../../nodes/NodeFactory.js';
+import { validateWorkflow } from './workflowValidator.js';
+import { buildExecutionGraph, mergeExecutionResult, selectOutgoingEdges } from './executionGraph.js';
 
-export const executeWorkflow = async (workflowId, userId, triggerPayload = {}) => {
+const validationError = (issues) => new Error(
+    `Workflow validation failed: ${issues.map(issue => `${issue.path}: ${issue.message}`).join('; ')}`
+);
+
+export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, executionOptions = {}) => {
     const startTime = Date.now();
     let status = 'Success';
     let errorMsg = null;
-    let stepLogs = [];
+    const stepLogs = [];
+    let workflowOutput = null;
 
     try {
         const workflow = await Workflow.findOne({ where: { id: workflowId, userId } });
-        
-        if (!workflow) {
-            throw new Error('Workflow not found');
-        }
+        if (!workflow) throw new Error('Workflow not found');
 
         const nodes = workflow.nodes || [];
         const edges = workflow.edges || [];
-        
-        if (nodes.length === 0) {
-            throw new Error('Workflow has no nodes to execute');
-        }
+        if (nodes.length === 0) throw new Error('Workflow has no nodes to execute');
 
-        // Build Adjacency List and Node Map
-        const nodeMap = {};
-        const inDegree = {};
-        const adj = {};
+        const validation = validateWorkflow({ nodes, edges, isActive: false, registry: NodeRegistry });
+        if (!validation.valid) throw validationError(validation.issues);
 
-        nodes.forEach(n => {
-            // Instantiate backend node logic object via Factory
-            nodeMap[n.id] = NodeFactory.createNode(n);
-            inDegree[n.id] = 0;
-            adj[n.id] = [];
-        });
+        const graph = buildExecutionGraph(nodes, edges);
+        const nodeMap = new Map();
+        for (const nodeData of nodes) nodeMap.set(nodeData.id, NodeFactory.createNode(nodeData));
 
-        edges.forEach(e => {
-            if (adj[e.source] && inDegree[e.target] !== undefined) {
-                adj[e.source].push({ target: e.target, edgeId: e.id });
-                inDegree[e.target]++;
+        const incomingRemaining = new Map([...graph.incoming.entries()].map(([id, incoming]) => [id, incoming.length]));
+        const activeIncoming = new Map(nodes.map(node => [node.id, 0]));
+        const queued = new Set();
+        const settled = new Set();
+        const queue = [];
+        const activeIncomingSources = new Map(nodes.map(node => [node.id, []]));
+        const unhandledFailures = new Map();
+        const eventId = executionOptions.eventId
+            || triggerPayload?.idempotencyKey
+            || triggerPayload?.responseId
+            || triggerPayload?.eventId
+            || triggerPayload?.requestId;
+        const contextData = {
+            initialPayload: triggerPayload,
+            metadata: {
+                userId,
+                workflowId,
+                errors: [],
+                ...(eventId ? { idempotencyKey: String(eventId) } : {}),
+                ...(executionOptions.correlationId ? { correlationId: executionOptions.correlationId } : {}),
+                ...(executionOptions.causationId ? { causationId: executionOptions.causationId } : {}),
+                ...(Number.isInteger(executionOptions.depth) ? { depth: executionOptions.depth } : {})
             }
-        });
+        };
+        const runtimeState = { incomingNodeIds: [] };
+        Object.defineProperty(contextData, '__runtime', { value: runtimeState, enumerable: false });
 
-        // Find starting nodes (0 in-degree)
-        let queue = nodes.filter(n => inDegree[n.id] === 0).map(n => n.id);
-        
-        // Fallback if there are cycles and no 0 in-degree nodes
-        if (queue.length === 0 && nodes.length > 0) {
-            queue = [nodes[0].id];
+        const schedule = (nodeId, shouldExecute, inputNodeIds = []) => {
+            if (queued.has(nodeId) || settled.has(nodeId)) return;
+            queued.add(nodeId);
+            queue.push({ nodeId, shouldExecute, inputNodeIds });
+        };
+
+        for (const node of nodes) {
+            if ((incomingRemaining.get(node.id) || 0) === 0) schedule(node.id, true);
         }
-
-        // Context state passed along the DAG
-        let contextData = { initialPayload: triggerPayload, metadata: { userId, workflowId } };
-        const executedNodes = new Set();
 
         while (queue.length > 0) {
-            const nodeId = queue.shift();
-            if (executedNodes.has(nodeId)) continue;
-            
-            const node = nodeMap[nodeId];
+            const { nodeId, shouldExecute, inputNodeIds } = queue.shift();
+            if (settled.has(nodeId)) continue;
+            const node = nodeMap.get(nodeId);
             const stepStartTime = Date.now();
-            let stepStatus = 'success';
-            let stepDetails = '';
-            
-            // Execute specialized node logic
-            try {
-                const executionResult = await node.execute(contextData);
-                contextData = { ...contextData, [node.id]: executionResult };
-                
-                // Triple Alias Strategy: Inject node result under Title and Subtype as well
-                if (node.title) {
-                    contextData[node.title] = executionResult;
-                }
-                if (node.subType) {
-                    contextData[node.subType] = executionResult;
-                }
-                stepDetails = `Successfully executed ${node.title || node.type} (${node.subType})`;
-                
-                // For logic nodes, determine which path to follow
-                if (node.type === 'logic') {
-                    // Resolve targetHandle to targetEdgeId if not already present
-                    if (executionResult.targetHandle && !executionResult.targetEdgeId) {
-                        const matchingEdge = edges.find(e => e.source === node.id && e.sourceHandle === executionResult.targetHandle);
-                        if (matchingEdge) {
-                            executionResult.targetEdgeId = matchingEdge.id;
-                        }
-                    }
-                    // Expect logic nodes to optionally return a targetEdgeId
-                    if (executionResult.targetEdgeId) {
-                        stepDetails += ` Routing down edge ${executionResult.targetEdgeId}`;
-                    }
-                }
-            } catch (err) {
-                stepStatus = 'failed';
-                stepDetails = `Execution failed: ${err.message}`;
-                status = 'Failed';
-                errorMsg = err.message;
-                
+            runtimeState.incomingNodeIds = inputNodeIds;
+
+            if (!shouldExecute) {
+                settled.add(nodeId);
                 stepLogs.push({
                     name: node.title || node.type,
                     type: node.type,
-                    status: stepStatus,
+                    status: 'skipped',
                     time: `${Date.now() - stepStartTime}ms`,
-                    details: stepDetails
+                    details: 'Skipped because no incoming branch was selected.'
                 });
-                break; // Stop execution on error
+                for (const edge of graph.outgoing.get(nodeId) || []) {
+                    incomingRemaining.set(edge.target, incomingRemaining.get(edge.target) - 1);
+                    if (incomingRemaining.get(edge.target) === 0) {
+                        schedule(edge.target, (activeIncoming.get(edge.target) || 0) > 0, activeIncomingSources.get(edge.target));
+                    }
+                }
+                continue;
             }
 
-            executedNodes.add(nodeId);
+            let executionResult;
+            let stepStatus = 'success';
+            let stepDetails;
+            try {
+                const validationResult = node.validate?.(contextData);
+                if (validationResult === false) throw new Error(`Node validation failed for ${node.title || node.type}`);
+
+                executionResult = await node.execute(contextData);
+                executionResult = executionResult ?? { success: true };
+                if (executionResult.success === false) {
+                    stepStatus = 'failed';
+                    const failure = {
+                        nodeId,
+                        node: node.title || node.type,
+                        error: executionResult.error || `Node ${node.title || node.type} reported failure.`,
+                        handled: false
+                    };
+                    unhandledFailures.set(nodeId, failure);
+                    contextData.metadata.errors.push(failure);
+                    errorMsg ||= failure.error;
+                    stepDetails = executionResult.error || 'Node reported failure.';
+                } else {
+                    stepDetails = `Successfully executed ${node.title || node.type} (${node.subType})`;
+                }
+            } catch (error) {
+                executionResult = { success: false, error: error.message };
+                stepStatus = 'failed';
+                const failure = { nodeId, node: node.title || node.type, error: error.message, handled: false };
+                unhandledFailures.set(nodeId, failure);
+                contextData.metadata.errors.push(failure);
+                errorMsg ||= error.message;
+                stepDetails = `Execution failed: ${error.message}`;
+            }
+
+            settled.add(nodeId);
+            mergeExecutionResult(contextData, node, executionResult);
+            if (node.subType === 'formatResponse' && executionResult.success !== false) {
+                workflowOutput = executionResult.outputData || null;
+            }
+            if (node.subType === 'catchError' && executionResult.handledError && executionResult.failedNodeId) {
+                const handledFailure = unhandledFailures.get(executionResult.failedNodeId);
+                if (handledFailure) {
+                    handledFailure.handled = true;
+                    unhandledFailures.delete(executionResult.failedNodeId);
+                }
+            }
             stepLogs.push({
                 name: node.title || node.type,
                 type: node.type,
                 status: stepStatus,
                 time: `${Date.now() - stepStartTime}ms`,
-                details: stepDetails
+                details: stepDetails,
+                ...(executionResult.logEntry ? { metadata: executionResult.logEntry } : {})
             });
 
-            // Enqueue downstream nodes
-            const neighbors = adj[nodeId] || [];
-            for (const neighbor of neighbors) {
-                inDegree[neighbor.target]--;
-                
-                // If it's a logic node and specified a target edge, only follow that edge
-                if (node.type === 'logic' && contextData[node.id]?.targetEdgeId) {
-                    if (neighbor.edgeId !== contextData[node.id].targetEdgeId) {
-                        continue; // Skip this branch
-                    }
+            const outgoing = graph.outgoing.get(nodeId) || [];
+            const selected = selectOutgoingEdges(node, executionResult, outgoing);
+            const selectedIds = new Set(selected.map(edge => edge.id));
+            for (const edge of outgoing) {
+                incomingRemaining.set(edge.target, incomingRemaining.get(edge.target) - 1);
+                if (selectedIds.has(edge.id)) {
+                    activeIncoming.set(edge.target, activeIncoming.get(edge.target) + 1);
+                    activeIncomingSources.get(edge.target).push(nodeId);
                 }
-                
-                if (inDegree[neighbor.target] <= 0) {
-                    queue.push(neighbor.target);
+                if (incomingRemaining.get(edge.target) === 0) {
+                    schedule(edge.target, (activeIncoming.get(edge.target) || 0) > 0, activeIncomingSources.get(edge.target));
                 }
             }
         }
 
-    } catch (err) {
+        const unresolved = nodes.filter(node => !settled.has(node.id));
+        if (unresolved.length > 0) {
+            status = 'Failed';
+            errorMsg ||= `Execution stopped before reaching nodes: ${unresolved.map(node => node.id).join(', ')}`;
+        }
+        if (unresolved.length > 0) {
+            status = 'Failed';
+        } else if (unhandledFailures.size > 0) {
+            status = 'Failed';
+            errorMsg = [...unhandledFailures.values()][0].error;
+        } else {
+            status = 'Success';
+            errorMsg = null;
+        }
+    } catch (error) {
         status = 'Failed';
-        errorMsg = err.message;
+        errorMsg = errorMsg || error.message;
     }
 
-    const durationMs = Date.now() - startTime;
-
-    // Create Execution Log
-    const log = await ExecutionLog.create({
+    return ExecutionLog.create({
         workflowId,
         userId,
-        durationMs,
+        durationMs: Date.now() - startTime,
         status,
-        trigger: 'Manual Test Run',
+        trigger: executionOptions.trigger || 'Manual Test Run',
         tags: ['Engine', status],
         error: errorMsg,
-        steps: stepLogs
+        steps: stepLogs,
+        output: workflowOutput
     });
-
-    return log;
 };

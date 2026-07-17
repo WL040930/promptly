@@ -1,10 +1,31 @@
 {
   "inputs": [
     {
-      "name": "eventName",
-      "type": "text",
-      "label": "Event Name to listen to",
-      "defaultValue": "onCreated"
+      "name": "resource",
+      "type": "select",
+      "label": "Promptly Resource",
+      "required": true,
+      "options": ["forms", "workflows", "folders", "executionLogs"],
+      "defaultValue": "forms"
+    },
+    {
+      "name": "events",
+      "type": "object",
+      "label": "Events (JSON array)",
+      "defaultValue": ["created", "updated", "deleted"]
+    },
+    {
+      "name": "filters",
+      "type": "object",
+      "label": "Filters (JSON)",
+      "defaultValue": {}
+    },
+    {
+      "name": "ignoreOwnWorkflowChanges",
+      "type": "select",
+      "label": "Ignore Own Execution Changes",
+      "options": ["true", "false"],
+      "defaultValue": "true"
     }
   ],
   "outputs": [

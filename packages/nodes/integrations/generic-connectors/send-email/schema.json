@@ -17,6 +17,7 @@
       "name": "to",
       "type": "text",
       "label": "To (recipient email)",
+      "required": true,
       "placeholder": "user@example.com or {{nodeId.email}}",
       "defaultValue": ""
     },
@@ -24,6 +25,7 @@
       "name": "subject",
       "type": "text",
       "label": "Subject",
+      "required": true,
       "placeholder": "Hello {{nodeId.name}}, your order is ready",
       "defaultValue": ""
     },
@@ -31,7 +33,32 @@
       "name": "body",
       "type": "textarea",
       "label": "Email Body",
+      "required": true,
       "placeholder": "Hi {{nodeId.name}},\n\nYour order #{{nodeId.orderId}} has shipped.\n\nBest regards",
+      "defaultValue": ""
+    },
+    {
+      "name": "htmlBody",
+      "type": "textarea",
+      "label": "HTML Body (optional)",
+      "defaultValue": ""
+    },
+    {
+      "name": "cc",
+      "type": "text",
+      "label": "CC (comma-separated)",
+      "defaultValue": ""
+    },
+    {
+      "name": "bcc",
+      "type": "text",
+      "label": "BCC (comma-separated)",
+      "defaultValue": ""
+    },
+    {
+      "name": "replyTo",
+      "type": "text",
+      "label": "Reply-To (optional)",
       "defaultValue": ""
     }
   ],

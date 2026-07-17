@@ -35,6 +35,13 @@
       "type": "number",
       "label": "HTTP Status Code (if used as webhook response)",
       "defaultValue": 200
+    },
+    {
+      "name": "headers",
+      "type": "textarea",
+      "label": "Response Headers (JSON)",
+      "placeholder": "{\"Cache-Control\":\"no-store\"}",
+      "defaultValue": ""
     }
   ],
   "outputs": [

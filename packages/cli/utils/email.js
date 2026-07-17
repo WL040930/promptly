@@ -15,14 +15,20 @@ const transporter = nodemailer.createTransport({
  * Send an email asynchronously.
  * @param {Object} options - The email options.
  * @param {string} options.to - The recipient email.
+ * @param {string} [options.cc] - Carbon-copy recipients.
+ * @param {string} [options.bcc] - Blind-carbon-copy recipients.
+ * @param {string} [options.replyTo] - Reply-To address.
  * @param {string} options.subject - The email subject.
  * @param {string} options.text - The plain text body.
  * @param {string} [options.html] - The HTML body (optional).
  */
-export const sendEmail = async ({ to, subject, text, html }) => {
+export const sendEmail = async ({ to, cc, bcc, replyTo, subject, text, html }) => {
     const mailOptions = {
         from: env.smtp.from,
         to,
+        cc,
+        bcc,
+        replyTo,
         subject,
         text,
         html

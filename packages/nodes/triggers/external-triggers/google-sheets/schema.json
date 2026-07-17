@@ -1,10 +1,25 @@
 {
   "inputs": [
     {
-      "name": "eventName",
+      "name": "spreadsheetId",
       "type": "text",
-      "label": "Event Name to listen to",
-      "defaultValue": "onCreated"
+      "label": "Spreadsheet ID",
+      "required": true,
+      "placeholder": "ID from the Google Sheets URL"
+    },
+    {
+      "name": "range",
+      "type": "text",
+      "label": "Watched Range",
+      "required": true,
+      "placeholder": "Sheet1!A:Z"
+    },
+    {
+      "name": "baselineMode",
+      "type": "select",
+      "label": "Initial Rows",
+      "options": ["ignore-existing", "process-existing"],
+      "defaultValue": "ignore-existing"
     }
   ],
   "outputs": [

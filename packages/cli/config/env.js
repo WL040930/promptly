@@ -37,7 +37,8 @@ const getOptionalPositiveInteger = (key) => {
 const env = {
     app: {
         port: Number(process.env.PORT || 3000),
-        clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173'
+        clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
+        publicOrigin: process.env.TRIGGER_PUBLIC_ORIGIN || null
     },
     db: {
         host: requireEnv('DB_HOST'),
@@ -53,7 +54,9 @@ const env = {
     google: {
         clientId: requireEnv('GOOGLE_CLIENT_ID'),
         clientSecret: requireEnv('GOOGLE_CLIENT_SECRET'),
-        redirectUri: requireEnv('GOOGLE_REDIRECT_URI')
+        redirectUri: requireEnv('GOOGLE_REDIRECT_URI'),
+        gmailPubSubTopic: process.env.GOOGLE_GMAIL_PUBSUB_TOPIC || null,
+        pubSubAudience: process.env.GOOGLE_PUBSUB_AUDIENCE || null
     },
     smtp: {
         host: requireEnv('SMTP_HOST'),

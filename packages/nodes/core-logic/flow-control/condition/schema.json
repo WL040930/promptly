@@ -27,9 +27,18 @@
         { "label": "Equals (==)", "value": "equals" },
         { "label": "Not Equals (!=)", "value": "not_equals" },
         { "label": "Greater Than (>)", "value": "greater_than" },
+        { "label": "Greater Than or Equal (>=)", "value": "greater_than_or_equal" },
         { "label": "Less Than (<)", "value": "less_than" },
+        { "label": "Less Than or Equal (<=)", "value": "less_than_or_equal" },
         { "label": "Contains", "value": "contains" },
-        { "label": "Exists", "value": "exists" }
+        { "label": "Starts With", "value": "starts_with" },
+        { "label": "Ends With", "value": "ends_with" },
+        { "label": "Is In List", "value": "in" },
+        { "label": "Is Not In List", "value": "not_in" },
+        { "label": "Exists", "value": "exists" },
+        { "label": "Is Empty", "value": "empty" },
+        { "label": "Is Truthy", "value": "truthy" },
+        { "label": "Is Falsy", "value": "falsy" }
       ]
     },
     {

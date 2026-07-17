@@ -54,7 +54,18 @@ PORT=3000
 DB_HOST=localhost
 DB_USER=your_postgres_user
 DB_PASSWORD=your_postgres_password
-DB_NAME=promptly_db
+DB_DATABASE=promptly_db
+
+# Google OAuth
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
+
+# External trigger callbacks
+# Required for Google Sheets and Gmail push triggers.
+TRIGGER_PUBLIC_ORIGIN=https://your-public-api.example.com
+GOOGLE_GMAIL_PUBSUB_TOPIC=projects/your-project/topics/promptly-gmail
+GOOGLE_PUBSUB_AUDIENCE=https://your-public-api.example.com/api/provider-events/gmail
 
 # Security
 JWT_SECRET=your_super_secret_jwt_key

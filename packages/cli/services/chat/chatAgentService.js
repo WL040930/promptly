@@ -238,7 +238,7 @@ export const applyEvent = async (session, userId, event) => {
         }
         const workflow = await workflowForRequest(userId, state.continuation.workflowId);
         if (!workflow) throw new Error('Workflow not found while resuming agent');
-        const specs = NodeRegistry.getSchemasFor(state.continuation.specSubTypes);
+        const specs = NodeRegistry.getSchemasFor(state.continuation.specNodeKeys || state.continuation.specSubTypes);
         const assembled = await assembleWorkflow({
             message: state.continuation.request,
             specs,
@@ -646,8 +646,10 @@ export const processChatMessage = async ({ session, userId, context = {} }) => {
                     const workflow = await workflowForRequest(userId, workflowId);
                     const classification = await classifyRequest({ message: args.prompt, snapshot: compactWorkflowSnapshot(workflow) });
                     if (classification.action === 'edit_workflow' && workflowId) {
-                        const selected = [...classification.selectedSubTypes];
-                        const affected = (workflow.nodes || []).filter(node => classification.affectedNodeIds.includes(node.id)).map(node => node.subType);
+                        const selected = [...(classification.selectedNodeKeys || [])];
+                        const affected = (workflow.nodes || [])
+                            .filter(node => classification.affectedNodeIds.includes(node.id))
+                            .map(node => `${node.type}:${node.subType}`);
                         selected.push(...affected);
                         const specs = NodeRegistry.getSchemasFor(selected);
                         
@@ -661,7 +663,7 @@ export const processChatMessage = async ({ session, userId, context = {} }) => {
                         await session.update({ agentState: { status: 'awaiting_workflow_approval', workflowId: workflow.id, proposalMessageId: replyObj.id } });
                         break;
                     } else {
-                        const specs = NodeRegistry.getSchemasFor(classification.selectedSubTypes);
+                        const specs = NodeRegistry.getSchemasFor(classification.selectedNodeKeys || classification.selectedSubTypes);
                         const assembled = await assembleWorkflow({ message: args.prompt, specs, workflowName: classification.workflowName, formId: null });
                         replyObj = await saveReply(session, {
                             text: 'The workflow is ready for your review.',

@@ -1,49 +1,59 @@
 import { BaseNode } from '../../../BaseNode.js';
+import { nodeFailure, parseFiniteNumber, parseJsonValue } from '../../shared/logicValues.js';
+
+const VALID_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const RESERVED_NAMES = new Set(['__proto__', 'prototype', 'constructor', 'metadata', 'initialPayload']);
+
+const parseVariable = (config) => {
+    const variableName = String(config.variableName || '').trim();
+    if (!VALID_NAME.test(variableName) || RESERVED_NAMES.has(variableName)) {
+        throw new Error('Variable name must start with a letter or underscore and cannot be reserved.');
+    }
+
+    const valueType = config.valueType || 'string';
+    const rawValue = config.variableValue ?? '';
+    let value;
+    switch (valueType) {
+        case 'number': value = parseFiniteNumber(rawValue, 'Variable value'); break;
+        case 'boolean': {
+            if (rawValue === true || rawValue === false) value = rawValue;
+            else if (rawValue === 'true' || rawValue === 'false') value = rawValue === 'true';
+            else throw new Error('Boolean variable value must be true or false.');
+            break;
+        }
+        case 'json': value = parseJsonValue(rawValue, 'Variable value'); break;
+        case 'auto': {
+            if (typeof rawValue !== 'string') value = rawValue;
+            else if (rawValue.trim() === '') value = '';
+            else {
+                try { value = JSON.parse(rawValue); }
+                catch { value = rawValue; }
+            }
+            break;
+        }
+        case 'string': value = String(rawValue); break;
+        default: throw new Error(`Unsupported variable type "${valueType}".`);
+    }
+
+    return { variableName, value, valueType };
+};
 
 export default class SetVariableNode extends BaseNode {
     async execute(context) {
-        const config = this.getResolvedConfig(context);
-        const { variableName = 'myVariable', variableValue = '', valueType = 'auto' } = config;
-
-        let parsedValue = variableValue;
-
         try {
-            switch (valueType) {
-                case 'number':
-                    parsedValue = Number(variableValue);
-                    break;
-                case 'boolean':
-                    parsedValue = String(variableValue).toLowerCase() === 'true';
-                    break;
-                case 'json':
-                    parsedValue = typeof variableValue === 'object'
-                        ? variableValue
-                        : JSON.parse(String(variableValue));
-                    break;
-                case 'auto':
-                    // Try to auto-detect: number → boolean → JSON → string
-                    if (!isNaN(variableValue) && variableValue !== '') {
-                        parsedValue = Number(variableValue);
-                    } else if (variableValue === 'true' || variableValue === 'false') {
-                        parsedValue = variableValue === 'true';
-                    } else {
-                        try { parsedValue = JSON.parse(String(variableValue)); } catch { /* keep as string */ }
-                    }
-                    break;
-                case 'string':
-                default:
-                    parsedValue = String(variableValue);
-            }
-        } catch {
-            parsedValue = variableValue; // fall back to raw value
+            const { variableName, value, valueType } = parseVariable(this.getResolvedConfig(context));
+            return {
+                success: true,
+                outputData: { variableName, value },
+                variableName,
+                value,
+                valueType,
+                variables: { [variableName]: value }
+            };
+        } catch (error) {
+            return nodeFailure('VARIABLE_FAILED', error.message, { outputData: null });
         }
-
-        return {
-            success: true,
-            variableName,
-            value: parsedValue,
-            // Also expose as a named key for ergonomic {{nodeId.variableName}} access
-            [variableName]: parsedValue,
-        };
     }
 }
+
+export { parseVariable };

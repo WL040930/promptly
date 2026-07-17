@@ -72,6 +72,13 @@
       "type": "number",
       "label": "Decimal Places (for toFixed)",
       "defaultValue": 2
+    },
+    {
+      "name": "timezone",
+      "type": "text",
+      "label": "Timezone (for date formatting)",
+      "placeholder": "UTC or Asia/Kuala_Lumpur",
+      "defaultValue": "UTC"
     }
   ],
   "outputs": [

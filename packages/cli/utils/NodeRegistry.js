@@ -1,17 +1,33 @@
 import fs from 'fs/promises';
 import path from 'path';
 import matter from 'gray-matter';
+import { validateNodeDefinition } from './nodeDefinitionValidator.js';
+
+const nodeKeyFor = (type, subType) => `${type}:${subType}`;
+
+const implementationStatusFor = (NodeClass) => {
+    const source = NodeClass?.prototype?.execute?.toString?.() || '';
+    const isPlaceholder = [
+        'Core execution logic goes here',
+        'Actual LLM call would go here',
+        'return { ...context, success: true }'
+    ].some(marker => source.includes(marker));
+
+    return isPlaceholder ? 'disabled' : 'experimental';
+};
 
 class NodeRegistry {
     constructor() {
-        this.nodesBySubType = new Map();
+        this.nodesByNodeKey = new Map();
+        // Keep this alias for callers that still use the old property name.
+        this.nodesBySubType = this.nodesByNodeKey;
         this.nodesBySubTypeName = new Map();
         this.uiLibrary = []; // Array of categories for the UI
     }
 
     async init() {
 
-        this.nodesBySubType.clear();
+        this.nodesByNodeKey.clear();
         this.nodesBySubTypeName.clear();
 
         // The cli process runs in packages/cli, so go up one level to packages/nodes
@@ -78,19 +94,32 @@ class NodeRegistry {
                 }
 
                 // Read optional schema.json
-                let configSchema = { inputs: [], outputs: [] };
-                try {
-                    const schemaContent = await fs.readFile(path.join(dir, 'schema.json'), 'utf-8');
-                    configSchema = JSON.parse(schemaContent);
-                } catch (err) {
-                    // Ignore if schema.json doesn't exist
-                }
+                const schemaContent = await fs.readFile(path.join(dir, 'schema.json'), 'utf-8');
+                const configSchema = JSON.parse(schemaContent);
 
                 // 4. Register the node
-                const key = `${metadata.type}:${metadata.subType}`;
-                const entry = { NodeClass, metadata, configSchema, instructionBody: instructionBody.trim() };
-                this.nodesBySubType.set(key, entry);
-                this.nodesBySubTypeName.set(metadata.subType, entry);
+                const nodeKey = nodeKeyFor(metadata.type, metadata.subType);
+                if (this.nodesByNodeKey.has(nodeKey)) {
+                    throw new Error(`Duplicate node key "${nodeKey}".`);
+                }
+                const entry = {
+                    nodeKey,
+                    NodeClass,
+                    metadata,
+                    configSchema,
+                    instructionBody: instructionBody.trim(),
+                    implementationStatus: implementationStatusFor(NodeClass)
+                };
+                const definitionIssues = validateNodeDefinition(entry);
+                if (definitionIssues.length > 0) {
+                    const error = new Error(`Invalid node definition for ${nodeKey}.`);
+                    error.issues = definitionIssues;
+                    throw error;
+                }
+                this.nodesByNodeKey.set(nodeKey, entry);
+                const subtypeEntries = this.nodesBySubTypeName.get(metadata.subType) || [];
+                subtypeEntries.push(entry);
+                this.nodesBySubTypeName.set(metadata.subType, subtypeEntries);
 
                 // 5. Build UI Library hierarchy
                 if (!categoryMap.has(category)) {
@@ -107,6 +136,8 @@ class NodeRegistry {
                     title: metadata.title,
                     type: metadata.type,
                     subType: metadata.subType,
+                    nodeKey,
+                    implementationStatus: entry.implementationStatus,
                     description: metadata.description,
                     schema: configSchema,
                     icon: ui.icon,
@@ -135,12 +166,24 @@ class NodeRegistry {
             };
         });
 
-        console.log(`[NodeRegistry] Successfully registered ${this.nodesBySubType.size} dynamic nodes.`);
+        console.log(`[NodeRegistry] Successfully registered ${this.nodesByNodeKey.size} dynamic nodes.`);
     }
 
     getClass(type, subType) {
-        const entry = this.nodesBySubType.get(`${type}:${subType}`);
+        const entry = this.nodesByNodeKey.get(nodeKeyFor(type, subType));
         return entry ? entry.NodeClass : null;
+    }
+
+    getDefinition(type, subType) {
+        return this.nodesByNodeKey.get(nodeKeyFor(type, subType)) || null;
+    }
+
+    getDefinitionByNodeKey(nodeKey) {
+        return this.nodesByNodeKey.get(nodeKey) || null;
+    }
+
+    getDefinitionsForSubType(subType) {
+        return this.nodesBySubTypeName.get(subType) || [];
     }
 
     getUiLibrary() {
@@ -153,34 +196,42 @@ class NodeRegistry {
      * is what makes the first model call inexpensive.
      */
     getCompactCatalogue() {
-        return Array.from(this.nodesBySubTypeName.entries()).map(([subType, entry]) => ({
-            subType,
+        return Array.from(this.nodesByNodeKey.values()).map(entry => ({
+            nodeKey: entry.nodeKey,
+            subType: entry.metadata.subType,
             type: entry.metadata.type,
             title: entry.metadata.title,
-            description: entry.metadata.description || ''
+            description: entry.metadata.description || '',
+            implementationStatus: entry.implementationStatus
         }));
     }
 
     /**
-     * Resolve the full node contracts selected by the classifier. Unknown
-     * subTypes are intentionally omitted; the agent service performs the
-     * request-level validation and fallback policy.
+     * Resolve full node contracts by canonical node key. A legacy subtype is
+     * accepted only when it maps to one unambiguous definition.
      */
-    getSchemasFor(subTypes = []) {
-        return [...new Set(subTypes)]
-            .map(subType => {
-                const entry = this.nodesBySubTypeName.get(subType);
-                if (!entry) return null;
+    getSchemasFor(nodeKeys = []) {
+        return [...new Set(nodeKeys)]
+            .flatMap(reference => {
+                const exact = this.nodesByNodeKey.get(reference);
+                if (exact) return [exact];
+                const matches = this.getDefinitionsForSubType(reference);
+                return matches.length === 1 ? matches : [];
+            })
+            .map(entry => {
                 return {
-                    subType,
+                    nodeKey: entry.nodeKey,
+                    subType: entry.metadata.subType,
                     type: entry.metadata.type,
                     title: entry.metadata.title,
                     description: entry.metadata.description || '',
                     schema: entry.configSchema || { inputs: [], outputs: [] },
                     instruction: entry.instructionBody || '',
-                    ui: entry.metadata.ui || {}
+                    ui: entry.metadata.ui || {},
+                    implementationStatus: entry.implementationStatus
                 };
             })
+            .filter(spec => spec.implementationStatus !== 'disabled')
             .filter(Boolean);
     }
 }

@@ -14,8 +14,10 @@ ui:
 # Database Event Node
 
 ## When to use this node
-Trigger on row changes
+Trigger when a Promptly-owned form, workflow, folder, or execution log is created, updated, or deleted.
 
 ## Configuration Schema
 The LLM must configure this node with the following JSON schema:
-- (Define schema here)
+- Configure a resource, event list, and simple equality filters.
+- The event payload contains `before`, `after`, `changedFields`, `recordId`, and `resource`.
+- Events are durable and deduplicated before workflow execution.

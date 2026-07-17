@@ -72,12 +72,14 @@ const NodeLibrarySidebar = ({ isOpen, onDragStart, onDragEnd }) => {
                                                 {group.items.map(node => {
                                                     const nodeUi = resolveNodeUi(node);
                                                     const nodeIcon = getIconByName(nodeUi.icon, { size: 14, strokeWidth: 2.8 });
+                                                    const isDisabled = node.implementationStatus === 'disabled';
 
                                                     return (
                                                         <div
-                                                            key={node.title}
-                                                            draggable
+                                                            key={node.nodeKey || `${node.type}:${node.subType}`}
+                                                            draggable={!isDisabled}
                                                             onDragStart={(e) => {
+                                                                if (isDisabled) return;
                                                                 onDragStart(node);
                                                                 e.dataTransfer.setData('application/reactflow-type', node.type);
                                                                 e.dataTransfer.setData('application/reactflow-data', JSON.stringify(node));
@@ -87,8 +89,8 @@ const NodeLibrarySidebar = ({ isOpen, onDragStart, onDragEnd }) => {
                                                                 img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
                                                                 e.dataTransfer.setDragImage(img, 0, 0);
                                                             }}
-                                                            onDragEnd={onDragEnd}
-                                                            className={`group bg-white p-3 rounded-xl cursor-grab active:cursor-grabbing transition-all duration-300 flex items-start gap-3 border border-slate-200 hover:shadow-md hover:-translate-y-0.5`}
+                                                            onDragEnd={isDisabled ? undefined : onDragEnd}
+                                                            className={`group bg-white p-3 rounded-xl transition-all duration-300 flex items-start gap-3 border border-slate-200 ${isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-grab active:cursor-grabbing hover:shadow-md hover:-translate-y-0.5'}`}
                                                         >
                                                             <div className={`mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${nodeUi.bgColor} ${nodeUi.color} group-hover:scale-105 transition-transform`}>
                                                                 {nodeIcon}
@@ -97,7 +99,7 @@ const NodeLibrarySidebar = ({ isOpen, onDragStart, onDragEnd }) => {
                                                                 <div className="flex items-center justify-between gap-2 mb-1">
                                                                     <span className="text-[13px] font-bold text-slate-800 truncate group-hover:text-slate-900 transition-colors">{node.title}</span>
                                                                     <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-slate-50 text-slate-400 border border-slate-200 select-none">
-                                                                        {node.type}
+                                                                        {isDisabled ? 'Unavailable' : node.type}
                                                                     </span>
                                                                 </div>
                                                                 <p className="text-[11px] font-medium text-slate-500 leading-snug line-clamp-2">{node.description}</p>

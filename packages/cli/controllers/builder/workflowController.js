@@ -2,6 +2,30 @@ import { Workflow, WorkflowVersion } from '../../models/index.js';
 import { executeWorkflow } from '../../services/engine/executionEngine.js';
 import asyncHandler from '../../utils/asyncHandler.js';
 import SchedulerService from '../../services/scheduler/schedulerService.js';
+import NodeRegistry from '../../utils/NodeRegistry.js';
+import { validateWorkflow } from '../../services/engine/workflowValidator.js';
+import { reconcileWorkflow, removeWorkflow } from '../../services/triggers/triggerRuntime.js';
+
+const workflowValidationResponse = (res, workflow) => {
+    const validation = validateWorkflow({
+        nodes: workflow.nodes || [],
+        edges: workflow.edges || [],
+        isActive: Boolean(workflow.isActive),
+        registry: NodeRegistry
+    });
+    if (validation.valid) return null;
+    return res.status(400).json({ message: 'Invalid workflow definition.', issues: validation.issues });
+};
+
+const syncSchedule = (workflowId, userId, nodes, isActive) => {
+    const scheduleNode = (nodes || []).find(node => node.type === 'trigger' && node.subType === 'schedule');
+    if (scheduleNode && isActive) {
+        const { cronExpression = '0 9 * * *', timezone = 'UTC' } = scheduleNode.config || {};
+        SchedulerService.register(workflowId, userId, cronExpression, timezone);
+    } else {
+        SchedulerService.deregister(workflowId);
+    }
+};
 
 export const getWorkflows = asyncHandler(async (req, res) => {
     const workflows = await Workflow.findAll({ 
@@ -22,10 +46,19 @@ export const getWorkflow = asyncHandler(async (req, res) => {
 
 export const createWorkflow = asyncHandler(async (req, res) => {
     const { name, folderId, isActive, status, icon, iconColor, iconBg, nodes, edges } = req.body;
+    const validationResponse = workflowValidationResponse(res, { nodes, edges, isActive });
+    if (validationResponse) return validationResponse;
     const workflow = await Workflow.create({
         name, folderId, isActive, status, icon, iconColor, iconBg, nodes, edges,
         userId: req.user.id
     });
+    try {
+        await reconcileWorkflow(workflow);
+    } catch (error) {
+        await workflow.update({ isActive: false, status: 'Trigger setup failed' });
+        return res.status(503).json({ message: 'Workflow trigger could not be connected.', error: error.message });
+    }
+    syncSchedule(workflow.id, req.user.id, nodes, Boolean(isActive));
     res.status(201).json(workflow);
 });
 
@@ -35,23 +68,24 @@ export const updateWorkflow = asyncHandler(async (req, res) => {
     
     const workflow = await Workflow.findOne({ where: { id, userId: req.user.id } });
     if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
-    
+
+    const nextNodes = nodes === undefined ? (workflow.nodes || []) : nodes;
+    const nextEdges = edges === undefined ? (workflow.edges || []) : edges;
+    const nextIsActive = isActive === undefined ? workflow.isActive : isActive;
+    const validationResponse = workflowValidationResponse(res, { nodes: nextNodes, edges: nextEdges, isActive: nextIsActive });
+    if (validationResponse) return validationResponse;
+
     await workflow.update({ name, folderId, isActive, status, icon, iconColor, iconBg, nodes, edges });
 
-    // Keep schedule cron jobs in sync with workflow isActive state / node config changes
-    const updatedNodes = nodes || workflow.nodes || [];
-    const scheduleNode = updatedNodes.find(n => n.type === 'trigger' && n.subType === 'schedule');
-    
-    // Check the updated isActive state (fallback to existing)
-    const isCurrentlyActive = isActive !== undefined ? isActive : workflow.isActive;
-    
-    if (scheduleNode && isCurrentlyActive) {
-        const { cronExpression = '0 9 * * *', timezone = 'UTC' } = scheduleNode.config || {};
-        SchedulerService.register(id, req.user.id, cronExpression, timezone);
-    } else {
-        // Deactivated or schedule node removed
-        SchedulerService.deregister(id);
+    try {
+        await reconcileWorkflow(workflow);
+    } catch (error) {
+        await workflow.update({ isActive: false, status: 'Trigger setup failed' });
+        return res.status(503).json({ message: 'Workflow trigger could not be connected.', error: error.message });
     }
+
+    // Keep schedule cron jobs in sync with workflow activation and node config.
+    syncSchedule(id, req.user.id, nextNodes, Boolean(nextIsActive));
 
     res.json(workflow);
 });
@@ -63,6 +97,7 @@ export const deleteWorkflow = asyncHandler(async (req, res) => {
     
     // Deregister any scheduled job before deletion
     SchedulerService.deregister(id);
+    await removeWorkflow(id);
 
     await workflow.destroy();
     res.json({ message: 'Workflow deleted' });
@@ -111,6 +146,13 @@ export const restoreWorkflowVersion = asyncHandler(async (req, res) => {
     
     const version = await WorkflowVersion.findOne({ where: { id: versionId, workflowId: id } });
     if (!version) return res.status(404).json({ message: 'Version not found' });
+
+    const validationResponse = workflowValidationResponse(res, {
+        nodes: version.nodes || [],
+        edges: version.edges || [],
+        isActive: workflow.isActive
+    });
+    if (validationResponse) return validationResponse;
     
     await workflow.update({
         nodes: version.nodes,

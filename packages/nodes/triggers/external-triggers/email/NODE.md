@@ -14,8 +14,10 @@ ui:
 # Email Received Node
 
 ## When to use this node
-Trigger on incoming email
+Trigger when a connected Gmail mailbox receives a matching message in the inbox.
 
 ## Configuration Schema
 The LLM must configure this node with the following JSON schema:
-- (Define schema here)
+- Configure Gmail labels, sender and subject filters, attachment filtering, and optional body access.
+- Gmail notifications are persisted and deduplicated before the workflow starts.
+- Message bodies are opt-in because they require broader Google permissions.

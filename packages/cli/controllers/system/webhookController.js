@@ -19,6 +19,7 @@ export const handleWebhook = asyncHandler(async (req, res) => {
         headers:   req.headers   || {},
         method:    req.method,
         timestamp: new Date().toISOString(),
+        ...(req.headers['x-idempotency-key'] ? { idempotencyKey: String(req.headers['x-idempotency-key']) } : {})
     };
 
     try {

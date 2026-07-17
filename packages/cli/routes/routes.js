@@ -13,6 +13,7 @@ import chatRoutes from './chat/chatRoutes.js';
 import storageRoutes from './storage/storageRoutes.js';
 import nodeRoutes from './builder/nodeRoutes.js';
 import webhookRoutes from './system/webhookRoutes.js';
+import providerEventRoutes from './system/providerEventRoutes.js';
 import rateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -37,5 +38,6 @@ router.use('/dashboard', dashboardRoutes);
 router.use('/chat', chatRoutes);
 router.use('/nodes', nodeRoutes);
 router.use('/webhooks', webhookRoutes);
+router.use('/provider-events', providerEventRoutes);
 
 export default router;

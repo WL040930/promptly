@@ -1,6 +1,8 @@
 import { OAuth2Client } from 'google-auth-library';
 import User from '../../models/User.js';
 import env from '../../config/env.js';
+import jwt from 'jsonwebtoken';
+import crypto from 'node:crypto';
 
 const oauth2Client = new OAuth2Client(
     env.google.clientId,
@@ -25,13 +27,20 @@ const googleConnect = async (req, res) => {
     const url = oauth2Client.generateAuthUrl({
         access_type: 'offline',
         prompt: 'consent',
+        include_granted_scopes: true,
         scope: [
             'https://www.googleapis.com/auth/userinfo.profile',
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/drive.file',
-            'https://www.googleapis.com/auth/gmail.send'
+            'https://www.googleapis.com/auth/gmail.send',
+            'https://www.googleapis.com/auth/gmail.metadata',
+            'https://www.googleapis.com/auth/spreadsheets.readonly'
         ],
-        state: req.user.id
+        state: jwt.sign({
+            sub: req.user.id,
+            purpose: 'google-oauth',
+            nonce: crypto.randomUUID()
+        }, env.jwt.secret, { expiresIn: '10m' })
     });
 
     return res.json({ url });
@@ -47,7 +56,14 @@ const googleCallback = async (req, res) => {
         });
     }
 
-    const userId = state;
+    let userId;
+    try {
+        const statePayload = jwt.verify(state, env.jwt.secret);
+        if (statePayload.purpose !== 'google-oauth') throw new Error('Invalid OAuth state purpose.');
+        userId = statePayload.sub;
+    } catch {
+        return redirectToConnections(res, { settings: 'connections', error: 'invalid_oauth_state' });
+    }
     const user = await User.findByPk(userId);
 
     if (!user) {

@@ -1,210 +1,184 @@
+import crypto from 'node:crypto';
 import { BaseNode } from '../../../BaseNode.js';
 import User from '../../../../cli/models/User.js';
+import EmailDelivery from '../../../../cli/models/EmailDelivery.js';
 import { sendEmail } from '../../../../cli/utils/email.js';
 import { OAuth2Client } from 'google-auth-library';
 import env from '../../../../cli/config/env.js';
+import {
+    buildRawMimeMessage,
+    isRetryableEmailError,
+    validateEmailMessage,
+    withRetries
+} from './emailConnector.js';
 
 const DEBUG_PREFIX = '[DEBUG-send-email]';
+const PENDING_TIMEOUT_MS = 10 * 60 * 1000;
 
-function isDebugEnabled() {
-    return process.env.SEND_EMAIL_DEBUG === 'true' || process.env.NODE_ENV !== 'production';
-}
+const isDebugEnabled = () => process.env.SEND_EMAIL_DEBUG === 'true' || process.env.NODE_ENV !== 'production';
+const preview = (value, maxLength = 160) => {
+    const raw = value === undefined ? '<undefined>' : value === null ? '<null>' : String(value);
+    const singleLine = raw.replace(/\s+/g, ' ').trim();
+    return singleLine.length > maxLength ? `${singleLine.slice(0, maxLength)}...` : singleLine;
+};
+const hash = value => crypto.createHash('sha256').update(String(value)).digest('hex');
 
-function preview(value, maxLength = 160) {
-    if (value === undefined) return '<undefined>';
-    if (value === null) return '<null>';
-    const raw = typeof value === 'string' ? value : JSON.stringify(value);
-    const singleLine = String(raw).replace(/\s+/g, ' ').trim();
-    return singleLine.length > maxLength
-        ? `${singleLine.slice(0, maxLength)}...`
-        : singleLine;
-}
+const logDebug = (label, details) => {
+    if (isDebugEnabled()) console.log(`${DEBUG_PREFIX} ${label}`, JSON.stringify(details));
+};
 
-function findVariableTokens(value) {
-    if (typeof value !== 'string') return [];
-    return Array.from(value.matchAll(/\{\{([^{}]+)\}\}/g)).map(match => match[0]);
-}
+const logFailure = (label, details) => console.error(`${DEBUG_PREFIX} ${label}`, JSON.stringify(details));
 
-function summarizeConfig(config) {
-    return {
-        emailProvider: config?.emailProvider,
-        toType: typeof config?.to,
-        to: preview(config?.to),
-        subjectType: typeof config?.subject,
-        subject: preview(config?.subject),
-        bodyType: typeof config?.body,
-        bodyLength: typeof config?.body === 'string' ? config.body.length : null,
-        unresolvedTokens: {
-            to: findVariableTokens(config?.to),
-            subject: findVariableTokens(config?.subject),
-            body: findVariableTokens(config?.body),
-        },
-    };
-}
+const getDelivery = async (context, message, provider) => {
+    const idempotencyKey = context.metadata?.idempotencyKey;
+    const workflowId = context.metadata?.workflowId;
+    const userId = context.metadata?.userId;
+    if (!idempotencyKey || !workflowId || !userId) return null;
 
-function summarizeContext(context) {
-    const nodeFieldKeys = Object.entries(context || {})
-        .filter(([, value]) => value && typeof value === 'object' && value.fields && typeof value.fields === 'object')
-        .map(([key, value]) => ({ node: key, fieldKeys: Object.keys(value.fields) }));
-
-    return {
-        topLevelKeys: Object.keys(context || {}),
-        metadata: context?.metadata,
-        initialPayloadFieldKeys: context?.initialPayload?.fields
-            ? Object.keys(context.initialPayload.fields)
-            : [],
-        nodeFieldKeys,
-    };
-}
-
-function logDebug(label, details) {
-    if (isDebugEnabled()) {
-        console.log(`${DEBUG_PREFIX} ${label}`, JSON.stringify(details, null, 2));
+    const recipientHash = hash([...message.to, ...message.cc, ...message.bcc, ...message.replyTo].join(','));
+    const subjectHash = hash(message.subject);
+    let delivery = await EmailDelivery.findOne({ where: { workflowId, nodeId: thisNodeId(context), idempotencyKey } });
+    if (delivery && (delivery.recipientHash !== recipientHash || delivery.subjectHash !== subjectHash)) {
+        const error = new Error('The same idempotency key was used with a different email message.');
+        error.code = 'EMAIL_IDEMPOTENCY_CONFLICT';
+        throw error;
     }
-}
-
-function logFailure(label, details) {
-    console.error(`${DEBUG_PREFIX} ${label}`, JSON.stringify(details, null, 2));
-}
-
-function assertUsableEmailConfig(config, context) {
-    const { to, subject, body } = config;
-
-    if (!to || !subject || !body) {
-        logFailure('missing-required-config', {
-            resolvedConfig: summarizeConfig(config),
-            context: summarizeContext(context),
-        });
-        throw new Error('Send Email node requires "to", "subject", and "body"');
+    if (delivery?.status === 'sent') return { delivery, duplicate: true };
+    if (delivery?.status === 'pending' && Date.now() - new Date(delivery.updatedAt).getTime() < PENDING_TIMEOUT_MS) {
+        const error = new Error('An email delivery with this idempotency key is already in progress.');
+        error.code = 'EMAIL_DELIVERY_IN_PROGRESS';
+        throw error;
     }
 
-    const unresolved = Object.entries({
-        to: findVariableTokens(to),
-        subject: findVariableTokens(subject),
-        body: findVariableTokens(body),
-    }).filter(([, tokens]) => tokens.length > 0);
-
-    if (unresolved.length > 0) {
-        logFailure('unresolved-variables', {
-            unresolved: Object.fromEntries(unresolved),
-            resolvedConfig: summarizeConfig(config),
-            context: summarizeContext(context),
-        });
-        throw new Error(`Send Email node has unresolved variables: ${unresolved.map(([field]) => field).join(', ')}`);
+    if (!delivery) {
+        try {
+            delivery = await EmailDelivery.create({
+                workflowId,
+                userId,
+                nodeId: thisNodeId(context),
+                idempotencyKey,
+                provider,
+                recipientHash,
+                subjectHash,
+                status: 'pending'
+            });
+        } catch (error) {
+            if (error.name !== 'SequelizeUniqueConstraintError') throw error;
+            delivery = await EmailDelivery.findOne({ where: { workflowId, nodeId: thisNodeId(context), idempotencyKey } });
+            if (delivery?.status === 'sent') return { delivery, duplicate: true };
+            throw new Error('Email delivery could not acquire its idempotency lock.');
+        }
+    } else {
+        await delivery.update({ status: 'pending', provider, recipientHash, subjectHash, lastError: null });
     }
+    return { delivery, duplicate: false };
+};
 
-    if (typeof to !== 'string' || !to.trim()) {
-        logFailure('invalid-recipient-type', {
-            resolvedConfig: summarizeConfig(config),
-            context: summarizeContext(context),
-        });
-        throw new Error('Send Email node "to" must resolve to a non-empty email address');
-    }
+const thisNodeId = context => context.__runtime?.currentNodeId || context.metadata?.currentNodeId;
 
-    const hasEmailLikeRecipient = /[^\s@<>(),;]+@[^\s@<>(),;]+\.[^\s@<>(),;]+/.test(to);
-    if (!hasEmailLikeRecipient) {
-        logFailure('invalid-recipient-value', {
-            resolvedConfig: summarizeConfig(config),
-            context: summarizeContext(context),
-        });
-        throw new Error(`Send Email node "to" did not resolve to a valid email address: ${preview(to)}`);
-    }
-}
+const sendViaGmail = async ({ user, message }) => {
+    if (!user?.googleAccessToken) throw new Error('User has not connected their Google account or is missing an access token.');
+    const oauth2Client = new OAuth2Client(env.google.clientId, env.google.clientSecret);
+    oauth2Client.setCredentials({ access_token: user.googleAccessToken, refresh_token: user.googleRefreshToken });
+    oauth2Client.on('tokens', tokens => {
+        if (!tokens.access_token && !tokens.refresh_token) return;
+        user.update({
+            ...(tokens.access_token ? { googleAccessToken: tokens.access_token } : {}),
+            ...(tokens.refresh_token ? { googleRefreshToken: tokens.refresh_token } : {})
+        }).catch(error => console.error('[Email] Failed to persist refreshed Google token:', error.message));
+    });
+    const raw = Buffer.from(buildRawMimeMessage(message)).toString('base64url');
+    const response = await oauth2Client.request({
+        url: 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+        method: 'POST',
+        data: { raw }
+    });
+    return response.data.id;
+};
 
 export default class SendEmailNode extends BaseNode {
     async execute(context) {
         const config = this.getResolvedConfig(context);
-        const { emailProvider = 'system-default', to, subject, body } = config;
-
-        logDebug('execute-start', {
-            nodeId: this.id,
-            nodeTitle: this.title,
-            rawConfig: summarizeConfig(this.config),
-            resolvedConfig: summarizeConfig(config),
-            context: summarizeContext(context),
-        });
-
-        assertUsableEmailConfig(config, context);
-
-        let messageId = null;
-
-        if (emailProvider === 'user-gmail') {
-            const userId = context.metadata?.userId;
-            if (!userId) {
-                throw new Error('Missing user context for OAuth email provider');
-            }
-
-            const user = await User.findByPk(userId);
-            if (!user || !user.googleAccessToken) {
-                throw new Error('User has not connected their Google account or missing access token');
-            }
-
-            const oauth2Client = new OAuth2Client(
-                env.google.clientId,
-                env.google.clientSecret
-            );
-
-            oauth2Client.setCredentials({
-                access_token: user.googleAccessToken,
-                refresh_token: user.googleRefreshToken
-            });
-
-            const makeEmail = (toEmail, emailSubject, emailBody) => {
-                const str = [
-                    `To: ${toEmail}`,
-                    `Subject: ${emailSubject}`,
-                    `MIME-Version: 1.0`,
-                    `Content-Type: text/plain; charset="UTF-8"`,
-                    '',
-                    emailBody,
-                ].join('\r\n');
-                return Buffer.from(str).toString('base64url');
-            };
-
-            const raw = makeEmail(to, subject, body);
-
-            try {
-                const response = await oauth2Client.request({
-                    url: 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
-                    method: 'POST',
-                    data: { raw }
-                });
-                
-                messageId = response.data.id;
-            } catch (err) {
-                logFailure('gmail-error', {
-                    error: err.message,
-                    resolvedConfig: summarizeConfig(config),
-                    context: summarizeContext(context),
-                });
-                throw new Error(`Failed to send email via Gmail: ${err.message}`);
-            }
-
-        } else {
-            // System Default (SMTP)
-            try {
-                const mailInfo = await sendEmail({
-                    to,
-                    subject,
-                    text: body
-                });
-                messageId = mailInfo?.messageId || 'dev-mode-mock-id';
-            } catch (err) {
-                logFailure('smtp-error', {
-                    error: err.message,
-                    resolvedConfig: summarizeConfig(config),
-                    context: summarizeContext(context),
-                });
-                throw new Error(`Failed to send email via system SMTP: ${err.message}`);
-            }
+        const provider = config.emailProvider || 'system-default';
+        if (!['system-default', 'smtp', 'user-gmail'].includes(provider)) {
+            return { success: false, errorCode: 'EMAIL_CONFIG_INVALID', error: `Unsupported email provider "${provider}".` };
         }
 
-        return { 
-            ...context, 
-            success: true,
-            messageId,
-            to,
-            subject
-        };
+        let message;
+        try {
+            message = validateEmailMessage({
+                to: config.to,
+                cc: config.cc,
+                bcc: config.bcc,
+                replyTo: config.replyTo,
+                subject: config.subject,
+                text: config.body,
+                html: config.htmlBody
+            });
+        } catch (error) {
+            logFailure('invalid-config', { error: error.message, to: preview(config.to), subject: preview(config.subject) });
+            return { success: false, errorCode: 'EMAIL_CONFIG_INVALID', error: error.message };
+        }
+
+        logDebug('execute-start', { nodeId: this.id, provider, recipients: message.to.length, subject: preview(message.subject) });
+        const contextWithNode = context;
+        if (!contextWithNode.__runtime) {
+            Object.defineProperty(contextWithNode, '__runtime', {
+                value: {},
+                enumerable: false,
+                configurable: true,
+                writable: true
+            });
+        }
+        contextWithNode.__runtime.currentNodeId = this.id;
+        let delivery;
+        try {
+            delivery = await getDelivery.call(this, contextWithNode, message, provider);
+        } catch (error) {
+            return { success: false, errorCode: error.code || 'EMAIL_IDEMPOTENCY_FAILED', error: error.message };
+        }
+
+        if (delivery?.duplicate) {
+            return {
+                success: true,
+                deduplicated: true,
+                messageId: delivery.delivery.messageId,
+                outputData: { messageId: delivery.delivery.messageId, provider, deduplicated: true },
+                to: message.to.join(', '),
+                subject: message.subject
+            };
+        }
+
+        try {
+            const user = provider === 'user-gmail' ? await User.findByPk(context.metadata?.userId) : null;
+            const { result: messageId, attempts } = await withRetries(async () => {
+                if (provider === 'user-gmail') return sendViaGmail({ user, message });
+                const mailInfo = await sendEmail({
+                    to: message.to.join(', '),
+                    cc: message.cc.join(', ') || undefined,
+                    bcc: message.bcc.join(', ') || undefined,
+                    replyTo: message.replyTo.join(', ') || undefined,
+                    subject: message.subject,
+                    text: message.text,
+                    html: message.html || undefined
+                });
+                return mailInfo?.messageId || `dev-${crypto.randomUUID()}`;
+            }, { maxRetries: delivery?.delivery ? 2 : 0, shouldRetry: isRetryableEmailError });
+
+            if (delivery?.delivery) await delivery.delivery.update({ status: 'sent', messageId, attempts, sentAt: new Date(), lastError: null });
+            return {
+                success: true,
+                outputData: { messageId, provider, attempts, deduplicated: false },
+                messageId,
+                attempts,
+                to: message.to.join(', '),
+                subject: message.subject
+            };
+        } catch (error) {
+            const attempts = error.attempts || 1;
+            if (delivery?.delivery) await delivery.delivery.update({ status: 'failed', attempts, lastError: error.message });
+            logFailure('delivery-failed', { provider, attempts, error: error.message });
+            return { success: false, errorCode: 'EMAIL_DELIVERY_FAILED', error: error.message, attempts };
+        }
     }
 }

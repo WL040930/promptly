@@ -4,6 +4,7 @@
       "name": "url",
       "type": "text",
       "label": "URL",
+      "required": true,
       "placeholder": "https://api.example.com/endpoint or {{nodeId.apiUrl}}",
       "defaultValue": ""
     },
@@ -58,6 +59,12 @@
       "type": "number",
       "label": "Timeout (ms)",
       "defaultValue": 10000
+    },
+    {
+      "name": "maxRetries",
+      "type": "number",
+      "label": "Maximum Retries",
+      "defaultValue": 2
     }
   ],
   "outputs": [

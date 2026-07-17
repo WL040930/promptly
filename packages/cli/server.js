@@ -4,14 +4,20 @@ import env from './config/env.js';
 import './models/index.js';
 import NodeRegistry from './utils/NodeRegistry.js';
 import SchedulerService from './services/scheduler/schedulerService.js';
+import { ensureDatabaseChangeTriggers, startDatabaseChangePublisher } from './services/triggers/databaseTriggerService.js';
+import { reconcileActiveWorkflows, startTriggerRuntime } from './services/triggers/triggerRuntime.js';
 
 const startServer = async () => {
   try {
     await sequelize.authenticate();
     await sequelize.sync({ alter: true });
+    await ensureDatabaseChangeTriggers(sequelize);
     
     // Initialize the dynamic node registry
     await NodeRegistry.init();
+    await reconcileActiveWorkflows();
+    startDatabaseChangePublisher();
+    await startTriggerRuntime();
     
     // Auto-initialize the 'form-uploads' bucket if it doesn't exist
     try {

@@ -6,6 +6,7 @@ import NodeRegistry from '../../utils/NodeRegistry.js';
 import { getAIProvider } from './aiService.js';
 import env from '../../config/env.js';
 import { parseAiJson } from '../../utils/jsonParser.js';
+import { validateWorkflow } from '../engine/workflowValidator.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const instructionDir = path.join(__dirname, 'instruction');
@@ -57,8 +58,10 @@ export const compactWorkflowSnapshot = (workflow) => {
 };
 
 export const classifyRequest = async ({ message, snapshot }) => {
-    const catalogue = NodeRegistry.getCompactCatalogue()
-        .map(node => `${node.subType} | ${node.type} | ${node.title} | ${node.description}`)
+    const catalogueEntries = NodeRegistry.getCompactCatalogue()
+        .filter(node => node.implementationStatus !== 'disabled');
+    const catalogue = catalogueEntries
+        .map(node => `${node.nodeKey} | ${node.title} | ${node.description}`)
         .join('\n');
     const current = snapshot?.nodes?.length
         ? `Current workflow nodes:\n${snapshot.nodes.map(n => `${n.id} | ${n.title} | ${n.type} | ${n.subType}`).join('\n')}\nEdges:\n${(snapshot.edges || []).map(e => `${e.id}: ${e.source} -> ${e.target}`).join('\n')}`
@@ -67,15 +70,23 @@ export const classifyRequest = async ({ message, snapshot }) => {
     const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow/classifier.md'));
     if (!validActions.has(value.action)) throw new Error('Classifier returned an unknown action');
 
-    const known = new Set(NodeRegistry.getCompactCatalogue().map(n => n.subType));
-    const selectedSubTypes = [...new Set((value.selectedSubTypes || []).filter(type => known.has(type)))];
-    if (value.action === 'create_workflow' && selectedSubTypes.length === 0) {
-        selectedSubTypes.push(...known);
+    const knownNodeKeys = new Set(catalogueEntries.map(node => node.nodeKey));
+    const references = Array.isArray(value.selectedNodeKeys)
+        ? value.selectedNodeKeys
+        : (value.selectedSubTypes || []);
+    const selectedNodeKeys = [...new Set(references.flatMap(reference => {
+        if (knownNodeKeys.has(reference)) return [reference];
+        const matches = catalogueEntries.filter(node => node.subType === reference);
+        return matches.length === 1 ? [matches[0].nodeKey] : [];
+    }))];
+    if (value.action === 'create_workflow' && selectedNodeKeys.length === 0) {
+        selectedNodeKeys.push(...knownNodeKeys);
     }
 
     return {
         action: value.action,
-        selectedSubTypes,
+        selectedNodeKeys,
+        selectedSubTypes: selectedNodeKeys.map(nodeKey => NodeRegistry.getDefinitionByNodeKey(nodeKey)?.metadata.subType).filter(Boolean),
         workflowName: value.action === 'create_workflow' && typeof value.workflowName === 'string'
             ? value.workflowName.trim().slice(0, 255) || 'New Workflow'
             : null,
@@ -87,6 +98,7 @@ export const classifyRequest = async ({ message, snapshot }) => {
 };
 
 const schemaBlock = (spec) => JSON.stringify({
+    nodeKey: spec.nodeKey,
     subType: spec.subType,
     type: spec.type,
     title: spec.title,
@@ -112,15 +124,23 @@ const nodeUiFields = (spec) => ({
     iconColor: spec.ui?.iconColor || spec.ui?.color
 });
 
+const assertWorkflowDefinition = (nodes, edges, isActive = false) => {
+    const validation = validateWorkflow({ nodes, edges, isActive, registry: NodeRegistry });
+    if (!validation.valid) {
+        throw new Error(`AI workflow proposal failed validation: ${validation.issues.map(item => item.message).join('; ')}`);
+    }
+};
+
 export const assembleWorkflow = async ({ message, specs, workflowName, formId }) => {
     const prompt = `Node specifications:\n${specs.map(schemaBlock).join('\n---\n')}\n\n${formId ? `Use this approved form ID for the form trigger: ${formId}\n\n` : ''}Workflow request:\n${message}`;
     const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow/assembler.md'));
     if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) throw new Error('Assembler returned an invalid workflow');
 
-    const specsBySubType = new Map(specs.map(spec => [spec.subType, spec]));
+    const specsByNodeKey = new Map(specs.map(spec => [spec.nodeKey || `${spec.type}:${spec.subType}`, spec]));
     const usedIds = new Set();
     const nodes = value.nodes.map((node, index) => {
-        const spec = specsBySubType.get(node.subType);
+        const requestedKey = node.nodeKey || (node.type && node.subType ? `${node.type}:${node.subType}` : node.subType);
+        const spec = specsByNodeKey.get(requestedKey);
         if (!spec) return null;
         let id = typeof node.id === 'string' && node.id.trim() ? node.id.trim() : `node_${index + 1}`;
         while (usedIds.has(id)) id = `node_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
@@ -131,6 +151,7 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId })
             id,
             type: spec.type,
             subType: spec.subType,
+            nodeKey: spec.nodeKey || `${spec.type}:${spec.subType}`,
             title: typeof node.title === 'string' && node.title.trim() ? node.title.trim() : spec.title,
             description: spec.description,
             config,
@@ -142,7 +163,6 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId })
         };
     }).filter(Boolean);
 
-    if (nodes[0].type !== 'trigger') throw new Error('Assembler must place a trigger first');
     const ids = new Set(nodes.map(node => node.id));
     const usedEdgeIds = new Set();
     const edges = value.edges.filter(edge => ids.has(edge.source) && ids.has(edge.target)).map((edge, index) => {
@@ -159,6 +179,7 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId })
         };
     });
     if (!nodes.length) throw new Error('Assembler returned no valid nodes');
+    if (nodes[0].type !== 'trigger') throw new Error('Assembler must place a trigger first');
     const indegree = new Map(nodes.map(node => [node.id, 0]));
     const adjacency = new Map(nodes.map(node => [node.id, []]));
     edges.forEach(edge => {
@@ -176,6 +197,7 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId })
         });
     }
     if (visited !== nodes.length) throw new Error('Assembler returned a cyclic workflow');
+    assertWorkflowDefinition(nodes, edges);
 
     return { name: workflowName || 'New Workflow', nodes, edges, tokenUsage };
 };
@@ -188,12 +210,21 @@ export const applyWorkflowPatches = ({ currentNodes = [], currentEdges = [], pat
     const nodes = JSON.parse(JSON.stringify(currentNodes));
     const edges = JSON.parse(JSON.stringify(currentEdges));
     const placeholders = new Map();
-    const specsBySubType = new Map(specs.map(spec => [spec.subType, spec]));
+    const specsByNodeKey = new Map(specs.map(spec => [spec.nodeKey || `${spec.type}:${spec.subType}`, spec]));
+    const specsByUniqueSubType = new Map();
+    for (const spec of specs) {
+        if (specsByUniqueSubType.has(spec.subType)) specsByUniqueSubType.set(spec.subType, null);
+        else specsByUniqueSubType.set(spec.subType, spec);
+    }
+    const resolveSpec = (patch) => {
+        if (patch.nodeKey && specsByNodeKey.has(patch.nodeKey)) return specsByNodeKey.get(patch.nodeKey);
+        return specsByUniqueSubType.get(patch.subType) || null;
+    };
 
     for (const patch of patches) {
         if (!patch || typeof patch.op !== 'string') continue;
         if (patch.op === 'add_node') {
-            const spec = specsBySubType.get(patch.subType);
+            const spec = resolveSpec(patch);
             if (!spec) continue;
             const id = newId('node');
             if (patch.id) placeholders.set(patch.id, id);
@@ -208,6 +239,7 @@ export const applyWorkflowPatches = ({ currentNodes = [], currentEdges = [], pat
                 id,
                 type: spec.type,
                 subType: spec.subType,
+                nodeKey: spec.nodeKey || `${spec.type}:${spec.subType}`,
                 title: patch.title || spec.title,
                 description: patch.description || spec.description,
                 config: normalizeConfig(patch.config, spec.schema),
@@ -251,6 +283,7 @@ export const patchWorkflow = async ({ message, currentWorkflow, classification, 
     const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow/patcher.md'));
     if (!Array.isArray(value.patches)) throw new Error('Patcher returned an invalid patch list');
     const applied = applyWorkflowPatches({ currentNodes: currentWorkflow.nodes || [], currentEdges: currentWorkflow.edges || [], patches: value.patches, specs });
+    assertWorkflowDefinition(applied.nodes, applied.edges, Boolean(currentWorkflow.isActive));
     const originalNodeIds = new Set((currentWorkflow.nodes || []).map(node => node.id));
     const nextNodeIds = new Set(applied.nodes.map(node => node.id));
     const diff = {

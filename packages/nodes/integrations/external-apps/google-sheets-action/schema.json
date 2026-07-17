@@ -7,17 +7,66 @@
       "isConnection": true
     },
     {
-      "name": "actionUrl",
+      "name": "spreadsheetId",
       "type": "text",
-      "label": "Target URL/Resource",
-      "placeholder": "https://api.example.com"
+      "label": "Spreadsheet ID",
+      "required": true,
+      "placeholder": "ID from the Google Sheets URL"
+    },
+    {
+      "name": "range",
+      "type": "text",
+      "label": "Sheet Range",
+      "required": true,
+      "placeholder": "Sheet1!A1:D20"
+    },
+    {
+      "name": "operation",
+      "type": "select",
+      "label": "Operation",
+      "required": true,
+      "options": [
+        { "label": "Read", "value": "read" },
+        { "label": "Append Rows", "value": "append" },
+        { "label": "Update Range", "value": "update" },
+        { "label": "Clear Range", "value": "clear" }
+      ],
+      "defaultValue": "read"
+    },
+    {
+      "name": "values",
+      "type": "object",
+      "label": "Values (JSON rows)",
+      "placeholder": "[[\"Name\", \"Status\"], [\"Ada\", \"Active\"]]",
+      "defaultValue": []
+    },
+    {
+      "name": "valueInputOption",
+      "type": "select",
+      "label": "Input Mode",
+      "options": ["RAW", "USER_ENTERED"],
+      "defaultValue": "USER_ENTERED"
+    },
+    {
+      "name": "valueRenderOption",
+      "type": "select",
+      "label": "Read Value Mode",
+      "options": ["FORMATTED_VALUE", "UNFORMATTED_VALUE", "FORMULA"],
+      "defaultValue": "UNFORMATTED_VALUE"
+    },
+    {
+      "name": "includeValuesInResponse",
+      "type": "select",
+      "label": "Include Written Values",
+      "options": ["false", "true"],
+      "defaultValue": "false"
     }
   ],
   "outputs": [
     {
-      "name": "response",
+      "name": "outputData",
       "type": "object",
-      "label": "API Response",
+      "label": "Google Sheets Result",
       "isConnection": true
     }
   ]

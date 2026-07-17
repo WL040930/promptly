@@ -13,6 +13,8 @@ ui:
 
 # Merge Branches Node
 
+The node waits for every connected incoming branch to resolve. Branches skipped by a condition are excluded from the merged output. Use `object`, `array`, or `last` merge mode to control the output shape.
+
 ## When to use this node
 Combine paths back into one
 

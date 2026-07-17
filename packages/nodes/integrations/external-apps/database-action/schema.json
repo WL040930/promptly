@@ -7,17 +7,70 @@
       "isConnection": true
     },
     {
-      "name": "actionUrl",
+      "name": "resource",
+      "type": "select",
+      "label": "Promptly Resource",
+      "required": true,
+      "options": [
+        { "label": "Forms", "value": "forms" },
+        { "label": "Workflows", "value": "workflows" },
+        { "label": "Folders", "value": "folders" },
+        { "label": "Execution Logs", "value": "executionLogs" }
+      ],
+      "defaultValue": "forms"
+    },
+    {
+      "name": "operation",
+      "type": "select",
+      "label": "Operation",
+      "required": true,
+      "options": [
+        { "label": "Select", "value": "select" },
+        { "label": "Insert", "value": "insert" },
+        { "label": "Update", "value": "update" },
+        { "label": "Delete", "value": "delete" }
+      ],
+      "defaultValue": "select"
+    },
+    {
+      "name": "filters",
+      "type": "object",
+      "label": "Filters (JSON)",
+      "placeholder": "{ \"id\": \"form_...\" }",
+      "defaultValue": {}
+    },
+    {
+      "name": "data",
+      "type": "object",
+      "label": "Data (JSON)",
+      "placeholder": "{ \"title\": \"Updated title\" }",
+      "defaultValue": {}
+    },
+    {
+      "name": "limit",
+      "type": "number",
+      "label": "Read Limit",
+      "defaultValue": 50
+    },
+    {
+      "name": "orderBy",
       "type": "text",
-      "label": "Target URL/Resource",
-      "placeholder": "https://api.example.com"
+      "label": "Order Field",
+      "defaultValue": "updatedAt"
+    },
+    {
+      "name": "orderDirection",
+      "type": "select",
+      "label": "Order Direction",
+      "options": ["ASC", "DESC"],
+      "defaultValue": "DESC"
     }
   ],
   "outputs": [
     {
-      "name": "response",
+      "name": "outputData",
       "type": "object",
-      "label": "API Response",
+      "label": "Database Result",
       "isConnection": true
     }
   ]

@@ -5,6 +5,17 @@
       "type": "object",
       "label": "Input Data",
       "isConnection": true
+    },
+    {
+      "name": "mergeMode",
+      "type": "select",
+      "label": "Merge Mode",
+      "defaultValue": "object",
+      "options": [
+        { "label": "Object by Node ID", "value": "object" },
+        { "label": "Array", "value": "array" },
+        { "label": "Last Input", "value": "last" }
+      ]
     }
   ],
   "outputs": [

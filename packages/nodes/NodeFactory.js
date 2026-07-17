@@ -5,6 +5,11 @@ export class NodeFactory {
         const { id, type, subType, title, description, schema, config, position } = nodeData;
         
         const NodeClass = NodeRegistry.getClass(type, subType);
+        const definition = NodeRegistry.getDefinition?.(type, subType);
+
+        if (definition?.implementationStatus === 'disabled') {
+            throw new Error(`Node type/subType is not implemented: ${type}:${subType}`);
+        }
         
         if (NodeClass) {
             const node = new NodeClass(id, type, subType, config, position);

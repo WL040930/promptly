@@ -37,6 +37,10 @@ const ExecutionLog = sequelize.define(
         steps: {
             type: DataTypes.JSONB,
             defaultValue: []
+        },
+        output: {
+            type: DataTypes.JSONB,
+            allowNull: true
         }
     },
     {

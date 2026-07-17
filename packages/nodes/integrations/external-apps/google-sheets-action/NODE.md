@@ -14,8 +14,12 @@ ui:
 # Google Sheets Action Node
 
 ## When to use this node
-Create, Read, Update rows
+Read, append, update, or clear a Google Sheets A1 range using the authenticated user's Google connection.
 
 ## Configuration Schema
 The LLM must configure this node with the following JSON schema:
-- (Define schema here)
+- `spreadsheetId`: Google spreadsheet ID.
+- `range`: A1 notation such as `Sheet1!A1:D20`.
+- `operation`: `read`, `append`, `update`, or `clear`.
+- `values`: JSON rows for `append` and `update`, for example `[["Name", "Status"], ["Ada", "Active"]]`.
+- `valueInputOption`: `RAW` or `USER_ENTERED`.

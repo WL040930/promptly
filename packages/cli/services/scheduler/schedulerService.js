@@ -34,9 +34,11 @@ function register(workflowId, userId, cronExpression, timezone = 'UTC') {
         async () => {
             console.log(`[Scheduler] Firing workflow ${workflowId} (${cronExpression})`);
             try {
+                const timestamp = new Date().toISOString();
                 await executeWorkflow(workflowId, userId, {
-                    timestamp:      new Date().toISOString(),
+                    timestamp,
                     cronExpression,
+                    idempotencyKey: `${workflowId}:${timestamp}`
                 });
             } catch (err) {
                 console.error(`[Scheduler] Execution failed for workflow ${workflowId}:`, err.message);

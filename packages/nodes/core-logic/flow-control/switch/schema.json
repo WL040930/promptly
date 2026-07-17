@@ -23,6 +23,19 @@
       "type": "text",
       "label": "Match Case B",
       "defaultValue": ""
+    },
+    {
+      "name": "cases",
+      "type": "textarea",
+      "label": "Cases (JSON)",
+      "placeholder": "[{\"value\":\"support\",\"handle\":\"support\"}]",
+      "defaultValue": ""
+    },
+    {
+      "name": "defaultHandle",
+      "type": "text",
+      "label": "Default Route Handle",
+      "defaultValue": "default"
     }
   ],
   "outputs": [
