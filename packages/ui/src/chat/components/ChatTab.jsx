@@ -100,27 +100,42 @@ export default function ChatTab() {
     };
 
     const handleApply = async (message) => {
-        const payload = message.payload || {};
-        let result;
-        if (message.kind === 'form_proposal') {
-            const schema = payload.schema || {};
-            const data = { title: schema.title || 'New Promptly Form', description: schema.description || '', settings: schema.settings || {}, fields: schema.fields || [] };
-            const saved = payload.formId ? await updateFormMutation.mutateAsync({id: payload.formId, data}) : await createFormMutation.mutateAsync(data);
-            result = { formId: saved.id };
-        } else if (message.kind === 'workflow_diff') {
-            const workflowId = payload.workflowId || targetWorkflow?.id || targetWorkflowId;
-            if (!workflowId) throw new Error('Choose a workflow target before applying these changes.');
-            if (payload.baseWorkflowUpdatedAt && targetWorkflow?.updatedAt && payload.baseWorkflowUpdatedAt !== targetWorkflow.updatedAt) throw new Error('This workflow changed while the proposal was open. Generate the changes again.');
-            await updateWorkflowMutation.mutateAsync({id: workflowId, data: { nodes: payload.nodes, edges: payload.edges }});
-            result = { workflowId };
-        } else if (message.kind === 'workflow_proposal') {
-            const saved = await createWorkflowMutation.mutateAsync({ name: payload.name || 'New Workflow', status: 'Draft', iconColor: 'text-indigo-600', iconBg: 'bg-indigo-100', nodes: payload.nodes || [], edges: payload.edges || [] });
-            result = { workflowId: saved.id };
+        try {
+            const payload = message.payload || {};
+            let result;
+            if (message.kind === 'form_proposal') {
+                const schema = payload.schema || {};
+                const data = {
+                    title: schema.title || 'New Promptly Form',
+                    description: schema.description || '',
+                    settings: schema.settings || {},
+                    fields: schema.fields || [],
+                    ...(payload.baseFormUpdatedAt ? { baseFormUpdatedAt: payload.baseFormUpdatedAt } : {})
+                };
+                const saved = payload.formId ? await updateFormMutation.mutateAsync({id: payload.formId, data}) : await createFormMutation.mutateAsync(data);
+                result = { formId: saved.id };
+            } else if (message.kind === 'workflow_diff') {
+                const workflowId = payload.workflowId || targetWorkflow?.id || targetWorkflowId;
+                if (!workflowId) throw new Error('Choose a workflow target before applying these changes.');
+                if (payload.baseWorkflowUpdatedAt && targetWorkflow?.updatedAt && payload.baseWorkflowUpdatedAt !== targetWorkflow.updatedAt) throw new Error('This workflow changed while the proposal was open. Generate the changes again.');
+                await updateWorkflowMutation.mutateAsync({id: workflowId, data: { nodes: payload.nodes, edges: payload.edges }});
+                result = { workflowId };
+            } else if (message.kind === 'workflow_proposal') {
+                const saved = await createWorkflowMutation.mutateAsync({ name: payload.name || 'New Workflow', status: 'Draft', iconColor: 'text-indigo-600', iconBg: 'bg-indigo-100', nodes: payload.nodes || [], edges: payload.edges || [] });
+                result = { workflowId: saved.id };
+            }
+            setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied' } : item));
+            if (message.kind === 'form_proposal') await send(null, { type: 'form_saved', messageId: message.id, formId: result.formId });
+            else await send(null, { type: 'proposal_applied', messageId: message.id });
+            toast.success('Proposal applied.');
+        } catch (error) {
+            if (error.payload?.code === 'FORM_PROPOSAL_STALE') {
+                setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'stale' } : item));
+                toast.error('This suggestion is outdated. Generate a new one.');
+            } else {
+                toast.error(error.message || 'Failed to apply proposal.');
+            }
         }
-        setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied' } : item));
-        if (message.kind === 'form_proposal') await send(null, { type: 'form_saved', messageId: message.id, formId: result.formId });
-        else await send(null, { type: 'proposal_applied', messageId: message.id });
-        toast.success('Proposal applied.');
     };
 
     const handleIgnore = (message) => {

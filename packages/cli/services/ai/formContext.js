@@ -1,5 +1,7 @@
+import { FORM_AI_MEMORY_LIMIT as SHARED_FORM_AI_MEMORY_LIMIT } from '../../../shared/formContract.js';
+
 export const FORM_AI_HISTORY_LIMIT = 12;
-export const FORM_AI_MEMORY_LIMIT = 1500;
+export const FORM_AI_MEMORY_LIMIT = SHARED_FORM_AI_MEMORY_LIMIT;
 export const FORM_AI_CONTEXT_LIMIT = 12000;
 
 const clampText = (value, limit) => String(value || '').trim().slice(0, limit);
@@ -26,11 +28,10 @@ export const readFormMemory = (schema = {}) => {
 };
 
 export const compactFormSchema = (schema = {}) => {
-    const { id, title, description, fields = [], settings = {} } = schema;
+    const { title, description, fields = [], settings = {} } = schema;
     const { aiMemory: _aiMemory, ...formSettings } = settings;
 
     return {
-        ...(id ? { id } : {}),
         title: title || '',
         description: description || '',
         settings: formSettings,
@@ -77,12 +78,69 @@ export const buildPlannerContext = ({ schema, chatHistory = [], prompt }) => {
     ].join('\n');
 };
 
-export const buildWorkerContext = ({ schema, instructions }) => [
+export const buildWorkerContext = ({ schema, instructions, requirements = [] }) => [
     'Current Form Schema:',
     JSON.stringify(compactFormSchema(schema)),
     '',
+    'Existing Field IDs (these are the only valid targets for update/remove):',
+    JSON.stringify((Array.isArray(schema.fields) ? schema.fields : []).map(field => field.id).filter(Boolean)),
+    'The form ID is not a field ID. Never use it as a patch id.',
+    '',
+    'Planner Requirements:',
+    JSON.stringify(requirements),
+    '',
     'Instructions from Planner:',
     clampText(instructions, FORM_AI_CONTEXT_LIMIT)
+].join('\n');
+
+export const buildPlannerRepairContext = ({ response, issues }) => [
+    'Repair the planner response below.',
+    'Return a complete replacement planner response as JSON only.',
+    '',
+    'Validation Issues:',
+    clampText(issues, 6000),
+    '',
+    'Invalid Planner Response:',
+    clampText(response, FORM_AI_CONTEXT_LIMIT)
+].join('\n');
+
+const summarizePatch = (patch) => {
+    if (patch.op === 'add') return { patchId: patch.patchId, op: patch.op, field: patch.field };
+    if (patch.op === 'update') return { patchId: patch.patchId, op: patch.op, id: patch.id, label: patch.label, updates: patch.updates };
+    if (patch.op === 'remove') return { patchId: patch.patchId, op: patch.op, id: patch.id, label: patch.label };
+    if (patch.op === 'update_meta') return { patchId: patch.patchId, op: patch.op, updates: patch.updates };
+    if (patch.op === 'update_memory') return { patchId: patch.patchId, op: patch.op, memory: patch.updates?.memory || null };
+    return patch;
+};
+
+export const buildVerifierContext = ({ requirements = [], patches = [] }) => [
+    'Planner Requirements:',
+    JSON.stringify(requirements),
+    '',
+    'Generated Patches:',
+    JSON.stringify(patches.map(summarizePatch))
+].join('\n');
+
+export const buildWorkerRepairContext = ({ schema, requirements = [], response, issues }) => [
+    'Repair the worker proposal below.',
+    'Return a complete replacement proposal as JSON only.',
+    'Preserve the planner requirements and current form. Correct every listed issue.',
+    '',
+    'Current Form Schema:',
+    JSON.stringify(compactFormSchema(schema)),
+    '',
+    'Existing Field IDs (these are the only valid targets for update/remove):',
+    JSON.stringify((Array.isArray(schema.fields) ? schema.fields : []).map(field => field.id).filter(Boolean)),
+    'The form ID is not a field ID. Never use it as a patch id. If a requested field is not listed, use an add patch instead of update/remove.',
+    '',
+    'Planner Requirements:',
+    JSON.stringify(requirements),
+    '',
+    'Validation Issues:',
+    clampText(issues, 6000),
+    '',
+    'Invalid Worker Proposal:',
+    clampText(response, FORM_AI_CONTEXT_LIMIT)
 ].join('\n');
 
 export const getMemoryUpdate = (plannerResult = {}) => {

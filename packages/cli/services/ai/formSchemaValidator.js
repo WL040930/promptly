@@ -1,0 +1,236 @@
+import {
+    FORM_AI_MEMORY_LIMIT,
+    FORM_MAX_FIELDS,
+    FORM_MAX_PATCHES,
+    FORM_MAX_TEXT_LENGTH,
+    FORM_FIELD_TYPES,
+    FORM_PATCH_OPERATIONS,
+    isChoiceFieldType,
+    isFormFieldType,
+    isFormPatchOperation
+} from '../../../shared/formContract.js';
+
+const issue = (code, path, message) => ({ code, path, message });
+
+const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const validateText = (value, path, { required = false, max = FORM_MAX_TEXT_LENGTH } = {}) => {
+    if (value === undefined || value === null) {
+        return required ? [issue('REQUIRED', path, 'A value is required.')] : [];
+    }
+    if (typeof value !== 'string') return [issue('INVALID_TEXT', path, 'Expected a string.')];
+    if (value.length > max) return [issue('TEXT_TOO_LONG', path, `Text must be ${max} characters or fewer.`)];
+    return [];
+};
+
+const validateField = (field, path = 'field') => {
+    const issues = [];
+    if (!isPlainObject(field)) return [issue('INVALID_FIELD', path, 'Expected a field object.')];
+
+    issues.push(...validateText(field.id, `${path}.id`, { required: true, max: 100 }));
+    issues.push(...validateText(field.label, `${path}.label`, { required: true, max: 255 }));
+
+    if (!isFormFieldType(field.type)) {
+        issues.push(issue('INVALID_FIELD_TYPE', `${path}.type`, `Unsupported field type. Expected one of: ${FORM_FIELD_TYPES.join(', ')}.`));
+        return issues;
+    }
+
+    if (field.required !== undefined && typeof field.required !== 'boolean') {
+        issues.push(issue('INVALID_REQUIRED', `${path}.required`, 'Required must be a boolean.'));
+    }
+
+    if (isChoiceFieldType(field.type)) {
+        if (!Array.isArray(field.choices) || field.choices.length === 0) {
+            issues.push(issue('INVALID_CHOICES', `${path}.choices`, 'Choice fields require at least one choice.'));
+        } else {
+            field.choices.forEach((choice, index) => {
+                issues.push(...validateText(choice, `${path}.choices[${index}]`, { required: true, max: 255 }));
+            });
+        }
+    }
+
+    if (field.type === 'number') {
+        for (const key of ['min', 'max']) {
+            if (field[key] !== undefined && field[key] !== '' && Number.isNaN(Number(field[key]))) {
+                issues.push(issue('INVALID_NUMBER', `${path}.${key}`, `${key} must be numeric.`));
+            }
+        }
+        if (field.min !== undefined && field.max !== undefined && field.min !== '' && field.max !== '' && Number(field.min) > Number(field.max)) {
+            issues.push(issue('INVALID_RANGE', path, 'Minimum cannot be greater than maximum.'));
+        }
+    }
+
+    if (field.type === 'textarea' && field.rows !== undefined && (!Number.isInteger(field.rows) || field.rows < 1 || field.rows > 100)) {
+        issues.push(issue('INVALID_ROWS', `${path}.rows`, 'Rows must be an integer between 1 and 100.'));
+    }
+
+    if (field.type === 'rating' && field.maxRating !== undefined && (!Number.isInteger(field.maxRating) || field.maxRating < 1 || field.maxRating > 10)) {
+        issues.push(issue('INVALID_RATING', `${path}.maxRating`, 'Maximum rating must be an integer between 1 and 10.'));
+    }
+
+    return issues;
+};
+
+export const validateFormSchema = (schema = {}) => {
+    const issues = [];
+    if (!isPlainObject(schema)) return [issue('INVALID_SCHEMA', '', 'Expected a form schema object.')];
+
+    issues.push(...validateText(schema.title, 'title', { required: true, max: 255 }));
+    issues.push(...validateText(schema.description, 'description', { max: FORM_MAX_TEXT_LENGTH }));
+
+    if (!Array.isArray(schema.fields)) {
+        issues.push(issue('INVALID_FIELDS', 'fields', 'Fields must be an array.'));
+    } else {
+        if (schema.fields.length > FORM_MAX_FIELDS) {
+            issues.push(issue('TOO_MANY_FIELDS', 'fields', `A form cannot contain more than ${FORM_MAX_FIELDS} fields.`));
+        }
+        const ids = new Set();
+        schema.fields.forEach((field, index) => {
+            issues.push(...validateField(field, `fields[${index}]`));
+            if (field?.id) {
+                if (ids.has(field.id)) issues.push(issue('DUPLICATE_FIELD_ID', `fields[${index}].id`, `Field ID '${field.id}' is duplicated.`));
+                ids.add(field.id);
+            }
+        });
+    }
+
+    if (schema.settings !== undefined && !isPlainObject(schema.settings)) {
+        issues.push(issue('INVALID_SETTINGS', 'settings', 'Settings must be an object.'));
+    }
+
+    const memory = schema.settings?.aiMemory;
+    if (memory !== undefined && memory !== null) {
+        const summary = typeof memory === 'string' ? memory : memory?.summary;
+        issues.push(...validateText(summary, 'settings.aiMemory.summary', { required: true, max: FORM_AI_MEMORY_LIMIT }));
+    }
+
+    return issues;
+};
+
+export const validatePatchShape = (patch, path) => {
+    const issues = [];
+    if (!isPlainObject(patch)) return [issue('INVALID_PATCH', path, 'Expected a patch object.')];
+    if (!isFormPatchOperation(patch.op)) {
+        return [issue('INVALID_PATCH_OPERATION', `${path}.op`, `Unsupported operation. Expected one of: ${FORM_PATCH_OPERATIONS.join(', ')}.`)];
+    }
+
+    if (patch.op === 'add') {
+        issues.push(...validateField(patch.field, `${path}.field`));
+        if (patch.insertAfter !== undefined) issues.push(...validateText(patch.insertAfter, `${path}.insertAfter`, { max: 100 }));
+    }
+    if (patch.op === 'update' || patch.op === 'remove') {
+        issues.push(...validateText(patch.id, `${path}.id`, { required: true, max: 100 }));
+        if (patch.op === 'update' && !isPlainObject(patch.updates)) issues.push(issue('INVALID_UPDATES', `${path}.updates`, 'Update patches require an updates object.'));
+    }
+    if (patch.op === 'update_meta') {
+        if (!isPlainObject(patch.updates)) issues.push(issue('INVALID_METADATA_UPDATE', `${path}.updates`, 'Metadata updates require an updates object.'));
+        else {
+            const keys = Object.keys(patch.updates);
+            if (keys.some(key => !['title', 'description'].includes(key))) issues.push(issue('INVALID_METADATA_KEY', `${path}.updates`, 'Only title and description may be changed.'));
+            issues.push(...validateText(patch.updates.title, `${path}.updates.title`, { max: 255 }));
+            issues.push(...validateText(patch.updates.description, `${path}.updates.description`, { max: FORM_MAX_TEXT_LENGTH }));
+        }
+    }
+    if (patch.op === 'update_memory') {
+        const memory = patch.updates?.memory;
+        if (memory !== null && memory !== undefined) {
+            issues.push(...validateText(memory.summary, `${path}.updates.memory.summary`, { required: true, max: FORM_AI_MEMORY_LIMIT }));
+        }
+    }
+
+    return issues;
+};
+
+export const validateFormPatches = (currentSchema, patches = []) => {
+    const issues = [];
+    if (!Array.isArray(patches)) return [issue('INVALID_PATCHES', 'patches', 'Patches must be an array.')];
+    if (patches.length > FORM_MAX_PATCHES) issues.push(issue('TOO_MANY_PATCHES', 'patches', `A proposal cannot contain more than ${FORM_MAX_PATCHES} patches.`));
+
+    const fields = Array.isArray(currentSchema?.fields) ? currentSchema.fields : [];
+    const fieldIds = new Set(fields.map(field => field.id));
+    const addedIds = new Set();
+    const touchedIds = new Set();
+
+    patches.forEach((patch, index) => {
+        const path = `patches[${index}]`;
+        issues.push(...validatePatchShape(patch, path));
+        if (!patch || typeof patch !== 'object') return;
+
+        if (patch.op === 'add' && patch.field?.id) {
+            if (fieldIds.has(patch.field.id) || addedIds.has(patch.field.id)) issues.push(issue('DUPLICATE_FIELD_ID', `${path}.field.id`, `Field ID '${patch.field.id}' already exists.`));
+            addedIds.add(patch.field.id);
+        }
+        if ((patch.op === 'update' || patch.op === 'remove') && patch.id) {
+            if (patch.id === currentSchema?.id) {
+                issues.push(issue('FORM_ID_USED_AS_FIELD_ID', `${path}.id`, `Form ID '${patch.id}' cannot be used as a field ID. Use an existing fields[].id or an add patch.`));
+            } else if (!fieldIds.has(patch.id) && !addedIds.has(patch.id)) {
+                issues.push(issue('UNKNOWN_FIELD', `${path}.id`, `Field ID '${patch.id}' does not exist.`));
+            }
+            if (touchedIds.has(patch.id)) issues.push(issue('CONFLICTING_PATCHES', path, `Field '${patch.id}' is changed more than once in this proposal.`));
+            touchedIds.add(patch.id);
+        }
+    });
+
+    return issues;
+};
+
+export const summarizeValidationIssues = (issues = []) => issues.map((item) => {
+    if (typeof item === 'string') return item;
+    if (item?.requirementId) return `Requirement ${item.requirementId}: ${item.message}`;
+    return `${item?.code || 'INVALID_RESPONSE'} at ${item?.path || 'response'}: ${item?.message || 'Unknown validation issue.'}`;
+}).join('\n');
+
+export const validatePlannerResult = (result = {}) => {
+    const issues = [];
+    if (!isPlainObject(result)) return [issue('INVALID_PLANNER_RESPONSE', '', 'Planner response must be an object.')];
+    if (!['message', 'plan_complete'].includes(result.type)) issues.push(issue('INVALID_PLANNER_TYPE', 'type', 'Planner type must be message or plan_complete.'));
+
+    if (result.type === 'message') {
+        issues.push(...validateText(result.message, 'message', { required: true, max: 4000 }));
+        if (result.inputs !== undefined && !Array.isArray(result.inputs)) issues.push(issue('INVALID_CLARIFICATION_INPUTS', 'inputs', 'Clarification inputs must be an array.'));
+    }
+
+    if (result.type === 'plan_complete') {
+        issues.push(...validateText(result.summary, 'summary', { required: true, max: 4000 }));
+        issues.push(...validateText(result.instructionsForWorker, 'instructionsForWorker', { required: true, max: FORM_MAX_TEXT_LENGTH }));
+        if (!Array.isArray(result.requirements) || result.requirements.length === 0) {
+            issues.push(issue('INVALID_REQUIREMENTS', 'requirements', 'A completed plan must contain at least one requirement.'));
+        } else {
+            result.requirements.forEach((requirement, index) => {
+                if (!isPlainObject(requirement)) {
+                    issues.push(issue('INVALID_REQUIREMENT', `requirements[${index}]`, 'Requirement must be an object.'));
+                    return;
+                }
+                issues.push(...validateText(requirement.id, `requirements[${index}].id`, { required: true, max: 100 }));
+                issues.push(...validateText(requirement.description, `requirements[${index}].description`, { required: true, max: 1000 }));
+            });
+        }
+        if (result.memoryUpdate !== undefined) {
+            if (!isPlainObject(result.memoryUpdate) || !['none', 'replace', 'clear'].includes(result.memoryUpdate.action)) {
+                issues.push(issue('INVALID_MEMORY_ACTION', 'memoryUpdate.action', 'Memory action must be none, replace, or clear.'));
+            }
+            if (result.memoryUpdate.action === 'replace') issues.push(...validateText(result.memoryUpdate.summary, 'memoryUpdate.summary', { required: true, max: FORM_AI_MEMORY_LIMIT }));
+        }
+    }
+
+    return issues;
+};
+
+export const validateWorkerResult = (result = {}) => {
+    const issues = [];
+    if (!isPlainObject(result)) return [issue('INVALID_WORKER_RESPONSE', '', 'Worker response must be an object.')];
+    if (result.type !== 'proposal') issues.push(issue('INVALID_WORKER_TYPE', 'type', 'Worker type must be proposal.'));
+    issues.push(...validateText(result.message, 'message', { max: 4000 }));
+    if (!Array.isArray(result.patches)) issues.push(issue('INVALID_PATCHES', 'patches', 'Worker patches must be an array.'));
+    else result.patches.forEach((patch, index) => issues.push(...validatePatchShape(patch, `patches[${index}]`)));
+    return issues;
+};
+
+export const validateVerifierResult = (result = {}) => {
+    const issues = [];
+    if (!isPlainObject(result)) return [issue('INVALID_VERIFIER_RESPONSE', '', 'Verifier response must be an object.')];
+    if (!['pass', 'repair'].includes(result.status)) issues.push(issue('INVALID_VERIFIER_STATUS', 'status', 'Verifier status must be pass or repair.'));
+    if (result.issues !== undefined && !Array.isArray(result.issues)) issues.push(issue('INVALID_VERIFIER_ISSUES', 'issues', 'Verifier issues must be an array.'));
+    if (result.status === 'repair' && (!Array.isArray(result.issues) || result.issues.length === 0)) issues.push(issue('MISSING_VERIFIER_ISSUES', 'issues', 'A repair result must include at least one issue.'));
+    return issues;
+};

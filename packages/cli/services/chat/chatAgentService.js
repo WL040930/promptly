@@ -126,7 +126,8 @@ const formResult = async ({ session, userId, request, formId, continuation = nul
             action: formId ? 'edit_form' : 'create_form',
             formId: formId || null,
             schema: result.schema || currentSchema,
-            patches: result.patches || []
+            patches: result.patches || [],
+            ...(form ? { baseFormUpdatedAt: form.updatedAt } : {})
         },
         tokenUsage,
         proposalStatus: 'pending'

@@ -1,18 +1,36 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getFormChatHistory, addFormChatMessage, updateFormChatMessage } from '../../api/backend.js';
+import { acceptFormProposal, getFormChatHistory, addFormChatMessage, updateFormChatMessage } from '../../api/backend.js';
 import { generateFormFromPromptStream } from '../../api/aiStream.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useAIStream } from '../../context/AIStreamContext.jsx';
 
 const LIMIT = 50;
+const RETRYABLE_ERROR_CODES = new Set([
+    'FORM_AI_RATE_LIMITED',
+    'FORM_AI_PROVIDER_TIMEOUT',
+    'FORM_AI_STREAM_TIMEOUT',
+    'FORM_AI_STREAM_INCOMPLETE',
+    'FORM_AI_STREAM_START_FAILED'
+]);
 const defaultMessage = {
     id: 'init',
     sender: 'bot',
     text: "Hi! I'm your AI form designer. Describe what kind of form you want to build, or ask me to add specific fields.",
 };
 
-export const useFormAIAssistant = (form, onUpdateForm) => {
+const getErrorMetadata = (error) => {
+    const code = error?.code?.startsWith('FORM_AI_') ? error.code : 'FORM_AI_GENERATION_FAILED';
+    const issue = Array.isArray(error?.issues) ? error.issues[0] : null;
+
+    return {
+        code,
+        retryable: RETRYABLE_ERROR_CODES.has(code),
+        ...(typeof issue?.path === 'string' && issue.path ? { stage: issue.path } : {})
+    };
+};
+
+export const useFormAIAssistant = (form) => {
     const queryClient = useQueryClient();
     const toast = useToast();
     const [input, setInput] = useState('');
@@ -68,7 +86,10 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
                 botMsgData.proposal = {
                     schema: result.schema,
                     patches: result.patches,
-                    status: 'pending' 
+                    requirements: result.requirements,
+                    verification: result.verification,
+                    baseFormUpdatedAt: result.baseFormUpdatedAt || form.updatedAt,
+                    status: 'pending'
                 };
             } else if (result.type === 'message') {
                 if (result.inputs) botMsgData.options = result.inputs;
@@ -103,24 +124,49 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
 
             return { previousData, optimisticUserId };
         },
-        onError: (err, variables, context) => {
+        onError: async (err, variables, context) => {
             clearStreamState();
             if (context?.previousData) {
                 queryClient.setQueryData(queryKey, context.previousData);
             }
             
             // Show error message
-            toast.error('Failed to generate form with AI.');
+            const safeErrorMessage = err?.code?.startsWith('FORM_AI_')
+                ? err.message
+                : 'Failed to generate form with AI.';
+            toast.error(safeErrorMessage);
+
+            let persistedErrorMessage;
+            try {
+                persistedErrorMessage = await addFormChatMessage(form.id, {
+                    sender: 'bot',
+                    text: safeErrorMessage,
+                    isError: true,
+                    errorMetadata: getErrorMetadata(err)
+                });
+            } catch (persistError) {
+                console.error('Failed to persist form AI error message:', persistError);
+            }
+
             queryClient.setQueryData(queryKey, (old) => {
                 if (!old) return old;
                 const newPages = [...old.pages];
+                const currentMessages = [...newPages[0].messages];
+                if (variables && !currentMessages.some(message => message.id === context?.optimisticUserId)) {
+                    currentMessages.push({
+                        id: context?.optimisticUserId || `failed_${Date.now()}`,
+                        sender: 'user',
+                        text: variables
+                    });
+                }
                 newPages[0] = {
                     ...newPages[0],
-                    messages: [...newPages[0].messages, {
+                    messages: [...currentMessages, persistedErrorMessage || {
                         id: Date.now().toString(),
                         sender: 'bot',
-                        text: "Sorry, I encountered an error while generating the form. Please try again.",
-                        isError: true
+                        text: safeErrorMessage,
+                        isError: true,
+                        errorMetadata: getErrorMetadata(err)
                     }]
                 };
                 return { ...old, pages: newPages };
@@ -199,42 +245,61 @@ export const useFormAIAssistant = (form, onUpdateForm) => {
         sendMessageMutation.mutate(text);
     }, [form?.id, isTyping, sendMessageMutation]);
 
-    const handleAcceptProposal = useCallback(async (msgId, proposalSchema, unselectedIndices) => {
+    const handleAcceptProposal = useCallback(async (msgId, unselectedIndices = []) => {
         setAcceptingProposalId(msgId);
         try {
-            // Ensure all fields have an ID
-            const sanitizedFields = (proposalSchema.fields || []).map(field => {
-                if (!field.id) {
-                    return { ...field, id: `f_${Date.now()}_${Math.random().toString(36).slice(2, 6)}` };
-                }
-                return field;
-            });
-
-            await onUpdateForm({
-                title: proposalSchema.title,
-                description: proposalSchema.description,
-                settings: proposalSchema.settings,
-                fields: sanitizedFields
-            });
-
             const msg = rawMessages.find(m => m.id === msgId);
             const originalProposal = msg?.proposal || {};
+            const patches = originalProposal.patches || [];
+            const selectedPatchIds = patches
+                .map((patch, index) => ({ patch, index, patchId: patch.patchId || `patch_${index + 1}` }))
+                .filter(({ index }) => !unselectedIndices.includes(index))
+                .map(({ patchId }) => patchId);
 
-            updateProposalMutation.mutate({ 
-                msgId, 
-                originalProposal,
-                status: 'accepted', 
-                schema: proposalSchema,
-                unselectedIndices
+            const result = await acceptFormProposal(form.id, msgId, {
+                selectedPatchIds,
+                baseFormUpdatedAt: originalProposal.baseFormUpdatedAt || form.updatedAt
             });
+
+            queryClient.setQueryData(['forms'], old => old ? old.map(item => item.id === form.id ? result.form : item) : old);
+            queryClient.setQueryData(['forms', form.id], result.form);
+            queryClient.setQueryData(queryKey, old => {
+                if (!old) return old;
+                return {
+                    ...old,
+                    pages: old.pages.map(page => ({
+                        ...page,
+                        messages: page.messages.map(message => message.id === msgId
+                            ? { ...message, proposal: result.proposal }
+                            : message)
+                    }))
+                };
+            });
+
             toast.success('Form updated successfully!');
         } catch (error) {
             console.error('Error applying proposal:', error);
-            toast.error('Failed to apply changes.');
+            if (error.payload?.code === 'FORM_PROPOSAL_STALE') {
+                queryClient.setQueryData(queryKey, old => {
+                    if (!old) return old;
+                    return {
+                        ...old,
+                        pages: old.pages.map(page => ({
+                            ...page,
+                            messages: page.messages.map(message => message.id === msgId
+                                ? { ...message, proposal: { ...message.proposal, status: 'stale' } }
+                                : message)
+                        }))
+                    };
+                });
+            }
+            toast.error(error.payload?.code === 'FORM_PROPOSAL_STALE'
+                ? 'This suggestion is outdated. Generate a new one.'
+                : error.message || 'Failed to apply changes.');
         } finally {
             setAcceptingProposalId(null);
         }
-    }, [onUpdateForm, updateProposalMutation, toast, rawMessages]);
+    }, [form, queryClient, queryKey, toast, rawMessages]);
 
     const handleRejectProposal = useCallback((msgId) => {
         setRejectingProposalId(msgId);

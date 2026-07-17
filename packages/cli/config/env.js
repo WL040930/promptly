@@ -23,6 +23,17 @@ const getJwtSecret = () => {
     return secret;
 };
 
+const getAiTimeoutMs = () => {
+    const timeoutMs = Number(process.env.AI_TIMEOUT_MS || 30000);
+    return Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 30000;
+};
+
+const getOptionalPositiveInteger = (key) => {
+    if (!process.env[key]) return null;
+    const value = Number(process.env[key]);
+    return Number.isInteger(value) && value > 0 ? value : null;
+};
+
 const env = {
     app: {
         port: Number(process.env.PORT || 3000),
@@ -70,6 +81,14 @@ const env = {
         process.env.AI_PROVIDER === 'cerebras' ? 'llama3.1-8b' : 
         'gemini-3.5-flash'
     ),
+    aiVerifierModel: process.env.AI_VERIFIER_MODEL || process.env.AI_MODEL || (
+        process.env.AI_PROVIDER === 'openrouter' ? 'openai/gpt-4o-mini' :
+        process.env.AI_PROVIDER === 'groq' ? 'llama3-8b-8192' :
+        process.env.AI_PROVIDER === 'cerebras' ? 'llama3.1-8b' :
+        'gemini-3.5-flash'
+    ),
+    aiTimeoutMs: getAiTimeoutMs(),
+    aiMaxCompletionTokens: getOptionalPositiveInteger('AI_MAX_COMPLETION_TOKENS'),
     supabase: {
         url: requireEnv('SUPABASE_URL'),
         anonKey: requireEnv('SUPABASE_ANON_KEY')

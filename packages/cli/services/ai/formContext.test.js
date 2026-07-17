@@ -34,6 +34,7 @@ test('buildPlannerContext keeps recent conversation bounded and separates memory
     assert.match(context, /message-15/);
     assert.ok(context.length <= FORM_AI_CONTEXT_LIMIT + 2000);
     assert.doesNotMatch(JSON.stringify(compactFormSchema({ settings: { aiMemory: 'private' } })), /private/);
+    assert.doesNotMatch(JSON.stringify(compactFormSchema({ id: 'form_1', settings: {} })), /form_1/);
 });
 
 test('createMemoryPatch supports replacement, clearing, and legacy memory', () => {

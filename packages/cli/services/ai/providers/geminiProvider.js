@@ -9,7 +9,10 @@ export class GeminiProvider extends BaseAIProvider {
         if (!apiKey) {
             console.warn('Gemini API key is missing.');
         }
-        this.ai = new GoogleGenAI({ apiKey });
+        this.ai = new GoogleGenAI({
+            apiKey,
+            httpOptions: { timeout: env.aiTimeoutMs },
+        });
     }
 
     async generateContent(contents, options = {}) {

@@ -1,5 +1,6 @@
 import { BaseAIProvider } from './baseProvider.js';
 import env from '../../../config/env.js';
+import { fetchWithTimeout } from './requestUtils.js';
 
 export class GroqProvider extends BaseAIProvider {
     constructor() {
@@ -41,14 +42,14 @@ export class GroqProvider extends BaseAIProvider {
         }
 
         try {
-            const response = await fetch(`${this.baseUrl}/chat/completions`, {
+            const response = await fetchWithTimeout(`${this.baseUrl}/chat/completions`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${this.apiKey}`
                 },
                 body: JSON.stringify(body)
-            });
+            }, env.aiTimeoutMs);
 
             if (!response.ok) {
                 const errorText = await response.text();

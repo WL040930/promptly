@@ -10,7 +10,7 @@ const SUGGESTIONS = [
     "A product feedback questionnaire"
 ];
 
-const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
+const FormAIAssistant = ({ form, accentColor = '#4f46e5' }) => {
     const {
         messages,
         input,
@@ -25,7 +25,7 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
         acceptingProposalId,
         rejectingProposalId,
         progressLabel
-    } = useFormAIAssistant(form, onUpdateForm);
+    } = useFormAIAssistant(form);
 
     const [previewProposal, setPreviewProposal] = useState(null);
 
@@ -40,8 +40,8 @@ const FormAIAssistant = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
                 hasMore={hasMore}
                 loadMoreHistory={loadMoreHistory}
                 handleSend={handleSend}
-                handleApply={(msg, filteredSchema, unselectedIndices) => {
-                    handleAcceptProposal(msg.id, filteredSchema || msg.proposal?.schema, unselectedIndices);
+                handleApply={(msg, _filteredSchema, unselectedIndices) => {
+                    handleAcceptProposal(msg.id, unselectedIndices);
                     setPreviewProposal(null);
                 }}
                 handleIgnore={(msg) => {

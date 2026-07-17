@@ -3,7 +3,7 @@ import asyncHandler from '../../utils/asyncHandler.js';
 import { requireAuth } from '../../middleware/authMiddleware.js';
 import { 
     getForms, createForm, updateForm, deleteForm, submitFormResponse, getFormResponses, getPublicForm, generateForm,
-    getFormChatHistory, addFormChatMessage, updateFormChatMessage
+    getFormChatHistory, addFormChatMessage, updateFormChatMessage, acceptFormProposal
 } from '../../controllers/forms/formController.js';
 
 const router = Router();
@@ -21,6 +21,7 @@ router.post('/generate', asyncHandler(generateForm));
 router.put('/:id', asyncHandler(updateForm));
 router.delete('/:id', asyncHandler(deleteForm));
 router.get('/:formId/responses', asyncHandler(getFormResponses));
+router.post('/:formId/ai-proposals/:messageId/accept', asyncHandler(acceptFormProposal));
 
 // Chat History routes
 router.get('/:formId/chat', asyncHandler(getFormChatHistory));

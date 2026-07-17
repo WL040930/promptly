@@ -1,3 +1,5 @@
+import { FORM_FIELD_TYPES } from '../../../../shared/formContract.js';
+
 /**
  * Field type registry — single source of truth for all form field types.
  * Each entry defines: label, icon SVG, category, and default field config.
@@ -105,7 +107,7 @@ export const FIELD_TYPES = {
 };
 
 /** Get a flat array of all type keys */
-export const ALL_TYPE_KEYS = Object.keys(FIELD_TYPES);
+export const ALL_TYPE_KEYS = FORM_FIELD_TYPES.filter(type => FIELD_TYPES[type]);
 
 /** Get types grouped by category */
 export const getTypesByCategory = () => {

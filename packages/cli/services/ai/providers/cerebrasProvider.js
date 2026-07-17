@@ -11,11 +11,18 @@ export class CerebrasProvider extends BaseAIProvider {
         }
         this.client = new Cerebras({
             apiKey: this.apiKey,
+            timeout: env.aiTimeoutMs,
+            maxRetries: 0,
         });
     }
 
     async generateContent(contents, options = {}) {
-        const { systemInstruction, responseMimeType, model = 'llama3.1-8b' } = options;
+        const {
+            systemInstruction,
+            responseMimeType,
+            model = 'llama3.1-8b',
+            maxCompletionTokens
+        } = options;
 
         const messages = [];
         if (systemInstruction) {
@@ -42,9 +49,14 @@ export class CerebrasProvider extends BaseAIProvider {
         if (responseMimeType === 'application/json') {
             body.response_format = { type: 'json_object' };
         }
+        if (Number.isInteger(maxCompletionTokens) && maxCompletionTokens > 0) {
+            body.max_completion_tokens = maxCompletionTokens;
+        }
 
         try {
-            const response = await this.client.chat.completions.create(body);
+            const response = await this.client.chat.completions.create(body, {
+                timeout: env.aiTimeoutMs,
+            });
 
             const text = response.choices?.[0]?.message?.content || '';
             const usage = response.usage;

@@ -113,10 +113,6 @@ const FormsTab = () => {
         updateFormMutation.mutate({ id: activeFormId, data: updates });
     }, [activeFormId, updateFormMutation]);
 
-    const updateFormAndWait = useCallback((updates) => {
-        return updateFormMutation.mutateAsync({ id: activeFormId, data: updates });
-    }, [activeFormId, updateFormMutation]);
-
     const handleCreateForm = () => {
         setIsCreatingForm(true);
         const newFormPayload = {
@@ -512,11 +508,10 @@ const FormsTab = () => {
                             </div>
                         ) : activeSubTab === 'ai' ? (
                             <div className="h-full">
-                                <FormAIAssistant 
-                                    form={activeForm} 
-                                    onUpdateForm={updateFormAndWait}
-                                    accentColor={accentColor} 
-                                />
+                                    <FormAIAssistant
+                                        form={activeForm}
+                                        accentColor={accentColor}
+                                    />
                             </div>
                         ) : activeSubTab === 'responses' ? (
                             <div className="h-full overflow-y-auto">

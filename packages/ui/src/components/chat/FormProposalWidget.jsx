@@ -13,6 +13,7 @@ export default function FormProposalWidget({
 }) {
     const isAccepted = status === 'Applied' || status === 'accepted';
     const isRejected = status === 'Ignored' || status === 'rejected';
+    const isStale = status === 'stale';
 
     // Track which patches are checked by the user
     const [selectedPatches, setSelectedPatches] = useState({});
@@ -33,7 +34,7 @@ export default function FormProposalWidget({
     }, [proposal]);
 
     const handleTogglePatch = (idx) => {
-        if (isAccepted || isRejected) return;
+        if (isAccepted || isRejected || isStale) return;
         setSelectedPatches(prev => ({ ...prev, [idx]: !prev[idx] }));
     };
 
@@ -75,11 +76,8 @@ export default function FormProposalWidget({
                         filteredSchema.description = patch.originalMeta.description;
                     }
                 } else if (patch.op === 'update_memory') {
-                    if (patch.updates?.memory) {
-                        filteredSchema.settings.aiMemory = patch.updates.memory;
-                    } else {
-                        delete filteredSchema.settings.aiMemory;
-                    }
+                    if (patch.originalMemory) filteredSchema.settings.aiMemory = patch.originalMemory;
+                    else delete filteredSchema.settings.aiMemory;
                 }
             }
         }
@@ -165,7 +163,7 @@ export default function FormProposalWidget({
                                             type="checkbox" 
                                             checked={!!isChecked} 
                                             onChange={() => handleTogglePatch(idx)}
-                                            disabled={isAccepted || isRejected}
+                                            disabled={isAccepted || isRejected || isStale}
                                             className="w-3.5 h-3.5 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 disabled:opacity-50"
                                         />
                                         <span className="flex-1">
@@ -183,7 +181,7 @@ export default function FormProposalWidget({
                                             type="checkbox" 
                                             checked={!!isChecked} 
                                             onChange={() => handleTogglePatch(idx)}
-                                            disabled={isAccepted || isRejected}
+                                            disabled={isAccepted || isRejected || isStale}
                                             className="w-3.5 h-3.5 text-red-600 rounded border-slate-300 focus:ring-red-500 disabled:opacity-50"
                                         />
                                         <span className="flex-1">
@@ -201,7 +199,7 @@ export default function FormProposalWidget({
                                             type="checkbox" 
                                             checked={!!isChecked} 
                                             onChange={() => handleTogglePatch(idx)}
-                                            disabled={isAccepted || isRejected}
+                                            disabled={isAccepted || isRejected || isStale}
                                             className="w-3.5 h-3.5 text-amber-600 rounded border-slate-300 focus:ring-amber-500 disabled:opacity-50"
                                         />
                                         <span className="flex-1">
@@ -220,7 +218,7 @@ export default function FormProposalWidget({
                                             type="checkbox"
                                             checked={!!isChecked}
                                             onChange={() => handleTogglePatch(idx)}
-                                            disabled={isAccepted || isRejected}
+                                            disabled={isAccepted || isRejected || isStale}
                                             className="w-3.5 h-3.5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 disabled:opacity-50"
                                         />
                                         <span className="flex-1">
@@ -245,6 +243,10 @@ export default function FormProposalWidget({
                 <div className="flex items-center gap-1.5 justify-center py-1.5 px-3 bg-slate-100 border border-slate-200 text-slate-500 rounded-lg text-xs font-semibold">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     Proposal Ignored
+                </div>
+            ) : isStale ? (
+                <div className="flex items-center justify-center py-1.5 px-3 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-xs font-semibold">
+                    This suggestion is outdated. Generate a new one.
                 </div>
             ) : (
                 <div className="flex gap-2">

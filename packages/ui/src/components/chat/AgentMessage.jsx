@@ -3,11 +3,56 @@ import Button from '../ui/Button.jsx';
 import FormProposalWidget from './FormProposalWidget.jsx';
 import MarkdownRenderer from '../ui/MarkdownRenderer.jsx';
 import MessageOptionsWidget from './MessageOptionsWidget.jsx';
+import { Zap } from 'lucide-react';
 
 const statusLabel = (status) => {
     if (status === 'applied') return 'Applied';
     if (status === 'ignored') return 'Ignored';
     return status;
+};
+
+const formatTokens = (value) => (value || 0).toLocaleString();
+
+const TokenUsageBreakdown = ({ tokenUsage }) => {
+    const stages = Object.entries(tokenUsage.stages || {});
+
+    return (
+        <div className="relative flex justify-end px-3.5 pb-3.5">
+            <span
+                tabIndex="0"
+                aria-label="Show token usage breakdown"
+                className="group relative inline-flex cursor-help items-center text-[10px] font-medium text-slate-400 outline-none focus-visible:text-slate-600"
+            >
+                <Zap size={11} strokeWidth={2.5} className="mr-1 text-yellow-500" />
+                {formatTokens(tokenUsage.totalTokens)} tokens
+                <span
+                    role="tooltip"
+                    className="pointer-events-none absolute bottom-full right-0 z-50 mb-2 hidden w-64 rounded-lg border border-slate-200 bg-white p-3 text-left text-[11px] text-slate-600 shadow-xl group-hover:block group-focus:block"
+                >
+                    <span className="mb-2 block text-xs font-semibold text-slate-800">Token usage</span>
+                    <span className="flex items-center justify-between">
+                        <span>Prompt</span>
+                        <span className="font-medium text-slate-800">{formatTokens(tokenUsage.promptTokens)}</span>
+                    </span>
+                    <span className="flex items-center justify-between">
+                        <span>Output</span>
+                        <span className="font-medium text-slate-800">{formatTokens(tokenUsage.completionTokens)}</span>
+                    </span>
+                    {stages.length > 0 && (
+                        <span className="mt-2 block border-t border-slate-100 pt-2">
+                            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Stages</span>
+                            {stages.map(([stage, usage]) => (
+                                <span key={stage} className="flex items-center justify-between gap-3 py-0.5">
+                                    <span className="truncate">{stage}</span>
+                                    <span className="shrink-0 font-medium text-slate-800">{formatTokens(usage.totalTokens)}</span>
+                                </span>
+                            ))}
+                        </span>
+                    )}
+                </span>
+            </span>
+        </div>
+    );
 };
 
 export default function AgentMessage({ message, onApply, onIgnore, onOption, isTyping, isAccepting, isRejecting }) {
@@ -28,19 +73,11 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
                     {message.sender === 'user' ? 'You' : 'Promptly AI'}
                 </span>
-                <div className={`w-full min-w-0 overflow-x-auto rounded-2xl p-3.5 text-sm leading-relaxed whitespace-pre-wrap ${message.sender === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'}`}>
-                    <MarkdownRenderer content={message.text} inverted={message.sender === 'user'} />
-                    {message.tokenUsage && (
-                        <div
-                            className="mt-2 text-[10px] text-slate-400 font-medium flex items-center justify-end cursor-help"
-                            title={`Prompt: ${message.tokenUsage.promptTokens} | Output: ${message.tokenUsage.completionTokens}`}
-                        >
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="mr-1 text-yellow-500">
-                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                            </svg>
-                            {message.tokenUsage.totalTokens?.toLocaleString()} tokens
-                        </div>
-                    )}
+                <div className={`relative w-full min-w-0 rounded-2xl ${message.sender === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'}`}>
+                    <div className="w-full min-w-0 overflow-x-auto p-3.5 text-sm leading-relaxed whitespace-pre-wrap">
+                        <MarkdownRenderer content={message.text} inverted={message.sender === 'user'} />
+                    </div>
+                    {message.tokenUsage && <TokenUsageBreakdown tokenUsage={message.tokenUsage} />}
                 </div>
 
                 {kind === 'clarification' && options.length > 0 && (
