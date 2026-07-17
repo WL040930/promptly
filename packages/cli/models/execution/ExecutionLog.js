@@ -1,5 +1,5 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../db/index.js';
+import sequelize from '../../db/index.js';
 import crypto from 'crypto';
 
 const ExecutionLog = sequelize.define(
@@ -47,10 +47,9 @@ const ExecutionLog = sequelize.define(
         tableName: 'execution_logs',
         timestamps: true,
         indexes: [
-            { fields: ['userId'] },
-            { fields: ['userId', 'time'] },
-            { fields: ['userId', 'status'] },
-            { fields: ['workflowId', 'time'] }
+            { fields: ['userId', 'time'], name: 'execution_logs_user_time' },
+            { fields: ['userId', 'status', 'time'], name: 'execution_logs_user_status_time' },
+            { fields: ['workflowId', 'time'], name: 'execution_logs_workflow_time' }
         ]
     }
 );

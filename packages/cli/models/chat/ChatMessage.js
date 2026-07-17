@@ -1,5 +1,5 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../db/index.js';
+import sequelize from '../../db/index.js';
 import crypto from 'crypto';
 
 /**
@@ -44,8 +44,7 @@ const ChatMessage = sequelize.define(
         tableName: 'chat_messages',
         timestamps: true,
         indexes: [
-            { fields: ['sessionId'] },
-            { fields: ['sessionId', 'createdAt'] }
+            { fields: ['sessionId', 'createdAt'], name: 'chat_messages_session_created' }
         ]
     }
 );

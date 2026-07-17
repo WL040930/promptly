@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { BaseNode } from '../../../BaseNode.js';
-import User from '../../../../cli/models/User.js';
-import EmailDelivery from '../../../../cli/models/EmailDelivery.js';
+import User from '../../../../cli/models/core/User.js';
+import EmailDelivery from '../../../../cli/models/execution/EmailDelivery.js';
 import { sendEmail } from '../../../../cli/utils/email.js';
 import { OAuth2Client } from 'google-auth-library';
 import env from '../../../../cli/config/env.js';

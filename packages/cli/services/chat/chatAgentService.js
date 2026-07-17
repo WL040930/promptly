@@ -1,4 +1,4 @@
-import { ChatSession, ChatMessage, Workflow, Form, ExecutionLog } from '../../models/index.js';
+import { ChatSession, ChatMessage, Workflow, Form, ExecutionLog, AgentRun } from '../../models/index.js';
 import { generateFormFromPrompt } from '../ai/aiFormsService.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import {
@@ -11,6 +11,7 @@ import {
 import { getAIProvider } from '../ai/aiService.js';
 import env from '../../config/env.js';
 import { mergeAgentContext, resolveResource } from './resourceResolver.js';
+import { processAgenticTurn, resumeAgentAfterForm } from '../agent/agentOrchestrator.js';
 
 const tokenPayload = (...usages) => {
     const stage1 = usages[0] || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -181,6 +182,14 @@ const formResult = async ({ session, userId, request, formId, continuation = nul
 export const applyEvent = async (session, userId, event) => {
     if (!event?.type) return null;
     const state = session.agentState || {};
+    if (event.type === 'form_saved' && event.runId) {
+        const run = await AgentRun.findOne({ where: { id: event.runId, sessionId: session.id, userId } });
+        if (!run) return { reply: await saveReply(session, { text: 'That agent run is no longer available.', kind: 'error' }) };
+        if (event.messageId) await ChatMessage.update({ proposalStatus: 'applied' }, { where: { id: event.messageId, sessionId: session.id } });
+        const resumed = await resumeAgentAfterForm({ run, session, userId, formId: event.formId });
+        await session.update({ agentState: { status: 'awaiting_agent_approval', runId: run.id } });
+        return { reply: resumed.reply, tokenUsage: resumed.tokenUsage };
+    }
     if (event.type === 'workflow_target_selected') {
         const workflow = await workflowForRequest(userId, event.workflowId);
         const request = state.continuation?.request;
@@ -459,6 +468,10 @@ const agentTools = [
 
 export const processChatMessage = async ({ session, userId, context = {} }) => {
     const effectiveContext = mergeAgentContext(session.agentContext || {}, context);
+    const latestUserMessage = await ChatMessage.findOne({ where: { sessionId: session.id, sender: 'user' }, order: [['createdAt', 'DESC']] });
+    const agenticResult = await processAgenticTurn({ session, userId, message: latestUserMessage?.text || '', context: effectiveContext });
+    if (agenticResult.handled) return { replyObj: agenticResult.replyObj, totalTokenUsage: agenticResult.totalTokenUsage };
+
     const history = await ChatMessage.findAll({
         where: { sessionId: session.id },
         order: [['createdAt', 'ASC']],

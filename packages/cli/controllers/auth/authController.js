@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { Op } from 'sequelize';
-import User from '../../models/User.js';
+import User from '../../models/core/User.js';
 import env from '../../config/env.js';
 import { normalizeEmail, emailPattern, passwordPattern } from '../../utils/validators.js';
 import { sendEmail } from '../../utils/email.js';

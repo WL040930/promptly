@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useToast } from '../../context/ToastContext.jsx';
-import { useChatSession, useChatSessions, useDeleteChatSession, useSendChatMessage } from '../../api/hooks/useChat.js';
+import { useApproveAgentRun, useChatSession, useChatSessions, useDeleteChatSession, useRejectAgentRun, useSendChatMessage } from '../../api/hooks/useChat.js';
 import { useCreateForm, useForm, useUpdateForm } from '../../api/hooks/useForms.js';
 import { useCreateWorkflow, useUpdateWorkflow, useWorkflow } from '../../api/hooks/useWorkflows.js';
 import Button from '../../components/ui/Button.jsx';
@@ -36,6 +36,8 @@ export default function ChatTab() {
     const { data: targetWorkflow } = useWorkflow(targetWorkflowId);
     const { data: previewForm } = useForm(previewFormId);
     const sendChatMessageMutation = useSendChatMessage();
+    const approveAgentRunMutation = useApproveAgentRun();
+    const rejectAgentRunMutation = useRejectAgentRun();
     const deleteChatSessionMutation = useDeleteChatSession();
     const createFormMutation = useCreateForm();
     const updateFormMutation = useUpdateForm();
@@ -102,6 +104,18 @@ export default function ChatTab() {
     const handleApply = async (message) => {
         try {
             const payload = message.payload || {};
+            if (payload.runId) {
+                const result = await approveAgentRunMutation.mutateAsync({
+                    runId: payload.runId,
+                    idempotencyKey: `${payload.runId}:${message.id}`
+                });
+                setMessages(previous => [
+                    ...previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied' } : item),
+                    ...(result.followUpReply ? [result.followUpReply] : [])
+                ]);
+                toast.success(result.followUpReply ? 'Form applied. Workflow proposal is ready.' : 'Proposal applied.');
+                return;
+            }
             let result;
             if (message.kind === 'form_proposal') {
                 const schema = payload.schema || {};
@@ -140,6 +154,10 @@ export default function ChatTab() {
 
     const handleIgnore = (message) => {
         setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'ignored' } : item));
+        if (message.payload?.runId) {
+            rejectAgentRunMutation.mutate(message.payload.runId);
+            return;
+        }
         send(null, { type: 'proposal_ignored', messageId: message.id });
     };
 

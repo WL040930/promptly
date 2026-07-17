@@ -1,5 +1,5 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../db/index.js';
+import sequelize from '../../db/index.js';
 import crypto from 'crypto';
 
 const FormResponse = sequelize.define(
@@ -25,12 +25,7 @@ const FormResponse = sequelize.define(
         tableName: 'form_responses',
         timestamps: true,
         indexes: [
-            { fields: ['formId'] },
-            { fields: ['formId', 'createdAt'] },
-            {
-                fields: ['responseData'],
-                using: 'gin'
-            }
+            { fields: ['formId', 'createdAt'], name: 'form_responses_form_created' }
         ]
     }
 );

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { deleteChatSession, getChatSession, getChatSessions, sendChatMessage } from '../backend.js';
+import { approveAgentRun, deleteChatSession, getChatSession, getChatSessions, rejectAgentRun, sendChatMessage } from '../backend.js';
 
 const CHAT_SESSIONS_KEY = ['chatSessions'];
 
@@ -41,5 +41,25 @@ export function useDeleteChatSession() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CHAT_SESSIONS_KEY });
         }
+    });
+}
+
+export function useApproveAgentRun() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ runId, idempotencyKey }) => approveAgentRun(runId, idempotencyKey),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: CHAT_SESSIONS_KEY });
+            queryClient.invalidateQueries({ queryKey: ['forms'] });
+            queryClient.invalidateQueries({ queryKey: ['workflows'] });
+        }
+    });
+}
+
+export function useRejectAgentRun() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: rejectAgentRun,
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: CHAT_SESSIONS_KEY })
     });
 }

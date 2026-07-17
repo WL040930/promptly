@@ -59,3 +59,10 @@ export const sendChatMessage = (sessionId, message, context = {}, event = null) 
 export const getChatSession = (sessionId) => apiRequest(`/api/chat/session/${sessionId}`);
 export const updateChatSession = (sessionId, title) => apiRequest(`/api/chat/session/${sessionId}`, { method: 'PUT', body: JSON.stringify({ title }) });
 export const deleteChatSession = (sessionId) => apiRequest(`/api/chat/session/${sessionId}`, { method: 'DELETE' });
+export const getAgentRun = (runId) => apiRequest(`/api/chat/agent-runs/${runId}`);
+export const approveAgentRun = (runId, idempotencyKey) => apiRequest(`/api/chat/agent-runs/${runId}/approve`, {
+    method: 'POST',
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: JSON.stringify({ idempotencyKey })
+});
+export const rejectAgentRun = (runId) => apiRequest(`/api/chat/agent-runs/${runId}/reject`, { method: 'POST' });

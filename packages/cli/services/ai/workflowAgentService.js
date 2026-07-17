@@ -80,7 +80,9 @@ export const classifyRequest = async ({ message, snapshot }) => {
         return matches.length === 1 ? [matches[0].nodeKey] : [];
     }))];
     if (value.action === 'create_workflow' && selectedNodeKeys.length === 0) {
-        selectedNodeKeys.push(...knownNodeKeys);
+        const error = new Error('The workflow request did not identify any supported nodes.');
+        error.code = 'WORKFLOW_NODE_SELECTION_REQUIRED';
+        throw error;
     }
 
     return {

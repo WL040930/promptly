@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import Workflow from '../../models/Workflow.js';
+import Workflow from '../../models/workflows/Workflow.js';
 import { executeWorkflow } from '../engine/executionEngine.js';
 
 /**

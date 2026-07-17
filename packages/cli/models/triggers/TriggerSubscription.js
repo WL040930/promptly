@@ -1,5 +1,5 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../db/index.js';
+import sequelize from '../../db/index.js';
 import crypto from 'node:crypto';
 
 const TriggerSubscription = sequelize.define(
@@ -30,8 +30,9 @@ const TriggerSubscription = sequelize.define(
         timestamps: true,
         indexes: [
             { unique: true, fields: ['workflowId', 'nodeId'], name: 'trigger_subscription_workflow_node' },
-            { fields: ['userId', 'provider', 'status'] },
-            { fields: ['provider', 'expiresAt'] }
+            { fields: ['userId', 'provider', 'status'], name: 'trigger_subscriptions_user_provider_status' },
+            { fields: ['provider', 'externalSubscriptionId', 'status'], name: 'trigger_subscriptions_external_lookup' },
+            { fields: ['status', 'expiresAt'], name: 'trigger_subscriptions_expiry' }
         ]
     }
 );

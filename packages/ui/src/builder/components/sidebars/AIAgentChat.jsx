@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useSendChatMessage } from '../../../api/hooks/useChat.js';
+import { useApproveAgentRun, useRejectAgentRun, useSendChatMessage } from '../../../api/hooks/useChat.js';
 import GenericChatWidget from '../../../components/chat/GenericChatWidget.jsx';
 
 const SUGGESTIONS = ['Add a Slack notification step', 'Filter for high urgency tickets', 'Add GPT response step to emails', 'Store results in database'];
@@ -18,6 +18,8 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
     const [progressLabel, setProgressLabel] = useState('Scanning node library');
     const [sessionId, setSessionId] = useState(null);
     const sendChatMessageMutation = useSendChatMessage();
+    const approveAgentRunMutation = useApproveAgentRun();
+    const rejectAgentRunMutation = useRejectAgentRun();
 
     const appendReply = (response) => {
         if (response?.reply) setMessages(previous => [...previous, response.reply]);
@@ -53,6 +55,17 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
 
     const handleApply = async (message) => {
         try {
+            if (message.payload?.runId) {
+                const result = await approveAgentRunMutation.mutateAsync({
+                    runId: message.payload.runId,
+                    idempotencyKey: `${message.payload.runId}:${message.id}`
+                });
+                setMessages(previous => [
+                    ...previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied' } : item),
+                    ...(result.followUpReply ? [result.followUpReply] : [])
+                ]);
+                return;
+            }
             const result = await onApplyProposal?.(message);
             setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied' } : item));
             if (message.kind === 'form_proposal') {
@@ -67,6 +80,10 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
 
     const handleIgnore = (message) => {
         setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'ignored' } : item));
+        if (message.payload?.runId) {
+            rejectAgentRunMutation.mutate(message.payload.runId);
+            return;
+        }
         send(null, { type: 'proposal_ignored', messageId: message.id });
     };
 

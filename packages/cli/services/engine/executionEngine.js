@@ -1,5 +1,5 @@
-import Workflow from '../../models/Workflow.js';
-import ExecutionLog from '../../models/ExecutionLog.js';
+import Workflow from '../../models/workflows/Workflow.js';
+import ExecutionLog from '../../models/execution/ExecutionLog.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { NodeFactory } from '../../../nodes/NodeFactory.js';
 import { validateWorkflow } from './workflowValidator.js';

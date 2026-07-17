@@ -1,5 +1,5 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../db/index.js';
+import sequelize from '../../db/index.js';
 import crypto from 'crypto';
 
 const Workflow = sequelize.define(
@@ -47,10 +47,11 @@ const Workflow = sequelize.define(
         tableName: 'workflows',
         timestamps: true,
         indexes: [
-            { fields: ['userId'] },
-            { fields: ['userId', 'isActive'] },
-            { fields: ['isActive'] },
-            { fields: ['folderId'] }
+            { fields: ['userId', 'updatedAt'], name: 'workflows_user_updated' },
+            { fields: ['userId', 'isActive'], name: 'workflows_user_active' },
+            { fields: ['userId', 'status'], name: 'workflows_user_status' },
+            { fields: ['isActive'], name: 'workflows_active' },
+            { fields: ['folderId'], name: 'workflows_folder' }
         ]
     }
 );

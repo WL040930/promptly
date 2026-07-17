@@ -48,6 +48,10 @@ export default function MessageOptionsWidget({ options, onSend, isTyping }) {
         if (Array.isArray(val)) return val.length > 0;
         return typeof val === 'string' && val.trim().length > 0;
     });
+    const hasDirectChoice = (options || []).some(input =>
+        input.type === 'workflow_choice' || input.type === 'form_choice'
+    );
+
     return (
         <div className="mt-2 flex flex-col gap-4 w-full max-w-[90%] bg-slate-50 border border-slate-200 p-3 rounded-xl">
             {(options || []).map((input, idx) => {

@@ -1,5 +1,5 @@
 import { OAuth2Client } from 'google-auth-library';
-import User from '../../models/User.js';
+import User from '../../models/core/User.js';
 import env from '../../config/env.js';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';

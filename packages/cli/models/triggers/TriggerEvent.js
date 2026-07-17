@@ -1,5 +1,5 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../db/index.js';
+import sequelize from '../../db/index.js';
 import crypto from 'node:crypto';
 
 const TriggerEvent = sequelize.define(
@@ -33,8 +33,8 @@ const TriggerEvent = sequelize.define(
         timestamps: true,
         indexes: [
             { unique: true, fields: ['subscriptionId', 'externalEventId'], name: 'trigger_event_deduplication' },
-            { fields: ['status', 'availableAt'] },
-            { fields: ['workflowId', 'createdAt'] }
+            { fields: ['status', 'availableAt', 'createdAt'], name: 'trigger_events_queue_claim' },
+            { fields: ['workflowId', 'createdAt'], name: 'trigger_events_workflow_created' }
         ]
     }
 );

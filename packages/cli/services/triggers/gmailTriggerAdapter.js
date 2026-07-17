@@ -1,6 +1,6 @@
 import { Op } from 'sequelize';
-import TriggerSubscription from '../../models/TriggerSubscription.js';
-import User from '../../models/User.js';
+import TriggerSubscription from '../../models/triggers/TriggerSubscription.js';
+import User from '../../models/core/User.js';
 import env from '../../config/env.js';
 import { getGoogleClientForUser } from './googleTriggerClient.js';
 import { ingestEvent } from './triggerRuntime.js';

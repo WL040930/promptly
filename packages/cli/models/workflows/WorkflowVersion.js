@@ -1,5 +1,5 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../db/index.js';
+import sequelize from '../../db/index.js';
 import crypto from 'crypto';
 
 const WorkflowVersion = sequelize.define(
@@ -31,7 +31,11 @@ const WorkflowVersion = sequelize.define(
         tableName: 'workflow_versions',
         timestamps: true,
         indexes: [
-            { fields: ['workflowId', 'versionNumber'] }
+            {
+                unique: true,
+                fields: ['workflowId', 'versionNumber'],
+                name: 'workflow_versions_workflow_version'
+            }
         ]
     }
 );

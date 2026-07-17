@@ -1,7 +1,7 @@
 import { Op } from 'sequelize';
-import TriggerSubscription from '../../models/TriggerSubscription.js';
-import TriggerEvent from '../../models/TriggerEvent.js';
-import Workflow from '../../models/Workflow.js';
+import TriggerSubscription from '../../models/triggers/TriggerSubscription.js';
+import TriggerEvent from '../../models/triggers/TriggerEvent.js';
+import Workflow from '../../models/workflows/Workflow.js';
 import { executeWorkflow } from '../engine/executionEngine.js';
 import { externalTriggerForNode, hashConfig, normalizeEvent } from './triggerContracts.js';
 import databaseAdapter from './databaseAdapter.js';

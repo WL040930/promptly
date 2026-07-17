@@ -1,5 +1,5 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../db/index.js';
+import sequelize from '../../db/index.js';
 
 const User = sequelize.define(
     'User',
@@ -12,7 +12,6 @@ const User = sequelize.define(
         email: {
             type: DataTypes.STRING(255),
             allowNull: false,
-            unique: true,
             validate: {
                 isEmail: true
             }
@@ -29,7 +28,7 @@ const User = sequelize.define(
         googleId: {
             type: DataTypes.STRING(255),
             allowNull: true,
-            unique: true
+            unique: false
         },
         googleEmail: {
             type: DataTypes.STRING(255),
@@ -56,7 +55,12 @@ const User = sequelize.define(
         tableName: 'users',
         timestamps: true,
         indexes: [
-            { fields: ['resetPasswordToken'] }
+            { unique: true, fields: ['email'], name: 'users_email_unique' },
+            { unique: true, fields: ['googleId'], name: 'users_google_id_unique' },
+            {
+                fields: ['resetPasswordToken', 'resetPasswordExpires'],
+                name: 'users_password_reset_lookup'
+            }
         ]
     }
 );

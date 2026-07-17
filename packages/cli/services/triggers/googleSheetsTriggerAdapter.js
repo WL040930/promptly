@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import TriggerSubscription from '../../models/TriggerSubscription.js';
+import TriggerSubscription from '../../models/triggers/TriggerSubscription.js';
 import { getGoogleClientForUser, requirePublicTriggerOrigin } from './googleTriggerClient.js';
 import { ingestEvent } from './triggerRuntime.js';
 import { stableRowFingerprint } from './triggerContracts.js';

@@ -61,6 +61,8 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
     const status = statusLabel(message.proposalStatus || payload.status);
     const options = message.options || payload.options || [];
     const kind = message.kind || (message.proposal ? 'form_proposal' : (options.length > 0 ? 'clarification' : 'text'));
+    const planSteps = Array.isArray(payload.plan) ? payload.plan : (Array.isArray(payload.plan?.steps) ? payload.plan.steps : []);
+    const planSummary = typeof payload.plan?.summary === 'string' ? payload.plan.summary : null;
 
     return (
         <div className={`flex w-full ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -83,6 +85,21 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                     </div>
                     {message.tokenUsage && <TokenUsageBreakdown tokenUsage={message.tokenUsage} />}
                 </div>
+
+                {message.sender !== 'user' && kind === 'form_proposal' && planSteps.length > 0 && (
+                    <div className="w-full rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2.5 text-xs text-slate-600">
+                        <div className="mb-1 font-semibold text-slate-800">Plan</div>
+                        {planSummary && <div className="mb-2 text-slate-600">{planSummary}</div>}
+                        <div className="flex flex-col gap-1">
+                            {planSteps.map((step, index) => (
+                                <div key={step.id || `${step.title || step.type}-${index}`} className="flex gap-2">
+                                    <span className="font-semibold text-indigo-600">{index + 1}.</span>
+                                    <span>{step.title || step.reason || step.type}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {kind === 'clarification' && options.length > 0 && (
                     <MessageOptionsWidget 
@@ -115,7 +132,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                         </div>
                         {message.kind === 'workflow_proposal' && (
                             <div className="flex flex-col gap-1">
-                                {(payload.plan || []).map((item, index) => <div key={`${item.subType}-${index}`} className="text-xs text-slate-600"><span className="font-bold text-slate-800">{item.title}</span>{item.reason ? ` — ${item.reason}` : ''}</div>)}
+                                {planSteps.map((item, index) => <div key={`${item.subType || item.id || item.type}-${index}`} className="text-xs text-slate-600"><span className="font-bold text-slate-800">{item.title || item.type}</span>{item.reason || item.description ? ` — ${item.reason || item.description}` : ''}</div>)}
                                 {payload.needsForm && <div className="text-xs font-semibold text-orange-700">A form will be created before this workflow can run.</div>}
                             </div>
                         )}

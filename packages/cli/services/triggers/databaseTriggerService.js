@@ -1,5 +1,5 @@
-import DatabaseChangeEvent from '../../models/DatabaseChangeEvent.js';
-import TriggerSubscription from '../../models/TriggerSubscription.js';
+import DatabaseChangeEvent from '../../models/triggers/DatabaseChangeEvent.js';
+import TriggerSubscription from '../../models/triggers/TriggerSubscription.js';
 import { ingestEvent } from './triggerRuntime.js';
 import { matchesDatabaseSubscription } from './triggerContracts.js';
 

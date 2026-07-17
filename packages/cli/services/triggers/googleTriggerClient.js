@@ -1,5 +1,5 @@
 import { OAuth2Client } from 'google-auth-library';
-import User from '../../models/User.js';
+import User from '../../models/core/User.js';
 import env from '../../config/env.js';
 
 export const getGoogleClientForUser = async userId => {
@@ -21,4 +21,3 @@ export const requirePublicTriggerOrigin = () => {
     if (!env.app.publicOrigin) throw new Error('TRIGGER_PUBLIC_ORIGIN must be configured for external Google triggers.');
     return env.app.publicOrigin.replace(/\/$/, '');
 };
-

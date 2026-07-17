@@ -1,5 +1,5 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../db/index.js';
+import sequelize from '../../db/index.js';
 import crypto from 'crypto';
 
 const Folder = sequelize.define(
@@ -23,8 +23,7 @@ const Folder = sequelize.define(
         tableName: 'folders',
         timestamps: true,
         indexes: [
-            { fields: ['userId'] },
-            { fields: ['parentId'] }
+            { fields: ['userId', 'parentId'], name: 'folders_user_parent' }
         ]
     }
 );

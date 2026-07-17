@@ -1,5 +1,5 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../db/index.js';
+import sequelize from '../../db/index.js';
 import crypto from 'crypto';
 
 const Form = sequelize.define(
@@ -35,8 +35,7 @@ const Form = sequelize.define(
         tableName: 'forms',
         timestamps: true,
         indexes: [
-            { fields: ['userId'] },
-            { fields: ['userId', 'createdAt'] }
+            { fields: ['userId', 'updatedAt'], name: 'forms_user_updated' }
         ]
     }
 );

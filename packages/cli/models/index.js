@@ -1,17 +1,10 @@
-import User from './User.js';
-import Folder from './Folder.js';
-import Workflow from './Workflow.js';
-import Form from './Form.js';
-import FormResponse from './FormResponse.js';
-import ExecutionLog from './ExecutionLog.js';
-import ChatSession from './ChatSession.js';
-import ChatMessage from './ChatMessage.js';
-import FormChatMessage from './FormChatMessage.js';
-import WorkflowVersion from './WorkflowVersion.js';
-import EmailDelivery from './EmailDelivery.js';
-import TriggerSubscription from './TriggerSubscription.js';
-import TriggerEvent from './TriggerEvent.js';
-import DatabaseChangeEvent from './DatabaseChangeEvent.js';
+import { User, Folder } from './core/index.js';
+import { ChatSession, ChatMessage } from './chat/index.js';
+import { AgentRun } from './agent/index.js';
+import { Form, FormResponse, FormChatMessage } from './forms/index.js';
+import { Workflow, WorkflowVersion } from './workflows/index.js';
+import { ExecutionLog, EmailDelivery } from './execution/index.js';
+import { TriggerSubscription, TriggerEvent, DatabaseChangeEvent } from './triggers/index.js';
 
 // --- Folder Associations ---
 Folder.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -72,6 +65,13 @@ Form.hasMany(FormChatMessage, {
     onDelete: 'CASCADE'
 });
 
+// --- Agent Associations ---
+AgentRun.belongsTo(ChatSession, { foreignKey: 'sessionId', as: 'session' });
+ChatSession.hasMany(AgentRun, { foreignKey: 'sessionId', as: 'agentRuns', onDelete: 'CASCADE' });
+
+AgentRun.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+User.hasMany(AgentRun, { foreignKey: 'userId', as: 'agentRuns', onDelete: 'CASCADE' });
+
 export {
     User,
     Folder,
@@ -86,5 +86,6 @@ export {
     EmailDelivery,
     TriggerSubscription,
     TriggerEvent,
-    DatabaseChangeEvent
+    DatabaseChangeEvent,
+    AgentRun
 };

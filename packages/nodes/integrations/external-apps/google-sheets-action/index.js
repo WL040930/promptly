@@ -1,5 +1,5 @@
 import { BaseNode } from '../../../BaseNode.js';
-import User from '../../../../cli/models/User.js';
+import User from '../../../../cli/models/core/User.js';
 import env from '../../../../cli/config/env.js';
 import { OAuth2Client } from 'google-auth-library';
 import {
