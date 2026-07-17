@@ -74,8 +74,12 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                     {message.sender === 'user' ? 'You' : 'Promptly AI'}
                 </span>
                 <div className={`relative w-full min-w-0 rounded-2xl ${message.sender === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'}`}>
-                    <div className="w-full min-w-0 overflow-x-auto p-3.5 text-sm leading-relaxed whitespace-pre-wrap">
-                        <MarkdownRenderer content={message.text} inverted={message.sender === 'user'} />
+                    <div className="w-full min-w-0 overflow-x-auto p-3.5 text-sm leading-relaxed">
+                        {message.sender === 'user' ? (
+                            <div className="whitespace-pre-wrap text-white/90">{message.text}</div>
+                        ) : (
+                            <MarkdownRenderer content={message.text} />
+                        )}
                     </div>
                     {message.tokenUsage && <TokenUsageBreakdown tokenUsage={message.tokenUsage} />}
                 </div>

@@ -33,8 +33,8 @@ const parseBr = (children) => {
 export default function MarkdownRenderer({ content, className = '', inverted = false }) {
     const textClass = inverted ? 'text-white/90' : 'text-slate-700';
     const headingClass = inverted ? 'text-white' : 'text-slate-900';
-    const listClass = inverted ? 'text-white/90 list-disc pl-5 mb-3.5 space-y-1' : 'list-disc pl-5 mb-3.5 space-y-1 text-slate-700';
-    const olClass = inverted ? 'text-white/90 list-decimal pl-5 mb-3.5 space-y-1' : 'list-decimal pl-5 mb-3.5 space-y-1 text-slate-700';
+    const listClass = inverted ? 'text-white/90 list-disc pl-5 mb-3 space-y-1' : 'list-disc pl-5 mb-3 space-y-1 text-slate-700';
+    const olClass = inverted ? 'text-white/90 list-decimal pl-5 mb-3 space-y-1' : 'list-decimal pl-5 mb-3 space-y-1 text-slate-700';
     const linkClass = inverted ? 'text-white hover:text-white/80 underline font-semibold transition-colors' : 'text-indigo-600 hover:text-indigo-800 underline font-semibold transition-colors';
 
     return (
@@ -108,7 +108,7 @@ export default function MarkdownRenderer({ content, className = '', inverted = f
 
                     // Tables
                     table: ({ node, children, ...props }) => (
-                        <div className={`w-full overflow-x-auto my-4 rounded-xl border shadow-sm ${inverted ? 'border-white/20' : 'border-slate-200'}`}>
+                        <div className={`w-full overflow-x-auto my-3 rounded-xl border shadow-sm ${inverted ? 'border-white/20' : 'border-slate-200'}`}>
                             <table className="w-full text-left border-collapse text-[13.5px]" {...props}>
                                 {children}
                             </table>
