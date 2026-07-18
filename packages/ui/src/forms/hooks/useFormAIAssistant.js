@@ -97,6 +97,7 @@ export const useFormAIAssistant = (form) => {
                     patches: result.patches,
                     requirements: result.requirements,
                     verification: result.verification,
+                    cardinality: result.cardinality,
                     baseFormUpdatedAt: result.baseFormUpdatedAt || form.updatedAt,
                     status: 'pending'
                 };

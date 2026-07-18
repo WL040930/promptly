@@ -4,6 +4,7 @@ import FieldRenderer from './fields/FieldRenderer';
 import { isEmptyFormMemorySummary } from '../../../shared/formContract.js';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
+import { formatFormSettingValue, getFormSettingLabel } from './formSettingPresentation.js';
 
 const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
     // Prevent background scrolling when open
@@ -152,10 +153,28 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
 
                         {settingsUpdate && (
                             <div className="mb-8 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
-                                <div className="text-[10px] font-bold text-amber-600 uppercase tracking-wider mb-1">Form Settings Modified</div>
-                                <p className="text-sm text-amber-900 font-medium">
-                                    {Object.entries(settingsUpdate.updates || {}).map(([key, value]) => `${key}: ${String(value)}`).join(' • ')}
-                                </p>
+                                <div className="flex items-center justify-between gap-3 mb-3">
+                                    <div>
+                                        <div className="text-sm font-bold text-amber-950">Form settings</div>
+                                        <div className="text-xs text-amber-800/80 mt-0.5">These values will be updated when you accept.</div>
+                                    </div>
+                                    <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800">{Object.keys(settingsUpdate.updates || {}).length} change{Object.keys(settingsUpdate.updates || {}).length === 1 ? '' : 's'}</span>
+                                </div>
+                                <div className="divide-y divide-amber-200/70 rounded-lg border border-amber-200/80 bg-white/70">
+                                    {Object.entries(settingsUpdate.updates || {}).map(([key, value]) => {
+                                        const oldValue = settingsUpdate.originalSettings?.[key];
+                                        return (
+                                            <div key={key} className="flex flex-col gap-1 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                                                <span className="text-xs font-semibold text-slate-700">{getFormSettingLabel(key)}</span>
+                                                <span className="flex min-w-0 items-center gap-1.5 text-xs">
+                                                    <span className="max-w-[12rem] truncate text-slate-400" title={formatFormSettingValue(key, oldValue)}>{formatFormSettingValue(key, oldValue)}</span>
+                                                    <span className="text-slate-300" aria-hidden="true">→</span>
+                                                    <span className="max-w-[16rem] rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-900" title={formatFormSettingValue(key, value)}>{formatFormSettingValue(key, value)}</span>
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         )}
 

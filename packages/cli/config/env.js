@@ -162,6 +162,9 @@ const env = {
     aiFormUnlimitedCompletionTokens: getBoolean('AI_FORM_UNLIMITED_COMPLETION_TOKENS'),
     aiFormCompletionLimits: FORM_COMPLETION_LIMITS,
     aiChatMaxCompletionTokens: getOptionalPositiveInteger('AI_CHAT_MAX_COMPLETION_TOKENS') || 700,
+    aiChatMaxToolLoops: getOptionalPositiveInteger('AI_CHAT_MAX_TOOL_LOOPS') || 8,
+    aiAgentMaxActions: getOptionalPositiveInteger('AI_AGENT_MAX_ACTIONS') || 8,
+    aiAgentMaxReplans: getOptionalPositiveInteger('AI_AGENT_MAX_REPLANS') || 1,
     aiWorkflowMaxCompletionTokens: getOptionalPositiveInteger('AI_WORKFLOW_MAX_COMPLETION_TOKENS') || 1200,
     aiNodeMaxCompletionTokens: getOptionalPositiveInteger('AI_NODE_MAX_COMPLETION_TOKENS') || 1000,
     supabase: {

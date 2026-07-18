@@ -1,7 +1,7 @@
 import sequelize from '../../db/index.js';
 import { Form, FormResponse, FormChatMessage, Workflow } from '../../models/index.js';
 import { generateFormFromPrompt } from '../../services/ai/aiFormsService.js';
-import { FORM_AI_HISTORY_LIMIT } from '../../services/ai/formContext.js';
+import { FORM_AI_HISTORY_LIMIT, validateQuestionCardinality } from '../../services/ai/formContext.js';
 import { applyFormPatches } from '../../services/ai/formPatchEngine.js';
 import { validateFormSchema } from '../../services/ai/formSchemaValidator.js';
 import asyncHandler from '../../utils/asyncHandler.js';
@@ -150,6 +150,16 @@ export const acceptFormProposal = asyncHandler(async (req, res) => {
         applied = applyFormPatches({ currentSchema: form.toJSON(), patches: selectedPatches });
     } catch (error) {
         return res.status(400).json({ code: 'FORM_PROPOSAL_INVALID', message: 'This proposal can no longer be safely applied.', issues: error.issues || [] });
+    }
+
+    const cardinality = proposal.cardinality;
+    const cardinalityIssue = validateQuestionCardinality({ schema: applied.schema, cardinality });
+    if (cardinalityIssue) {
+        return res.status(400).json({
+            code: 'FORM_PROPOSAL_CARDINALITY_MISMATCH',
+            message: 'The selected changes no longer satisfy the requested question count. Select the complete set of question changes or generate a new proposal.',
+            issues: [cardinalityIssue]
+        });
     }
 
     await sequelize.transaction(async (transaction) => {

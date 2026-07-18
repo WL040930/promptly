@@ -11,7 +11,7 @@ const SUGGESTIONS = [
     "A product feedback questionnaire"
 ];
 
-const FormAIAssistant = ({ form, accentColor = '#4f46e5' }) => {
+const FormAIAssistant = ({ form }) => {
     const {
         messages,
         input,

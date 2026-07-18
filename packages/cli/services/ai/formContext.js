@@ -6,7 +6,7 @@ import {
 import { getClarificationModeInstruction, normalizeClarificationMode } from '../../../shared/agentContract.js';
 
 export const FORM_AI_HISTORY_LIMIT = 6;
-export const FORM_AI_MEMORY_LIMIT = SHARED_FORM_AI_MEMORY_LIMIT;
+const FORM_AI_MEMORY_LIMIT = SHARED_FORM_AI_MEMORY_LIMIT;
 export const FORM_AI_CONTEXT_LIMIT = 12000;
 const NON_QUESTION_FIELD_TYPES = new Set(['heading', 'hidden']);
 
@@ -78,6 +78,17 @@ export const getActiveQuestionCount = (schema = {}) => (Array.isArray(schema.fie
     .filter(field => !field?.deleted && !NON_QUESTION_FIELD_TYPES.has(field?.type))
     .length;
 
+export const validateQuestionCardinality = ({ schema = {}, cardinality = null } = {}) => {
+    if (!cardinality || !Number.isInteger(cardinality.targetCount)) return null;
+    const actualCount = getActiveQuestionCount(schema);
+    if (actualCount === cardinality.targetCount) return null;
+    return {
+        code: 'QUESTION_COUNT_MISMATCH',
+        path: 'patches',
+        message: `The selected changes produce ${actualCount} active questions; the proposal requires ${cardinality.targetCount}.`
+    };
+};
+
 const getRequestedQuestionSpec = prompt => {
     const text = clampText(prompt, FORM_AI_CONTEXT_LIMIT);
     if (!text) return null;
@@ -100,18 +111,33 @@ const getRequestedQuestionSpec = prompt => {
     };
 };
 
-export const getQuestionCardinality = ({ schema = {}, prompt = '', chatHistory = [] } = {}) => {
-    const requestTexts = [
-        ...chatHistory
-            .filter(message => message?.sender === 'user')
-            .map(message => message.text),
-        prompt
-    ];
-    let requested = null;
-    for (let index = requestTexts.length - 1; index >= 0; index -= 1) {
-        requested = getRequestedQuestionSpec(requestTexts[index]);
-        if (requested) break;
+const getClarificationAnswerSpec = ({ chatHistory = [], prompt = '' } = {}) => {
+    const latestUserIndex = [...chatHistory].map(message => message?.sender).lastIndexOf('user');
+    if (latestUserIndex < 1) return null;
+    const latestUserText = String(chatHistory[latestUserIndex]?.text || '').trim();
+    if (latestUserText !== String(prompt || '').trim()) return null;
+
+    const answer = chatHistory[latestUserIndex];
+    const question = chatHistory[latestUserIndex - 1];
+    if (question?.sender !== 'bot') return null;
+    const questionText = String(question.text || '');
+    if (!/\b(?:how many|number of|count|total)\b.*\b(?:question|field)/i.test(questionText)) return null;
+
+    const answerText = String(answer.text || '').trim();
+    const directCount = answerText.match(/^(\d+)\s*(?:questions?|fields?)?$/i)?.[1];
+    const requested = getRequestedQuestionSpec(answerText);
+    const count = directCount || requested?.count;
+    if (count) {
+        return {
+            count: Number(count),
+            isAddRequest: Boolean(requested?.isAddRequest)
+        };
     }
+    return null;
+};
+
+export const getQuestionCardinality = ({ schema = {}, prompt = '', chatHistory = [] } = {}) => {
+    const requested = getRequestedQuestionSpec(prompt) || getClarificationAnswerSpec({ chatHistory, prompt });
     if (!requested) return null;
 
     const currentCount = getActiveQuestionCount(schema);

@@ -43,6 +43,9 @@ export const makePlan = (value = {}, intent = {}) => ({
             type: String(step?.type || 'design').slice(0, 60),
             title: String(step?.title || step?.type || `Step ${index + 1}`).slice(0, 255),
             description: String(step?.description || '').slice(0, 1000),
+            args: step?.args && typeof step.args === 'object' && !Array.isArray(step.args)
+                ? Object.fromEntries(Object.entries(step.args).slice(0, 20))
+                : {},
             dependsOn: Array.isArray(step?.dependsOn) ? step.dependsOn.slice(0, 8) : [],
             status: 'pending'
         }))

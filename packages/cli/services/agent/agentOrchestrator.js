@@ -9,6 +9,9 @@ import {
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { resolveResource } from '../chat/resourceResolver.js';
 import { addUsage, requestAgentJson } from './agentAi.js';
+import { createAgentCapabilityRegistry } from './agentCapabilityRegistry.js';
+import { createAgentRuntime } from './agentRuntime.js';
+import env from '../../config/env.js';
 import { makeError, makeIntent, makePlan } from './agentContracts.js';
 import { DEFAULT_CLARIFICATION_MODE, getClarificationModeInstruction, normalizeClarificationMode } from '../../../shared/agentContract.js';
 import {
@@ -22,16 +25,9 @@ import {
     updateRun
 } from './agentRunStore.js';
 
-const buildRequestPattern = /\b(create|build|design|make|set up|setup|automate|connect|modify|update|change|add|remove|delete|edit|improve|i need|i want|help me|when .* then|after .* send)\b/i;
-const domainPattern = /\b(form|survey|workflow|automation|trigger|field|email|sheet|sheets|webhook|database)\b/i;
 const planReviewPattern = /(?:\b(show|give|provide|present|review|explain|outline|draft)\b.{0,50}\b(plan|steps|approach)\b|\b(plan|steps|approach)\b.{0,50}\b(before|first|review|approve|proceed)\b|\bplan first\b)/i;
 
 export const shouldPauseForPlanReview = message => planReviewPattern.test(String(message || ''));
-
-export const shouldUseAgenticPath = message => Boolean(
-    String(message || '').match(domainPattern)
-    && (String(message || '').match(buildRequestPattern) || shouldPauseForPlanReview(message))
-);
 
 const messagePayload = message => {
     const value = message.toJSON ? message.toJSON() : message;
@@ -84,8 +80,10 @@ const deterministicIntent = ({ message, context = {} }) => {
     if (/\b(connect|integration|google|gmail|sheets|webhook)\b/i.test(text)) domains.push('integration');
     if (context.formId && !domains.includes('form')) domains.push('form');
     if (context.workflowId && !domains.includes('workflow')) domains.push('workflow');
+    const isModification = /\b(modify|update|change|add|remove|delete|edit|improve)\b/i.test(text);
+    const isActionRequest = /\b(create|build|design|draft|make|set up|setup|automate|connect|i need|i want|please)\b/i.test(text);
     return makeIntent({
-        goal: /\b(modify|update|change|add|remove|delete|edit|improve)\b/i.test(text) ? 'modify' : 'create',
+        goal: isModification ? 'modify' : isActionRequest ? 'create' : 'explain',
         domains,
         resourceReferences: [
             context.formId ? { type: 'form', query: context.formId } : null,
@@ -181,6 +179,60 @@ const planSolution = async ({ intent, resources, clarificationMode = DEFAULT_CLA
     }
 };
 
+const normalizeSolutionPlan = (plan, intent) => {
+    const allowedTypes = new Set(['research', 'design_form', 'design_workflow', 'verify']);
+    const steps = Array.isArray(plan?.steps) ? plan.steps.map(step => ({ ...step })) : [];
+    const unsupported = steps.filter(step => !allowedTypes.has(step.type));
+    if (unsupported.length > 0) {
+        const error = new Error(`The plan contains unsupported step type '${unsupported[0].type}'.`);
+        error.code = 'AGENT_PLAN_INVALID';
+        error.issues = unsupported.map(step => ({ code: 'UNSUPPORTED_STEP_TYPE', path: step.id, message: `Unsupported step type '${step.type}'.` }));
+        throw error;
+    }
+
+    const byType = type => steps.find(step => step.type === type);
+    const appendStep = (type, title, description, dependsOn = []) => {
+        const existing = byType(type);
+        if (existing) return existing;
+        const step = {
+            id: type,
+            type,
+            title,
+            description,
+            dependsOn,
+            status: 'pending'
+        };
+        steps.push(step);
+        return step;
+    };
+
+    const researchStep = byType('research');
+    if (researchStep) researchStep.status = 'completed';
+    const formStep = intent.domains.includes('form')
+        ? appendStep('design_form', 'Design the form', 'Prepare a reviewable form proposal.', researchStep ? [researchStep.id] : [])
+        : null;
+    const workflowStep = intent.domains.includes('workflow')
+        ? appendStep('design_workflow', 'Design the workflow', 'Prepare a reviewable workflow proposal.', formStep ? [formStep.id] : researchStep ? [researchStep.id] : [])
+        : null;
+    const proposalSteps = [formStep, workflowStep].filter(Boolean);
+    const verifyStep = byType('verify') || appendStep('verify', 'Verify the solution', 'Check all generated artifacts before approval.');
+    verifyStep.dependsOn = proposalSteps.length > 0
+        ? proposalSteps.map(step => step.id)
+        : researchStep ? [researchStep.id] : [];
+
+    const stepIds = new Set(steps.map(step => step.id));
+    steps.forEach(step => {
+        step.dependsOn = [...new Set((step.dependsOn || [])
+            .filter(dependency => dependency !== step.id && stepIds.has(dependency)))];
+    });
+
+    return {
+        ...plan,
+        steps,
+        approvalRequired: plan?.approvalRequired !== false
+    };
+};
+
 const formHistory = async sessionId => {
     const messages = await ChatMessage.findAll({
         where: { sessionId },
@@ -213,6 +265,7 @@ const designForm = async ({ run, session, message, form, clarificationMode = DEF
             patches: result.patches || [],
             requirements: result.requirements || [],
             verification: result.verification || null,
+            cardinality: result.cardinality || null,
             ...(form ? { baseFormUpdatedAt: form.updatedAt } : {})
         };
         const artifact = await createArtifact({
@@ -297,6 +350,97 @@ const designWorkflow = async ({ run, message, workflow, form, formArtifactId = n
     }
 };
 
+const createSolutionCapabilityRegistry = ({
+    run,
+    session,
+    message,
+    form,
+    workflow,
+    resources,
+    clarificationMode
+}) => createAgentCapabilityRegistry([
+    {
+        name: 'research',
+        description: 'Use the already-resolved account resources for this run.',
+        risk: 'read',
+        execute: async () => ({ output: { resources: resources.map(item => item.resource) } })
+    },
+    {
+        name: 'design_form',
+        description: 'Prepare a reviewable form proposal.',
+        risk: 'proposal',
+        execute: async () => {
+            const result = await designForm({ run, session, message, form, clarificationMode });
+            if (result.status === 'clarification') {
+                return {
+                    status: 'awaiting_clarification',
+                    message: result.result.message,
+                    output: { result },
+                    tokenUsage: result.tokenUsage
+                };
+            }
+            return {
+                output: { artifact: result.artifact },
+                tokenUsage: result.tokenUsage
+            };
+        }
+    },
+    {
+        name: 'design_workflow',
+        description: 'Prepare a reviewable workflow proposal.',
+        risk: 'proposal',
+        execute: async ({ context }) => {
+            const formProposal = context.state.outputs.design_form?.artifact || null;
+            // A newly-created form must be approved and persisted before a
+            // workflow can reference its ID. The runtime pauses here and the
+            // existing resume path continues with the approved form.
+            if (!form && formProposal) {
+                return {
+                    status: 'awaiting_approval',
+                    message: 'The form proposal is ready for review before I connect the workflow.',
+                    output: { artifact: formProposal, requiresFormApproval: true }
+                };
+            }
+            const result = await designWorkflow({
+                run,
+                message,
+                workflow,
+                form,
+                formArtifactId: formProposal?.id || null
+            });
+            return {
+                output: { artifact: result.artifact },
+                tokenUsage: result.tokenUsage
+            };
+        }
+    },
+    {
+        name: 'verify',
+        description: 'Verify proposal artifacts before approval.',
+        risk: 'read',
+        execute: async () => {
+            const artifacts = getRunArtifacts(run);
+            const issues = artifacts.flatMap(artifact => {
+                if (artifact.type === 'form_proposal' && !artifact.content?.schema) {
+                    return [{ code: 'FORM_SCHEMA_MISSING', message: 'The form proposal has no schema.' }];
+                }
+                if (artifact.type === 'workflow_proposal' && (!Array.isArray(artifact.content?.nodes) || !Array.isArray(artifact.content?.edges))) {
+                    return [{ code: 'WORKFLOW_DEFINITION_MISSING', message: 'The workflow proposal is incomplete.' }];
+                }
+                return [];
+            });
+            if (issues.length > 0) {
+                return {
+                    status: 'blocked',
+                    message: 'The generated solution failed verification.',
+                    issues
+                };
+            }
+            return { output: { artifactIds: artifacts.map(artifact => artifact.id), verification: { status: 'pass', issues: [] } } };
+        }
+    }
+]);
+
 const saveClarification = async ({ session, run, type, candidates, text }) => {
     await updateRun(run, { status: 'awaiting_clarification', currentStep: 'research' });
     await session.update({ agentState: { status: 'awaiting_agent_clarification', runId: run.id } });
@@ -317,8 +461,15 @@ const saveClarification = async ({ session, run, type, candidates, text }) => {
     });
 };
 
-export const processAgenticTurn = async ({ session, userId, message, context = {}, run: existingRun = null, force = false, skipPlanReview = false }) => {
-    if (!force && !shouldUseAgenticPath(message)) return { handled: false };
+export const processAgenticTurn = async ({ session, userId, message, context = {}, run: existingRun = null, force = false, skipPlanReview = false, approvedPlan = null }) => {
+    // Intent classification is the routing seam. The old implementation used
+    // a fixed keyword gate here, which made natural-language requests fall
+    // into a different agent. Keep the exported predicate for compatibility,
+    // but let the typed classifier decide whether this is an agentic turn.
+    const preAnalyzed = !force ? await analyzeIntent({ message, context }) : null;
+    const isActionable = ['create', 'modify', 'connect'].includes(preAnalyzed?.intent?.goal)
+        && preAnalyzed?.intent?.domains?.length > 0;
+    if (!force && !isActionable) return { handled: false };
 
     const persistedContext = {
         surface: context.surface || 'chat',
@@ -342,7 +493,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         await updateRun(run, { status: 'understanding', currentStep: 'understand' });
         const intentStep = await createStep(run, { stepKey: 'understand', type: 'understand' });
         await startStep(intentStep);
-        const analyzed = await analyzeIntent({ message, context });
+        const analyzed = preAnalyzed || await analyzeIntent({ message, context });
         totalUsage = addUsage(totalUsage, analyzed.tokenUsage);
         await updateRun(run, { intent: analyzed.intent, tokenUsage: totalUsage });
         await completeStep(intentStep, { result: analyzed.intent, tokenUsage: analyzed.tokenUsage });
@@ -369,11 +520,15 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         }
         await completeStep(researchStep, { result: researched.resources.map(item => item.resource) });
 
-        const { plan, tokenUsage: planUsage } = await planSolution({
-            intent: analyzed.intent,
-            resources: researched.resources,
-            clarificationMode: persistedContext.clarificationMode
-        });
+        const planned = approvedPlan
+            ? { plan: approvedPlan, tokenUsage: {} }
+            : await planSolution({
+                intent: analyzed.intent,
+                resources: researched.resources,
+                clarificationMode: persistedContext.clarificationMode
+            });
+        const plan = normalizeSolutionPlan(planned.plan, analyzed.intent);
+        const planUsage = planned.tokenUsage;
         totalUsage = addUsage(totalUsage, planUsage);
         await updateRun(run, { status: 'planning', plan, tokenUsage: totalUsage });
         const planStep = await createStep(run, { stepKey: 'plan', type: 'plan' });
@@ -399,31 +554,73 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         await updateRun(run, { status: 'designing', currentStep: 'design' });
         const form = resourceByType(researched.resources, 'form');
         const workflow = resourceByType(researched.resources, 'workflow');
-        let formResult = null;
-        let workflowResult = null;
-        if (analyzed.intent.domains.includes('form')) {
-            formResult = await designForm({
-                run,
-                session,
-                message,
-                form,
-                clarificationMode: persistedContext.clarificationMode
-            });
-            totalUsage = addUsage(totalUsage, formResult.tokenUsage);
-            if (formResult.status === 'clarification') {
-                await updateRun(run, { status: 'awaiting_clarification', tokenUsage: totalUsage });
-                await session.update({ agentState: { status: 'awaiting_agent_clarification', runId: run.id } });
-                const reply = await saveReply(session, { text: formResult.result.message, kind: 'clarification', payload: { runId: run.id, options: formResult.result.inputs || formResult.result.options || [] }, tokenUsage: totalUsage });
-                return { handled: true, replyObj: reply, totalTokenUsage: totalUsage };
+        const capabilityRegistry = createSolutionCapabilityRegistry({
+            run,
+            session,
+            message,
+            form,
+            workflow,
+            resources: researched.resources,
+            clarificationMode: persistedContext.clarificationMode
+        });
+        const runtime = createAgentRuntime({
+            registry: capabilityRegistry,
+            planner: { plan: async () => plan },
+            limits: { maxActions: env.aiAgentMaxActions, maxReplans: env.aiAgentMaxReplans }
+        });
+        const runtimeResult = await runtime.run({
+            input: { message, intent: analyzed.intent, context: persistedContext },
+            state: { resources: researched.resources.map(item => item.resource) },
+            plan
+        });
+        totalUsage = addUsage(totalUsage, runtimeResult.tokenUsage);
+        await updateRun(run, {
+            plan: runtimeResult.plan,
+            tokenUsage: totalUsage,
+            metadata: {
+                ...(run.metadata || {}),
+                runtime: {
+                    actionCount: runtimeResult.actionCount,
+                    replanCount: runtimeResult.replanCount,
+                    observations: (runtimeResult.state.observations || []).map(observation => ({
+                        stepId: observation.stepId,
+                        type: observation.type,
+                        status: observation.status,
+                        message: observation.message || null,
+                        reason: observation.reason || null,
+                        issues: observation.issues || []
+                    }))
+                }
             }
+        });
+
+        if (runtimeResult.status === 'awaiting_clarification') {
+            const clarificationResult = Object.values(runtimeResult.state.outputs || {})
+                .map(output => output?.result)
+                .find(result => result?.status === 'clarification');
+            if (!clarificationResult) {
+                throw new Error('The agent requested clarification without a usable question.');
+            }
+            await updateRun(run, { status: 'awaiting_clarification', tokenUsage: totalUsage });
+            await session.update({ agentState: { status: 'awaiting_agent_clarification', runId: run.id } });
+            const reply = await saveReply(session, {
+                text: clarificationResult.message,
+                kind: 'clarification',
+                payload: { runId: run.id, options: clarificationResult.inputs || clarificationResult.options || [] },
+                tokenUsage: totalUsage
+            });
+            return { handled: true, replyObj: reply, totalTokenUsage: totalUsage };
         }
 
-        if (analyzed.intent.domains.includes('workflow') && (!formResult?.artifact || form)) {
-            workflowResult = await designWorkflow({ run, message, workflow, form, formArtifactId: formResult?.artifact?.id || null });
-            totalUsage = addUsage(totalUsage, workflowResult.tokenUsage);
+        if (runtimeResult.status === 'blocked') {
+            const error = new Error(runtimeResult.observation?.message || 'The generated solution could not be verified.');
+            error.code = 'AGENT_VERIFICATION_FAILED';
+            error.issues = runtimeResult.observation?.issues || [];
+            throw error;
         }
 
-        const artifactIds = [formResult?.artifact?.id, workflowResult?.artifact?.id].filter(Boolean);
+        const artifacts = getRunArtifacts(run);
+        const artifactIds = artifacts.map(artifact => artifact.id).filter(Boolean);
         if (artifactIds.length === 0) {
             await updateRun(run, { status: 'completed', currentStep: null, tokenUsage: totalUsage });
             const reply = await saveReply(session, { text: 'I understood the request, but it does not yet contain enough detail to design a form or workflow.', kind: 'clarification', payload: { runId: run.id, intent: analyzed.intent, plan } });
@@ -433,23 +630,16 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         await updateRun(run, { status: 'verifying', currentStep: 'verify', tokenUsage: totalUsage });
         const verifyStep = await createStep(run, { stepKey: 'verify', type: 'verify', inputArtifactIds: artifactIds });
         await startStep(verifyStep);
-        const artifacts = getRunArtifacts(run);
-        const verificationIssues = artifacts.flatMap(artifact => {
-            if (artifact.type === 'form_proposal' && !artifact.content?.schema) return [{ code: 'FORM_SCHEMA_MISSING', message: 'The form proposal has no schema.' }];
-            if (artifact.type === 'workflow_proposal' && (!Array.isArray(artifact.content?.nodes) || !Array.isArray(artifact.content?.edges))) return [{ code: 'WORKFLOW_DEFINITION_MISSING', message: 'The workflow proposal is incomplete.' }];
-            return [];
+        await completeStep(verifyStep, {
+            result: runtimeResult.state.outputs?.verify?.verification || {
+                status: 'pending',
+                reason: runtimeResult.status === 'awaiting_approval' ? 'APPROVAL_REQUIRED' : 'VERIFICATION_NOT_RUN'
+            }
         });
-        if (verificationIssues.length > 0) {
-            const error = new Error('The generated solution failed verification.');
-            error.code = 'AGENT_VERIFICATION_FAILED';
-            error.issues = verificationIssues;
-            throw error;
-        }
-        await completeStep(verifyStep, { result: { status: 'pass', artifactIds } });
 
         await updateRun(run, { status: 'awaiting_approval', currentStep: null, tokenUsage: totalUsage });
         await session.update({ agentState: { status: 'awaiting_agent_approval', runId: run.id } });
-        const firstArtifact = formResult?.artifact || workflowResult?.artifact;
+        const firstArtifact = artifacts.find(artifact => artifact.type === 'form_proposal') || artifacts[0];
         const kind = firstArtifact.type === 'form_proposal' ? 'form_proposal' : 'workflow_proposal';
         const content = firstArtifact.content;
         const payload = {
@@ -524,7 +714,8 @@ export const resumeAgentAfterPlanReview = async ({ run, session, userId }) => {
         message: request,
         context: metadata.context || {},
         force: true,
-        skipPlanReview: true
+        skipPlanReview: true,
+        approvedPlan: run.plan
     });
 };
 

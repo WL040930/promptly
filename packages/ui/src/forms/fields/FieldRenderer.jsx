@@ -10,8 +10,6 @@ const focusRing = `focus:border-transparent`;
 
 const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
     const [hoveredStar, setHoveredStar] = useState(0);
-    const [isUploading, setIsUploading] = useState(false);
-    const [uploadError, setUploadError] = useState(null);
     const currentValue = value || 0;
 
     const inputStyle = {

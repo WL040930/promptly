@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Button from '../ui/Button.jsx';
 import { isEmptyFormMemorySummary } from '../../../../shared/formContract.js';
+import { formatFormSettingValue, getFormSettingLabel } from '../../forms/formSettingPresentation.js';
 
 const isMeaningfulPatch = patch => {
     if (patch?.op !== 'update_memory') return true;
@@ -31,6 +32,11 @@ export default function FormProposalWidget({
         () => (proposal?.patches || []).filter(isMeaningfulPatch),
         [proposal?.patches]
     );
+    const settingsChangeCount = proposalPatches
+        .filter(patch => patch.op === 'update_settings')
+        .reduce((count, patch) => count + Object.keys(patch.updates || {}).length, 0);
+    const hasFormChanges = proposalPatches.some(patch => ['add', 'remove', 'update', 'update_meta'].includes(patch.op));
+    const hasSettingsOnlyChanges = settingsChangeCount > 0 && !hasFormChanges;
 
     // Initialize all patches to true by default, unless they were previously unselected
     useEffect(() => {
@@ -135,9 +141,9 @@ export default function FormProposalWidget({
     return (
         <div className="mt-2 w-full border border-slate-200 rounded-xl bg-slate-50 p-3 shadow-md flex flex-col gap-3">
             <div className="flex items-center justify-between border-b border-slate-200/70 pb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Proposed Form Update</span>
-                <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
-                    Schema
+                <span className="text-xs font-semibold tracking-wide text-slate-500">Suggested changes</span>
+                <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">
+                    {hasFormChanges ? 'Form' : 'Settings'}
                 </span>
             </div>
 
@@ -150,7 +156,7 @@ export default function FormProposalWidget({
                     }
                     const adds = proposalPatches.filter(p => p.op === 'add').length;
                     const removes = proposalPatches.filter(p => p.op === 'remove').length;
-                    const updates = proposalPatches.filter(p => ['update', 'update_meta', 'update_settings'].includes(p.op)).length;
+                    const updates = proposalPatches.filter(p => ['update', 'update_meta'].includes(p.op)).length;
                     const memoryUpdates = proposalPatches.filter(p => p.op === 'update_memory').length;
 
                     const parts = [];
@@ -160,7 +166,9 @@ export default function FormProposalWidget({
 
                     return (
                         <div className="flex flex-col gap-1">
-                            <p className="text-xs text-slate-500 font-medium leading-relaxed">{parts.length > 0 ? parts.join(', ') + ' fields.' : 'No field changes.'}</p>
+                            <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                                {parts.length > 0 ? `${parts.join(', ')} fields.` : hasSettingsOnlyChanges ? `${settingsChangeCount} form setting${settingsChangeCount === 1 ? '' : 's'} will change.` : 'No field changes.'}
+                            </p>
                             {memoryUpdates > 0 && <p className="text-xs text-indigo-600 font-medium leading-relaxed">A persistent form preference is also proposed.</p>}
                         </div>
                     );
@@ -214,8 +222,9 @@ export default function FormProposalWidget({
                             );
                         }
                         if (patch.op === 'update' || patch.op === 'update_meta' || patch.op === 'update_settings') {
+                            const settingEntries = patch.op === 'update_settings' ? Object.entries(patch.updates || {}) : [];
                             return (
-                                <div key={idx} className={`flex items-start gap-2 text-xs font-medium px-2 py-1.5 rounded border transition-colors ${isChecked ? 'text-amber-700 bg-amber-50/50 border-amber-100' : 'text-slate-400 bg-slate-50 border-slate-100'}`}>
+                                <div key={idx} className={`flex items-start gap-2 text-xs font-medium px-2 py-2 rounded border transition-colors ${isChecked ? 'text-amber-700 bg-amber-50/50 border-amber-100' : 'text-slate-400 bg-slate-50 border-slate-100'}`}>
                                     <label className="flex items-center gap-2 cursor-pointer w-full">
                                         <input 
                                             type="checkbox" 
@@ -224,8 +233,27 @@ export default function FormProposalWidget({
                                             disabled={isAccepted || isRejected || isStale}
                                             className="w-3.5 h-3.5 text-amber-600 rounded border-slate-300 focus:ring-amber-500 disabled:opacity-50"
                                         />
-                                        <span className="flex-1">
-                                            <span className={`font-bold ${isChecked ? 'text-amber-600' : 'text-slate-400'}`}>~</span> {patch.op === 'update_meta' ? 'Modified Form Properties' : patch.op === 'update_settings' ? 'Modified Form Settings' : `Modified: ${patch.label || 'Field'}`}
+                                        <span className="flex-1 min-w-0">
+                                            {patch.op === 'update_settings' ? (
+                                                <span className="flex flex-col gap-1.5">
+                                                    <span className={`font-semibold ${isChecked ? 'text-amber-800' : 'text-slate-500'}`}>Form settings</span>
+                                                    {settingEntries.map(([key, value]) => {
+                                                        const oldValue = patch.originalSettings?.[key];
+                                                        return (
+                                                            <span key={key} className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] font-medium text-slate-600">
+                                                                <span className="font-semibold text-slate-700">{getFormSettingLabel(key)}:</span>
+                                                                <span className="text-slate-400">{formatFormSettingValue(key, oldValue)}</span>
+                                                                <span className="text-slate-300" aria-hidden="true">→</span>
+                                                                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${isChecked ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-500'}`}>
+                                                                    {formatFormSettingValue(key, value)}
+                                                                </span>
+                                                            </span>
+                                                        );
+                                                    })}
+                                                </span>
+                                            ) : (
+                                                <><span className={`font-bold ${isChecked ? 'text-amber-600' : 'text-slate-400'}`}>~</span> {patch.op === 'update_meta' ? 'Modified form properties' : `Modified: ${patch.label || 'Field'}`}</>
+                                            )}
                                         </span>
                                     </label>
                                 </div>

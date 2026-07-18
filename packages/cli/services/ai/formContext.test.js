@@ -11,7 +11,8 @@ import {
     getActiveQuestionCount,
     getMemoryUpdate,
     getQuestionCardinality,
-    readFormMemory
+    readFormMemory,
+    validateQuestionCardinality
 } from './formContext.js';
 
 test('buildPlannerContext keeps recent conversation bounded and separates memory', () => {
@@ -76,6 +77,12 @@ test('question cardinality distinguishes final totals from additions and keeps c
     };
 
     assert.equal(getActiveQuestionCount(schema), 1);
+    assert.equal(validateQuestionCardinality({ schema, cardinality: { targetCount: 1 } }), null);
+    assert.deepEqual(validateQuestionCardinality({ schema, cardinality: { targetCount: 3 } }), {
+        code: 'QUESTION_COUNT_MISMATCH',
+        path: 'patches',
+        message: 'The selected changes produce 1 active questions; the proposal requires 3.'
+    });
     assert.deepEqual(getQuestionCardinality({ schema, prompt: 'I need a total of 10 questions.' }), {
         mode: 'total_questions',
         targetCount: 10,
@@ -90,14 +97,27 @@ test('question cardinality distinguishes final totals from additions and keeps c
     });
     assert.deepEqual(getQuestionCardinality({
         schema,
-        prompt: 'Use email fields.',
-        chatHistory: [{ sender: 'user', text: 'Create a survey with a total of 5 questions.' }]
+        prompt: '5',
+        chatHistory: [
+            { sender: 'bot', text: 'How many questions should the form contain?' },
+            { sender: 'user', text: '5' }
+        ]
     }), {
         mode: 'total_questions',
         targetCount: 5,
         currentCount: 1,
         additionalCount: 4
     });
+    assert.equal(getQuestionCardinality({
+        schema,
+        prompt: 'Make the email field required.',
+        chatHistory: [
+            { sender: 'bot', text: 'How many questions should the form contain?' },
+            { sender: 'user', text: '5' },
+            { sender: 'bot', text: 'The form is ready.' },
+            { sender: 'user', text: 'Make the email field required.' }
+        ]
+    }), null);
 });
 
 test('createMemoryPatch supports replacement, clearing, and legacy memory', () => {

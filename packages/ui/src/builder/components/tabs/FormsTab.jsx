@@ -510,7 +510,6 @@ const FormsTab = () => {
                             <div className="h-full">
                                     <FormAIAssistant
                                         form={activeForm}
-                                        accentColor={accentColor}
                                     />
                             </div>
                         ) : activeSubTab === 'responses' ? (

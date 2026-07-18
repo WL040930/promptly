@@ -1,5 +1,4 @@
-import { apiRequest, apiBase } from './client.js';
-import { getAuthToken } from '../utils/storage.js';
+import { apiRequest } from './client.js';
 // --- Workflows ---
 export const getWorkflows = () => apiRequest('/api/workflows');
 export const getWorkflow = (id) => apiRequest(`/api/workflows/${id}`);
@@ -27,8 +26,6 @@ export const deleteForm = (id) => apiRequest(`/api/forms/${id}`, { method: 'DELE
 export const submitFormResponse = (formId, responseData) => apiRequest(`/api/forms/${formId}/responses`, { method: 'POST', body: JSON.stringify({ responseData }) });
 export const getFormResponses = (formId) => apiRequest(`/api/forms/${formId}/responses`);
 export const getPublicForm = (id) => apiRequest(`/api/forms/public/${id}`);
-export const generateFormFromPrompt = (prompt, currentSchema, formId, options = {}) => apiRequest('/api/forms/generate', { method: 'POST', body: JSON.stringify({ prompt, currentSchema, formId, clarificationMode: options.clarificationMode }) });
-
 export const getFormChatHistory = (formId, limit = 50, offset = 0) => apiRequest(`/api/forms/${formId}/chat?limit=${limit}&offset=${offset}`);
 export const addFormChatMessage = (formId, messageData) => apiRequest(`/api/forms/${formId}/chat`, { method: 'POST', body: JSON.stringify(messageData) });
 export const updateFormChatMessage = (messageId, updates) => apiRequest(`/api/forms/chat/${messageId}`, { method: 'PUT', body: JSON.stringify(updates) });
