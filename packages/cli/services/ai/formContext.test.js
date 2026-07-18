@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
     FORM_AI_CONTEXT_LIMIT,
     FORM_AI_HISTORY_LIMIT,
+    buildVerifierContext,
     buildPlannerContext,
     compactFormSchema,
     createMemoryPatch,
@@ -66,4 +67,19 @@ test('empty or unchanged memory proposals do not create selectable patches', () 
     assert.equal(createMemoryPatch({ settings: { aiMemory: { version: 1, summary: 'Use short labels.' } } }, {
         memoryUpdate: { action: 'replace', summary: 'Use short labels.' }
     }), null);
+});
+
+test('buildVerifierContext keeps planner-approved memory changes in scope', () => {
+    const context = buildVerifierContext({
+        requirements: [{ id: 'req_1', description: 'Use a professional tone.' }],
+        memoryUpdate: { action: 'replace', summary: 'Use a professional tone.' },
+        patches: [{
+            op: 'update_memory',
+            updates: { memory: { version: 1, summary: 'Use a professional tone.' } }
+        }]
+    });
+
+    assert.match(context, /Planner-approved Memory Update:/);
+    assert.match(context, /Treat this approved memory update as in scope/);
+    assert.match(context, /Use a professional tone\./);
 });

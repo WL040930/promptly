@@ -9,7 +9,8 @@ import {
     buildVerifierContext,
     buildWorkerContext,
     buildWorkerRepairContext,
-    createMemoryPatch
+    createMemoryPatch,
+    getMemoryUpdate
 } from './formContext.js';
 import { applyFormPatches } from './formPatchEngine.js';
 import { normalizeClarificationMode } from '../../../shared/agentContract.js';
@@ -36,6 +37,8 @@ const defaultCompletionLimits = {
     'worker repair': 2048,
     verifier: 600
 };
+
+const MAX_WORKER_ATTEMPTS = 3;
 
 let plannerInstruction = 'You are an AI Form Planner.';
 let workerInstruction = 'You are an AI Form Worker.';
@@ -167,12 +170,43 @@ const requestJson = async ({ provider, contents, systemInstruction, model, label
         throw error;
     }
 
+    const rawText = typeof response?.text === 'string' ? response.text : '';
+    if (!rawText.trim()) {
+        const parseError = createAIOutputError(`${label} AI returned an empty response.`, `FORM_AI_INVALID_${label.toUpperCase()}_JSON`, [{
+            code: 'EMPTY_RESPONSE',
+            path: '',
+            message: 'The AI provider returned no JSON content.'
+        }]);
+        console.warn('[AI Output Shape]', JSON.stringify({
+            operation: `form:${label}`,
+            responseType: 'empty',
+            rawTextLength: 0,
+            finishReason: response?.finishReason || response?.candidates?.[0]?.finishReason || null
+        }));
+        return { response, rawText, parseError };
+    }
+
     try {
-        return { value: parseAiJson(response.text), response, rawText: response.text };
+        const value = parseAiJson(rawText);
+        if (value === null || Array.isArray(value) || typeof value !== 'object') {
+            console.warn('[AI Output Shape]', JSON.stringify({
+                operation: `form:${label}`,
+                responseType: value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value,
+                rawTextLength: rawText.length,
+                finishReason: response?.finishReason || response?.candidates?.[0]?.finishReason || null
+            }));
+        }
+        return { value, response, rawText };
     } catch (error) {
+        console.warn('[AI Output Shape]', JSON.stringify({
+            operation: `form:${label}`,
+            responseType: 'invalid_json',
+            rawTextLength: rawText.length,
+            finishReason: response?.finishReason || response?.candidates?.[0]?.finishReason || null
+        }));
         return {
             response,
-            rawText: response.text,
+            rawText,
             parseError: createAIOutputError(`${label} AI returned invalid JSON.`, `FORM_AI_INVALID_${label.toUpperCase()}_JSON`, [{
                 code: 'INVALID_JSON',
                 path: '',
@@ -247,10 +281,59 @@ const recoverMissingWorkerLabels = (result, issues = []) => {
     return recovered ? { ...result, patches } : result;
 };
 
-const verifyProposal = async ({ provider, requirements, patches, tokenUsage }) => {
+const classifyWorkerFailure = (issues = []) => {
+    if (issues.some(item => item.code === 'INVALID_JSON' || item.code === 'EMPTY_RESPONSE')) return 'invalid_json';
+    if (issues.some(item => item.code === 'INVALID_WORKER_RESPONSE')) return 'invalid_response';
+    return 'invalid_proposal';
+};
+
+const readWorkerResult = workerCall => {
+    let result = workerCall.value;
+    let issues = getOutputIssues({ ...workerCall, validate: validateWorkerResult });
+    if (!workerCall.parseError) {
+        result = recoverMissingWorkerLabels(result, issues);
+        issues = getOutputIssues({ value: result, validate: validateWorkerResult });
+    }
+    return {
+        result,
+        issues,
+        kind: classifyWorkerFailure(issues)
+    };
+};
+
+const createWorkerRecoveryError = failure => {
+    if (failure?.kind === 'invalid_json') {
+        return createAIOutputError(
+            'The AI returned invalid JSON while preparing the form. No changes were applied.',
+            'FORM_AI_INVALID_WORKER_JSON',
+            failure.issues || []
+        );
+    }
+    if (failure?.kind === 'invalid_response') {
+        return createAIOutputError(
+            'The AI returned an invalid repair response while preparing the form. No changes were applied.',
+            'FORM_AI_INVALID_WORKER_RESPONSE',
+            failure.issues || []
+        );
+    }
+    if (failure?.stage === 'verifier') {
+        return createAIOutputError(
+            'The generated form changes did not pass verification after the repair attempts. No changes were applied.',
+            'FORM_AI_VERIFICATION_FAILED',
+            failure.issues || []
+        );
+    }
+    return createAIOutputError(
+        'I could not safely prepare this form after the repair attempts. No changes were applied.',
+        'FORM_AI_UNSAFE_PROPOSAL',
+        failure?.issues || []
+    );
+};
+
+const verifyProposal = async ({ provider, requirements, patches, memoryUpdate, tokenUsage }) => {
     const verification = await requestJson({
         provider,
-        contents: [{ role: 'user', parts: [{ text: buildVerifierContext({ requirements, patches }) }] }],
+        contents: [{ role: 'user', parts: [{ text: buildVerifierContext({ requirements, patches, memoryUpdate }) }] }],
         systemInstruction: verifierInstruction,
         label: 'verifier'
     });
@@ -258,6 +341,105 @@ const verifyProposal = async ({ provider, requirements, patches, tokenUsage }) =
         ...verification,
         tokenUsage: addTokenUsage(tokenUsage, verification.response, 'verifier')
     };
+};
+
+const recoverWorkerProposal = async ({ provider, schema, plannerResult, workerContents, tokenUsage, onProgress }) => {
+    const memoryUpdate = getMemoryUpdate(plannerResult);
+    let totalTokenUsage = tokenUsage;
+    let failure = null;
+    let result = null;
+
+    for (let attempt = 0; attempt < MAX_WORKER_ATTEMPTS; attempt += 1) {
+        let workerCall;
+        if (attempt === 0) {
+            workerCall = await requestJson({
+                provider,
+                contents: workerContents,
+                systemInstruction: workerInstruction,
+                label: 'worker'
+            });
+            totalTokenUsage = addTokenUsage(totalTokenUsage, workerCall.response, 'worker');
+        } else {
+            if (onProgress) onProgress({
+                status: 'repairing',
+                message: failure?.stage === 'verifier'
+                    ? 'Correcting the form changes to match the request...'
+                    : 'Checking and correcting the form changes...'
+            });
+            workerCall = await repairWorker({
+                provider,
+                schema,
+                requirements: plannerResult.requirements,
+                rawText: failure?.rawText || JSON.stringify(result),
+                issues: failure?.issues || [],
+                tokenUsage: totalTokenUsage
+            });
+            totalTokenUsage = workerCall.tokenUsage;
+        }
+
+        const workerOutput = readWorkerResult(workerCall);
+        result = workerOutput.result;
+        if (workerOutput.issues.length > 0) {
+            failure = {
+                stage: 'worker',
+                kind: workerOutput.kind,
+                issues: workerOutput.issues,
+                rawText: workerCall.rawText || JSON.stringify(result)
+            };
+            continue;
+        }
+
+        if (onProgress) onProgress({ status: 'checking', message: 'Checking generated form...' });
+        const memoryPatch = createMemoryPatch(schema, plannerResult);
+        const patches = memoryPatch ? [memoryPatch, ...(result.patches || [])] : (result.patches || []);
+        let appliedProposal;
+        try {
+            appliedProposal = applyFormPatches({ currentSchema: schema, patches });
+        } catch (error) {
+            failure = {
+                stage: 'patch',
+                kind: 'invalid_proposal',
+                issues: error.issues || [],
+                rawText: JSON.stringify(result)
+            };
+            continue;
+        }
+
+        if (onProgress) onProgress({
+            status: 'verifying',
+            message: attempt === 0 ? 'Verifying the form instructions...' : 'Verifying the corrected form...'
+        });
+        const verificationCall = await verifyProposal({
+            provider,
+            requirements: plannerResult.requirements,
+            patches: appliedProposal.patches,
+            memoryUpdate,
+            tokenUsage: totalTokenUsage
+        });
+        totalTokenUsage = verificationCall.tokenUsage;
+        const verificationIssues = getOutputIssues({ ...verificationCall, validate: validateVerifierResult });
+        if (verificationIssues.length > 0) {
+            throw createAIOutputError(
+                'I could not verify the form proposal safely. No changes were applied.',
+                'FORM_AI_VERIFICATION_FAILED',
+                verificationIssues
+            );
+        }
+
+        const verification = verificationCall.value;
+        if (verification.status === 'pass') {
+            return { result, appliedProposal, verification, tokenUsage: totalTokenUsage };
+        }
+
+        failure = {
+            stage: 'verifier',
+            kind: 'verification_repair',
+            issues: verification.issues,
+            rawText: JSON.stringify(result)
+        };
+    }
+
+    throw createWorkerRecoveryError(failure);
 };
 
 export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory = [], onProgress = null, options = {}) => {
@@ -323,126 +505,18 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
                 }) }]
             }];
 
-            let workerCall = await requestJson({
+            const workerResult = await recoverWorkerProposal({
                 provider,
-                contents: workerContents,
-                systemInstruction: workerInstruction,
-                label: 'worker'
+                schema: currentSchema || {},
+                plannerResult,
+                workerContents,
+                tokenUsage,
+                onProgress
             });
-            tokenUsage = addTokenUsage(tokenUsage, workerCall.response, 'worker');
-
-            let result = workerCall.value;
-            let workerIssues = getOutputIssues({ ...workerCall, validate: validateWorkerResult });
-            let repairAttempts = 0;
-            while (workerIssues.length > 0 && repairAttempts < 2) {
-                repairAttempts += 1;
-                if (onProgress) onProgress({ status: 'repairing', message: 'Checking and correcting the form changes...' });
-                workerCall = await repairWorker({
-                    provider,
-                    schema: currentSchema || {},
-                    requirements: plannerResult.requirements,
-                    rawText: workerCall.rawText || JSON.stringify(result),
-                    issues: workerIssues,
-                    tokenUsage
-                });
-                tokenUsage = workerCall.tokenUsage;
-                result = workerCall.value;
-                workerIssues = getOutputIssues({ ...workerCall, validate: validateWorkerResult });
-                result = recoverMissingWorkerLabels(result, workerIssues);
-                workerIssues = getOutputIssues({ value: result, validate: validateWorkerResult });
-            }
-            if (workerIssues.length > 0) throw createAIOutputError('I could not create a safe form proposal.', 'FORM_AI_UNSAFE_PROPOSAL', workerIssues);
-
-            if (onProgress) onProgress({ status: 'checking', message: 'Checking generated form...' });
-            const memoryPatch = createMemoryPatch(currentSchema || {}, plannerResult);
-            const patches = memoryPatch ? [memoryPatch, ...(result.patches || [])] : (result.patches || []);
-
-            let appliedProposal;
-            try {
-                appliedProposal = applyFormPatches({ currentSchema: currentSchema || {}, patches });
-            } catch (error) {
-                if (repairAttempts >= 2) throw createAIOutputError('I could not create a safe form proposal.', 'FORM_AI_UNSAFE_PROPOSAL', error.issues || []);
-                repairAttempts += 1;
-                if (onProgress) onProgress({ status: 'repairing', message: 'Checking and correcting the form changes...' });
-                workerCall = await repairWorker({
-                    provider,
-                    schema: currentSchema || {},
-                    requirements: plannerResult.requirements,
-                    rawText: JSON.stringify(result),
-                    issues: error.issues || [],
-                    tokenUsage
-                });
-                tokenUsage = workerCall.tokenUsage;
-                result = workerCall.value;
-                workerIssues = getOutputIssues({ ...workerCall, validate: validateWorkerResult });
-                result = recoverMissingWorkerLabels(result, workerIssues);
-                workerIssues = getOutputIssues({ value: result, validate: validateWorkerResult });
-                if (workerIssues.length > 0) throw createAIOutputError('I could not create a safe form proposal.', 'FORM_AI_UNSAFE_PROPOSAL', workerIssues);
-                const repairedMemoryPatch = createMemoryPatch(currentSchema || {}, plannerResult);
-                const repairedPatches = repairedMemoryPatch ? [repairedMemoryPatch, ...(result.patches || [])] : (result.patches || []);
-                try {
-                    appliedProposal = applyFormPatches({ currentSchema: currentSchema || {}, patches: repairedPatches });
-                } catch (repairError) {
-                    throw createAIOutputError('I could not create a safe form proposal.', 'FORM_AI_UNSAFE_PROPOSAL', repairError.issues || []);
-                }
-            }
-
-            if (onProgress) onProgress({ status: 'verifying', message: 'Verifying the form instructions...' });
-            let verificationCall = await verifyProposal({
-                provider,
-                requirements: plannerResult.requirements,
-                patches: appliedProposal.patches,
-                tokenUsage
-            });
-            tokenUsage = verificationCall.tokenUsage;
-            let verificationIssues = getOutputIssues({ ...verificationCall, validate: validateVerifierResult });
-            if (verificationIssues.length > 0) {
-                throw createAIOutputError('I could not verify the form proposal safely.', 'FORM_AI_VERIFICATION_FAILED', verificationIssues);
-            }
-
-            let verification = verificationCall.value;
-            if (verification.status === 'repair') {
-                if (repairAttempts >= 2) {
-                    throw createAIOutputError('I could not create a form proposal that follows the request.', 'FORM_AI_UNSAFE_PROPOSAL', verification.issues || []);
-                }
-                repairAttempts += 1;
-                if (onProgress) onProgress({ status: 'repairing', message: 'Correcting the form changes to match your request...' });
-                workerCall = await repairWorker({
-                    provider,
-                    schema: currentSchema || {},
-                    requirements: plannerResult.requirements,
-                    rawText: JSON.stringify(result),
-                    issues: verification.issues || [],
-                    tokenUsage
-                });
-                tokenUsage = workerCall.tokenUsage;
-                result = workerCall.value;
-                workerIssues = getOutputIssues({ ...workerCall, validate: validateWorkerResult });
-                result = recoverMissingWorkerLabels(result, workerIssues);
-                workerIssues = getOutputIssues({ value: result, validate: validateWorkerResult });
-                if (workerIssues.length > 0) throw createAIOutputError('I could not create a safe form proposal.', 'FORM_AI_UNSAFE_PROPOSAL', workerIssues);
-                const repairedMemoryPatch = createMemoryPatch(currentSchema || {}, plannerResult);
-                const repairedPatches = repairedMemoryPatch ? [repairedMemoryPatch, ...(result.patches || [])] : (result.patches || []);
-                try {
-                    appliedProposal = applyFormPatches({ currentSchema: currentSchema || {}, patches: repairedPatches });
-                } catch (error) {
-                    throw createAIOutputError('I could not create a safe form proposal.', 'FORM_AI_UNSAFE_PROPOSAL', error.issues || []);
-                }
-                if (onProgress) onProgress({ status: 'verifying', message: 'Verifying the corrected form...' });
-                verificationCall = await verifyProposal({
-                    provider,
-                    requirements: plannerResult.requirements,
-                    patches: appliedProposal.patches,
-                    tokenUsage
-                });
-                tokenUsage = verificationCall.tokenUsage;
-                verificationIssues = getOutputIssues({ ...verificationCall, validate: validateVerifierResult });
-                if (verificationIssues.length > 0 || verificationCall.value.status !== 'pass') {
-                    throw createAIOutputError('I could not create a form proposal that follows the request.', 'FORM_AI_UNSAFE_PROPOSAL', verificationIssues.length > 0 ? verificationIssues : verificationCall.value.issues || []);
-                }
-                verification = verificationCall.value;
-            }
-
+            const result = workerResult.result;
+            const appliedProposal = workerResult.appliedProposal;
+            const verification = workerResult.verification;
+            tokenUsage = workerResult.tokenUsage;
             result.patches = appliedProposal.patches;
             result.schema = appliedProposal.schema;
             result.tokenUsage = tokenUsage;

@@ -73,6 +73,7 @@ export class GeminiProvider extends BaseAIProvider {
 
             return {
                 text: response.text,
+                finishReason: response.candidates?.[0]?.finishReason || null,
                 usageMetadata: usageMetadata ? {
                     promptTokenCount: usageMetadata.promptTokenCount,
                     candidatesTokenCount: usageMetadata.candidatesTokenCount,

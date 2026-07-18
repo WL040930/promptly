@@ -201,3 +201,94 @@ test('generateFormFromPrompt exposes a retryable rate-limit error', async () => 
         }
     );
 });
+
+test('worker repair retries a malformed verifier repair response', async () => {
+    const { generateFormFromPrompt } = await import('./aiFormsService.js');
+    const outputs = [
+        {
+            type: 'plan_complete',
+            summary: 'Building the form.',
+            requirements: [{ id: 'req_1', description: 'Add a required email field.' }],
+            instructionsForWorker: 'Add a required email field.',
+            memoryUpdate: { action: 'none' }
+        },
+        {
+            type: 'proposal',
+            message: 'Added the email field.',
+            patches: [{ op: 'add', field: { id: 'email', type: 'email', label: 'Email', required: true } }]
+        },
+        {
+            status: 'repair',
+            fulfilledRequirements: [],
+            issues: [{ requirementId: 'req_1', message: 'The field must be required.' }]
+        },
+        null,
+        {
+            type: 'proposal',
+            message: 'Added the required email field.',
+            patches: [{ op: 'add', field: { id: 'email', type: 'email', label: 'Email', required: true } }]
+        },
+        { status: 'pass', fulfilledRequirements: ['req_1'], issues: [] }
+    ];
+    let calls = 0;
+    const provider = {
+        async generateContent() {
+            calls += 1;
+            return { text: JSON.stringify(outputs.shift()) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Add a required email field.',
+        { id: 'form_1', title: 'Contact', description: '', settings: {}, fields: [] },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.schema.fields[0].required, true);
+    assert.equal(calls, 6);
+});
+
+test('worker recovery returns a typed error after malformed repair responses are exhausted', async () => {
+    const { generateFormFromPrompt } = await import('./aiFormsService.js');
+    const outputs = [
+        {
+            type: 'plan_complete',
+            summary: 'Building the form.',
+            requirements: [{ id: 'req_1', description: 'Add an email field.' }],
+            instructionsForWorker: 'Add an email field.',
+            memoryUpdate: { action: 'none' }
+        },
+        {
+            type: 'proposal',
+            message: 'Added the email field.',
+            patches: [{ op: 'add', field: { id: 'email', type: 'email', label: 'Email' } }]
+        },
+        {
+            status: 'repair',
+            fulfilledRequirements: [],
+            issues: [{ requirementId: 'req_1', message: 'The field is incomplete.' }]
+        },
+        null,
+        null
+    ];
+    const provider = {
+        async generateContent() {
+            return { text: JSON.stringify(outputs.shift()) };
+        }
+    };
+
+    await assert.rejects(
+        generateFormFromPrompt(
+            'Add an email field.',
+            { id: 'form_1', title: 'Contact', description: '', settings: {}, fields: [] },
+            [],
+            null,
+            { provider }
+        ),
+        error => error.code === 'FORM_AI_INVALID_WORKER_RESPONSE'
+            && error.issues?.[0]?.code === 'INVALID_WORKER_RESPONSE'
+    );
+});

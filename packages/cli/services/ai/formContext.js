@@ -121,9 +121,13 @@ const summarizePatch = (patch) => {
     return patch;
 };
 
-export const buildVerifierContext = ({ requirements = [], patches = [] }) => [
+export const buildVerifierContext = ({ requirements = [], patches = [], memoryUpdate = { action: 'none' } }) => [
     'Planner Requirements:',
     JSON.stringify(requirements),
+    '',
+    'Planner-approved Memory Update:',
+    JSON.stringify(memoryUpdate),
+    'Treat this approved memory update as in scope. Do not flag it as an unrelated change.',
     '',
     'Generated Patches:',
     JSON.stringify(patches.map(summarizePatch))
