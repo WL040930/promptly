@@ -1,6 +1,7 @@
 import { Op } from 'sequelize';
 import TriggerSubscription from '../../models/triggers/TriggerSubscription.js';
 import User from '../../models/core/User.js';
+import Connection from '../../models/core/Connection.js';
 import env from '../../config/env.js';
 import { getGoogleClientForUser } from './googleTriggerClient.js';
 import { ingestEvent } from './triggerRuntime.js';
@@ -118,7 +119,7 @@ const watch = async ({ subscription, userId, config }) => {
         }
     });
     await subscription.update({
-        externalResourceId: user.googleEmail,
+        externalResourceId: connection?.accountEmail || user.email,
         cursor: subscription.cursor || String(response.data.historyId),
         expiresAt: response.data.expiration ? new Date(Number(response.data.expiration)) : null,
         state: { ...(subscription.state || {}), baselineAt: subscription.state?.baselineAt || new Date().toISOString() }
@@ -154,7 +155,9 @@ export const handleGmailNotification = async body => {
     if (!encoded) throw new Error('Gmail Pub/Sub notification is missing message.data.');
     const notification = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
     if (!notification.emailAddress || !notification.historyId) throw new Error('Gmail notification is missing emailAddress or historyId.');
-    const user = await User.findOne({ where: { googleEmail: notification.emailAddress } });
+    const connection = await Connection.findOne({ where: { provider: 'google', accountEmail: notification.emailAddress, status: 'active' } });
+    if (!connection) return { matched: 0, processed: 0 };
+    const user = await User.findByPk(connection.userId);
     if (!user) return { matched: 0, processed: 0 };
     const subscriptions = await TriggerSubscription.findAll({ where: { userId: user.id, provider: 'gmail', status: 'active' } });
     let processed = 0;

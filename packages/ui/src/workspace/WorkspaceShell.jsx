@@ -1,0 +1,108 @@
+import React, { useEffect, useState } from 'react';
+import { navigateTo } from '../utils/router.js';
+import SettingsModal from '../dashboard/SettingsModal.jsx';
+import Button from '../components/ui/Button.jsx';
+
+const PanelLeftIcon = () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <line x1="9" y1="3" x2="9" y2="21" />
+    </svg>
+);
+
+const icons = {
+    home: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M9 22V12h6v10" /></svg>,
+    automations: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /><path d="M10 6.5h2a2 2 0 0 1 2 2v5" /><path d="M14 17.5h-2a2 2 0 0 1-2-2v-5" /></svg>,
+    forms: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="9" y1="21" x2="9" y2="9" /></svg>,
+    runs: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></svg>,
+    assistant: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M8 8h8M8 12h5" /></svg>,
+    settings: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1.51 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 3.6 15H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9.18l-.06-.06A2 2 0 1 1 7.37 6.3l.06.06A1.65 1.65 0 0 0 9.25 6.7H9.5A1.65 1.65 0 0 0 11 5.18V5a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 20.4 11H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" /></svg>
+};
+
+const navigation = [
+    { page: 'home', label: 'Home', icon: icons.home },
+    { page: 'automations', label: 'Automations', icon: icons.automations },
+    { page: 'forms', label: 'Forms', icon: icons.forms },
+    { page: 'runs', label: 'Runs', icon: icons.runs }
+];
+
+const pageForRoute = route => {
+    if (route.page === 'automation-detail' || route.page.startsWith('automation-')) return 'automations';
+    if (route.page === 'form-detail') return 'forms';
+    if (route.page === 'run-detail') return 'runs';
+    if (route.page === 'assistant') return 'assistant';
+    return route.page;
+};
+
+export default function WorkspaceShell({ user, route, onLogout, children }) {
+    const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem('promptly.sidebar.collapsed') === 'true');
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [settingsTab, setSettingsTab] = useState('general');
+    const activePage = route ? pageForRoute(route) : 'home';
+
+    useEffect(() => {
+        if (route?.page === 'settings') {
+            setSettingsTab(route.section || 'general');
+            setSettingsOpen(true);
+        }
+    }, [route?.page, route?.section]);
+
+    const go = (page) => {
+        if (page === 'home') navigateTo({ page: 'home' });
+        else if (page === 'automations') navigateTo({ page: 'automations' });
+        else if (page === 'forms') navigateTo({ page: 'forms' });
+        else if (page === 'runs') navigateTo({ page: 'runs' });
+        else if (page === 'assistant') navigateTo({ page: 'assistant' });
+    };
+
+    const toggleCollapsed = () => {
+        setCollapsed(value => {
+            const next = !value;
+            window.localStorage.setItem('promptly.sidebar.collapsed', String(next));
+            return next;
+        });
+    };
+
+    return (
+        <div className="flex h-screen overflow-hidden bg-[#f7f9fc] font-sans text-slate-900">
+            <aside className={`relative z-50 flex shrink-0 flex-col border-r border-slate-200 bg-slate-50 transition-all duration-300 ${collapsed ? 'w-[70px]' : 'w-[252px]'}`}>
+                <div className={`flex h-16 items-center border-b border-slate-100 ${collapsed ? 'justify-center' : 'justify-between px-4'}`}>
+                    {!collapsed && <div className="flex items-center gap-2"><img src="/logo.png" alt="Promptly" className="h-8 w-8 rounded-lg" /><span className="text-lg font-bold tracking-tight text-indigo-600">Promptly</span></div>}
+                    <Button variant="ghost" size="icon-md" onClick={toggleCollapsed} className="p-1.5"><PanelLeftIcon /></Button>
+                </div>
+
+                <div className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
+                    <Button variant="primary" onClick={() => navigateTo({ page: 'automation-new', method: 'ai' })} className={`mb-5 rounded-xl shadow-md shadow-indigo-500/20 ${collapsed ? 'mx-auto h-10 w-10 p-0' : 'w-full'}`} title="Create automation">
+                        <span className="text-xl leading-none">+</span>{!collapsed && <span className="ml-2">New automation</span>}
+                    </Button>
+
+                    <div className="mb-1 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{!collapsed && 'Workspace'}</div>
+                    {navigation.map(item => (
+                        <button key={item.page} type="button" onClick={() => go(item.page)} title={item.label} className={`flex items-center gap-3 rounded-xl border p-2.5 text-left font-semibold transition-colors ${activePage === item.page ? 'border-slate-200 bg-white text-indigo-600 shadow-sm' : 'border-transparent text-slate-600 hover:bg-slate-100'} ${collapsed ? 'justify-center' : ''}`}>
+                            <span className="shrink-0">{item.icon}</span>{!collapsed && <span className="truncate">{item.label}</span>}
+                        </button>
+                    ))}
+
+                    <button type="button" onClick={() => go('assistant')} title="Ask Promptly" className={`mt-2 flex items-center gap-3 rounded-xl border border-transparent p-2.5 text-left font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 ${collapsed ? 'justify-center' : ''}`}>
+                        <span className="shrink-0">{icons.assistant}</span>{!collapsed && <span>Ask Promptly</span>}
+                    </button>
+
+                    <div className="mt-auto pt-6">
+                        <button type="button" onClick={() => { setSettingsTab('general'); setSettingsOpen(true); }} title="Settings" className={`flex w-full items-center gap-3 rounded-xl border border-transparent p-2.5 text-left font-medium text-slate-600 transition-colors hover:bg-slate-100 ${collapsed ? 'justify-center' : ''}`}>
+                            <span className="shrink-0">{icons.settings}</span>{!collapsed && <span>Settings</span>}
+                        </button>
+                    </div>
+                </div>
+
+                <div className={`flex items-center gap-3 border-t border-slate-200 p-3 ${collapsed ? 'justify-center' : ''}`}>
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{user?.email?.substring(0, 2).toUpperCase() || 'U'}</div>
+                    {!collapsed && <div className="min-w-0"><p className="truncate text-sm font-bold">{user?.email || 'User'}</p><p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Promptly account</p></div>}
+                </div>
+            </aside>
+
+            <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">{children}</main>
+
+            {settingsOpen && <SettingsModal user={user} onClose={() => setSettingsOpen(false)} onLogout={onLogout} initialTab={settingsTab} />}
+        </div>
+    );
+}

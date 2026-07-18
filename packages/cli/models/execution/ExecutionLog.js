@@ -26,6 +26,10 @@ const ExecutionLog = sequelize.define(
             type: DataTypes.STRING(255),
             allowNull: true
         },
+        revisionId: {
+            type: DataTypes.STRING(100),
+            allowNull: true
+        },
         tags: {
             type: DataTypes.JSONB,
             defaultValue: []
@@ -44,7 +48,7 @@ const ExecutionLog = sequelize.define(
         }
     },
     {
-        tableName: 'execution_logs',
+        tableName: 'automation_runs',
         timestamps: true,
         indexes: [
             { fields: ['userId', 'time'], name: 'execution_logs_user_time' },

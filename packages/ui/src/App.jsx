@@ -1,151 +1,95 @@
-import React, { useEffect, useState, Suspense } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { getAuthUser, setAuthUser, getAuthToken, clearAuthUser, clearAuthToken } from './utils/storage.js'
-import { useMe } from './api/hooks/useMe.js'
-import { getDashboardPath, getRouteState, navigate } from './utils/router.js'
-import AppLoadingSkeleton from './components/ui/AppLoadingSkeleton.jsx'
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { getAuthUser, setAuthUser, getAuthToken, clearAuthUser, clearAuthToken } from './utils/storage.js';
+import { useMe } from './api/hooks/useMe.js';
+import { getDashboardPath, getRouteState, navigate, parsePath } from './utils/router.js';
+import AppLoadingSkeleton from './components/ui/AppLoadingSkeleton.jsx';
+import WorkspaceShell from './workspace/WorkspaceShell.jsx';
+import WorkspacePageRouter from './workspace/WorkspacePageRouter.jsx';
 
-const LandingPage = React.lazy(() => import('./landing/LandingPage.jsx'))
-const LoginPage = React.lazy(() => import('./auth/LoginPage.jsx'))
-const RegisterPage = React.lazy(() => import('./auth/RegisterPage.jsx'))
-const ForgotPasswordPage = React.lazy(() => import('./auth/ForgotPasswordPage.jsx'))
-const ResetPasswordPage = React.lazy(() => import('./auth/ResetPasswordPage.jsx'))
-const DashboardShell = React.lazy(() => import('./dashboard/DashboardShell'))
-const OnboardingPage = React.lazy(() => import('./onboarding/OnboardingPage'))
-const ChatView = React.lazy(() => import('./chat/ChatView'))
-const WorkflowBuilderView = React.lazy(() => import('./builder/WorkflowBuilderView'))
-const SecurityPage = React.lazy(() => import('./landing/SecurityPage.jsx'))
-const PublicFormView = React.lazy(() => import('./forms/public/PublicFormView.jsx'))
+const LandingPage = React.lazy(() => import('./landing/LandingPage.jsx'));
+const LoginPage = React.lazy(() => import('./auth/LoginPage.jsx'));
+const RegisterPage = React.lazy(() => import('./auth/RegisterPage.jsx'));
+const ForgotPasswordPage = React.lazy(() => import('./auth/ForgotPasswordPage.jsx'));
+const ResetPasswordPage = React.lazy(() => import('./auth/ResetPasswordPage.jsx'));
+const OnboardingPage = React.lazy(() => import('./onboarding/OnboardingPage.jsx'));
+const SecurityPage = React.lazy(() => import('./landing/SecurityPage.jsx'));
+const PublicFormView = React.lazy(() => import('./forms/public/PublicFormView.jsx'));
 
 function AppLoadingFallback() {
-    return <AppLoadingSkeleton />
+    return <AppLoadingSkeleton />;
 }
 
 function App() {
-    const [path, setPath] = useState(typeof window !== 'undefined' ? window.location.pathname : '/')
-    const queryClient = useQueryClient()
-    const hasAuthToken = Boolean(getAuthToken())
-    const cachedUser = getAuthUser()
-    const { data: remoteUser, isPending: isUserLoading } = useMe({ enabled: hasAuthToken })
-    const user = hasAuthToken ? (remoteUser ?? cachedUser) : null
-    const isLoading = hasAuthToken && isUserLoading && !cachedUser
+    const [locationKey, setLocationKey] = useState(() => window.location.href);
+    const queryClient = useQueryClient();
+    const hasAuthToken = Boolean(getAuthToken());
+    const cachedUser = getAuthUser();
+    const { data: remoteUser, isPending: isUserLoading } = useMe({ enabled: hasAuthToken });
+    const user = hasAuthToken ? (remoteUser ?? cachedUser) : null;
+    const isLoading = hasAuthToken && isUserLoading && !cachedUser;
 
     useEffect(() => {
-        const handler = () => setPath(window.location.pathname)
-        window.addEventListener('popstate', handler)
-        return () => window.removeEventListener('popstate', handler)
-    }, [])
+        const handler = () => setLocationKey(window.location.href);
+        window.addEventListener('popstate', handler);
+        return () => window.removeEventListener('popstate', handler);
+    }, []);
+
+    const routeState = useMemo(() => getRouteState(window.location.pathname), [locationKey]);
+    const route = useMemo(() => parsePath(window.location.href), [locationKey]);
 
     useEffect(() => {
-        const route = getRouteState(path)
-
-        if (user && !route.isDashboard && !route.isResetPassword && !route.isPublicForm) {
-            goTo(getDashboardPath(user))
-        } else if (!user && route.isDashboard) {
-            goTo('/login')
+        if (user && !routeState.isDashboard && !routeState.isOnboarding && !routeState.isResetPassword && !routeState.isPublicForm) {
+            navigate(getDashboardPath());
+        } else if (!user && (routeState.isDashboard || routeState.isOnboarding)) {
+            navigate('/login');
+        } else if (user && routeState.isOnboarding && user.onboardingCompletedAt) {
+            navigate(getDashboardPath());
         }
-    }, [user, path])
-
-    const goTo = (nextPath) => {
-        navigate(nextPath)
-    }
+    }, [user, routeState, locationKey]);
 
     const handleUserUpdate = (updatedUser) => {
-        setAuthUser(updatedUser)
-        queryClient.setQueryData(['me'], updatedUser)
-    }
+        setAuthUser(updatedUser);
+        queryClient.setQueryData(['me'], updatedUser);
+    };
 
     const handleLoginSuccess = (payload) => {
         if (payload?.user) {
-            handleUserUpdate(payload.user)
-            goTo(getDashboardPath(payload.user))
+            handleUserUpdate(payload.user);
+            navigate(payload.user.onboardingCompletedAt ? getDashboardPath() : '/onboarding');
         }
-    }
+    };
 
     const handleLogout = () => {
-        clearAuthUser()
-        clearAuthToken()
-        queryClient.setQueryData(['me'], null)
-        goTo('/')
+        clearAuthUser();
+        clearAuthToken();
+        queryClient.setQueryData(['me'], null);
+        navigate('/');
+    };
+
+    if (routeState.isPublicForm) return <PublicFormView />;
+    if (isLoading) return <AppLoadingFallback />;
+
+    if (routeState.isOnboarding && user) {
+        return <OnboardingPage user={user} onOnboardingComplete={handleUserUpdate} />;
     }
 
-    const route = getRouteState(path)
-    const isWorkflowRoute = path.startsWith('/workflow/')
-    const isChatRoute = path.startsWith('/chat/')
-
-    if (route.isPublicForm) {
-        return <PublicFormView />
-    }
-
-    if (isLoading) {
-        return <AppLoadingFallback />
-    }
-
-    if (route.isDashboard && user) {
-        if (!user.experienceLevel) {
-            return (
-                <OnboardingPage
-                    user={user}
-                    onOnboardingComplete={handleUserUpdate}
-                />
-            )
-        }
-
+    if (routeState.isDashboard && user) {
         return (
-            <DashboardShell
-                user={user}
-                onUserUpdate={handleUserUpdate}
-                onLogout={handleLogout}
-                forceWorkflowMode={isWorkflowRoute}
-                forceChatMode={isChatRoute}
-            >
-                {isChatRoute && !isWorkflowRoute ? (
-                    <ChatView user={user} />
-                ) : (
-                    <WorkflowBuilderView />
-                )}
-            </DashboardShell>
-        )
+            <WorkspaceShell user={user} route={route} onLogout={handleLogout}>
+                <WorkspacePageRouter route={route} />
+            </WorkspaceShell>
+        );
     }
 
-    if (route.isLogin) {
-        return (
-            <LoginPage
-                onRegister={() => goTo('/register')}
-                onLoginSuccess={handleLoginSuccess}
-            />
-        )
-    }
-
-    if (route.isRegister) {
-        return (
-            <RegisterPage
-                onLogin={() => goTo('/login')}
-                onLoginSuccess={handleLoginSuccess}
-            />
-        )
-    }
-
-    if (route.isForgotPassword) {
-        return <ForgotPasswordPage onLogin={() => goTo('/login')} />
-    }
-
-    if (route.isResetPassword) {
-        const token = route.pathname.split('/').pop()
-        return <ResetPasswordPage token={token} onLogin={() => goTo('/login')} />
-    }
-
-    if (route.isSecurity) {
-        return <SecurityPage onHome={() => goTo('/')} onLogin={() => goTo('/login')} />
-    }
-
-    return <LandingPage onLogin={() => goTo('/login')} onSecurity={() => goTo('/landing/security')} />
+    if (routeState.isLogin) return <LoginPage onRegister={() => navigate('/register')} onLoginSuccess={handleLoginSuccess} />;
+    if (routeState.isRegister) return <RegisterPage onLogin={() => navigate('/login')} onLoginSuccess={handleLoginSuccess} />;
+    if (routeState.isForgotPassword) return <ForgotPasswordPage onLogin={() => navigate('/login')} />;
+    if (routeState.isResetPassword) return <ResetPasswordPage token={routeState.pathname.split('/').pop()} onLogin={() => navigate('/login')} />;
+    if (routeState.isSecurity) return <SecurityPage onHome={() => navigate('/')} onLogin={() => navigate('/login')} />;
+    return <LandingPage onLogin={() => navigate('/login')} onSecurity={() => navigate('/landing/security')} />;
 }
 
 export default function RootApp() {
-    return (
-        <Suspense fallback={<AppLoadingFallback />}>
-            <App />
-        </Suspense>
-    )
+    return <Suspense fallback={<AppLoadingFallback />}><App /></Suspense>;
 }

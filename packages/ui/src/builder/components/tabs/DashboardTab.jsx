@@ -3,6 +3,7 @@ import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useDashboardMetrics } from '../../../api/hooks/useDashboard.js';
 import Skeleton from '../../../components/ui/Skeleton.jsx';
+import { navigateTo } from '../../../utils/router.js';
 
 const SKELETON_BAR_HEIGHTS = [36, 58, 44, 72, 52, 66, 48];
 
@@ -57,6 +58,13 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, compact = false }) =
         weeklyData: data?.weeklyData || [],
         recentActivities: data?.recentActivities || []
     }), [data, activeWorkflowCount]);
+
+    const go = page => {
+        if (onNavigateTab) return onNavigateTab(page);
+        if (page === 'workflows') navigateTo({ page: 'automations' });
+        else if (page === 'forms') navigateTo({ page: 'forms' });
+        else if (page === 'logs') navigateTo({ page: 'runs' });
+    };
 
     const systemStatus = useMemo(() => {
         if (loading) return { label: 'Checking recent activity', className: 'bg-slate-50 text-slate-600 border-slate-200' };
@@ -188,7 +196,7 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, compact = false }) =
                         </div>
                         <div className="flex flex-col gap-3 flex-1 justify-center">
                             <button
-                                onClick={() => onNavigateTab?.('workflows')}
+                                onClick={() => go('workflows')}
                                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm py-3 px-4 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all flex items-center justify-center gap-2.5"
                             >
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -197,7 +205,7 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, compact = false }) =
                                 Create Automation Flow
                             </button>
                             <button
-                                onClick={() => onNavigateTab?.('forms')}
+                                onClick={() => go('forms')}
                                 className="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium text-sm py-3 px-4 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all flex items-center justify-center gap-2.5"
                             >
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -208,7 +216,7 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, compact = false }) =
                                 Design Intake Form
                             </button>
                             <button
-                                onClick={() => onNavigateTab?.('logs')}
+                                onClick={() => go('logs')}
                                 className="w-full bg-white hover:bg-slate-50 text-slate-700 font-medium text-sm py-3 px-4 rounded-xl border border-slate-200 shadow-sm hover:shadow active:scale-[0.98] transition-all flex items-center justify-center gap-2.5"
                             >
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -235,7 +243,7 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, compact = false }) =
                                 <p className="text-xs text-slate-400 mt-0.5">Latest workflow executions and events</p>
                             </div>
                             <button
-                                onClick={() => onNavigateTab?.('logs')}
+                                onClick={() => go('logs')}
                                 className="text-sm font-medium text-indigo-600 hover:text-indigo-700 hover:underline transition-colors"
                             >
                                 View all &rarr;

@@ -11,5 +11,5 @@ test('database trigger filters match the current record image', () => {
     };
     assert.equal(matchesDatabaseSubscription({ config: { resource: 'forms', events: ['updated'], filters: { title: 'Customer Survey' } }, change }), true);
     assert.equal(matchesDatabaseSubscription({ config: { resource: 'forms', events: ['created'] }, change }), false);
-    assert.equal(matchesDatabaseSubscription({ config: { resource: 'workflows' }, change }), false);
+    assert.equal(matchesDatabaseSubscription({ config: { resource: 'automations' }, change }), false);
 });

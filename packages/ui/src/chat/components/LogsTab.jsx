@@ -12,12 +12,12 @@ import { LogsListSkeleton } from './log-ui/LogsSkeleton.jsx';
 const PAGE_SIZE = 10;
 const INSPECTOR_TRANSITION_MS = 300;
 
-const LogsTab = () => {
+const LogsTab = ({ workflowId: initialWorkflowId = '' } = {}) => {
     const container = useRef(null);
     const [searchInput, setSearchInput] = useState('');
     const [search, setSearch] = useState('');
     const [status, setStatus] = useState('All');
-    const [workflowId, setWorkflowId] = useState('');
+    const [workflowId, setWorkflowId] = useState(initialWorkflowId);
     const [page, setPage] = useState(1);
     const [selectedLogId, setSelectedLogId] = useState(null);
     const [inspectorLogId, setInspectorLogId] = useState(null);
@@ -114,7 +114,7 @@ const LogsTab = () => {
             <div className="flex-1 min-w-0 p-6 md:p-8 overflow-y-auto">
                 <div className="max-w-6xl mx-auto w-full flex flex-col gap-6">
                     <div>
-                        <h2 className="text-2xl font-semibold text-slate-900 tracking-tight">Workflow runs</h2>
+                        <h2 className="text-2xl font-semibold text-slate-900 tracking-tight">Automation runs</h2>
                         <p className="text-sm text-slate-500 mt-1">Inspect automation runs, outcomes, and execution details.</p>
                     </div>
 

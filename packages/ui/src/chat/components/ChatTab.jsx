@@ -9,7 +9,7 @@ import Button from '../../components/ui/Button.jsx';
 import GenericChatWidget from '../../components/chat/GenericChatWidget.jsx';
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 import FormDiffPreviewModal from '../../forms/ai/FormDiffPreviewModal.jsx';
-import { navigate, parsePath, buildPath } from '../../utils/router.js';
+import { navigate, navigateTo, parsePath, getQuery } from '../../utils/router.js';
 import { formatCompactRelativeTime } from '../../utils/time.js';
 import ChatSessionsSkeleton from '../../components/chat/ChatSessionsSkeleton.jsx';
 import ClarificationModeSelect from '../../components/chat/ClarificationModeSelect.jsx';
@@ -18,12 +18,12 @@ import { getClarificationModePreference, setClarificationModePreference } from '
 
 const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I can build automations and forms from a description. What would you like to automate?' };
 
-export default function ChatTab() {
+export default function ChatTab({ conversationId = null, automationId = null, startNewAutomation = false }) {
     const toast = useToast();
     const container = useRef(null);
     const [messages, setMessages] = useState([welcome]);
-    const [sessionId, setSessionId] = useState(() => parsePath(window.location.pathname).sessionId || null);
-    const [targetWorkflowId, setTargetWorkflowId] = useState(null);
+    const [sessionId, setSessionId] = useState(() => conversationId || getQuery(window.location.href).get('conversation') || parsePath(window.location.href).conversationId || null);
+    const [targetWorkflowId, setTargetWorkflowId] = useState(automationId || getQuery(window.location.href).get('automationId') || null);
     const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
@@ -57,16 +57,17 @@ export default function ChatTab() {
     // to provide context, while chat owns loading and persisting that context.
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        const workflowId = params.get('workflowId');
+        const workflowId = automationId || params.get('automationId');
         const prompt = params.get('prompt');
-        if (!workflowId && !prompt) return;
+        const onboardingGoal = startNewAutomation ? window.localStorage.getItem('promptly.onboarding-goal') : '';
+        if (!workflowId && !prompt && !onboardingGoal) return;
 
         if (workflowId) setTargetWorkflowId(workflowId);
-        if (prompt) setInput(prompt);
+        if (prompt || onboardingGoal) setInput(prompt || onboardingGoal);
 
-        const parsed = parsePath(window.location.pathname);
-        window.history.replaceState({}, '', buildPath({ mode: 'chat', tab: 'chat', sessionId: parsed.sessionId || undefined }));
-    }, []);
+        if (startNewAutomation) window.localStorage.removeItem('promptly.onboarding-goal');
+        if (startNewAutomation) navigateTo({ page: 'assistant', conversationId: sessionId || undefined });
+    }, [automationId, startNewAutomation, sessionId]);
 
     useEffect(() => {
         if (!session || loadedSessionIdRef.current === sessionId) return;
@@ -91,9 +92,11 @@ export default function ChatTab() {
         if (response?.sessionId) {
             setSessionId(response.sessionId);
             // Replace url to have new session id without refreshing page
-            const parsed = parsePath(window.location.pathname);
-            if (!parsed.sessionId) {
-                 navigate(buildPath({ mode: 'chat', tab: 'chat', sessionId: response.sessionId }));
+            const parsed = parsePath(window.location.href);
+            if (automationId) {
+                navigate(`/app/automations/${automationId}/build?editor=ai&conversation=${encodeURIComponent(response.sessionId)}`);
+            } else if (!parsed.conversationId) {
+                navigateTo({ page: 'assistant', conversationId: response.sessionId });
             }
         }
         if (response?.reply) {
@@ -128,6 +131,7 @@ export default function ChatTab() {
                 message: text,
                 context: {
                     surface: 'chat',
+                    automationId: targetWorkflow?.id || targetWorkflowId || null,
                     workflowId: targetWorkflow?.id || null,
                     workflowSnapshot: targetSnapshot,
                     clarificationMode
@@ -173,15 +177,18 @@ export default function ChatTab() {
                 const workflowId = payload.workflowId || targetWorkflow?.id || targetWorkflowId;
                 if (!workflowId) throw new Error('Choose a workflow target before applying these changes.');
                 if (payload.baseWorkflowUpdatedAt && targetWorkflow?.updatedAt && payload.baseWorkflowUpdatedAt !== targetWorkflow.updatedAt) throw new Error('This workflow changed while the proposal was open. Generate the changes again.');
-                await updateWorkflowMutation.mutateAsync({id: workflowId, data: { nodes: payload.nodes, edges: payload.edges }});
+                await updateWorkflowMutation.mutateAsync({id: workflowId, data: { nodes: payload.nodes, edges: payload.edges, source: 'ai', expectedRevision: targetWorkflow?.revision, summary: 'Applied AI automation proposal' }});
                 result = { workflowId };
             } else if (message.kind === 'workflow_proposal') {
-                const saved = await createWorkflowMutation.mutateAsync({ name: payload.name || 'New Automation', status: 'Draft', iconColor: 'text-indigo-600', iconBg: 'bg-indigo-100', nodes: payload.nodes || [], edges: payload.edges || [] });
+                const saved = await createWorkflowMutation.mutateAsync({ name: payload.name || 'New Automation', status: 'Draft', iconColor: 'text-indigo-600', iconBg: 'bg-indigo-100', nodes: payload.nodes || [], edges: payload.edges || [], source: 'ai', summary: 'Created from an AI proposal' });
                 result = { workflowId: saved.id };
             }
             setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied' } : item));
             if (message.kind === 'form_proposal') await send(null, { type: 'form_saved', messageId: message.id, formId: result.formId });
             else await send(null, { type: 'proposal_applied', messageId: message.id });
+            if (message.kind === 'workflow_proposal' && result.workflowId) {
+                navigateTo({ page: 'automation-build', automationId: result.workflowId, editor: 'ai' });
+            }
             toast.success('Proposal applied.');
         } catch (error) {
             if (error.payload?.code === 'FORM_PROPOSAL_STALE') {
@@ -241,7 +248,8 @@ export default function ChatTab() {
         setPreviewFormId(null);
         loadedSessionIdRef.current = null;
         setIsSidebarOpen(false); 
-        navigate(buildPath({ mode: 'chat', tab: 'chat' }));
+        if (automationId) navigate(`/app/automations/${automationId}/build?editor=ai`);
+        else navigateTo({ page: 'assistant' });
     };
     
     const loadChat = (id) => {
@@ -250,7 +258,8 @@ export default function ChatTab() {
         setMessages([welcome]);
         setClarificationMode(getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
         setIsSidebarOpen(false);
-        navigate(buildPath({ mode: 'chat', tab: 'chat', sessionId: id }));
+        if (automationId) navigate(`/app/automations/${automationId}/build?editor=ai&conversation=${encodeURIComponent(id)}`);
+        else navigateTo({ page: 'assistant', conversationId: id });
     };
 
     const confirmDelete = async () => {

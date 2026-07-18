@@ -1,5 +1,6 @@
 import { OAuth2Client } from 'google-auth-library';
 import User from '../../models/core/User.js';
+import Connection from '../../models/core/Connection.js';
 import env from '../../config/env.js';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
@@ -10,11 +11,10 @@ const oauth2Client = new OAuth2Client(
     env.google.redirectUri
 );
 
-const getConnectionsPath = (user) =>
-    user?.experienceLevel === 'chat' ? '/chat/dashboard' : '/workflow/dashboard';
+const getConnectionsPath = () => '/app/settings/connections';
 
 const redirectToConnections = (res, params, user = null) => {
-    const redirectUrl = new URL(getConnectionsPath(user), env.app.clientOrigin);
+    const redirectUrl = new URL(getConnectionsPath(), env.app.clientOrigin);
 
     for (const [key, value] of Object.entries(params)) {
         redirectUrl.searchParams.set(key, value);
@@ -81,13 +81,23 @@ const googleCallback = async (req, res) => {
         const googleEmail = response.data.email;
         const googleId = response.data.id;
 
-        user.googleId = googleId;
-        user.googleEmail = googleEmail;
-        user.googleAccessToken = tokens.access_token;
-        if (tokens.refresh_token) {
-            user.googleRefreshToken = tokens.refresh_token;
-        }
-        await user.save();
+        const [connection] = await Connection.findOrCreate({
+            where: { userId: user.id, provider: 'google', externalAccountId: googleId },
+            defaults: {
+                accountEmail: googleEmail,
+                accessToken: tokens.access_token,
+                refreshToken: tokens.refresh_token || null,
+                scopes: tokens.scope ? String(tokens.scope).split(' ') : [],
+                status: 'active'
+            }
+        });
+        await connection.update({
+            accountEmail: googleEmail,
+            accessToken: tokens.access_token || connection.accessToken,
+            refreshToken: tokens.refresh_token || connection.refreshToken,
+            scopes: tokens.scope ? String(tokens.scope).split(' ') : connection.scopes,
+            status: 'active'
+        });
 
         return redirectToConnections(res, {
             settings: 'connections',
@@ -106,13 +116,7 @@ const googleDisconnect = async (req, res) => {
     const userId = req.user.id;
     try {
         const user = await User.findByPk(userId);
-        if (user) {
-            user.googleId = null;
-            user.googleEmail = null;
-            user.googleAccessToken = null;
-            user.googleRefreshToken = null;
-            await user.save();
-        }
+        if (user) await Connection.update({ status: 'revoked' }, { where: { userId: user.id, provider: 'google', status: 'active' } });
         return res.json({ success: true });
     } catch (err) {
         console.error('Google OAuth Disconnect Error:', err);

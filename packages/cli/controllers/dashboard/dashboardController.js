@@ -20,7 +20,7 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
             `SELECT
                 COUNT(*) AS "totalRuns",
                 COUNT(*) FILTER (WHERE status = 'Success') AS "successRuns"
-             FROM execution_logs
+             FROM automation_runs
              WHERE "userId" = :userId`,
             { replacements: { userId }, type: QueryTypes.SELECT }
         ),
@@ -30,7 +30,7 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
             `SELECT
                 TO_CHAR(DATE_TRUNC('day', time), 'Dy') AS day,
                 COUNT(*) AS runs
-             FROM execution_logs
+             FROM automation_runs
              WHERE "userId" = :userId
                AND time >= NOW() - INTERVAL '7 days'
              GROUP BY DATE_TRUNC('day', time)

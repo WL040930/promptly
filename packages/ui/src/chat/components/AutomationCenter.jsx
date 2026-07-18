@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../../context/ToastContext.jsx';
-import { useCreateWorkflow, useDeleteWorkflow, useRestoreWorkflowVersion, useUpdateWorkflow, useWorkflow, useWorkflowVersions, useWorkflows } from '../../api/hooks/useWorkflows.js';
+import { useCreateWorkflow, useDeleteWorkflow, usePauseWorkflow, usePublishWorkflow, useRestoreWorkflowVersion, useWorkflow, useWorkflowVersions, useWorkflows } from '../../api/hooks/useWorkflows.js';
 import { useRunWorkflow } from '../../api/hooks/useRunWorkflow.js';
 import { useExecutionLogs } from '../../api/hooks/useLogs.js';
 import { useDashboardMetrics } from '../../api/hooks/useDashboard.js';
@@ -79,10 +79,10 @@ const getHealthStyles = (health) => {
 
 const buildChatUrl = (workflowId, prompt = '') => {
     const params = new URLSearchParams();
-    if (workflowId) params.set('workflowId', workflowId);
+    if (workflowId) params.set('automationId', workflowId);
     if (prompt) params.set('prompt', prompt);
     const query = params.toString();
-    return `/chat/chat${query ? `?${query}` : ''}`;
+    return `/app/assistant${query ? `?${query}` : ''}`;
 };
 
 function StatCard({ label, value, detail, icon: Icon, tone = 'slate' }) {
@@ -200,7 +200,7 @@ function WorkflowDetailDrawer({ workflowId, onClose, onRun, onOpenBuilder, onAsk
                         )}
 
                         <div>
-                            <div className="flex items-center justify-between"><h3 className="text-sm font-bold text-slate-900">Recent executions</h3><button type="button" onClick={() => navigate('/chat/logs')} className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">View all logs</button></div>
+                            <div className="flex items-center justify-between"><h3 className="text-sm font-bold text-slate-900">Recent runs</h3><button type="button" onClick={() => navigate('/app/runs')} className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">View all runs</button></div>
                             <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200">
                                 {isLogsFetching && logs.length === 0 ? <div className="p-5 text-sm text-slate-500">Loading executions…</div> : logs.length === 0 ? <div className="p-5 text-sm text-slate-500">No executions yet. Run a test to see results here.</div> : logs.map(log => <ExecutionRow key={log.id} log={log} />)}
                             </div>
@@ -257,7 +257,8 @@ export default function AutomationCenter() {
     const { data: logsResponse } = useExecutionLogs({ page: 1, pageSize: 100 });
     const allLogs = logsResponse?.data || [];
     const createWorkflowMutation = useCreateWorkflow();
-    const updateWorkflowMutation = useUpdateWorkflow();
+    const publishWorkflowMutation = usePublishWorkflow();
+    const pauseWorkflowMutation = usePauseWorkflow();
     const deleteWorkflowMutation = useDeleteWorkflow();
     const runWorkflowMutation = useRunWorkflow();
 
@@ -282,14 +283,14 @@ export default function AutomationCenter() {
         createWorkflowMutation.mutate({ name: 'New Automation', status: 'Saved', isActive: false, iconColor: 'text-indigo-600', iconBg: 'bg-indigo-100', nodes: [], edges: [] }, {
             onSuccess: workflow => {
                 toast.success('Automation created. Opening builder…');
-                navigate(`/workflow/builder/${workflow.id}`);
+                navigate(`/app/automations/${workflow.id}/build?editor=visual`);
             },
             onError: error => toast.error(error.message || 'Failed to create automation.')
         });
     };
     const runSelectedWorkflow = (payload) => {
         if (!runWorkflow?.id) return;
-        runWorkflowMutation.mutate({ workflowId: runWorkflow.id, payload }, {
+        runWorkflowMutation.mutate({ workflowId: runWorkflow.id, payload, revisionId: runWorkflow.draftRevisionId || null }, {
             onSuccess: result => {
                 setRunWorkflow(null);
                 setSelectedWorkflowId(runWorkflow.id);
@@ -301,7 +302,8 @@ export default function AutomationCenter() {
         });
     };
     const toggleWorkflow = workflow => {
-        updateWorkflowMutation.mutate({ id: workflow.id, data: { isActive: !workflow.isActive, status: !workflow.isActive ? 'Active' : 'Paused' } }, {
+        const mutation = workflow.isActive ? pauseWorkflowMutation : publishWorkflowMutation;
+        mutation.mutate(workflow.id, {
             onSuccess: () => toast.success(workflow.isActive ? 'Automation paused.' : 'Automation activated.'),
             onError: error => toast.error(error.message || 'Could not update automation status.')
         });
@@ -352,11 +354,11 @@ export default function AutomationCenter() {
                         </div>
                     </section>
 
-                    {isError ? <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center"><p className="font-semibold text-red-700">Unable to load automations.</p><button type="button" onClick={() => refetch()} className="mt-3 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white">Try again</button></div> : isPending ? <div className="space-y-3">{[1, 2, 3].map(item => <div key={item} className="h-20 animate-pulse rounded-2xl bg-white" />)}</div> : workflows.length === 0 ? <EmptyState onCreateWithAI={openCreateAI} onBuildManually={createManually} /> : filteredRows.length === 0 ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center"><Search size={24} className="mx-auto text-slate-300" /><p className="mt-3 font-semibold text-slate-700">No automations match these filters.</p><button type="button" onClick={() => { setSearch(''); setStatusFilter('All'); setHealthFilter('All'); }} className="mt-3 text-sm font-semibold text-indigo-600">Clear filters</button></div> : <WorkflowTable rows={filteredRows} onSelect={setSelectedWorkflowId} onRun={setRunWorkflow} onOpenBuilder={id => navigate(`/workflow/builder/${id}`)} onAskAI={openWorkflowAI} onDelete={setWorkflowToDelete} onToggle={toggleWorkflow} onDuplicate={duplicateWorkflow} />}
+                    {isError ? <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center"><p className="font-semibold text-red-700">Unable to load automations.</p><button type="button" onClick={() => refetch()} className="mt-3 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white">Try again</button></div> : isPending ? <div className="space-y-3">{[1, 2, 3].map(item => <div key={item} className="h-20 animate-pulse rounded-2xl bg-white" />)}</div> : workflows.length === 0 ? <EmptyState onCreateWithAI={openCreateAI} onBuildManually={createManually} /> : filteredRows.length === 0 ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center"><Search size={24} className="mx-auto text-slate-300" /><p className="mt-3 font-semibold text-slate-700">No automations match these filters.</p><button type="button" onClick={() => { setSearch(''); setStatusFilter('All'); setHealthFilter('All'); }} className="mt-3 text-sm font-semibold text-indigo-600">Clear filters</button></div> : <WorkflowTable rows={filteredRows} onSelect={setSelectedWorkflowId} onRun={setRunWorkflow} onOpenBuilder={id => navigate(`/app/automations/${id}/build?editor=visual`)} onAskAI={openWorkflowAI} onDelete={setWorkflowToDelete} onToggle={toggleWorkflow} onDuplicate={duplicateWorkflow} />}
                 </div>
             </main>
 
-            {selectedWorkflowId && <><button type="button" aria-label="Close workflow details" onClick={() => setSelectedWorkflowId(null)} className="fixed inset-0 z-30 cursor-default bg-slate-900/20 backdrop-blur-[1px]" /><WorkflowDetailDrawer workflowId={selectedWorkflowId} onClose={() => setSelectedWorkflowId(null)} onRun={() => { const workflow = workflows.find(item => item.id === selectedWorkflowId); setRunWorkflow(workflow || null); }} onOpenBuilder={() => navigate(`/workflow/builder/${selectedWorkflowId}`)} onAskAI={prompt => openWorkflowAI(selectedWorkflowId, prompt)} onDiagnose={log => openWorkflowAI(selectedWorkflowId, `Diagnose this failed execution (${log.id}). Explain the root cause and propose a safe fix.`)} onToggleActive={toggleWorkflow} onDuplicate={duplicateWorkflow} /></>}
+            {selectedWorkflowId && <><button type="button" aria-label="Close workflow details" onClick={() => setSelectedWorkflowId(null)} className="fixed inset-0 z-30 cursor-default bg-slate-900/20 backdrop-blur-[1px]" /><WorkflowDetailDrawer workflowId={selectedWorkflowId} onClose={() => setSelectedWorkflowId(null)} onRun={() => { const workflow = workflows.find(item => item.id === selectedWorkflowId); setRunWorkflow(workflow || null); }} onOpenBuilder={() => navigate(`/app/automations/${selectedWorkflowId}/build?editor=visual`)} onAskAI={prompt => openWorkflowAI(selectedWorkflowId, prompt)} onDiagnose={log => openWorkflowAI(selectedWorkflowId, `Diagnose this failed execution (${log.id}). Explain the root cause and propose a safe fix.`)} onToggleActive={toggleWorkflow} onDuplicate={duplicateWorkflow} /></>}
 
             <ConfirmModal isOpen={!!workflowToDelete} onClose={() => setWorkflowToDelete(null)} onConfirm={confirmDelete} title="Delete automation?" message={`This permanently deletes “${workflowToDelete?.name || 'this automation'}” and its configuration.`} confirmText="Delete" confirmVariant="danger" isLoading={deleteWorkflowMutation.isPending} />
             {runWorkflow && <TestRunModal isOpen={true} onClose={() => setRunWorkflow(null)} onConfirm={runSelectedWorkflow} isLoading={runWorkflowMutation.isPending} workflowId={runWorkflow.id} nodes={runWorkflowDetails?.nodes || runWorkflow.nodes || []} />}

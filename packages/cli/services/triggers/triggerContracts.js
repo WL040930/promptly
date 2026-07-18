@@ -39,7 +39,7 @@ export const normalizeEvent = ({ provider, eventType, externalEventId, payload, 
 
 export const matchesDatabaseSubscription = ({ config = {}, change }) => {
     if (config.resource && config.resource !== change.resource) return false;
-    if (config.ignoreOwnWorkflowChanges !== false && change.resource === 'executionLogs') {
+    if (config.ignoreOwnWorkflowChanges !== false && change.resource === 'automationRuns') {
         const current = change.afterData || change.beforeData || {};
         if (current.workflowId === change.subscriptionWorkflowId) return false;
     }

@@ -13,7 +13,7 @@ import { triggerWorkflow } from '../backend.js';
  */
 export function useRunWorkflow() {
     return useMutation({
-        mutationFn: ({ workflowId, payload = {} }) =>
-            triggerWorkflow(workflowId, payload),
+        mutationFn: ({ workflowId, payload = {}, revisionId = null }) =>
+            triggerWorkflow(workflowId, payload, revisionId),
     });
 }

@@ -10,7 +10,12 @@ export const sendMessage = asyncHandler(async (req, res) => {
     let session = sessionId ? await ChatSession.findOne({ where: { id: sessionId, userId } }) : null;
     if (!session) {
         const titleSource = message || 'New Agent Session';
-        session = await ChatSession.create({ userId, title: `${titleSource.substring(0, 40)}${titleSource.length > 40 ? '...' : ''}` });
+        session = await ChatSession.create({
+            userId,
+            automationId: context?.automationId || context?.workflowId || null,
+            purpose: context?.automationId || context?.workflowId ? 'automation_edit' : 'general',
+            title: `${titleSource.substring(0, 40)}${titleSource.length > 40 ? '...' : ''}`
+        });
     }
 
     if (event) {
@@ -65,7 +70,7 @@ export const getSession = asyncHandler(async (req, res) => {
 });
 
 export const getSessions = asyncHandler(async (req, res) => {
-    const sessions = await ChatSession.findAll({ where: { userId: req.user.id }, order: [['updatedAt', 'DESC']], attributes: ['id', 'title', 'updatedAt', 'agentContext', 'agentState'], limit: 50 });
+    const sessions = await ChatSession.findAll({ where: { userId: req.user.id }, order: [['updatedAt', 'DESC']], attributes: ['id', 'title', 'updatedAt', 'agentContext', 'agentState', 'automationId', 'purpose'], limit: 50 });
     res.json(sessions);
 });
 

@@ -12,7 +12,9 @@ const startServer = async () => {
   try {
     assertAIConfig();
     await sequelize.authenticate();
-    await sequelize.sync({ alter: true });
+    // The clean-slate schema is created explicitly by the database bootstrap.
+    // Startup must never alter a live schema implicitly.
+    await sequelize.sync();
     await ensureDatabaseChangeTriggers(sequelize);
     
     // Initialize the dynamic node registry

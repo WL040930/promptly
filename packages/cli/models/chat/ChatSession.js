@@ -25,13 +25,23 @@ const ChatSession = sequelize.define(
         agentState: {
             type: DataTypes.JSONB,
             defaultValue: {}
+        },
+        automationId: {
+            type: DataTypes.STRING(100),
+            allowNull: true
+        },
+        purpose: {
+            type: DataTypes.STRING(30),
+            allowNull: false,
+            defaultValue: 'general'
         }
     },
     {
-        tableName: 'chat_sessions',
+        tableName: 'conversations',
         timestamps: true,
         indexes: [
-            { fields: ['userId', 'updatedAt'], name: 'chat_sessions_user_updated' }
+            { fields: ['userId', 'updatedAt'], name: 'chat_sessions_user_updated' },
+            { fields: ['userId', 'automationId', 'updatedAt'], name: 'chat_sessions_user_automation_updated' }
         ]
     }
 );

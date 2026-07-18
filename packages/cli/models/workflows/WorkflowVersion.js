@@ -14,6 +14,10 @@ const WorkflowVersion = sequelize.define(
             type: DataTypes.STRING(100),
             allowNull: false
         },
+        baseRevisionId: {
+            type: DataTypes.STRING(100),
+            allowNull: true
+        },
         versionNumber: {
             type: DataTypes.INTEGER,
             allowNull: false
@@ -25,10 +29,19 @@ const WorkflowVersion = sequelize.define(
         edges: {
             type: DataTypes.JSONB,
             defaultValue: []
+        },
+        source: {
+            type: DataTypes.STRING(20),
+            allowNull: false,
+            defaultValue: 'system'
+        },
+        summary: {
+            type: DataTypes.TEXT,
+            allowNull: true
         }
     },
     {
-        tableName: 'workflow_versions',
+        tableName: 'automation_revisions',
         timestamps: true,
         indexes: [
             {

@@ -1,14 +1,16 @@
 import { apiRequest } from './client.js';
-// --- Workflows ---
-export const getWorkflows = () => apiRequest('/api/workflows');
-export const getWorkflow = (id) => apiRequest(`/api/workflows/${id}`);
-export const createWorkflow = (data) => apiRequest('/api/workflows', { method: 'POST', body: JSON.stringify(data) });
-export const updateWorkflow = (id, data) => apiRequest(`/api/workflows/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-export const deleteWorkflow = (id) => apiRequest(`/api/workflows/${id}`, { method: 'DELETE' });
-export const triggerWorkflow = (id, payload) => apiRequest(`/api/workflows/${id}/trigger`, { method: 'POST', body: JSON.stringify({ payload }) });
-export const getWorkflowVersions = (id) => apiRequest(`/api/workflows/${id}/versions`);
-export const saveWorkflowVersion = (id) => apiRequest(`/api/workflows/${id}/versions`, { method: 'POST' });
-export const restoreWorkflowVersion = (id, versionId) => apiRequest(`/api/workflows/${id}/versions/${versionId}/restore`, { method: 'POST' });
+// --- Automations ---
+export const getWorkflows = () => apiRequest('/api/automations');
+export const getWorkflow = (id) => apiRequest(`/api/automations/${id}`);
+export const createWorkflow = (data) => apiRequest('/api/automations', { method: 'POST', body: JSON.stringify(data) });
+export const updateWorkflow = (id, data) => apiRequest(`/api/automations/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const publishWorkflow = (id) => apiRequest(`/api/automations/${id}/publish`, { method: 'POST' });
+export const pauseWorkflow = (id) => apiRequest(`/api/automations/${id}/pause`, { method: 'POST' });
+export const deleteWorkflow = (id) => apiRequest(`/api/automations/${id}`, { method: 'DELETE' });
+export const triggerWorkflow = (id, payload, revisionId = null) => apiRequest(`/api/automations/${id}/test`, { method: 'POST', body: JSON.stringify({ payload, ...(revisionId ? { revisionId } : {}) }) });
+export const getWorkflowVersions = (id) => apiRequest(`/api/automations/${id}/versions`);
+export const saveWorkflowVersion = (id) => apiRequest(`/api/automations/${id}/versions`, { method: 'POST' });
+export const restoreWorkflowVersion = (id, versionId) => apiRequest(`/api/automations/${id}/versions/${versionId}/restore`, { method: 'POST' });
 
 // --- Folders ---
 export const getFolders = () => apiRequest('/api/folders');
@@ -39,27 +41,27 @@ export const getExecutionLogs = ({ search = '', status = 'All', workflowId = '',
     params.append('page', page);
     params.append('pageSize', pageSize);
     const queryString = params.toString();
-    return apiRequest(`/api/logs${queryString ? '?' + queryString : ''}`);
+    return apiRequest(`/api/runs${queryString ? '?' + queryString : ''}`);
 };
 
-export const getExecutionLog = (id) => apiRequest(`/api/logs/${id}`);
+export const getExecutionLog = (id) => apiRequest(`/api/runs/${id}`);
 
 // --- Dashboard ---
 export const getDashboardMetrics = () => apiRequest('/api/dashboard/metrics');
 
 // --- Chat ---
-export const getChatSessions = () => apiRequest('/api/chat/sessions');
-export const sendChatMessage = (sessionId, message, context = {}, event = null) => apiRequest('/api/chat/message', {
+export const getChatSessions = () => apiRequest('/api/conversations');
+export const sendChatMessage = (sessionId, message, context = {}, event = null) => apiRequest('/api/conversations/message', {
     method: 'POST',
     body: JSON.stringify({ sessionId, message, context, ...(event ? { event } : {}) })
 });
-export const getChatSession = (sessionId) => apiRequest(`/api/chat/session/${sessionId}`);
-export const updateChatSession = (sessionId, title) => apiRequest(`/api/chat/session/${sessionId}`, { method: 'PUT', body: JSON.stringify({ title }) });
-export const deleteChatSession = (sessionId) => apiRequest(`/api/chat/session/${sessionId}`, { method: 'DELETE' });
-export const getAgentRun = (runId) => apiRequest(`/api/chat/agent-runs/${runId}`);
-export const approveAgentRun = (runId, idempotencyKey) => apiRequest(`/api/chat/agent-runs/${runId}/approve`, {
+export const getChatSession = (sessionId) => apiRequest(`/api/conversations/${sessionId}`);
+export const updateChatSession = (sessionId, title) => apiRequest(`/api/conversations/${sessionId}`, { method: 'PUT', body: JSON.stringify({ title }) });
+export const deleteChatSession = (sessionId) => apiRequest(`/api/conversations/${sessionId}`, { method: 'DELETE' });
+export const getAgentRun = (runId) => apiRequest(`/api/conversations/agent-runs/${runId}`);
+export const approveAgentRun = (runId, idempotencyKey) => apiRequest(`/api/conversations/agent-runs/${runId}/approve`, {
     method: 'POST',
     headers: { 'Idempotency-Key': idempotencyKey },
     body: JSON.stringify({ idempotencyKey })
 });
-export const rejectAgentRun = (runId) => apiRequest(`/api/chat/agent-runs/${runId}/reject`, { method: 'POST' });
+export const rejectAgentRun = (runId) => apiRequest(`/api/conversations/agent-runs/${runId}/reject`, { method: 'POST' });

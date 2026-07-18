@@ -1,5 +1,5 @@
 import sequelize from '../../db/index.js';
-import { AgentRun, ChatMessage, ChatSession, Form, Workflow } from '../../models/index.js';
+import { AgentRun, ChatMessage, ChatSession, Form, Workflow, WorkflowVersion } from '../../models/index.js';
 import { applyFormPatches } from '../ai/form/domain/formPatchEngine.js';
 import { validateFormSchema } from '../ai/form/domain/formSchemaValidator.js';
 import { validateWorkflow } from '../engine/workflowValidator.js';
@@ -60,16 +60,27 @@ const applyWorkflowArtifact = async ({ artifact, userId, form, transaction }) =>
     if (!validation.valid) throw Object.assign(new Error('The workflow proposal failed validation.'), { code: 'AGENT_INVALID_PROPOSAL', issues: validation.issues });
 
     const workflow = source || await Workflow.create({
-        name: content.name || 'New Workflow',
+        name: content.name || 'New Automation',
         status: 'Draft',
         isActive: false,
         iconColor: 'text-indigo-600',
         iconBg: 'bg-indigo-100',
         nodes,
         edges,
+        revision: 1,
         userId
     }, { transaction });
-    if (source) await workflow.update({ nodes, edges }, { transaction });
+    const nextRevision = Number(workflow.revision || 0) + (source ? 1 : 0);
+    const version = await WorkflowVersion.create({
+        workflowId: workflow.id,
+        versionNumber: source ? nextRevision : 1,
+        baseRevisionId: source ? String(workflow.revision || 1) : null,
+        nodes,
+        edges,
+        source: 'ai',
+        summary: content.summary || 'Applied AI automation proposal'
+    }, { transaction });
+    await workflow.update({ draftRevisionId: version.id, ...(source ? { nodes, edges, revision: nextRevision } : {}) }, { transaction });
     return workflow;
 };
 

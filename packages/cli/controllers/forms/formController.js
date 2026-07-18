@@ -279,7 +279,7 @@ export const submitFormResponse = asyncHandler(async (req, res) => {
                     n => n.subType === 'form-submission' && n.config?.formId === formId
                 );
                 if (triggerNode) {
-                    executeWorkflow(workflow.id, form.userId, initialPayload)
+                    executeWorkflow(workflow.id, form.userId, initialPayload, { runType: 'production', trigger: 'form-submission' })
                         .catch(err => console.error(`[FormTrigger] Dispatch failed for workflow ${workflow.id}:`, err.message));
                 }
             }

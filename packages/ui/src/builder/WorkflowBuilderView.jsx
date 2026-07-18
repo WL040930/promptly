@@ -29,24 +29,24 @@ import { useToast } from '../context/ToastContext.jsx';
 const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setSidebarCollapsed }) => {
     // ── Server data ──────────────────────────────────────────────────────────
     const getViewStateFromUrl = () => {
-        const parsed = parsePath(window.location.pathname);
+        const parsed = parsePath(window.location.href);
         return {
-            viewMode: parsed.viewMode || 'overview',
-            workflowId: parsed.workflowId || null
+            viewMode: parsed.page === 'automation-build' ? 'builder' : 'overview',
+            workflowId: parsed.automationId || null
         };
     };
 
     const { data: folders = [], isPending: isFoldersPending } = useFolders();
     const { data: workflowsData = [], isPending: isWorkflowsPending } = useWorkflows();
     const [activeWorkflowId, setActiveWorkflowId] = useState(() => getViewStateFromUrl().workflowId);
-    
+
     // Automatically select the first workflow if none is selected
     const derivedWorkflowId = activeWorkflowId || (workflowsData.length > 0 ? workflowsData[0].id : null);
     const { data: activeWorkflowData, isPending: isActiveWorkflowPending } = useWorkflow(derivedWorkflowId);
-    
+
     const [activeNodeId, setActiveNodeId] = useState(null);
     const [viewMode, setViewModeState] = useState(() => getViewStateFromUrl().viewMode);
-    
+
     const createWorkflowMutation = useCreateWorkflow();
     const updateWorkflowMutation = useUpdateWorkflow();
     const saveVersionMutation = useSaveWorkflowVersion();
@@ -64,9 +64,9 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
     };
 
     // Only show skeleton on initial load (no data yet), not on background refetches
-    const loading = (isFoldersPending && folders.length === 0) || 
-                    (isWorkflowsPending && workflowsData.length === 0) || 
-                    (viewMode === 'builder' && derivedWorkflowId && isActiveWorkflowPending && !activeWorkflowData);
+    const loading = (isFoldersPending && folders.length === 0) ||
+        (isWorkflowsPending && workflowsData.length === 0) ||
+        (viewMode === 'builder' && derivedWorkflowId && isActiveWorkflowPending && !activeWorkflowData);
 
     // Normalise workflows array → id-keyed map for fast lookup
     const workflows = useMemo(() => {
@@ -108,8 +108,8 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
 
     // ── Execution panel state ─────────────────────────────────────────────
     const [isExecutionPanelOpen, setIsExecutionPanelOpen] = useState(false);
-    const [isTestRunModalOpen, setIsTestRunModalOpen]     = useState(false);
-    const [lastExecutionLog, setLastExecutionLog]         = useState(null);
+    const [isTestRunModalOpen, setIsTestRunModalOpen] = useState(false);
+    const [lastExecutionLog, setLastExecutionLog] = useState(null);
     const runWorkflowMutation = useRunWorkflow();
 
     const handleTestRunClick = () => {
@@ -122,7 +122,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
         setIsExecutionPanelOpen(true);
         setLastExecutionLog(null);
         try {
-            const log = await runWorkflowMutation.mutateAsync({ workflowId: derivedWorkflowId, payload });
+            const log = await runWorkflowMutation.mutateAsync({ workflowId: derivedWorkflowId, payload, revisionId: activeWorkflowData?.draftRevisionId || null });
             setLastExecutionLog(log);
         } catch (err) {
             setLastExecutionLog({ status: 'Failed', durationMs: 0, steps: [], error: err.message });
@@ -145,13 +145,13 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
 
     // ── Navigation helpers ───────────────────────────────────────────────────
     const navigateToBuilder = (wfId) => {
-        navigate(`/workflow/builder/${wfId}`);
+        navigate(`/app/automations/${wfId}/build?editor=visual`);
         setViewModeState('builder');
         setActiveWorkflowId(wfId);
     };
 
     const navigateToOverview = () => {
-        navigate('/workflow/workflows');
+        navigate('/app/automations');
         setViewModeState('overview');
     };
 
@@ -268,10 +268,10 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
 
     // ── Modal & Title editing ────────────────────────────────────────────────
     const openModal = useCallback((type, data = null) => {
-        setModal({ 
-            isOpen: true, 
-            type, 
-            data, 
+        setModal({
+            isOpen: true,
+            type,
+            data,
             inputValue: data?.currentName || '',
             formData: {
                 name: data?.currentName || '',
@@ -328,7 +328,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
         let uniqueTitle = baseTitle;
         let counter = 2;
         let isUnique = false;
-        
+
         while (!isUnique) {
             const exists = nodes.some(n => n.id !== excludeNodeId && (n.title || n.subType || n.id) === uniqueTitle);
             if (!exists) {
@@ -459,9 +459,9 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
 
         updatedNodes = updatedNodes.map(node => {
             if (node.id !== nodeId) return node;
-            
+
             const nextNode = { ...node, ...updatedFields };
-            
+
             if (updatedFields.title !== undefined) {
                 oldTitle = node.title || node.subType || node.id;
                 const requestedTitle = updatedFields.title || node.subType || node.id;
@@ -482,7 +482,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
                 return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             }
             const regex = new RegExp(`\\{\\{${escapeRegExp(oldTitle)}\\.`, 'g');
-            
+
             updatedNodes = updatedNodes.map(node => {
                 if (node.id === nodeId) return node;
                 let configStr = JSON.stringify(node.config || {});
@@ -610,9 +610,8 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
 
             {/* 3. RIGHT PANEL: AI assistant & configuration */}
             <aside
-                className={`bg-white/90 backdrop-blur-md border-l border-slate-200/60 flex flex-col h-full transition-all duration-300 relative z-20 shadow-xl shrink-0 ${
-                    isRightSidebarOpen ? 'w-[340px]' : 'w-0 opacity-0 overflow-hidden border-none'
-                }`}
+                className={`bg-white/90 backdrop-blur-md border-l border-slate-200/60 flex flex-col h-full transition-all duration-300 relative z-20 shadow-xl shrink-0 ${isRightSidebarOpen ? 'w-[340px]' : 'w-0 opacity-0 overflow-hidden border-none'
+                    }`}
             >
                 <div className="flex border-b border-slate-200/60 shrink-0">
                     {isHistorySidebarOpen ? (
@@ -635,21 +634,19 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
                         <>
                             <button
                                 onClick={() => setRightTab('chat')}
-                                className={`flex-1 py-3 px-1 text-center text-sm truncate font-medium transition-all border-b-2 ${
-                                    rightTab === 'chat'
+                                className={`flex-1 py-3 px-1 text-center text-sm truncate font-medium transition-all border-b-2 ${rightTab === 'chat'
                                         ? 'border-indigo-600 text-indigo-600 bg-indigo-50/30'
                                         : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                                }`}
+                                    }`}
                             >
                                 AI Assistant
                             </button>
                             <button
                                 onClick={() => setRightTab('properties')}
-                                className={`flex-1 py-3 px-1 text-center text-sm truncate font-medium transition-all border-b-2 ${
-                                    rightTab === 'properties'
+                                className={`flex-1 py-3 px-1 text-center text-sm truncate font-medium transition-all border-b-2 ${rightTab === 'properties'
                                         ? 'border-indigo-600 text-indigo-600 bg-indigo-50/30'
                                         : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                                }`}
+                                    }`}
                             >
                                 Configure
                             </button>

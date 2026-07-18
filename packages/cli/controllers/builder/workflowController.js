@@ -5,6 +5,7 @@ import SchedulerService from '../../services/scheduler/schedulerService.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { validateWorkflow } from '../../services/engine/workflowValidator.js';
 import { reconcileWorkflow, removeWorkflow } from '../../services/triggers/triggerRuntime.js';
+import { saveAutomationDraft, publishAutomation, pauseAutomation, saveAutomationVersion } from '../../services/automations/automationService.js';
 
 const workflowValidationResponse = (res, workflow) => {
     const validation = validateWorkflow({
@@ -45,13 +46,15 @@ export const getWorkflow = asyncHandler(async (req, res) => {
 });
 
 export const createWorkflow = asyncHandler(async (req, res) => {
-    const { name, folderId, isActive, status, icon, iconColor, iconBg, nodes, edges } = req.body;
+    const { name, description, folderId, isActive, status, lifecycleStatus, icon, iconColor, iconBg, nodes = [], edges = [], source = 'system', summary = 'Initial automation draft' } = req.body;
     const validationResponse = workflowValidationResponse(res, { nodes, edges, isActive });
     if (validationResponse) return validationResponse;
     const workflow = await Workflow.create({
-        name, folderId, isActive, status, icon, iconColor, iconBg, nodes, edges,
+        name, description, folderId, isActive, status: status || lifecycleStatus || 'Draft', icon, iconColor, iconBg, nodes, edges, revision: 1,
         userId: req.user.id
     });
+    const initialVersion = await WorkflowVersion.create({ workflowId: workflow.id, versionNumber: 1, baseRevisionId: null, nodes, edges, source, summary });
+    await workflow.update({ draftRevisionId: initialVersion.id });
     try {
         await reconcileWorkflow(workflow);
     } catch (error) {
@@ -64,9 +67,9 @@ export const createWorkflow = asyncHandler(async (req, res) => {
 
 export const updateWorkflow = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { name, folderId, isActive, status, icon, iconColor, iconBg, nodes, edges } = req.body;
+    const { name, description, folderId, isActive, status, lifecycleStatus, icon, iconColor, iconBg, nodes, edges, expectedRevision, source = 'visual', summary } = req.body;
     
-    const workflow = await Workflow.findOne({ where: { id, userId: req.user.id } });
+    let workflow = await Workflow.findOne({ where: { id, userId: req.user.id } });
     if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
 
     const nextNodes = nodes === undefined ? (workflow.nodes || []) : nodes;
@@ -75,7 +78,30 @@ export const updateWorkflow = asyncHandler(async (req, res) => {
     const validationResponse = workflowValidationResponse(res, { nodes: nextNodes, edges: nextEdges, isActive: nextIsActive });
     if (validationResponse) return validationResponse;
 
-    await workflow.update({ name, folderId, isActive, status, icon, iconColor, iconBg, nodes, edges });
+    const graphChanged = nodes !== undefined || edges !== undefined;
+    if (graphChanged) {
+        const saved = await saveAutomationDraft({
+            automationId: id,
+            userId: req.user.id,
+            nodes: nextNodes,
+            edges: nextEdges,
+            expectedRevision,
+            source,
+            summary
+        });
+        workflow = saved.automation;
+    }
+
+    await workflow.update({
+        ...(name !== undefined ? { name } : {}),
+        ...(description !== undefined ? { description } : {}),
+        ...(folderId !== undefined ? { folderId } : {}),
+        ...(isActive !== undefined ? { isActive } : {}),
+        ...(status !== undefined || lifecycleStatus !== undefined ? { status: status || lifecycleStatus } : {}),
+        ...(icon !== undefined ? { icon } : {}),
+        ...(iconColor !== undefined ? { iconColor } : {}),
+        ...(iconBg !== undefined ? { iconBg } : {})
+    });
 
     try {
         await reconcileWorkflow(workflow);
@@ -105,9 +131,26 @@ export const deleteWorkflow = asyncHandler(async (req, res) => {
 
 export const triggerWorkflow = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { payload } = req.body;
-    const log = await executeWorkflow(id, req.user.id, payload);
+    const { payload, revisionId } = req.body;
+    const log = await executeWorkflow(id, req.user.id, payload, { runType: 'test', revisionId, trigger: 'manual-test' });
     res.json(log);
+});
+
+export const publishWorkflow = asyncHandler(async (req, res) => {
+    const workflow = await publishAutomation({ automationId: req.params.id, userId: req.user.id });
+    try {
+        await reconcileWorkflow(workflow);
+    } catch (error) {
+        await workflow.update({ isActive: false, status: 'Trigger setup failed' });
+        return res.status(503).json({ message: 'Automation trigger could not be connected.', error: error.message });
+    }
+    res.json(workflow);
+});
+
+export const pauseWorkflow = asyncHandler(async (req, res) => {
+    const workflow = await pauseAutomation({ automationId: req.params.id, userId: req.user.id });
+    await removeWorkflow(workflow.id);
+    res.json(workflow);
 });
 
 // --- Versioning Endpoints ---
@@ -122,19 +165,7 @@ export const getWorkflowVersions = asyncHandler(async (req, res) => {
 });
 
 export const saveWorkflowVersion = asyncHandler(async (req, res) => {
-    const { id } = req.params;
-    const workflow = await Workflow.findOne({ where: { id, userId: req.user.id } });
-    if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
-    
-    const count = await WorkflowVersion.count({ where: { workflowId: id } });
-    
-    const version = await WorkflowVersion.create({
-        workflowId: id,
-        versionNumber: count + 1,
-        nodes: workflow.nodes,
-        edges: workflow.edges
-    });
-    
+    const version = await saveAutomationVersion({ automationId: req.params.id, userId: req.user.id, source: req.body?.source || 'system', summary: req.body?.summary || null });
     res.status(201).json(version);
 });
 
@@ -154,10 +185,15 @@ export const restoreWorkflowVersion = asyncHandler(async (req, res) => {
     });
     if (validationResponse) return validationResponse;
     
-    await workflow.update({
+    const saved = await saveAutomationDraft({
+        automationId: id,
+        userId: req.user.id,
         nodes: version.nodes,
-        edges: version.edges
+        edges: version.edges,
+        expectedRevision: workflow.revision,
+        source: 'restore',
+        summary: `Restored version ${version.versionNumber}`
     });
-    
-    res.json(workflow);
+
+    res.json(saved.automation);
 });

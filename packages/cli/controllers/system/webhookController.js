@@ -44,7 +44,7 @@ export const handleWebhook = asyncHandler(async (req, res) => {
                 }
             }
 
-            executeWorkflow(workflow.id, workflow.userId, initialPayload)
+            executeWorkflow(workflow.id, workflow.userId, initialPayload, { runType: 'production', trigger: 'webhook' })
                 .catch(err => console.error(`[WebhookTrigger] Dispatch failed for workflow ${workflow.id}:`, err.message));
         }
     } catch (err) {

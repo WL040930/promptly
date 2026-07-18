@@ -82,7 +82,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
         const params = new URLSearchParams();
         if (workflowId) params.set('workflowId', workflowId);
         if (prompt) params.set('prompt', prompt);
-        navigate(`/chat/chat?${params.toString()}`);
+        navigate(`/app/assistant?${params.toString().replace('workflowId', 'automationId')}`);
     }, []);
 
     // ── Modal helpers ────────────────────────────────────────────────────────

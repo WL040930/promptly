@@ -41,7 +41,7 @@ const ChatMessage = sequelize.define(
         }
     },
     {
-        tableName: 'chat_messages',
+        tableName: 'conversation_messages',
         timestamps: true,
         indexes: [
             { fields: ['sessionId', 'createdAt'], name: 'chat_messages_session_created' }

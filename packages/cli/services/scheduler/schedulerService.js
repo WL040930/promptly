@@ -39,7 +39,7 @@ function register(workflowId, userId, cronExpression, timezone = 'UTC') {
                     timestamp,
                     cronExpression,
                     idempotencyKey: `${workflowId}:${timestamp}`
-                });
+                }, { runType: 'production', trigger: 'schedule' });
             } catch (err) {
                 console.error(`[Scheduler] Execution failed for workflow ${workflowId}:`, err.message);
             }

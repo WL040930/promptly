@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { Op } from 'sequelize';
 import User from '../../models/core/User.js';
+import Connection from '../../models/core/Connection.js';
+import OnboardingProgress from '../../models/core/OnboardingProgress.js';
 import env from '../../config/env.js';
 import { normalizeEmail, emailPattern, passwordPattern } from '../../utils/validators.js';
 import { sendEmail } from '../../utils/email.js';
@@ -12,6 +14,20 @@ const createAuthToken = (user) =>
     jwt.sign({ sub: user.id, email: user.email }, env.jwt.secret, {
         expiresIn: env.jwt.expiresIn
     });
+
+const serializeUser = async (user) => {
+    const google = await Connection.findOne({ where: { userId: user.id, provider: 'google', status: 'active' } });
+    const onboarding = await OnboardingProgress.findOne({ where: { userId: user.id } });
+    return {
+        id: user.id,
+        email: user.email,
+        onboardingStatus: onboarding?.status || 'not_started',
+        onboardingCompletedAt: onboarding?.completedAt || null,
+        onboardingVersion: onboarding?.version || 1,
+        googleEmail: google?.accountEmail || null,
+        googleId: google?.externalAccountId || null
+    };
+};
 
 const register = async (req, res) => {
     const email = normalizeEmail(req.body.email);
@@ -39,11 +55,12 @@ const register = async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({ email, passwordHash });
+    await OnboardingProgress.create({ userId: user.id });
     const token = createAuthToken(user);
 
     return res.status(201).json({
         message: 'User registered successfully',
-        user: { id: user.id, email: user.email, experienceLevel: user.experienceLevel },
+        user: await serializeUser(user),
         token
     });
 };
@@ -70,34 +87,36 @@ const login = async (req, res) => {
 
     return res.json({
         message: 'Login successful',
-        user: { id: user.id, email: user.email, experienceLevel: user.experienceLevel },
+        user: await serializeUser(user),
         token
     });
 };
 
-const updateMode = async (req, res) => {
-    const { experienceLevel } = req.body;
-
-    if (!['chat', 'builder'].includes(experienceLevel)) {
-        return res.status(400).json({ error: 'Invalid mode selection.' });
-    }
-
+const completeOnboarding = async (req, res) => {
     const user = await User.findByPk(req.user.id);
     if (!user) {
         return res.status(404).json({ error: 'User not found.' });
     }
 
-    user.experienceLevel = experienceLevel;
-    await user.save();
+    const [onboarding] = await OnboardingProgress.findOrCreate({ where: { userId: user.id }, defaults: { version: 1 } });
+    await onboarding.update({ status: 'completed', currentStep: 'complete', completedAt: onboarding.completedAt || new Date(), version: Math.max(Number(onboarding.version || 0), 1) });
 
     return res.json({
-        message: 'Mode saved successfully.',
-        user: {
-            id: user.id,
-            email: user.email,
-            experienceLevel: user.experienceLevel
-        }
+        message: 'Onboarding completed successfully.',
+        user: await serializeUser(user)
     });
+};
+
+const startOnboarding = async (req, res) => {
+    const [onboarding] = await OnboardingProgress.findOrCreate({ where: { userId: req.user.id }, defaults: { version: 1 } });
+    await onboarding.update({ status: 'in_progress', currentStep: req.body?.step || 'goal', startedAt: onboarding.startedAt || new Date() });
+    return res.json({ onboarding });
+};
+
+const skipOnboarding = async (req, res) => {
+    const [onboarding] = await OnboardingProgress.findOrCreate({ where: { userId: req.user.id }, defaults: { version: 1 } });
+    await onboarding.update({ status: 'skipped', currentStep: 'skipped', completedAt: onboarding.completedAt || new Date() });
+    return res.json({ onboarding, user: await serializeUser(await User.findByPk(req.user.id)) });
 };
 
 const getMe = async (req, res) => {
@@ -107,11 +126,7 @@ const getMe = async (req, res) => {
     }
     return res.json({
         user: {
-            id: user.id,
-            email: user.email,
-            experienceLevel: user.experienceLevel,
-            googleEmail: user.googleEmail,
-            googleId: user.googleId
+            ...(await serializeUser(user))
         }
     });
 };
@@ -207,4 +222,4 @@ export const changePassword = async (req, res) => {
     return res.json({ message: 'Password updated successfully.' });
 };
 
-export { register, login, updateMode, getMe };
+export { register, login, completeOnboarding, startOnboarding, skipOnboarding, getMe };

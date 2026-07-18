@@ -21,17 +21,18 @@ import FormsLoadingSkeleton from './FormsLoadingSkeleton.jsx';
  * Redesigned sidebar and top bar for a premium workspace feel.
  */
 
-const FormsTab = () => {
+const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'build' } = {}) => {
     const { data: forms = [], isLoading: isFormsLoading } = useForms();
     const createFormMutation = useCreateForm();
     const updateFormMutation = useUpdateForm();
     const deleteFormMutation = useDeleteForm();
-    const [activeFormId, setActiveFormId] = useState(() => parsePath(window.location.pathname).formId || null);
+    const initialRoute = parsePath(window.location.href);
+    const [activeFormId, setActiveFormId] = useState(() => initialFormId || initialRoute.formId || null);
     const [activeSubTab, setActiveSubTab] = useState(() => {
-        const urlSubTab = parsePath(window.location.pathname).subTab;
-        return (urlSubTab && urlSubTab !== 'preview') ? urlSubTab : 'questions';
+        const urlSubTab = initialSection !== 'build' ? initialSection : initialRoute.section;
+        return urlSubTab === 'ai' || urlSubTab === 'responses' || urlSubTab === 'settings' ? urlSubTab : 'questions';
     });
-    const [isPreviewMode, setIsPreviewMode] = useState(() => parsePath(window.location.pathname).subTab === 'preview');
+    const [isPreviewMode, setIsPreviewMode] = useState(() => (initialSection || initialRoute.section) === 'preview');
     const [isShareOpen, setIsShareOpen] = useState(false);
     const [sidebarSearch, setSidebarSearch] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -55,7 +56,7 @@ const FormsTab = () => {
     useEffect(() => {
         if (!isFormsLoading && forms.length > 0 && isInitialLoad.current) {
             isInitialLoad.current = false;
-            const urlFormId = parsePath(window.location.pathname).formId;
+            const urlFormId = parsePath(window.location.href).formId;
             if (urlFormId && forms.find(f => f.id === urlFormId)) {
                 setActiveFormId(urlFormId);
             } else if (!activeFormId) {
@@ -69,7 +70,7 @@ const FormsTab = () => {
         if (activeFormId) {
             const currentPath = window.location.pathname;
             const currentSubTab = isPreviewMode ? 'preview' : activeSubTab;
-            const newPath = buildPath({ mode: 'workflow', tab: 'forms', formId: activeFormId, subTab: currentSubTab });
+            const newPath = buildPath({ page: 'form-detail', formId: activeFormId, section: currentSubTab === 'questions' ? 'build' : currentSubTab });
             if (currentPath !== newPath) {
                 replacePath(newPath);
             }
@@ -79,12 +80,12 @@ const FormsTab = () => {
     // Handle back/forward navigation
     useEffect(() => {
         const handler = () => {
-            const parsed = parsePath(window.location.pathname);
-            if (parsed.tab === 'forms') {
+            const parsed = parsePath(window.location.href);
+            if (parsed.page === 'form-detail' || parsed.page === 'forms') {
                 if (parsed.formId && parsed.formId !== activeFormId) {
                     setActiveFormId(parsed.formId);
                 }
-                const urlSubTab = parsed.subTab;
+                const urlSubTab = parsed.section;
                 if (urlSubTab === 'preview') {
                     setIsPreviewMode(true);
                 } else if (urlSubTab) {

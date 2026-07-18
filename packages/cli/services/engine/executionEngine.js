@@ -1,4 +1,5 @@
 import Workflow from '../../models/workflows/Workflow.js';
+import WorkflowVersion from '../../models/workflows/WorkflowVersion.js';
 import ExecutionLog from '../../models/execution/ExecutionLog.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { NodeFactory } from '../../../nodes/NodeFactory.js';
@@ -13,6 +14,7 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
     const startTime = Date.now();
     let status = 'Success';
     let errorMsg = null;
+    let executedRevisionId = executionOptions.revisionId || null;
     const stepLogs = [];
     let workflowOutput = null;
 
@@ -20,8 +22,10 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
         const workflow = await Workflow.findOne({ where: { id: workflowId, userId } });
         if (!workflow) throw new Error('Workflow not found');
 
-        const nodes = workflow.nodes || [];
-        const edges = workflow.edges || [];
+        executedRevisionId = executionOptions.revisionId || (executionOptions.runType === 'production' ? workflow.publishedRevisionId : workflow.draftRevisionId) || null;
+        const revision = executedRevisionId ? await WorkflowVersion.findOne({ where: { id: executedRevisionId, workflowId: workflow.id } }) : null;
+        const nodes = revision?.nodes || workflow.nodes || [];
+        const edges = revision?.edges || workflow.edges || [];
         if (nodes.length === 0) throw new Error('Workflow has no nodes to execute');
 
         const validation = validateWorkflow({ nodes, edges, isActive: false, registry: NodeRegistry });
@@ -184,6 +188,7 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
 
     return ExecutionLog.create({
         workflowId,
+        revisionId: executedRevisionId,
         userId,
         durationMs: Date.now() - startTime,
         status,

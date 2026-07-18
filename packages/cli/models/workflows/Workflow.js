@@ -3,7 +3,7 @@ import sequelize from '../../db/index.js';
 import crypto from 'crypto';
 
 const Workflow = sequelize.define(
-    'Workflow',
+    'Automation',
     {
         id: {
             type: DataTypes.STRING(100),
@@ -13,6 +13,23 @@ const Workflow = sequelize.define(
         name: {
             type: DataTypes.STRING(255),
             allowNull: false
+        },
+        description: {
+            type: DataTypes.TEXT,
+            allowNull: true
+        },
+        revision: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 1
+        },
+        draftRevisionId: {
+            type: DataTypes.STRING(100),
+            allowNull: true
+        },
+        publishedRevisionId: {
+            type: DataTypes.STRING(100),
+            allowNull: true
         },
         isActive: {
             type: DataTypes.BOOLEAN,
@@ -44,7 +61,7 @@ const Workflow = sequelize.define(
         }
     },
     {
-        tableName: 'workflows',
+        tableName: 'automations',
         timestamps: true,
         indexes: [
             { fields: ['userId', 'updatedAt'], name: 'workflows_user_updated' },

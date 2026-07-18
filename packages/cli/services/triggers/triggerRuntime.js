@@ -174,6 +174,7 @@ export const processPendingEvents = async ({ limit = 10 } = {}) => {
                 await event.update({ status: 'discarded', processedAt: new Date(), lastError: 'Workflow is no longer active.' });
             } else {
                 const execution = await executeWorkflow(event.workflowId, event.userId, event.payload, {
+                    runType: 'production',
                     trigger: `${event.provider}:${event.eventType}`,
                     eventId: event.externalEventId,
                     correlationId: event.correlationId,

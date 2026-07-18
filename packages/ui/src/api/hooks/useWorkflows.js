@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getWorkflows, getWorkflow, createWorkflow, updateWorkflow, deleteWorkflow } from '../backend.js';
+import { getWorkflows, getWorkflow, createWorkflow, updateWorkflow, publishWorkflow, pauseWorkflow, deleteWorkflow } from '../backend.js';
 
 export const useWorkflows = () => {
     return useQuery({
@@ -68,6 +68,20 @@ export const useUpdateWorkflow = () => {
         },
     });
 };
+
+const useWorkflowLifecycleMutation = mutationFn => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn,
+        onSuccess: workflow => {
+            queryClient.setQueryData(['workflows', workflow.id], workflow);
+            queryClient.invalidateQueries({ queryKey: ['workflows'] });
+        },
+    });
+};
+
+export const usePublishWorkflow = () => useWorkflowLifecycleMutation(publishWorkflow);
+export const usePauseWorkflow = () => useWorkflowLifecycleMutation(pauseWorkflow);
 
 export const useDeleteWorkflow = () => {
     const queryClient = useQueryClient();

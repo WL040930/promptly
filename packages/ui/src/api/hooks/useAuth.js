@@ -3,8 +3,7 @@ import {
     changePassword,
     completeOnboarding,
     disconnectGoogle,
-    getGoogleConnectUrl,
-    switchExperienceLevel
+    getGoogleConnectUrl
 } from '../auth.js';
 
 const ME_QUERY_KEY = ['me'];
@@ -26,10 +25,6 @@ function useUpdateCurrentUser(mutationFn) {
 
 export function useCompleteOnboarding() {
     return useUpdateCurrentUser(completeOnboarding);
-}
-
-export function useSwitchExperienceLevel() {
-    return useUpdateCurrentUser(switchExperienceLevel);
 }
 
 export function useChangePassword() {
