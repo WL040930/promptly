@@ -101,7 +101,6 @@ const analyzeIntent = async ({ message, context }) => {
     try {
         const result = await requestAgentJson({
             label: 'intent',
-            maxCompletionTokens: 700,
             prompt: [
                 'User request:', message,
                 '',
@@ -163,7 +162,6 @@ const planSolution = async ({ intent, resources, clarificationMode = DEFAULT_CLA
     try {
         const result = await requestAgentJson({
             label: 'plan',
-            maxCompletionTokens: 1000,
             prompt: [
                 'Typed intent:', JSON.stringify(intent),
                 '',

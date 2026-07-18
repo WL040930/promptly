@@ -35,6 +35,48 @@ test('generateFormFromPrompt returns a non-mutating conversational reply', async
     assert.equal(result.tokenUsage.requestCalls, 1);
 });
 
+test('generateFormFromPrompt preserves normalized token usage from the AI client', async () => {
+    const { generateFormFromPrompt } = await import('./pipeline.js');
+    const provider = {
+        async generateContent() {
+            return {
+                text: JSON.stringify({
+                    type: 'reply',
+                    message: 'A short answer.'
+                }),
+                usageMetadata: {
+                    promptTokenCount: 12,
+                    candidatesTokenCount: 8,
+                    totalTokenCount: 20
+                }
+            };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'How should I collect this information?',
+        { title: 'Survey', description: '', settings: {}, fields: [] },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.deepEqual(result.tokenUsage, {
+        promptTokens: 12,
+        completionTokens: 8,
+        totalTokens: 20,
+        stages: {
+            planner: {
+                promptTokens: 12,
+                completionTokens: 8,
+                totalTokens: 20,
+                calls: 1
+            }
+        },
+        requestCalls: 1
+    });
+});
+
 test('generateFormFromPrompt uses the direct proposal fast path for a clear small edit', async () => {
     const { generateFormFromPrompt } = await import('./pipeline.js');
     const operations = [];

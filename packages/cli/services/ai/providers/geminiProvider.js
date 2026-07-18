@@ -18,15 +18,15 @@ const getThinkingLevel = (model, configuredLevel) => {
 };
 
 export class GeminiProvider extends BaseAIProvider {
-    constructor() {
+    constructor({ apiKey = env.gemini.apiKey, timeoutMs = env.aiTimeoutMs, thinkingLevel = env.aiThinkingLevel } = {}) {
         super();
-        const apiKey = env.gemini.apiKey;
         if (!apiKey) {
             console.warn('Gemini API key is missing.');
         }
+        this.thinkingLevel = thinkingLevel;
         this.ai = new GoogleGenAI({
             apiKey,
-            httpOptions: { timeout: env.aiTimeoutMs },
+            httpOptions: { timeout: timeoutMs },
         });
     }
 
@@ -35,65 +35,35 @@ export class GeminiProvider extends BaseAIProvider {
             systemInstruction,
             responseMimeType,
             model = 'gemini-3.5-flash',
-            maxCompletionTokens,
-            operation = 'unknown'
+            maxCompletionTokens
         } = options;
         const maxOutputTokens = Number.isInteger(maxCompletionTokens) && maxCompletionTokens > 0
             ? maxCompletionTokens
             : null;
-        const thinkingLevel = getThinkingLevel(model, env.aiThinkingLevel);
+        const thinkingLevel = getThinkingLevel(model, this.thinkingLevel);
         const config = {
             systemInstruction,
             responseMimeType,
             ...(maxOutputTokens ? { maxOutputTokens } : {}),
             ...(thinkingLevel ? { thinkingConfig: { thinkingLevel } } : {})
         };
-        const startedAt = Date.now();
-        
-        try {
-            const response = await this.ai.models.generateContent({
-                model,
-                contents,
-                config
-            });
+        const response = await this.ai.models.generateContent({
+            model,
+            contents,
+            config
+        });
 
-            const usageMetadata = response.usageMetadata;
-            console.info('[AI Performance]', JSON.stringify({
-                operation,
-                provider: 'gemini',
-                model,
-                elapsedMs: Date.now() - startedAt,
-                maxOutputTokens,
-                thinkingLevel: thinkingLevel || null,
-                promptTokens: usageMetadata?.promptTokenCount || 0,
-                completionTokens: usageMetadata?.candidatesTokenCount || 0,
-                totalTokens: usageMetadata?.totalTokenCount || 0,
-                thoughtTokens: usageMetadata?.thoughtsTokenCount || 0
-            }));
+        const usageMetadata = response.usageMetadata;
 
-            return {
-                text: response.text,
-                finishReason: response.candidates?.[0]?.finishReason || null,
-                usageMetadata: usageMetadata ? {
-                    promptTokenCount: usageMetadata.promptTokenCount,
-                    candidatesTokenCount: usageMetadata.candidatesTokenCount,
-                    totalTokenCount: usageMetadata.totalTokenCount,
-                    thoughtsTokenCount: usageMetadata.thoughtsTokenCount || 0
-                } : null
-            };
-        } catch (error) {
-            console.warn('[AI Performance]', JSON.stringify({
-                operation,
-                provider: 'gemini',
-                model,
-                elapsedMs: Date.now() - startedAt,
-                maxOutputTokens,
-                thinkingLevel: thinkingLevel || null,
-                status: error?.status || error?.statusCode || null,
-                error: error?.code || error?.name || 'provider_error'
-            }));
-            console.error('Gemini Provider Error:', error);
-            throw error;
-        }
+        return {
+            text: response.text,
+            finishReason: response.candidates?.[0]?.finishReason || null,
+            usageMetadata: usageMetadata ? {
+                promptTokenCount: usageMetadata.promptTokenCount,
+                candidatesTokenCount: usageMetadata.candidatesTokenCount,
+                totalTokenCount: usageMetadata.totalTokenCount,
+                thoughtsTokenCount: usageMetadata.thoughtsTokenCount || 0
+            } : null
+        };
     }
 }

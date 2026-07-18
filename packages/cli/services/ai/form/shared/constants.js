@@ -1,4 +1,4 @@
-import env from '../../../../config/env.js';
+import { AI_TASKS } from '../../core/aiTasks.js';
 
 export const MAX_PLANNER_ATTEMPTS = 2;
 export const MAX_FORM_REPAIR_LOOPS = 5;
@@ -14,12 +14,8 @@ export const MAX_FORM_AI_CALLS = MAX_PROVIDER_ROUTE_ATTEMPTS * (
 
 export const MAX_INVALID_OUTPUT_PREVIEW_LENGTH = 2000;
 
-export const getCompletionLimit = label => env.aiFormUnlimitedCompletionTokens
-    ? null
-    : env.aiFormCompletionLimits[label];
-
 export const getFormTask = label => label.startsWith('planner')
-    ? 'formPlanner'
+    ? label === 'planner repair' ? AI_TASKS.FORM_PLAN_REPAIR : AI_TASKS.FORM_PLAN
     : label.startsWith('worker')
-        ? 'formWorker'
-        : 'formVerifier';
+        ? label === 'worker repair' ? AI_TASKS.FORM_BUILD_REPAIR : AI_TASKS.FORM_BUILD
+        : label === 'verifier repair' ? AI_TASKS.FORM_VERIFY_REPAIR : AI_TASKS.FORM_VERIFY;

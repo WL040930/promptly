@@ -1,7 +1,6 @@
 import { BaseNode } from '../../../BaseNode.js';
-import { getAITaskConfig, getAIProviderForTask } from '../../../../cli/services/ai/core/aiService.js';
-import env from '../../../../cli/config/env.js';
-import { parseAiJson } from '../../../../cli/utils/jsonParser.js';
+import { ai } from '../../../../cli/services/ai/index.js';
+import { AI_TASKS } from '../../../../cli/services/ai/core/aiTasks.js';
 
 const SYSTEM_PROMPTS = {
     summarize: 'You are a summarization assistant. Produce a concise, accurate summary of the provided text. Return only the summary, no preamble.',
@@ -30,37 +29,24 @@ export default class AITaskNode extends BaseNode {
     async execute(context) {
         const config = this.getResolvedConfig(context);
         const taskType = config.taskType || 'custom';
-        const taskConfig = getAITaskConfig('node');
-        const model = config.model || taskConfig.model;
         const prompt = buildPrompt(taskType, config.prompt, config.extractionSchema, config.categories, config.inputData || context.initialPayload);
         const systemPrompt = config.systemPrompt || SYSTEM_PROMPTS[taskType] || '';
-        const provider = getAIProviderForTask('node');
-        const response = await provider.generateContent([{ role: 'user', parts: [{ text: prompt }] }], {
+        const response = await ai.run({
+            task: structuredTasks.has(taskType) ? AI_TASKS.NODE_JSON : AI_TASKS.NODE_TEXT,
+            messages: [{ role: 'user', parts: [{ text: prompt }] }],
             systemInstruction: systemPrompt,
-            model,
-            responseMimeType: structuredTasks.has(taskType) ? 'application/json' : undefined,
-            maxCompletionTokens: env.aiNodeMaxCompletionTokens,
+            mode: ['fast', 'best'].includes(config.mode) ? config.mode : null,
             operation: 'node:ai-task'
         });
 
-        const responseText = String(response.text || '').trim();
-        let parsedResponse = null;
-        if (structuredTasks.has(taskType)) {
-            try {
-                parsedResponse = parseAiJson(responseText);
-            } catch (error) {
-                throw new Error(`AI Task expected JSON output but received invalid JSON: ${error.message}`);
-            }
-        }
-
-        const usage = response.usageMetadata || {};
-        const tokensUsed = usage.totalTokenCount || ((usage.promptTokenCount || 0) + (usage.candidatesTokenCount || 0));
+        const responseText = response.text.trim();
+        const tokensUsed = response.usage.totalTokens;
         return {
             success: true,
             taskType,
-            model,
+            model: response.model,
             response: responseText,
-            parsedResponse,
+            parsedResponse: response.json,
             tokensUsed
         };
     }

@@ -1,5 +1,7 @@
 import { ChatSession, ChatMessage, Workflow, Form, AgentRun } from '../../models/index.js';
 import { runFormTurn } from '../ai/formAIService.js';
+import { ai } from '../ai/index.js';
+import { AI_TASKS } from '../ai/core/aiTasks.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { assembleWorkflow, tokenTotal } from '../ai/workflow/workflowAgentService.js';
 import env from '../../config/env.js';
@@ -8,7 +10,6 @@ import { processAgenticTurn, resumeAgentAfterClarification, resumeAgentAfterForm
 import { createChatCapabilityRegistry } from './chatCapabilityRegistry.js';
 import { getClarificationModeInstruction, normalizeClarificationMode } from '../../../shared/agentContract.js';
 import { supersedePendingChatFormProposals } from '../proposalLifecycle.js';
-import { requestChatCompletionWithFallback } from './chatProviderRouter.js';
 
 const tokenPayload = (...usages) => {
     const stage1 = usages[0] || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -424,13 +425,13 @@ export const processChatMessage = async ({ session, userId, context = {} }) => {
 
     while (loopCount < maxLoops) {
         loopCount++;
-        const response = await requestChatCompletionWithFallback({
-            contents: aiMessages,
+        const response = await ai.run({
+            task: AI_TASKS.CHAT_RESPOND,
+            messages: aiMessages,
             systemInstruction: `${systemInstruction}
 Available capabilities:
 ${capabilitySummary}
 Clarification for form requirements: ${normalizeClarificationMode(effectiveContext.clarificationMode)} - ${getClarificationModeInstruction(effectiveContext.clarificationMode)}${selectedWorkflowInstruction}${selectedFormInstruction}`,
-            maxCompletionTokens: env.aiChatMaxCompletionTokens,
             operation: 'chat',
             tools: capabilityTools
         });

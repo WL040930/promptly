@@ -1,8 +1,8 @@
 export const addTokenUsage = (total = {}, response, stage = null) => {
     const usage = response?.usageMetadata;
-    const promptTokens = usage?.promptTokenCount || 0;
-    const completionTokens = usage?.candidatesTokenCount || 0;
-    const totalTokens = usage?.totalTokenCount || 0;
+    const promptTokens = usage?.promptTokens ?? usage?.promptTokenCount ?? 0;
+    const completionTokens = usage?.completionTokens ?? usage?.candidatesTokenCount ?? 0;
+    const totalTokens = usage?.totalTokens ?? usage?.totalTokenCount ?? 0;
     const nextTotal = {
         promptTokens: (total.promptTokens || 0) + promptTokens,
         completionTokens: (total.completionTokens || 0) + completionTokens,

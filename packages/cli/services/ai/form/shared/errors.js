@@ -1,4 +1,3 @@
-import env from '../../../../config/env.js';
 import { MAX_FORM_AI_CALLS } from './constants.js';
 
 export const createAIOutputError = (message, code, issues = []) => {
@@ -17,53 +16,6 @@ export const createAIOutputError = (message, code, issues = []) => {
     error.code = code;
     error.issues = issues;
     return error;
-};
-
-export const withTimeout = (promise, timeoutMs, label) => new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-        reject(createAIOutputError(
-            `${label} AI request timed out. Please try again.`,
-            'FORM_AI_PROVIDER_TIMEOUT',
-            [{ code: 'PROVIDER_TIMEOUT', path: label, message: 'The AI provider did not respond before the timeout.' }]
-        ));
-    }, timeoutMs);
-
-    Promise.resolve(promise).then(
-        value => {
-            clearTimeout(timer);
-            resolve(value);
-        },
-        error => {
-            clearTimeout(timer);
-            reject(error);
-        }
-    );
-});
-
-export const getRetryAfterSeconds = error => {
-    const headerValue = error?.headers?.['retry-after'] || error?.headers?.get?.('retry-after');
-    const retryAfter = Number(headerValue);
-    return Number.isFinite(retryAfter) && retryAfter > 0 ? Math.ceil(retryAfter) : null;
-};
-
-export const getFinishReason = response => response?.finishReason || response?.candidates?.[0]?.finishReason || null;
-
-export const isLengthFinishReason = reason => ['LENGTH', 'MAX_TOKENS', 'MAX_OUTPUT_TOKENS']
-    .includes(String(reason || '').toUpperCase());
-
-export const isProviderTimeoutError = error => {
-    const status = Number(error?.status ?? error?.statusCode);
-    return error?.code === 'FORM_AI_PROVIDER_TIMEOUT'
-        || [408, 504].includes(status)
-        || error?.code === 'DEADLINE_EXCEEDED'
-        || /deadline expired|deadline_exceeded|timed out|timeout/i.test(error?.message || '');
-};
-
-export const isProviderUnavailableError = error => {
-    const status = Number(error?.status ?? error?.statusCode);
-    return [500, 502, 503].includes(status)
-        || error?.code === 'UNAVAILABLE'
-        || /temporarily unavailable|high demand|service unavailable/i.test(error?.message || '');
 };
 
 export const createProviderTimeoutError = (label, cause) => createAIOutputError(
@@ -87,18 +39,6 @@ export const createProviderUnavailableError = (label, cause) => createAIOutputEr
 );
 
 export const createRequestBudget = () => ({ calls: 0, maxCalls: MAX_FORM_AI_CALLS });
-
-export const reserveRequestCall = (budget, label) => {
-    if (!budget) return;
-    if (budget.calls >= budget.maxCalls) {
-        throw createAIOutputError(
-            'I could not complete the form safely within the AI request budget. No changes were applied. Please try again with a smaller request.',
-            'FORM_AI_BUDGET_EXCEEDED',
-            [{ code: 'CALL_BUDGET_EXCEEDED', path: label, message: `Maximum ${budget.maxCalls} AI calls reached.` }]
-        );
-    }
-    budget.calls += 1;
-};
 
 export const createUnverifiedVerification = (budget, reason = 'AI_CALL_BUDGET_EXCEEDED') => ({
     status: 'unverified',

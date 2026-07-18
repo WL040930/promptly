@@ -6,9 +6,11 @@ import NodeRegistry from './utils/NodeRegistry.js';
 import SchedulerService from './services/scheduler/schedulerService.js';
 import { ensureDatabaseChangeTriggers, startDatabaseChangePublisher } from './services/triggers/databaseTriggerService.js';
 import { reconcileActiveWorkflows, startTriggerRuntime } from './services/triggers/triggerRuntime.js';
+import { assertAIConfig } from './services/ai/core/configValidator.js';
 
 const startServer = async () => {
   try {
+    assertAIConfig();
     await sequelize.authenticate();
     await sequelize.sync({ alter: true });
     await ensureDatabaseChangeTriggers(sequelize);

@@ -3,9 +3,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import NodeRegistry from '../../../utils/NodeRegistry.js';
-import { getAITaskConfig, getAIProviderForTask } from '../core/aiService.js';
-import env from '../../../config/env.js';
-import { parseAiJson } from '../../../utils/jsonParser.js';
+import { ai } from '../index.js';
+import { AI_TASKS } from '../core/aiTasks.js';
 import { validateWorkflow } from '../../engine/workflowValidator.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -14,38 +13,21 @@ const validActions = new Set(['create_workflow', 'edit_workflow', 'create_form',
 
 const readInstruction = async (name) => fs.readFile(path.join(instructionDir, name), 'utf8');
 
-const usage = (metadata) => ({
-    promptTokens: metadata?.promptTokenCount || 0,
-    completionTokens: metadata?.candidatesTokenCount || 0,
-    totalTokens: metadata?.totalTokenCount || 0
-});
-
-const parseModelJson = (text) => {
-    try {
-        return parseAiJson(text);
-    } catch (error) {
-        throw new Error(`AI returned invalid JSON: ${error.message}`);
-    }
-};
-
 const getWorkflowTask = operation => operation === 'classifier'
-    ? 'workflowClassifier'
+    ? AI_TASKS.WORKFLOW_CLASSIFY
     : operation === 'assembler'
-        ? 'workflowAssembler'
-        : 'workflowPatcher';
+        ? AI_TASKS.WORKFLOW_ASSEMBLE
+        : AI_TASKS.WORKFLOW_PATCH;
 
 const providerJson = async (prompt, systemInstruction, operation) => {
     const task = getWorkflowTask(operation);
-    const taskConfig = getAITaskConfig(task);
-    const provider = getAIProviderForTask(task);
-    const response = await provider.generateContent([{ role: 'user', parts: [{ text: prompt }] }], {
+    const response = await ai.run({
+        task,
+        messages: [{ role: 'user', parts: [{ text: prompt }] }],
         systemInstruction,
-        responseMimeType: 'application/json',
-        model: taskConfig.model,
-        maxCompletionTokens: env.aiWorkflowMaxCompletionTokens,
         operation: `workflow:${operation}`
     });
-    return { value: parseModelJson(response.text), tokenUsage: usage(response.usageMetadata) };
+    return { value: response.json, tokenUsage: response.usage };
 };
 
 export const compactWorkflowSnapshot = (workflow) => {

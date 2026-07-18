@@ -41,17 +41,13 @@
       "defaultValue": ""
     },
     {
-      "name": "model",
+      "name": "mode",
       "type": "select",
-      "label": "AI Model",
-      "defaultValue": "gpt-4o",
+      "label": "Response Mode",
+      "defaultValue": "best",
       "options": [
-        { "label": "GPT-4o (OpenAI)", "value": "gpt-4o" },
-        { "label": "GPT-4o Mini (OpenAI)", "value": "gpt-4o-mini" },
-        { "label": "Claude 3.5 Sonnet (Anthropic)", "value": "claude-3-5-sonnet" },
-        { "label": "Claude 3 Haiku (Anthropic)", "value": "claude-3-haiku" },
-        { "label": "Gemini 1.5 Pro (Google)", "value": "gemini-1-5-pro" },
-        { "label": "Gemini 1.5 Flash (Google)", "value": "gemini-1-5-flash" }
+        { "label": "Fast", "value": "fast" },
+        { "label": "Best quality", "value": "best" }
       ]
     },
     {
