@@ -4,6 +4,68 @@ import assert from 'node:assert/strict';
 // Keep these contract tests focused on explicit stage limits; the local .env
 // enables provider-managed completion for interactive development.
 process.env.AI_FORM_UNLIMITED_COMPLETION_TOKENS = 'false';
+process.env.AI_TIMEOUT_MS = '50';
+
+test('generateFormFromPrompt returns a non-mutating conversational reply', async () => {
+    const { generateFormFromPrompt } = await import('./aiFormsService.js');
+    let calls = 0;
+    const provider = {
+        async generateContent() {
+            calls += 1;
+            return {
+                text: JSON.stringify({
+                    type: 'reply',
+                    message: 'A dropdown is best when respondents choose one value from a known list.'
+                })
+            };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Why should I use a dropdown for this field?',
+        { title: 'Survey', description: '', settings: {}, fields: [] },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.equal(result.type, 'reply');
+    assert.match(result.message, /dropdown/);
+    assert.equal(calls, 1);
+    assert.equal(result.tokenUsage.requestCalls, 1);
+});
+
+test('generateFormFromPrompt uses the direct proposal fast path for a clear small edit', async () => {
+    const { generateFormFromPrompt } = await import('./aiFormsService.js');
+    const operations = [];
+    const outputs = [
+        {
+            type: 'direct_proposal',
+            summary: 'Making the existing email field required.',
+            requirements: [{ id: 'req_1', description: 'Make the existing email field required.' }],
+            patches: [{ op: 'update', id: 'email', updates: { required: true } }]
+        },
+        { status: 'pass', issues: [] }
+    ];
+    const provider = {
+        async generateContent(contents, options) {
+            operations.push(options.operation);
+            return { text: JSON.stringify(outputs.shift()) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Make the existing email field required.',
+        { id: 'form_1', title: 'Contact form', description: '', settings: {}, fields: [{ id: 'email', type: 'email', label: 'Email', required: false }] },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.schema.fields[0].required, true);
+    assert.deepEqual(operations, ['form:planner', 'form:verifier']);
+});
 
 test('generateFormFromPrompt repairs a semantically incorrect proposal once', async () => {
     Object.assign(process.env, {

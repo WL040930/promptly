@@ -171,9 +171,34 @@ const selectRecentMessages = (messages = []) => {
     return selected;
 };
 
+const compactPendingProposal = (messages = []) => {
+    const pending = [...messages]
+        .reverse()
+        .find(message => message?.sender === 'bot' && message?.proposal?.status === 'pending');
+    if (!pending?.proposal) return null;
+
+    const proposal = pending.proposal;
+    return {
+        status: 'pending',
+        message: clampText(pending.text, 600),
+        patchCount: Array.isArray(proposal.patches) ? proposal.patches.length : 0,
+        patchOperations: Array.isArray(proposal.patches)
+            ? [...new Set(proposal.patches.map(patch => patch?.op).filter(Boolean))]
+            : [],
+        requirements: Array.isArray(proposal.requirements)
+            ? proposal.requirements.slice(0, 8).map(requirement => ({
+                id: clampText(requirement?.id, 100),
+                description: clampText(requirement?.description, 300)
+            }))
+            : [],
+        preview: proposal.schema ? compactFormSchema(proposal.schema) : null
+    };
+};
+
 export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarificationMode, cardinality = null }) => {
     const memory = readFormMemory(schema);
     const recentConversation = selectRecentMessages(chatHistory);
+    const pendingProposal = compactPendingProposal(chatHistory);
 
     return [
         'Persistent Form Memory:',
@@ -193,6 +218,12 @@ export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarific
         '',
         'Recent Conversation:',
         recentConversation.length > 0 ? recentConversation.join('\n') : '(none)',
+        '',
+        'Pending Proposal:',
+        pendingProposal
+            ? JSON.stringify(pendingProposal)
+            : '(none)',
+        'If the user refers to the pending proposal, treat it as a draft to revise. Do not apply it and do not discard requested changes unless the user asks you to.',
         '',
         'Current Request:',
         clampText(prompt, FORM_AI_CONTEXT_LIMIT)

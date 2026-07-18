@@ -282,6 +282,7 @@ export const createChatCapabilityRegistry = ({
                     await session.update({ agentState: { proposalMessageId: result.reply.id } });
                     return approval(result.reply);
                 }
+                if (result.reply?.kind === 'text') return completed(result.reply);
                 return clarification(result.reply);
             },
             'proposal'

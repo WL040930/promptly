@@ -1,5 +1,5 @@
 import { ChatMessage, Form, Workflow } from '../../models/index.js';
-import { generateFormFromPrompt } from '../ai/aiFormsService.js';
+import { runFormTurn } from '../ai/formAIService.js';
 import {
     assembleWorkflow,
     classifyRequest,
@@ -247,14 +247,13 @@ const designForm = async ({ run, session, message, form, clarificationMode = DEF
     const step = await createStep(run, { stepKey: 'design_form', type: 'design_form' });
     await startStep(step);
     try {
-        const result = await generateFormFromPrompt(
-            message,
-            form?.toJSON?.() || form || {},
-            await formHistory(session.id),
-            null,
-            { clarificationMode }
-        );
-        if (result.type === 'message') {
+        const result = await runFormTurn({
+            request: message,
+            currentSchema: form?.toJSON?.() || form || {},
+            history: await formHistory(session.id),
+            clarificationMode
+        });
+        if (result.kind === 'reply' || result.kind === 'clarification') {
             await completeStep(step, { result, tokenUsage: result.tokenUsage || {} });
             return { status: 'clarification', result, tokenUsage: result.tokenUsage || {} };
         }
@@ -601,12 +600,13 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
             if (!clarificationResult) {
                 throw new Error('The agent requested clarification without a usable question.');
             }
+            const formTurn = clarificationResult.result || clarificationResult;
             await updateRun(run, { status: 'awaiting_clarification', tokenUsage: totalUsage });
             await session.update({ agentState: { status: 'awaiting_agent_clarification', runId: run.id } });
             const reply = await saveReply(session, {
-                text: clarificationResult.message,
+                text: formTurn.message,
                 kind: 'clarification',
-                payload: { runId: run.id, options: clarificationResult.inputs || clarificationResult.options || [] },
+                payload: { runId: run.id, options: formTurn.inputs || formTurn.options || [] },
                 tokenUsage: totalUsage
             });
             return { handled: true, replyObj: reply, totalTokenUsage: totalUsage };

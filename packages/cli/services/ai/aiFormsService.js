@@ -616,7 +616,7 @@ const getQuestionCardinalityIssues = ({ schema, cardinality }) => {
     }];
 };
 
-const recoverWorkerProposal = async ({ provider, schema, plannerResult, workerContents, tokenUsage, onProgress, budget, cardinality }) => {
+const recoverWorkerProposal = async ({ provider, schema, plannerResult, workerContents, initialWorkerResult = null, tokenUsage, onProgress, budget, cardinality }) => {
     const memoryUpdate = getMemoryUpdate(plannerResult);
     let totalTokenUsage = tokenUsage;
     let failure = null;
@@ -624,7 +624,13 @@ const recoverWorkerProposal = async ({ provider, schema, plannerResult, workerCo
 
     for (let attempt = 0; attempt < MAX_FORM_REPAIR_LOOPS; attempt += 1) {
         let workerCall;
-        if (attempt === 0) {
+        if (attempt === 0 && initialWorkerResult) {
+            workerCall = {
+                value: initialWorkerResult,
+                rawText: JSON.stringify(initialWorkerResult),
+                response: null
+            };
+        } else if (attempt === 0) {
             workerCall = await requestJson({
                 provider,
                 contents: workerContents,
@@ -794,15 +800,17 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
             }
         }
 
-        // If the planner needs to ask a question, return immediately
-        if (plannerResult.type === 'message') {
+        // Conversational replies and clarification questions are terminal
+        // non-mutating outcomes. Only a completed plan reaches the worker.
+        if (plannerResult.type === 'reply' || plannerResult.type === 'message') {
             plannerResult.tokenUsage = tokenUsage;
             plannerResult.tokenUsage.requestCalls = budget.calls;
             return plannerResult;
         }
 
-        // 3. If planner is complete, Call the Worker Agent
-        if (plannerResult.type === 'plan_complete') {
+        // 3. A direct proposal skips the worker model call but still enters
+        // the same patch application, cardinality, and verifier safeguards.
+        if (plannerResult.type === 'direct_proposal' || plannerResult.type === 'plan_complete') {
             if (onProgress) onProgress({ status: 'building', message: 'Generating form schema...' });
             const workerContents = [{
                 role: 'user',
@@ -818,6 +826,7 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
                 schema: currentSchema || {},
                 plannerResult,
                 workerContents,
+                ...(plannerResult.type === 'direct_proposal' ? { initialWorkerResult: plannerResult } : {}),
                 tokenUsage,
                 onProgress,
                 budget,

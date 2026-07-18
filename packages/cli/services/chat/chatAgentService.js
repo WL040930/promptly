@@ -1,5 +1,5 @@
 import { ChatSession, ChatMessage, Workflow, Form, AgentRun } from '../../models/index.js';
-import { generateFormFromPrompt } from '../ai/aiFormsService.js';
+import { runFormTurn } from '../ai/formAIService.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { assembleWorkflow, tokenTotal } from '../ai/workflowAgentService.js';
 import { getAITaskConfig, getAIProviderForTask } from '../ai/aiService.js';
@@ -113,9 +113,15 @@ const formHistory = async (sessionId) => {
         where: { sessionId },
         order: [['createdAt', 'ASC']],
         limit: 20,
-        attributes: ['sender', 'text']
+        attributes: ['sender', 'text', 'kind', 'payload', 'proposalStatus']
     });
-    return rows.map(row => ({ sender: row.sender, text: row.text }));
+    return rows.map(row => ({
+        sender: row.sender,
+        text: row.text,
+        ...(row.kind === 'form_proposal' && row.proposalStatus === 'pending' && row.payload
+            ? { proposal: { ...row.payload, status: 'pending' } }
+            : {})
+    }));
 };
 
 const formResult = async ({ session, userId, request, formId, continuation = null, state = {}, clarificationMode }) => {
@@ -125,23 +131,22 @@ const formResult = async ({ session, userId, request, formId, continuation = nul
         return { reply, tokenUsage: null };
     }
     const currentSchema = form ? form.toJSON() : state.currentSchema || {};
-    const result = await generateFormFromPrompt(
+    const result = await runFormTurn({
         request,
         currentSchema,
-        await formHistory(session.id),
-        null,
-        { clarificationMode: normalizeClarificationMode(clarificationMode) }
-    );
+        history: await formHistory(session.id),
+        clarificationMode: normalizeClarificationMode(clarificationMode)
+    });
     const tokenUsage = result.tokenUsage ? {
         stage1: result.tokenUsage,
         stage2: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
         total: result.tokenUsage
     } : null;
 
-    if (result.type === 'message') {
+    if (result.kind === 'reply' || result.kind === 'clarification') {
         const nextState = {
             ...state,
-            status: 'awaiting_form_clarification',
+            status: result.kind === 'reply' ? 'form_conversation' : 'awaiting_form_clarification',
             formId: formId || null,
             currentSchema,
             continuation
@@ -149,8 +154,8 @@ const formResult = async ({ session, userId, request, formId, continuation = nul
         await session.update({ agentState: nextState });
         const reply = await saveReply(session, {
             text: result.message || 'Please provide a little more detail.',
-            kind: 'clarification',
-            payload: { options: result.options || [] },
+            kind: result.kind === 'reply' ? 'text' : 'clarification',
+            payload: result.kind === 'reply' ? null : { options: result.options || result.inputs || [] },
             tokenUsage
         });
         return { reply, tokenUsage };

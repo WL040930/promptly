@@ -1,6 +1,6 @@
 import sequelize from '../../db/index.js';
 import { Form, FormResponse, FormChatMessage, Workflow } from '../../models/index.js';
-import { generateFormFromPrompt } from '../../services/ai/aiFormsService.js';
+import { runFormTurn } from '../../services/ai/formAIService.js';
 import { FORM_AI_HISTORY_LIMIT, validateQuestionCardinality } from '../../services/ai/formContext.js';
 import { applyFormPatches } from '../../services/ai/formPatchEngine.js';
 import { validateFormSchema } from '../../services/ai/formSchemaValidator.js';
@@ -57,7 +57,13 @@ export const generateForm = asyncHandler(async (req, res) => {
         };
         
         try {
-            const generatedForm = await generateFormFromPrompt(prompt, formSchema, chatHistory, onProgress, { clarificationMode });
+            const generatedForm = await runFormTurn({
+                request: prompt,
+                currentSchema: formSchema,
+                history: chatHistory,
+                onProgress,
+                clarificationMode
+            });
             if (sourceForm && generatedForm) generatedForm.baseFormUpdatedAt = sourceForm.updatedAt;
             res.write(`data: ${JSON.stringify({ type: 'complete', result: generatedForm })}\n\n`);
             res.end();
@@ -67,7 +73,12 @@ export const generateForm = asyncHandler(async (req, res) => {
             res.end();
         }
     } else {
-        const generatedForm = await generateFormFromPrompt(prompt, formSchema, chatHistory, null, { clarificationMode });
+        const generatedForm = await runFormTurn({
+            request: prompt,
+            currentSchema: formSchema,
+            history: chatHistory,
+            clarificationMode
+        });
         if (sourceForm && generatedForm) generatedForm.baseFormUpdatedAt = sourceForm.updatedAt;
         res.json(generatedForm);
     }

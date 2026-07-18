@@ -241,35 +241,45 @@ export const summarizeValidationIssues = (issues = []) => issues.map((item) => {
     return `${item?.code || 'INVALID_RESPONSE'} at ${item?.path || 'response'}: ${item?.message || 'Unknown validation issue.'}`;
 }).join('\n');
 
+const validatePlannerRequirements = (result, issues) => {
+    if (!Array.isArray(result.requirements) || result.requirements.length === 0) {
+        issues.push(issue('INVALID_REQUIREMENTS', 'requirements', 'A completed plan must contain at least one requirement.'));
+        return;
+    }
+
+    const requirementIds = new Set();
+    result.requirements.forEach((requirement, index) => {
+        if (!isPlainObject(requirement)) {
+            issues.push(issue('INVALID_REQUIREMENT', `requirements[${index}]`, 'Requirement must be an object.'));
+            return;
+        }
+        issues.push(...validateText(requirement.id, `requirements[${index}].id`, { required: true, max: 100 }));
+        issues.push(...validateText(requirement.description, `requirements[${index}].description`, { required: true, max: 1000 }));
+        if (requirement.id && requirementIds.has(requirement.id)) {
+            issues.push(issue('DUPLICATE_REQUIREMENT_ID', `requirements[${index}].id`, `Requirement ID '${requirement.id}' is duplicated.`));
+        }
+        if (requirement.id) requirementIds.add(requirement.id);
+    });
+};
+
 export const validatePlannerResult = (result = {}) => {
     const issues = [];
     if (!isPlainObject(result)) return [issue('INVALID_PLANNER_RESPONSE', '', 'Planner response must be an object.')];
-    if (!['message', 'plan_complete'].includes(result.type)) issues.push(issue('INVALID_PLANNER_TYPE', 'type', 'Planner type must be message or plan_complete.'));
+    if (!['reply', 'message', 'plan_complete', 'direct_proposal'].includes(result.type)) issues.push(issue('INVALID_PLANNER_TYPE', 'type', 'Planner type must be reply, message, plan_complete, or direct_proposal.'));
+
+    if (result.type === 'reply') {
+        issues.push(...validateText(result.message, 'message', { required: true, max: 4000 }));
+    }
 
     if (result.type === 'message') {
         issues.push(...validateText(result.message, 'message', { required: true, max: 4000 }));
         issues.push(...validateClarificationInputs(result.inputs));
     }
 
-    if (result.type === 'plan_complete') {
+    if (result.type === 'plan_complete' || result.type === 'direct_proposal') {
         issues.push(...validateText(result.summary, 'summary', { required: true, max: 4000 }));
-        if (!Array.isArray(result.requirements) || result.requirements.length === 0) {
-            issues.push(issue('INVALID_REQUIREMENTS', 'requirements', 'A completed plan must contain at least one requirement.'));
-        } else {
-            const requirementIds = new Set();
-            result.requirements.forEach((requirement, index) => {
-                if (!isPlainObject(requirement)) {
-                    issues.push(issue('INVALID_REQUIREMENT', `requirements[${index}]`, 'Requirement must be an object.'));
-                    return;
-                }
-                issues.push(...validateText(requirement.id, `requirements[${index}].id`, { required: true, max: 100 }));
-                issues.push(...validateText(requirement.description, `requirements[${index}].description`, { required: true, max: 1000 }));
-                if (requirement.id && requirementIds.has(requirement.id)) {
-                    issues.push(issue('DUPLICATE_REQUIREMENT_ID', `requirements[${index}].id`, `Requirement ID '${requirement.id}' is duplicated.`));
-                }
-                if (requirement.id) requirementIds.add(requirement.id);
-            });
-        }
+        validatePlannerRequirements(result, issues);
+        if (result.type === 'direct_proposal') issues.push(...validateWorkerResult(result));
         if (result.memoryUpdate !== undefined && result.memoryUpdate !== null) {
             if (!isPlainObject(result.memoryUpdate) || !['none', 'replace', 'clear'].includes(result.memoryUpdate.action)) {
                 issues.push(issue('INVALID_MEMORY_ACTION', 'memoryUpdate.action', 'Memory action must be none, replace, or clear.'));

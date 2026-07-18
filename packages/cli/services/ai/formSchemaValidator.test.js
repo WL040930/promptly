@@ -80,6 +80,22 @@ test('validatePlannerResult and validateWorkerResult reject malformed model cont
     assert.deepEqual(validateWorkerResult({ patches: [] }), []);
 });
 
+test('validatePlannerResult accepts a read-only conversational reply', () => {
+    assert.deepEqual(validatePlannerResult({
+        type: 'reply',
+        message: 'A dropdown is useful when respondents choose one value from a known list.'
+    }), []);
+});
+
+test('validatePlannerResult accepts a safe direct proposal contract', () => {
+    assert.deepEqual(validatePlannerResult({
+        type: 'direct_proposal',
+        summary: 'Make the existing email field required.',
+        requirements: [{ id: 'req_1', description: 'Make the existing email field required.' }],
+        patches: [{ op: 'update', id: 'email', updates: { required: true } }]
+    }), []);
+});
+
 test('validatePlannerResult rejects duplicate requirement IDs', () => {
     const issues = validatePlannerResult({
         type: 'plan_complete',

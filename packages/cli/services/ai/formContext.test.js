@@ -66,6 +66,32 @@ test('buildPlannerContext keeps recent conversation bounded and separates memory
     assert.deepEqual(compact.fields[0].choices, ['One']);
 });
 
+test('buildPlannerContext exposes a compact pending proposal for conversational refinement', () => {
+    const context = buildPlannerContext({
+        schema: { title: 'Survey', settings: {}, fields: [] },
+        chatHistory: [{
+            sender: 'bot',
+            text: 'I prepared a survey draft.',
+            proposal: {
+                status: 'pending',
+                patches: [
+                    { op: 'add', field: { id: 'name', type: 'text', label: 'Name' } },
+                    { op: 'update_settings', updates: { acceptingResponses: true } }
+                ],
+                requirements: [{ id: 'req_1', description: 'Collect the respondent name.' }],
+                schema: { title: 'Survey', description: '', settings: {}, fields: [{ id: 'name', type: 'text', label: 'Name' }] }
+            }
+        }],
+        prompt: 'Make the name optional.',
+        clarificationMode: 'important_only'
+    });
+
+    assert.match(context, /Pending Proposal:/);
+    assert.match(context, /"patchCount":2/);
+    assert.match(context, /Collect the respondent name/);
+    assert.match(context, /treat it as a draft to revise/);
+});
+
 test('question cardinality distinguishes final totals from additions and keeps clarification context', () => {
     const schema = {
         fields: [
