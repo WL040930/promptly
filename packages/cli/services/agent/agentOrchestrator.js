@@ -5,7 +5,7 @@ import {
     classifyRequest,
     compactWorkflowSnapshot,
     patchWorkflow
-} from '../ai/workflowAgentService.js';
+} from '../ai/workflow/workflowAgentService.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { resolveResource } from '../chat/resourceResolver.js';
 import { addUsage, requestAgentJson } from './agentAi.js';

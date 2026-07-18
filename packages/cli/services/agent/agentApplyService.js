@@ -1,7 +1,7 @@
 import sequelize from '../../db/index.js';
 import { AgentRun, ChatMessage, ChatSession, Form, Workflow } from '../../models/index.js';
-import { applyFormPatches } from '../ai/formPatchEngine.js';
-import { validateFormSchema } from '../ai/formSchemaValidator.js';
+import { applyFormPatches } from '../ai/form/domain/formPatchEngine.js';
+import { validateFormSchema } from '../ai/form/domain/formSchemaValidator.js';
 import { validateWorkflow } from '../engine/workflowValidator.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { reconcileWorkflow } from '../triggers/triggerRuntime.js';

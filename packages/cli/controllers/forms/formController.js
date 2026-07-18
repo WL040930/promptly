@@ -1,9 +1,9 @@
 import sequelize from '../../db/index.js';
 import { Form, FormResponse, FormChatMessage, Workflow } from '../../models/index.js';
 import { runFormTurn } from '../../services/ai/formAIService.js';
-import { FORM_AI_HISTORY_LIMIT, validateQuestionCardinality } from '../../services/ai/formContext.js';
-import { applyFormPatches } from '../../services/ai/formPatchEngine.js';
-import { validateFormSchema } from '../../services/ai/formSchemaValidator.js';
+import { FORM_AI_HISTORY_LIMIT, validateQuestionCardinality } from '../../services/ai/form/context/formContext.js';
+import { applyFormPatches } from '../../services/ai/form/domain/formPatchEngine.js';
+import { validateFormSchema } from '../../services/ai/form/domain/formSchemaValidator.js';
 import asyncHandler from '../../utils/asyncHandler.js';
 import { executeWorkflow } from '../../services/engine/executionEngine.js';
 import { supersedePendingFormChatProposals } from '../../services/proposalLifecycle.js';

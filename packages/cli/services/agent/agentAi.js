@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import env from '../../config/env.js';
-import { getAITaskConfig, getAIProviderRoutesForTask } from '../ai/aiService.js';
+import { getAITaskConfig, getAIProviderRoutesForTask } from '../ai/core/aiService.js';
 import { parseAiJson } from '../../utils/jsonParser.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

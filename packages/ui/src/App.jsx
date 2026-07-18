@@ -15,7 +15,7 @@ const OnboardingPage = React.lazy(() => import('./onboarding/OnboardingPage'))
 const ChatView = React.lazy(() => import('./chat/ChatView'))
 const WorkflowBuilderView = React.lazy(() => import('./builder/WorkflowBuilderView'))
 const SecurityPage = React.lazy(() => import('./landing/SecurityPage.jsx'))
-const PublicFormView = React.lazy(() => import('./forms/PublicFormView.jsx'))
+const PublicFormView = React.lazy(() => import('./forms/public/PublicFormView.jsx'))
 
 function AppLoadingFallback() {
     return <AppLoadingSkeleton />

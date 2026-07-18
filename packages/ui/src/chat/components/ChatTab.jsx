@@ -8,7 +8,7 @@ import { useCreateWorkflow, useUpdateWorkflow, useWorkflow } from '../../api/hoo
 import Button from '../../components/ui/Button.jsx';
 import GenericChatWidget from '../../components/chat/GenericChatWidget.jsx';
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
-import FormDiffPreviewModal from '../../forms/FormDiffPreviewModal.jsx';
+import FormDiffPreviewModal from '../../forms/ai/FormDiffPreviewModal.jsx';
 import { navigate, parsePath, buildPath } from '../../utils/router.js';
 import { formatCompactRelativeTime } from '../../utils/time.js';
 import ChatSessionsSkeleton from '../../components/chat/ChatSessionsSkeleton.jsx';

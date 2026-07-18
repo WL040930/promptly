@@ -1,14 +1,14 @@
 import { ChatSession, ChatMessage, Workflow, Form, AgentRun } from '../../models/index.js';
 import { runFormTurn } from '../ai/formAIService.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
-import { assembleWorkflow, tokenTotal } from '../ai/workflowAgentService.js';
-import { getAITaskConfig, getAIProviderForTask } from '../ai/aiService.js';
+import { assembleWorkflow, tokenTotal } from '../ai/workflow/workflowAgentService.js';
 import env from '../../config/env.js';
 import { mergeAgentContext } from './resourceResolver.js';
 import { processAgenticTurn, resumeAgentAfterClarification, resumeAgentAfterForm, resumeAgentAfterPlanReview } from '../agent/agentOrchestrator.js';
 import { createChatCapabilityRegistry } from './chatCapabilityRegistry.js';
 import { getClarificationModeInstruction, normalizeClarificationMode } from '../../../shared/agentContract.js';
 import { supersedePendingChatFormProposals } from '../proposalLifecycle.js';
+import { requestChatCompletionWithFallback } from './chatProviderRouter.js';
 
 const tokenPayload = (...usages) => {
     const stage1 = usages[0] || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -391,9 +391,6 @@ export const processChatMessage = async ({ session, userId, context = {} }) => {
         };
     });
 
-    const chatTaskConfig = getAITaskConfig('chat');
-    const provider = getAIProviderForTask('chat');
-    const useNativeTools = provider.supportsToolCalls === true;
 
     let loopCount = 0;
     const maxLoops = env.aiChatMaxToolLoops;
@@ -427,15 +424,15 @@ export const processChatMessage = async ({ session, userId, context = {} }) => {
 
     while (loopCount < maxLoops) {
         loopCount++;
-        const response = await provider.generateContent(aiMessages, {
+        const response = await requestChatCompletionWithFallback({
+            contents: aiMessages,
             systemInstruction: `${systemInstruction}
 Available capabilities:
 ${capabilitySummary}
 Clarification for form requirements: ${normalizeClarificationMode(effectiveContext.clarificationMode)} - ${getClarificationModeInstruction(effectiveContext.clarificationMode)}${selectedWorkflowInstruction}${selectedFormInstruction}`,
-            model: chatTaskConfig.model,
             maxCompletionTokens: env.aiChatMaxCompletionTokens,
             operation: 'chat',
-            ...(useNativeTools ? { tools: capabilityTools } : {})
+            tools: capabilityTools
         });
 
         if (response.usageMetadata) {

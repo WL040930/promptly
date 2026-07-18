@@ -9,7 +9,7 @@
     "cli:dev": "cd packages/cli && node server.js",
     "ui:dev": "cd packages/ui && vite",
     "build": "cd packages/ui && vite build",
-    "test": "node --test packages/cli/models/*.test.js packages/cli/services/ai/*.test.js packages/cli/services/ai/providers/*.test.js packages/cli/services/chat/*.test.js packages/cli/services/agent/*.test.js packages/cli/services/engine/*.test.js packages/cli/services/triggers/*.test.js packages/nodes/*.test.js",
+    "test": "node --test packages/cli/models/*.test.js 'packages/cli/services/ai/**/*.test.js' packages/cli/services/chat/*.test.js packages/cli/services/agent/*.test.js packages/cli/services/engine/*.test.js packages/cli/services/triggers/*.test.js packages/nodes/*.test.js",
     "start": "cd packages/cli && node server.js",
     "cli:watch": "cd packages/cli && nodemon --watch . --watch ../nodes --ext js,json server.js"
   },

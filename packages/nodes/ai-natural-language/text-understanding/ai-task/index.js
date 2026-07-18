@@ -1,5 +1,5 @@
 import { BaseNode } from '../../../BaseNode.js';
-import { getAITaskConfig, getAIProviderForTask } from '../../../../cli/services/ai/aiService.js';
+import { getAITaskConfig, getAIProviderForTask } from '../../../../cli/services/ai/core/aiService.js';
 import env from '../../../../cli/config/env.js';
 import { parseAiJson } from '../../../../cli/utils/jsonParser.js';
 

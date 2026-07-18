@@ -6,7 +6,7 @@ import {
     classifyRequest,
     compactWorkflowSnapshot,
     patchWorkflow
-} from '../ai/workflowAgentService.js';
+} from '../ai/workflow/workflowAgentService.js';
 import { createAgentCapabilityRegistry } from '../agent/agentCapabilityRegistry.js';
 
 const completed = output => ({ status: 'completed', output });
