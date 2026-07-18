@@ -22,7 +22,7 @@ export default function FormProposalWidget({
 }) {
     const isAccepted = status === 'Applied' || status === 'accepted';
     const isRejected = status === 'Ignored' || status === 'rejected';
-    const isStale = status === 'stale';
+    const isStale = status === 'stale' || status === 'Superseded' || status === 'superseded';
     const isUnverified = proposal?.verification?.status === 'unverified';
     const verificationSkippedDueToBudget = proposal?.verification?.skippedReason === 'AI_CALL_BUDGET_EXCEEDED';
 
@@ -296,7 +296,9 @@ export default function FormProposalWidget({
                 </div>
             ) : isStale ? (
                 <div className="flex items-center justify-center py-1.5 px-3 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-xs font-semibold">
-                    This suggestion is outdated. Generate a new one.
+                    {status === 'Superseded' || status === 'superseded'
+                        ? 'A newer proposal replaced this suggestion.'
+                        : 'This suggestion is outdated. Generate a new one.'}
                 </div>
             ) : (
                 <div className="flex gap-2">

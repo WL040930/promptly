@@ -193,6 +193,12 @@ export const useFormAIAssistant = (form) => {
                     m.id !== data.userMsg.id && 
                     m.id !== data.botMsg.id
                 );
+                const supersededMessageIds = new Set(data.botMsg.supersededMessageIds || []);
+                if (supersededMessageIds.size > 0) {
+                    currentMessages = currentMessages.map(message => supersededMessageIds.has(message.id)
+                        ? { ...message, proposal: { ...message.proposal, status: 'superseded' } }
+                        : message);
+                }
                 newPages[0] = {
                     ...newPages[0],
                     messages: [...currentMessages, data.userMsg, data.botMsg]

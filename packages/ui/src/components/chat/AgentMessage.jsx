@@ -8,6 +8,7 @@ import { Zap } from 'lucide-react';
 const statusLabel = (status) => {
     if (status === 'applied') return 'Applied';
     if (status === 'ignored') return 'Ignored';
+    if (status === 'superseded') return 'Superseded';
     return status;
 };
 

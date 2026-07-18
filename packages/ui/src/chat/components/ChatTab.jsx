@@ -80,7 +80,17 @@ export default function ChatTab() {
                  navigate(buildPath({ mode: 'chat', tab: 'chat', sessionId: response.sessionId }));
             }
         }
-        if (response?.reply) setMessages(previous => [...previous, response.reply]);
+        if (response?.reply) {
+            const supersededMessageIds = new Set(response.reply.payload?.supersededMessageIds || []);
+            setMessages(previous => [
+                ...(supersededMessageIds.size > 0
+                    ? previous.map(message => supersededMessageIds.has(message.id)
+                        ? { ...message, proposalStatus: 'superseded' }
+                        : message)
+                    : previous),
+                response.reply
+            ]);
+        }
     };
 
     const handleClarificationModeChange = (mode) => {

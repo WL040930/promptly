@@ -8,6 +8,7 @@ import { mergeAgentContext } from './resourceResolver.js';
 import { processAgenticTurn, resumeAgentAfterClarification, resumeAgentAfterForm, resumeAgentAfterPlanReview } from '../agent/agentOrchestrator.js';
 import { createChatCapabilityRegistry } from './chatCapabilityRegistry.js';
 import { getClarificationModeInstruction, normalizeClarificationMode } from '../../../shared/agentContract.js';
+import { supersedePendingChatFormProposals } from '../proposalLifecycle.js';
 
 const tokenPayload = (...usages) => {
     const stage1 = usages[0] || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -170,19 +171,25 @@ const formResult = async ({ session, userId, request, formId, continuation = nul
         schema: result.schema || currentSchema
     };
     await session.update({ agentState: nextState });
+    const supersededMessageIds = await supersedePendingChatFormProposals({
+        sessionId: session.id,
+        formId: formId || null
+    });
+    const proposalPayload = {
+        action: formId ? 'edit_form' : 'create_form',
+        formId: formId || null,
+        schema: result.schema || currentSchema,
+        patches: result.patches || [],
+        requirements: result.requirements || [],
+        verification: result.verification || null,
+        cardinality: result.cardinality || null,
+        ...(form ? { baseFormUpdatedAt: form.updatedAt } : {}),
+        ...(supersededMessageIds.length > 0 ? { supersededMessageIds } : {})
+    };
     const reply = await saveReply(session, {
         text: result.message || 'I prepared the form for your review.',
         kind: 'form_proposal',
-        payload: {
-            action: formId ? 'edit_form' : 'create_form',
-            formId: formId || null,
-            schema: result.schema || currentSchema,
-            patches: result.patches || [],
-            requirements: result.requirements || [],
-            verification: result.verification || null,
-            cardinality: result.cardinality || null,
-            ...(form ? { baseFormUpdatedAt: form.updatedAt } : {})
-        },
+        payload: proposalPayload,
         tokenUsage,
         proposalStatus: 'pending'
     });

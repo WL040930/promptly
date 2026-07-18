@@ -26,7 +26,17 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
     const rejectAgentRunMutation = useRejectAgentRun();
 
     const appendReply = (response) => {
-        if (response?.reply) setMessages(previous => [...previous, response.reply]);
+        if (response?.reply) {
+            const supersededMessageIds = new Set(response.reply.payload?.supersededMessageIds || []);
+            setMessages(previous => [
+                ...(supersededMessageIds.size > 0
+                    ? previous.map(message => supersededMessageIds.has(message.id)
+                        ? { ...message, proposalStatus: 'superseded' }
+                        : message)
+                    : previous),
+                response.reply
+            ]);
+        }
         if (response?.sessionId) setSessionId(response.sessionId);
     };
 

@@ -6,6 +6,7 @@ import { applyFormPatches } from '../../services/ai/formPatchEngine.js';
 import { validateFormSchema } from '../../services/ai/formSchemaValidator.js';
 import asyncHandler from '../../utils/asyncHandler.js';
 import { executeWorkflow } from '../../services/engine/executionEngine.js';
+import { supersedePendingFormChatProposals } from '../../services/proposalLifecycle.js';
 
 export const getForms = asyncHandler(async (req, res) => {
     const forms = await Form.findAll({ where: { userId: req.user.id } });
@@ -346,18 +347,25 @@ export const addFormChatMessage = asyncHandler(async (req, res) => {
     const form = await Form.findOne({ where: { id: formId, userId: req.user.id } });
     if (!form) return res.status(404).json({ message: 'Form not found' });
 
-    const message = await FormChatMessage.create({
-        formId,
-        sender,
-        text,
-        proposal,
-        options,
-        tokenUsage,
-        isError,
-        errorMetadata: isError ? sanitizeFormErrorMetadata(errorMetadata) : null
+    let message;
+    let supersededMessageIds = [];
+    await sequelize.transaction(async transaction => {
+        if (sender === 'bot' && proposal?.status === 'pending') {
+            supersededMessageIds = await supersedePendingFormChatProposals({ formId, transaction });
+        }
+        message = await FormChatMessage.create({
+            formId,
+            sender,
+            text,
+            proposal,
+            options,
+            tokenUsage,
+            isError,
+            errorMetadata: isError ? sanitizeFormErrorMetadata(errorMetadata) : null
+        }, { transaction });
     });
 
-    res.status(201).json(message);
+    res.status(201).json({ ...message.toJSON(), supersededMessageIds });
 });
 
 export const updateFormChatMessage = asyncHandler(async (req, res) => {

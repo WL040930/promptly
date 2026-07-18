@@ -14,6 +14,7 @@ import { createAgentRuntime } from './agentRuntime.js';
 import env from '../../config/env.js';
 import { makeError, makeIntent, makePlan } from './agentContracts.js';
 import { DEFAULT_CLARIFICATION_MODE, getClarificationModeInstruction, normalizeClarificationMode } from '../../../shared/agentContract.js';
+import { supersedePendingChatFormProposals } from '../proposalLifecycle.js';
 import {
     completeStep,
     createArtifact,
@@ -649,6 +650,13 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
             artifactIds,
             solution: artifacts.map(artifact => ({ id: artifact.id, type: artifact.type, content: artifact.content }))
         };
+        if (kind === 'form_proposal') {
+            const supersededMessageIds = await supersedePendingChatFormProposals({
+                sessionId: session.id,
+                formId: payload.formId || null
+            });
+            if (supersededMessageIds.length > 0) payload.supersededMessageIds = supersededMessageIds;
+        }
         const reply = await saveReply(session, {
             text: plan.summary || 'I prepared a solution for your review.',
             kind,
