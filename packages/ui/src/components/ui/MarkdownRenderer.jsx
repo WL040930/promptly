@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { createMarkdownCodeComponents } from './markdownCodeComponents.js';
 
 const parseBr = (children) => {
     if (typeof children === 'string') {
@@ -36,6 +37,10 @@ export default function MarkdownRenderer({ content, className = '', inverted = f
     const listClass = inverted ? 'text-white/90 list-disc pl-5 mb-3 space-y-1' : 'list-disc pl-5 mb-3 space-y-1 text-slate-700';
     const olClass = inverted ? 'text-white/90 list-decimal pl-5 mb-3 space-y-1' : 'list-decimal pl-5 mb-3 space-y-1 text-slate-700';
     const linkClass = inverted ? 'text-white hover:text-white/80 underline font-semibold transition-colors' : 'text-indigo-600 hover:text-indigo-800 underline font-semibold transition-colors';
+    const codeComponents = createMarkdownCodeComponents({
+        inverted,
+        renderBlock: ({ language, children }) => <CodeBlock language={language}>{children}</CodeBlock>
+    });
 
     return (
         <div className={`prose max-w-none ${inverted ? 'text-white/90' : 'text-slate-800 dark:text-slate-200'} text-[14px] leading-relaxed ${className}`}>
@@ -140,28 +145,7 @@ export default function MarkdownRenderer({ content, className = '', inverted = f
                         </td>
                     ),
 
-                    // Code
-                    code: ({ node, inline, className: codeClassName, children, ...props }) => {
-                        const match = /language-(\w+)/.exec(codeClassName || '');
-                        const lang = match ? match[1] : '';
-
-                        if (inline) {
-                            return (
-                                <code 
-                                    className={`px-1.5 py-0.5 rounded-lg font-mono text-[13px] font-bold border ${inverted ? 'bg-white/15 text-white border-white/20' : 'bg-slate-100 dark:bg-slate-800/80 text-indigo-600 dark:text-indigo-400 border-slate-200/50'}`}
-                                    {...props}
-                                >
-                                    {children}
-                                </code>
-                            );
-                        }
-
-                        return (
-                            <CodeBlock language={lang} {...props}>
-                                {String(children).replace(/\n$/, '')}
-                            </CodeBlock>
-                        );
-                    }
+                    ...codeComponents
                 }}
             >
                 {content}

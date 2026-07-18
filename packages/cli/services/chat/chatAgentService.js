@@ -8,6 +8,7 @@ import env from '../../config/env.js';
 import { mergeAgentContext } from './resourceResolver.js';
 import { processAgenticTurn, resumeAgentAfterClarification, resumeAgentAfterForm, resumeAgentAfterPlanReview } from '../agent/agentOrchestrator.js';
 import { createChatCapabilityRegistry } from './chatCapabilityRegistry.js';
+import { hasFallbackToolMarkup, parseFallbackToolCall } from './fallbackToolCall.js';
 import { getClarificationModeInstruction, normalizeClarificationMode } from '../../../shared/agentContract.js';
 import { supersedePendingChatFormProposals } from '../proposalLifecycle.js';
 
@@ -447,20 +448,20 @@ Clarification for form requirements: ${normalizeClarificationMode(effectiveConte
         // assistant message aligned with the single tool response we send.
         const nativeToolCalls = response.toolCalls?.slice(0, 1) || [];
         const nativeToolCall = nativeToolCalls[0] || null;
-        const toolMatch = replyText.match(/<TOOL>(.*?)<\/TOOL>/s);
+        const fallbackToolCall = parseFallbackToolCall(replyText);
+        const hasFallbackTool = hasFallbackToolMarkup(replyText);
 
-        if (nativeToolCall || toolMatch) {
+        if (nativeToolCall || hasFallbackTool) {
             let toolCall;
             if (nativeToolCall) {
                 toolCall = nativeToolCall;
             } else {
-                try {
-                    toolCall = JSON.parse(toolMatch[1]);
-                } catch (e) {
+                if (!fallbackToolCall) {
                     aiMessages.push({ role: 'model', parts: [{ text: replyText }] });
                     aiMessages.push({ role: 'user', parts: [{ text: `<TOOL_RESPONSE>{"error": "Invalid JSON in tool call"}</TOOL_RESPONSE>` }] });
                     continue;
                 }
+                toolCall = fallbackToolCall;
             }
 
             const { name, args = {} } = toolCall;
