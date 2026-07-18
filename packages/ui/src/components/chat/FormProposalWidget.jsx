@@ -89,6 +89,8 @@ export default function FormProposalWidget({
                         filteredSchema.title = patch.originalMeta.title;
                         filteredSchema.description = patch.originalMeta.description;
                     }
+                } else if (patch.op === 'update_settings') {
+                    filteredSchema.settings = { ...(patch.originalSettings || {}) };
                 } else if (patch.op === 'update_memory') {
                     if (patch.originalMemory) filteredSchema.settings.aiMemory = patch.originalMemory;
                     else delete filteredSchema.settings.aiMemory;
@@ -148,7 +150,7 @@ export default function FormProposalWidget({
                     }
                     const adds = proposalPatches.filter(p => p.op === 'add').length;
                     const removes = proposalPatches.filter(p => p.op === 'remove').length;
-                    const updates = proposalPatches.filter(p => p.op === 'update' || p.op === 'update_meta').length;
+                    const updates = proposalPatches.filter(p => ['update', 'update_meta', 'update_settings'].includes(p.op)).length;
                     const memoryUpdates = proposalPatches.filter(p => p.op === 'update_memory').length;
 
                     const parts = [];
@@ -211,7 +213,7 @@ export default function FormProposalWidget({
                                 </div>
                             );
                         }
-                        if (patch.op === 'update' || patch.op === 'update_meta') {
+                        if (patch.op === 'update' || patch.op === 'update_meta' || patch.op === 'update_settings') {
                             return (
                                 <div key={idx} className={`flex items-start gap-2 text-xs font-medium px-2 py-1.5 rounded border transition-colors ${isChecked ? 'text-amber-700 bg-amber-50/50 border-amber-100' : 'text-slate-400 bg-slate-50 border-slate-100'}`}>
                                     <label className="flex items-center gap-2 cursor-pointer w-full">
@@ -223,7 +225,7 @@ export default function FormProposalWidget({
                                             className="w-3.5 h-3.5 text-amber-600 rounded border-slate-300 focus:ring-amber-500 disabled:opacity-50"
                                         />
                                         <span className="flex-1">
-                                            <span className={`font-bold ${isChecked ? 'text-amber-600' : 'text-slate-400'}`}>~</span> {patch.op === 'update_meta' ? 'Modified Form Properties' : `Modified: ${patch.label || 'Field'}`}
+                                            <span className={`font-bold ${isChecked ? 'text-amber-600' : 'text-slate-400'}`}>~</span> {patch.op === 'update_meta' ? 'Modified Form Properties' : patch.op === 'update_settings' ? 'Modified Form Settings' : `Modified: ${patch.label || 'Field'}`}
                                         </span>
                                     </label>
                                 </div>

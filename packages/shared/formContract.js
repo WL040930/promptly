@@ -17,7 +17,14 @@ export const FORM_FIELD_TYPES = Object.freeze([
 ]);
 
 export const FORM_CHOICE_FIELD_TYPES = Object.freeze(['select', 'radio', 'checkbox']);
-export const FORM_PATCH_OPERATIONS = Object.freeze(['add', 'update', 'remove', 'update_meta', 'update_memory']);
+export const FORM_SETTINGS_KEYS = Object.freeze([
+    'acceptingResponses',
+    'limitOnePerBrowser',
+    'hasResponseLimit',
+    'responseLimit',
+    'confirmationMessage'
+]);
+export const FORM_PATCH_OPERATIONS = Object.freeze(['add', 'update', 'remove', 'update_meta', 'update_settings', 'update_memory']);
 
 export const FORM_AI_MEMORY_LIMIT = 1500;
 export const FORM_MAX_FIELDS = 100;

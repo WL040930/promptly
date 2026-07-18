@@ -4,6 +4,7 @@ import {
     FORM_MAX_PATCHES,
     FORM_MAX_TEXT_LENGTH,
     FORM_FIELD_TYPES,
+    FORM_SETTINGS_KEYS,
     FORM_PATCH_OPERATIONS,
     isChoiceFieldType,
     isFormFieldType,
@@ -169,6 +170,26 @@ export const validatePatchShape = (patch, path) => {
             if (keys.some(key => !['title', 'description'].includes(key))) issues.push(issue('INVALID_METADATA_KEY', `${path}.updates`, 'Only title and description may be changed.'));
             issues.push(...validateText(patch.updates.title, `${path}.updates.title`, { max: 255 }));
             issues.push(...validateText(patch.updates.description, `${path}.updates.description`, { max: FORM_MAX_TEXT_LENGTH }));
+        }
+    }
+    if (patch.op === 'update_settings') {
+        if (!isPlainObject(patch.updates)) issues.push(issue('INVALID_SETTINGS_UPDATE', `${path}.updates`, 'Settings updates require an updates object.'));
+        else {
+            const keys = Object.keys(patch.updates);
+            if (keys.length === 0) issues.push(issue('EMPTY_SETTINGS_UPDATE', `${path}.updates`, 'Settings updates must change at least one setting.'));
+            if (keys.some(key => !FORM_SETTINGS_KEYS.includes(key))) {
+                issues.push(issue('INVALID_SETTINGS_KEY', `${path}.updates`, `Only these settings may be changed: ${FORM_SETTINGS_KEYS.join(', ')}.`));
+            }
+            for (const key of keys) {
+                const value = patch.updates[key];
+                if (['acceptingResponses', 'limitOnePerBrowser', 'hasResponseLimit'].includes(key) && typeof value !== 'boolean') {
+                    issues.push(issue('INVALID_SETTING_VALUE', `${path}.updates.${key}`, `${key} must be a boolean.`));
+                }
+                if (key === 'responseLimit' && !((typeof value === 'string' && value.trim()) || (typeof value === 'number' && Number.isFinite(value)))) {
+                    issues.push(issue('INVALID_SETTING_VALUE', `${path}.updates.${key}`, 'responseLimit must be a numeric value.'));
+                }
+                if (key === 'confirmationMessage') issues.push(...validateText(value, `${path}.updates.${key}`, { max: FORM_MAX_TEXT_LENGTH }));
+            }
         }
     }
     if (patch.op === 'update_memory') {

@@ -62,6 +62,18 @@ test('validateFormPatches identifies when the form ID is used as a field target'
     assert.ok(issues.some(issue => issue.code === 'FORM_ID_USED_AS_FIELD_ID'));
 });
 
+test('validateFormPatches accepts safe form settings updates and rejects unknown settings', () => {
+    const validIssues = validateFormPatches({ id: 'form_1', fields: [], settings: {} }, [
+        { op: 'update_settings', updates: { acceptingResponses: true } }
+    ]);
+    assert.deepEqual(validIssues, []);
+
+    const invalidIssues = validateFormPatches({ id: 'form_1', fields: [], settings: {} }, [
+        { op: 'update_settings', updates: { accentColor: '#fff' } }
+    ]);
+    assert.ok(invalidIssues.some(issue => issue.code === 'INVALID_SETTINGS_KEY'));
+});
+
 test('validatePlannerResult and validateWorkerResult reject malformed model contracts', () => {
     assert.ok(validatePlannerResult({ type: 'plan_complete' }).length > 0);
     assert.ok(validateWorkerResult({ patches: [{ op: 'add', field: { type: 'text' } }] }).length > 0);

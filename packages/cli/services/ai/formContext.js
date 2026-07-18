@@ -1,5 +1,6 @@
 import {
     FORM_AI_MEMORY_LIMIT as SHARED_FORM_AI_MEMORY_LIMIT,
+    FORM_SETTINGS_KEYS,
     isEmptyFormMemorySummary
 } from '../../../shared/formContract.js';
 import { getClarificationModeInstruction, normalizeClarificationMode } from '../../../shared/agentContract.js';
@@ -7,15 +8,9 @@ import { getClarificationModeInstruction, normalizeClarificationMode } from '../
 export const FORM_AI_HISTORY_LIMIT = 6;
 export const FORM_AI_MEMORY_LIMIT = SHARED_FORM_AI_MEMORY_LIMIT;
 export const FORM_AI_CONTEXT_LIMIT = 12000;
+const NON_QUESTION_FIELD_TYPES = new Set(['heading', 'hidden']);
 
 const clampText = (value, limit) => String(value || '').trim().slice(0, limit);
-const FORM_AI_SETTINGS_KEYS = Object.freeze([
-    'acceptingResponses',
-    'limitOnePerBrowser',
-    'hasResponseLimit',
-    'responseLimit',
-    'confirmationMessage'
-]);
 const FORM_AI_FIELD_KEYS = Object.freeze([
     'id',
     'type',
@@ -66,7 +61,7 @@ const compactField = (field = {}) => Object.fromEntries(
 export const compactFormSchema = (schema = {}) => {
     const { title, description, fields = [], settings = {} } = schema;
     const compactSettings = Object.fromEntries(
-        FORM_AI_SETTINGS_KEYS
+        FORM_SETTINGS_KEYS
             .filter(key => settings[key] !== undefined)
             .map(key => [key, settings[key]])
     );
@@ -76,6 +71,57 @@ export const compactFormSchema = (schema = {}) => {
         description: clampText(description, 1000),
         settings: compactSettings,
         fields: Array.isArray(fields) ? fields.map(compactField) : []
+    };
+};
+
+export const getActiveQuestionCount = (schema = {}) => (Array.isArray(schema.fields) ? schema.fields : [])
+    .filter(field => !field?.deleted && !NON_QUESTION_FIELD_TYPES.has(field?.type))
+    .length;
+
+const getRequestedQuestionSpec = prompt => {
+    const text = clampText(prompt, FORM_AI_CONTEXT_LIMIT);
+    if (!text) return null;
+
+    const totalMatch = text.match(/\b(?:total(?:\s+of)?|exactly)\s+(\d+)\s+(?:questions?|fields?)\b/i);
+    const addMatch = text.match(/\badd\s+(?:exactly\s+)?(\d+)\s+(?:new\s+)?(?:questions?|fields?)\b/i);
+    const formMatch = text.match(/\b(?:with|containing|contain)\s+(\d+)\s+(?:questions?|fields?)\b/i);
+    const shapeMatch = text.match(/\b(\d+)[ -](?:question|field)s?\b/i);
+    const count = totalMatch?.[1]
+        || (addMatch && !/\btotal\b/i.test(text) ? addMatch[1] : null)
+        || formMatch?.[1]
+        || shapeMatch?.[1];
+
+    const parsedCount = Number(count);
+    if (!Number.isInteger(parsedCount) || parsedCount <= 0) return null;
+
+    return {
+        count: parsedCount,
+        isAddRequest: Boolean(addMatch && !/\btotal\b/i.test(text))
+    };
+};
+
+export const getQuestionCardinality = ({ schema = {}, prompt = '', chatHistory = [] } = {}) => {
+    const requestTexts = [
+        ...chatHistory
+            .filter(message => message?.sender === 'user')
+            .map(message => message.text),
+        prompt
+    ];
+    let requested = null;
+    for (let index = requestTexts.length - 1; index >= 0; index -= 1) {
+        requested = getRequestedQuestionSpec(requestTexts[index]);
+        if (requested) break;
+    }
+    if (!requested) return null;
+
+    const currentCount = getActiveQuestionCount(schema);
+    const { count, isAddRequest } = requested;
+
+    return {
+        mode: isAddRequest ? 'add_questions' : 'total_questions',
+        targetCount: isAddRequest ? currentCount + count : count,
+        currentCount,
+        additionalCount: isAddRequest ? count : Math.max(0, count - currentCount)
     };
 };
 
@@ -99,7 +145,7 @@ const selectRecentMessages = (messages = []) => {
     return selected;
 };
 
-export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarificationMode }) => {
+export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarificationMode, cardinality = null }) => {
     const memory = readFormMemory(schema);
     const recentConversation = selectRecentMessages(chatHistory);
 
@@ -109,6 +155,12 @@ export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarific
         '',
         'Current Form Schema:',
         JSON.stringify(compactFormSchema(schema)),
+        '',
+        'Question Count:',
+        cardinality
+            ? JSON.stringify(cardinality)
+            : '(no explicit question count requested)',
+        'If a total question count is present, it is the final number of active questions, not the number of new fields to add.',
         '',
         'Clarification:',
         `${normalizeClarificationMode(clarificationMode)} - ${getClarificationModeInstruction(clarificationMode)}`,
@@ -121,7 +173,7 @@ export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarific
     ].join('\n');
 };
 
-export const buildWorkerContext = ({ schema, requirements = [] }) => [
+export const buildWorkerContext = ({ schema, requirements = [], cardinality = null }) => [
     'Current Form Schema:',
     JSON.stringify(compactFormSchema(schema)),
     '',
@@ -129,17 +181,26 @@ export const buildWorkerContext = ({ schema, requirements = [] }) => [
     JSON.stringify((Array.isArray(schema.fields) ? schema.fields : []).map(field => field.id).filter(Boolean)),
     'The form ID is not a field ID. Never use it as a patch id.',
     'Every add patch must include a complete field object with non-empty id, type, and label.',
+    'Question Cardinality:',
+    cardinality
+        ? JSON.stringify(cardinality)
+        : '(no explicit question count requested)',
+    'For total_questions, the final active question count must equal targetCount. Add only additionalCount new questions unless the request explicitly removes or converts existing questions.',
+    'For add_questions, add exactly additionalCount new questions. Count the additions before returning; do not stop after a partial list.',
     '',
     'Planner Requirements:',
     JSON.stringify(requirements)
 ].join('\n');
 
-export const buildPlannerRepairContext = ({ response, issues }) => [
+export const buildPlannerRepairContext = ({ response, issues, cardinality = null }) => [
     'Repair the planner response below and return a complete compact JSON response.',
     'Do not include worker instructions. Keep the summary and requirement descriptions concise.',
     '',
     'Validation Issues:',
     clampText(issues, 6000),
+    '',
+    'Question Cardinality:',
+    cardinality ? JSON.stringify(cardinality) : '(none)',
     '',
     'Invalid Planner Response:',
     clampText(response, FORM_AI_CONTEXT_LIMIT)
@@ -189,6 +250,13 @@ const summarizePatch = (patch = {}) => {
             description: clampText(patch.updates?.description, 300)
         }
     };
+    if (patch.op === 'update_settings') return {
+        patchId: patch.patchId,
+        op: patch.op,
+        updates: Object.fromEntries(FORM_SETTINGS_KEYS
+            .filter(key => Object.prototype.hasOwnProperty.call(patch.updates || {}, key))
+            .map(key => [key, patch.updates[key]]))
+    };
     if (patch.op === 'update_memory') return {
         patchId: patch.patchId,
         op: patch.op,
@@ -197,7 +265,7 @@ const summarizePatch = (patch = {}) => {
     return { patchId: patch.patchId, op: patch.op };
 };
 
-export const buildVerifierContext = ({ requirements = [], patches = [], memoryUpdate = { action: 'none' } }) => [
+export const buildVerifierContext = ({ requirements = [], patches = [], memoryUpdate = { action: 'none' }, cardinality = null }) => [
     'Planner Requirements:',
     JSON.stringify(requirements.map(requirement => ({
         id: requirement.id,
@@ -208,6 +276,12 @@ export const buildVerifierContext = ({ requirements = [], patches = [], memoryUp
     JSON.stringify(memoryUpdate),
     'Treat this approved memory update as in scope. Do not flag it as an unrelated change.',
     '',
+    'Question Cardinality:',
+    cardinality
+        ? JSON.stringify(cardinality)
+        : '(no explicit question count requested)',
+    'For total_questions, pass only when the final active question count equals targetCount. For add_questions, pass only when exactly additionalCount new questions were added.',
+    '',
     'Generated Patches:',
     JSON.stringify(patches.map(summarizePatch))
 ].join('\n');
@@ -216,6 +290,7 @@ export const buildVerifierRepairContext = ({
     requirements = [],
     patches = [],
     memoryUpdate = { action: 'none' },
+    cardinality = null,
     response,
     issues
 }) => [
@@ -223,7 +298,7 @@ export const buildVerifierRepairContext = ({
     'Return a complete replacement verifier response as JSON only.',
     'Do not change the generated patches or planner requirements.',
     '',
-    buildVerifierContext({ requirements, patches, memoryUpdate }),
+    buildVerifierContext({ requirements, patches, memoryUpdate, cardinality }),
     '',
     'Validation Issues:',
     clampText(issues, 2000),
@@ -232,7 +307,7 @@ export const buildVerifierRepairContext = ({
     clampText(response, 2000)
 ].join('\n');
 
-export const buildWorkerRepairContext = ({ schema, requirements = [], response, issues }) => [
+export const buildWorkerRepairContext = ({ schema, requirements = [], response, issues, cardinality = null }) => [
     'Repair the worker proposal below.',
     'Return a complete replacement proposal as JSON only.',
     'Preserve the planner requirements and current form. Correct every listed issue.',
@@ -244,6 +319,11 @@ export const buildWorkerRepairContext = ({ schema, requirements = [], response, 
     JSON.stringify((Array.isArray(schema.fields) ? schema.fields : []).map(field => field.id).filter(Boolean)),
     'The form ID is not a field ID. Never use it as a patch id. If a requested field is not listed, use an add patch instead of update/remove.',
     'Repair every listed issue. Every add patch must include a complete field object with non-empty id, type, and label. Do not repeat an omitted label.',
+    'Question Cardinality:',
+    cardinality
+        ? JSON.stringify(cardinality)
+        : '(no explicit question count requested)',
+    'Cardinality is a hard requirement. For total_questions, make the final active question count equal targetCount. For add_questions, add exactly additionalCount new questions. Preserve valid patches and correct only the count mismatch.',
     'For update patches, include only properties explicitly requested. To change requiredness, use only { "required": true } or { "required": false }; never include label, type, choices, or other preserved properties unless they are explicitly being changed. Never clear an existing label.',
     '',
     'Planner Requirements:',

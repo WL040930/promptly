@@ -90,6 +90,67 @@ test('generateFormFromPrompt repairs a semantically incorrect proposal once', as
     assert.equal(result.tokenUsage.stages.verifier.calls, 2);
 });
 
+test('generateFormFromPrompt treats an explicit total question count as the final count', async () => {
+    const { generateFormFromPrompt } = await import('./aiFormsService.js');
+    const outputs = [
+        {
+            type: 'plan_complete',
+            summary: 'Building a three-question form.',
+            requirements: [{ id: 'req_1', description: 'Create a form with a total of 3 questions.' }],
+            memoryUpdate: { action: 'none' }
+        },
+        {
+            type: 'proposal',
+            message: 'Added the requested questions.',
+            patches: [
+                { op: 'add', field: { id: 'f_q1', type: 'text', label: 'Question 1' } },
+                { op: 'add', field: { id: 'f_q2', type: 'text', label: 'Question 2' } },
+                { op: 'add', field: { id: 'f_q3', type: 'text', label: 'Question 3' } }
+            ]
+        },
+        {
+            type: 'proposal',
+            message: 'Adjusted the form to three total questions.',
+            patches: [
+                { op: 'add', field: { id: 'f_q1', type: 'text', label: 'Question 1' } },
+                { op: 'add', field: { id: 'f_q2', type: 'text', label: 'Question 2' } }
+            ]
+        },
+        { status: 'pass', issues: [] }
+    ];
+    const provider = {
+        async generateContent() {
+            const output = outputs.shift();
+            assert.ok(output, 'The fake provider received an unexpected request.');
+            return { text: JSON.stringify(output) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Create a form with a total of 3 questions.',
+        {
+            id: 'form_1',
+            title: 'Existing form',
+            description: '',
+            settings: {},
+            fields: [{ id: 'existing', type: 'text', label: 'Existing question' }]
+        },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.equal(result.schema.fields.length, 3);
+    assert.deepEqual(result.cardinality, {
+        mode: 'total_questions',
+        targetCount: 3,
+        currentCount: 1,
+        additionalCount: 2
+    });
+    assert.equal(result.verification.status, 'pass');
+    assert.equal(outputs.length, 0);
+});
+
 test('recovers user-facing labels when the worker and its repair omit them', async () => {
     const { generateFormFromPrompt } = await import('./aiFormsService.js');
     const outputs = [
@@ -227,6 +288,28 @@ test('generateFormFromPrompt normalizes provider deadline errors', async () => {
     );
 });
 
+test('generateFormFromPrompt normalizes temporary provider outages', async () => {
+    const { generateFormFromPrompt } = await import('./aiFormsService.js');
+    const provider = {
+        async generateContent() {
+            const error = new Error('This model is currently experiencing high demand.');
+            error.status = 503;
+            error.code = 'UNAVAILABLE';
+            throw error;
+        }
+    };
+
+    await assert.rejects(
+        generateFormFromPrompt('Add an email field.', { fields: [], settings: {} }, [], null, { provider }),
+        error => {
+            assert.equal(error.code, 'FORM_AI_PROVIDER_UNAVAILABLE');
+            assert.equal(error.issues?.[0]?.code, 'PROVIDER_UNAVAILABLE');
+            assert.match(error.message, /temporarily unavailable/);
+            return true;
+        }
+    );
+});
+
 test('worker repair retries a malformed verifier repair response', async () => {
     const { generateFormFromPrompt } = await import('./aiFormsService.js');
     const outputs = [
@@ -292,6 +375,8 @@ test('worker recovery returns a typed error after malformed repair responses are
             status: 'repair',
             issues: [{ requirementId: 'req_1', message: 'The field is incomplete.' }]
         },
+        null,
+        null,
         null,
         null
     ];

@@ -66,6 +66,11 @@ export const applyFormPatches = ({ currentSchema = {}, patches = [] }) => {
             Object.assign(updatedSchema, cloneJson(patch.updates));
         }
 
+        if (patch.op === 'update_settings') {
+            patch.originalSettings = cloneJson(currentSchema.settings) || {};
+            Object.assign(updatedSchema.settings, cloneJson(patch.updates));
+        }
+
         if (patch.op === 'update_memory') {
             patch.originalMemory = cloneJson(currentSchema.settings?.aiMemory);
             if (patch.updates?.memory) updatedSchema.settings.aiMemory = cloneJson(patch.updates.memory);
@@ -84,4 +89,3 @@ export const applyFormPatches = ({ currentSchema = {}, patches = [] }) => {
         issues: []
     };
 };
-

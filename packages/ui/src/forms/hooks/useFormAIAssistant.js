@@ -11,6 +11,7 @@ const LIMIT = 50;
 const RETRYABLE_ERROR_CODES = new Set([
     'FORM_AI_RATE_LIMITED',
     'FORM_AI_PROVIDER_TIMEOUT',
+    'FORM_AI_PROVIDER_UNAVAILABLE',
     'FORM_AI_STREAM_TIMEOUT',
     'FORM_AI_STREAM_INCOMPLETE',
     'FORM_AI_STREAM_START_FAILED'
@@ -288,6 +289,18 @@ export const useFormAIAssistant = (form) => {
         } catch (error) {
             console.error('Error applying proposal:', error);
             if (error.payload?.code === 'FORM_PROPOSAL_STALE') {
+                const message = rawMessages.find(item => item.id === msgId);
+                if (message?.proposal) {
+                    try {
+                        await updateProposalMutation.mutateAsync({
+                            msgId,
+                            originalProposal: message.proposal,
+                            status: 'stale'
+                        });
+                    } catch (persistError) {
+                        console.error('Failed to persist stale form proposal:', persistError);
+                    }
+                }
                 queryClient.setQueryData(queryKey, old => {
                     if (!old) return old;
                     return {
@@ -307,7 +320,7 @@ export const useFormAIAssistant = (form) => {
         } finally {
             setAcceptingProposalId(null);
         }
-    }, [form, queryClient, queryKey, toast, rawMessages]);
+    }, [form, queryClient, queryKey, toast, rawMessages, updateProposalMutation]);
 
     const handleRejectProposal = useCallback((msgId) => {
         setRejectingProposalId(msgId);

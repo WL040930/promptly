@@ -11,7 +11,9 @@ import {
     buildWorkerContext,
     buildWorkerRepairContext,
     createMemoryPatch,
-    getMemoryUpdate
+    getActiveQuestionCount,
+    getMemoryUpdate,
+    getQuestionCardinality
 } from './formContext.js';
 import { applyFormPatches } from './formPatchEngine.js';
 import { normalizeClarificationMode } from '../../../shared/agentContract.js';
@@ -32,7 +34,7 @@ const workerInstructionPath = path.resolve(__dirname, './instruction/form/worker
 const verifierInstructionPath = path.resolve(__dirname, './instruction/form/verifier.md');
 
 const MAX_PLANNER_ATTEMPTS = 2;
-const MAX_FORM_REPAIR_LOOPS = 3;
+const MAX_FORM_REPAIR_LOOPS = 5;
 const MAX_VERIFIER_ATTEMPTS = 2;
 // Try every distinct configured provider/model route before surfacing a
 // transient provider failure. The route resolver currently supports four AI
@@ -150,6 +152,13 @@ const isProviderTimeoutError = error => {
         || /deadline expired|deadline_exceeded|timed out|timeout/i.test(error?.message || '');
 };
 
+const isProviderUnavailableError = error => {
+    const status = Number(error?.status ?? error?.statusCode);
+    return [500, 502, 503].includes(status)
+        || error?.code === 'UNAVAILABLE'
+        || /temporarily unavailable|high demand|service unavailable/i.test(error?.message || '');
+};
+
 const createProviderTimeoutError = (label, cause) => createAIOutputError(
     `${label} AI request timed out before the provider returned a response. Please try again.`,
     'FORM_AI_PROVIDER_TIMEOUT',
@@ -157,6 +166,16 @@ const createProviderTimeoutError = (label, cause) => createAIOutputError(
         code: 'PROVIDER_TIMEOUT',
         path: label,
         message: cause?.message || 'The AI provider did not respond before the timeout.'
+    }]
+);
+
+const createProviderUnavailableError = (label, cause) => createAIOutputError(
+    `${label} AI provider is temporarily unavailable. Tried all configured providers. Please try again shortly.`,
+    'FORM_AI_PROVIDER_UNAVAILABLE',
+    [{
+        code: 'PROVIDER_UNAVAILABLE',
+        path: label,
+        message: cause?.message || 'The AI provider is temporarily unavailable.'
     }]
 );
 
@@ -239,7 +258,9 @@ const requestJson = async ({ provider, contents, systemInstruction, model, label
                         operation: `form:${label}`,
                         reason: 'rate_limited',
                         from: attempt.providerName,
+                        fromModel: attempt.model,
                         to: nextAttempt.providerName,
+                        toModel: nextAttempt.model,
                         retryAfter
                     }));
                     continue;
@@ -254,13 +275,29 @@ const requestJson = async ({ provider, contents, systemInstruction, model, label
                     message: retryMessage
                 }]);
             }
+            if (isProviderUnavailableError(error)) {
+                if (nextAttempt) {
+                    console.warn('[AI Provider Fallback]', JSON.stringify({
+                        operation: `form:${label}`,
+                        reason: 'provider_unavailable',
+                        from: attempt.providerName,
+                        fromModel: attempt.model,
+                        to: nextAttempt.providerName,
+                        toModel: nextAttempt.model
+                    }));
+                    continue;
+                }
+                throw createProviderUnavailableError(label, error);
+            }
             if (!isProviderTimeoutError(error)) throw error;
             if (nextAttempt) {
                 console.warn('[AI Provider Fallback]', JSON.stringify({
                     operation: `form:${label}`,
                     reason: 'timeout',
                     from: attempt.providerName,
-                    to: nextAttempt.providerName
+                    fromModel: attempt.model,
+                    to: nextAttempt.providerName,
+                    toModel: nextAttempt.model
                 }));
                 continue;
             }
@@ -270,6 +307,7 @@ const requestJson = async ({ provider, contents, systemInstruction, model, label
 
     if (lastError) {
         if (isProviderTimeoutError(lastError)) throw createProviderTimeoutError(label, lastError);
+        if (isProviderUnavailableError(lastError)) throw createProviderUnavailableError(label, lastError);
         throw lastError;
     }
 
@@ -340,10 +378,14 @@ const requestJson = async ({ provider, contents, systemInstruction, model, label
 
 const getOutputIssues = ({ value, parseError, validate }) => parseError ? parseError.issues : validate(value);
 
-const repairPlanner = async ({ provider, rawText, issues, tokenUsage, budget }) => {
+const repairPlanner = async ({ provider, rawText, issues, tokenUsage, budget, cardinality }) => {
     const repaired = await requestJson({
         provider,
-        contents: [{ role: 'user', parts: [{ text: buildPlannerRepairContext({ response: rawText, issues: summarizeValidationIssues(issues) }) }] }],
+        contents: [{ role: 'user', parts: [{ text: buildPlannerRepairContext({
+            response: rawText,
+            issues: summarizeValidationIssues(issues),
+            cardinality
+        }) }] }],
         systemInstruction: plannerInstruction,
         label: 'planner repair',
         budget
@@ -354,14 +396,15 @@ const repairPlanner = async ({ provider, rawText, issues, tokenUsage, budget }) 
     };
 };
 
-const repairWorker = async ({ provider, schema, requirements, rawText, issues, tokenUsage, budget }) => {
+const repairWorker = async ({ provider, schema, requirements, rawText, issues, tokenUsage, budget, cardinality }) => {
     const repaired = await requestJson({
         provider,
         contents: [{ role: 'user', parts: [{ text: buildWorkerRepairContext({
             schema,
             requirements,
             response: rawText,
-            issues: summarizeValidationIssues(issues)
+            issues: summarizeValidationIssues(issues),
+            cardinality
         }) }] }],
         systemInstruction: workerInstruction,
         label: 'worker repair',
@@ -469,10 +512,10 @@ const createUnverifiedVerification = (budget, reason = 'AI_CALL_BUDGET_EXCEEDED'
     requestLimit: budget?.maxCalls || MAX_FORM_AI_CALLS
 });
 
-const verifyProposal = async ({ provider, requirements, patches, memoryUpdate, tokenUsage, budget }) => {
+const verifyProposal = async ({ provider, requirements, patches, memoryUpdate, tokenUsage, budget, cardinality }) => {
     const verification = await requestJson({
         provider,
-        contents: [{ role: 'user', parts: [{ text: buildVerifierContext({ requirements, patches, memoryUpdate }) }] }],
+        contents: [{ role: 'user', parts: [{ text: buildVerifierContext({ requirements, patches, memoryUpdate, cardinality }) }] }],
         systemInstruction: verifierInstruction,
         label: 'verifier',
         budget
@@ -483,13 +526,14 @@ const verifyProposal = async ({ provider, requirements, patches, memoryUpdate, t
     };
 };
 
-const repairVerifier = async ({ provider, requirements, patches, memoryUpdate, rawText, issues, tokenUsage, budget }) => {
+const repairVerifier = async ({ provider, requirements, patches, memoryUpdate, rawText, issues, tokenUsage, budget, cardinality }) => {
     const repaired = await requestJson({
         provider,
         contents: [{ role: 'user', parts: [{ text: buildVerifierRepairContext({
             requirements,
             patches,
             memoryUpdate,
+            cardinality,
             response: rawText,
             issues: summarizeValidationIssues(issues)
         }) }] }],
@@ -508,6 +552,7 @@ const verifyProposalWithRecovery = async ({
     requirements,
     patches,
     memoryUpdate,
+    cardinality,
     tokenUsage,
     onProgress,
     budget
@@ -518,7 +563,7 @@ const verifyProposalWithRecovery = async ({
 
     for (let attempt = 0; attempt < MAX_VERIFIER_ATTEMPTS; attempt += 1) {
         if (attempt === 0) {
-            verifierCall = await verifyProposal({ provider, requirements, patches, memoryUpdate, tokenUsage: totalTokenUsage, budget });
+            verifierCall = await verifyProposal({ provider, requirements, patches, memoryUpdate, cardinality, tokenUsage: totalTokenUsage, budget });
         } else {
             if (onProgress) onProgress({ status: 'repairing', message: 'Correcting the verification response...' });
             verifierCall = await repairVerifier({
@@ -526,6 +571,7 @@ const verifyProposalWithRecovery = async ({
                 requirements,
                 patches,
                 memoryUpdate,
+                cardinality,
                 rawText: verifierCall.rawText,
                 issues: verificationIssues,
                 tokenUsage: totalTokenUsage,
@@ -557,7 +603,20 @@ const verifyProposalWithRecovery = async ({
     );
 };
 
-const recoverWorkerProposal = async ({ provider, schema, plannerResult, workerContents, tokenUsage, onProgress, budget }) => {
+const getQuestionCardinalityIssues = ({ schema, cardinality }) => {
+    if (!cardinality) return [];
+
+    const actualCount = getActiveQuestionCount(schema);
+    if (actualCount === cardinality.targetCount) return [];
+
+    return [{
+        code: 'QUESTION_COUNT_MISMATCH',
+        path: 'patches',
+        message: `The proposal results in ${actualCount} active questions, but the request requires ${cardinality.targetCount} total active questions. Keep ${cardinality.currentCount} existing questions and add ${cardinality.additionalCount} new questions only.`
+    }];
+};
+
+const recoverWorkerProposal = async ({ provider, schema, plannerResult, workerContents, tokenUsage, onProgress, budget, cardinality }) => {
     const memoryUpdate = getMemoryUpdate(plannerResult);
     let totalTokenUsage = tokenUsage;
     let failure = null;
@@ -588,7 +647,8 @@ const recoverWorkerProposal = async ({ provider, schema, plannerResult, workerCo
                 rawText: failure?.rawText || JSON.stringify(result),
                 issues: failure?.issues || [],
                 tokenUsage: totalTokenUsage,
-                budget
+                budget,
+                cardinality
             });
             totalTokenUsage = workerCall.tokenUsage;
         }
@@ -621,6 +681,20 @@ const recoverWorkerProposal = async ({ provider, schema, plannerResult, workerCo
             continue;
         }
 
+        const cardinalityIssues = getQuestionCardinalityIssues({
+            schema: appliedProposal.schema,
+            cardinality
+        });
+        if (cardinalityIssues.length > 0) {
+            failure = {
+                stage: 'patch',
+                kind: 'invalid_proposal',
+                issues: cardinalityIssues,
+                rawText: JSON.stringify(result)
+            };
+            continue;
+        }
+
         if (onProgress) onProgress({
             status: 'verifying',
             message: attempt === 0 ? 'Verifying the form instructions...' : 'Verifying the corrected form...'
@@ -632,6 +706,7 @@ const recoverWorkerProposal = async ({ provider, schema, plannerResult, workerCo
                 requirements: plannerResult.requirements,
                 patches: appliedProposal.patches,
                 memoryUpdate,
+                cardinality,
                 tokenUsage: totalTokenUsage,
                 onProgress,
                 budget
@@ -672,6 +747,7 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
     try {
         const provider = options.provider || null;
         const budget = createRequestBudget();
+        const cardinality = getQuestionCardinality({ schema: currentSchema || {}, prompt, chatHistory });
 
         if (onProgress) onProgress({ status: 'analyzing', message: 'Analyzing requirements...' });
 
@@ -680,7 +756,8 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
             schema: currentSchema || {},
             chatHistory,
             prompt,
-            clarificationMode: normalizeClarificationMode(options.clarificationMode)
+            clarificationMode: normalizeClarificationMode(options.clarificationMode),
+            cardinality
         });
         const contents = [{
             role: 'user',
@@ -706,7 +783,8 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
                 rawText: plannerCall.rawText || JSON.stringify(plannerResult),
                 issues: plannerIssues,
                 tokenUsage,
-                budget
+                budget,
+                cardinality
             });
             tokenUsage = plannerCall.tokenUsage;
             plannerResult = plannerCall.value;
@@ -730,7 +808,8 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
                 role: 'user',
                 parts: [{ text: buildWorkerContext({
                     schema: currentSchema || {},
-                    requirements: plannerResult.requirements
+                    requirements: plannerResult.requirements,
+                    cardinality
                 }) }]
             }];
 
@@ -741,7 +820,8 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
                 workerContents,
                 tokenUsage,
                 onProgress,
-                budget
+                budget,
+                cardinality
             });
             const result = workerResult.result;
             const appliedProposal = workerResult.appliedProposal;
@@ -755,7 +835,8 @@ export const generateFormFromPrompt = async (prompt, currentSchema, chatHistory 
                 schema: appliedProposal.schema,
                 tokenUsage: { ...tokenUsage, requestCalls: budget.calls },
                 requirements: plannerResult.requirements,
-                verification
+                verification,
+                cardinality
             };
         }
     } catch (error) {

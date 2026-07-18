@@ -160,6 +160,11 @@ export default function ChatTab() {
         } catch (error) {
             if (error.payload?.code === 'FORM_PROPOSAL_STALE') {
                 setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'stale' } : item));
+                try {
+                    await send(null, { type: 'proposal_stale', messageId: message.id });
+                } catch (persistError) {
+                    console.error('Failed to persist stale chat proposal:', persistError);
+                }
                 toast.error('This suggestion is outdated. Generate a new one.');
             } else {
                 toast.error(error.message || 'Failed to apply proposal.');

@@ -61,6 +61,7 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
     });
     const proposedSchema = proposal?.schema || {};
     const metaUpdate = patches.find(p => p.op === 'update_meta');
+    const settingsUpdate = patches.find(p => p.op === 'update_settings');
     const memoryUpdate = patches.find(p => p.op === 'update_memory');
 
     const diffFields = useMemo(() => {
@@ -145,6 +146,15 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
                                 <div className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider mb-1">Persistent Form Memory</div>
                                 <p className="text-sm text-indigo-900 font-medium">
                                     {memoryUpdate.updates?.memory?.summary || 'The saved form memory will be cleared.'}
+                                </p>
+                            </div>
+                        )}
+
+                        {settingsUpdate && (
+                            <div className="mb-8 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                                <div className="text-[10px] font-bold text-amber-600 uppercase tracking-wider mb-1">Form Settings Modified</div>
+                                <p className="text-sm text-amber-900 font-medium">
+                                    {Object.entries(settingsUpdate.updates || {}).map(([key, value]) => `${key}: ${String(value)}`).join(' • ')}
                                 </p>
                             </div>
                         )}

@@ -257,6 +257,11 @@ export const applyEvent = async (session, userId, event) => {
         await session.update({ agentState: {} });
         return { reply: await saveReply(session, { text: 'Ignored.', kind: 'status', payload: { status: 'ignored' } }) };
     }
+    if (event.type === 'proposal_stale') {
+        if (event.messageId) await ChatMessage.update({ proposalStatus: 'stale' }, { where: { id: event.messageId, sessionId: session.id } });
+        await session.update({ agentState: {} });
+        return { reply: await saveReply(session, { text: 'This suggestion is outdated. Generate a new one.', kind: 'status', payload: { status: 'stale' } }) };
+    }
     if (event.type === 'proposal_applied') {
         if (event.messageId) await ChatMessage.update({ proposalStatus: 'applied' }, { where: { id: event.messageId, sessionId: session.id } });
         await session.update({ agentState: {} });

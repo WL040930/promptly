@@ -28,6 +28,25 @@ test('applyFormPatches returns an enriched proposal without mutating the source 
     assert.equal(form.fields.length, 1);
 });
 
+test('applyFormPatches applies and preserves form settings updates', () => {
+    const currentSchema = {
+        id: 'form_1',
+        title: 'Contact form',
+        description: '',
+        settings: { acceptingResponses: false },
+        fields: []
+    };
+
+    const result = applyFormPatches({
+        currentSchema,
+        patches: [{ op: 'update_settings', updates: { acceptingResponses: true } }]
+    });
+
+    assert.equal(result.schema.settings.acceptingResponses, true);
+    assert.deepEqual(result.patches[0].originalSettings, { acceptingResponses: false });
+    assert.equal(currentSchema.settings.acceptingResponses, false);
+});
+
 test('applyFormPatches fails closed when a patch would create an invalid form', () => {
     assert.throws(() => applyFormPatches({
         currentSchema: form,
@@ -38,4 +57,3 @@ test('applyFormPatches fails closed when a patch would create an invalid form', 
         return true;
     });
 });
-

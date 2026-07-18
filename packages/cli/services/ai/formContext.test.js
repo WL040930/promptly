@@ -8,7 +8,9 @@ import {
     buildPlannerContext,
     compactFormSchema,
     createMemoryPatch,
+    getActiveQuestionCount,
     getMemoryUpdate,
+    getQuestionCardinality,
     readFormMemory
 } from './formContext.js';
 
@@ -61,6 +63,41 @@ test('buildPlannerContext keeps recent conversation bounded and separates memory
     assert.equal(compact.fields[0].internalNotes, undefined);
     assert.equal(compact.fields[0].description.length, 300);
     assert.deepEqual(compact.fields[0].choices, ['One']);
+});
+
+test('question cardinality distinguishes final totals from additions and keeps clarification context', () => {
+    const schema = {
+        fields: [
+            { id: 'q1', type: 'text', label: 'Question 1' },
+            { id: 'heading', type: 'heading', label: 'Section' },
+            { id: 'hidden', type: 'hidden', label: 'Internal value' },
+            { id: 'deleted', type: 'text', label: 'Removed', deleted: true }
+        ]
+    };
+
+    assert.equal(getActiveQuestionCount(schema), 1);
+    assert.deepEqual(getQuestionCardinality({ schema, prompt: 'I need a total of 10 questions.' }), {
+        mode: 'total_questions',
+        targetCount: 10,
+        currentCount: 1,
+        additionalCount: 9
+    });
+    assert.deepEqual(getQuestionCardinality({ schema, prompt: 'Please add 3 new questions.' }), {
+        mode: 'add_questions',
+        targetCount: 4,
+        currentCount: 1,
+        additionalCount: 3
+    });
+    assert.deepEqual(getQuestionCardinality({
+        schema,
+        prompt: 'Use email fields.',
+        chatHistory: [{ sender: 'user', text: 'Create a survey with a total of 5 questions.' }]
+    }), {
+        mode: 'total_questions',
+        targetCount: 5,
+        currentCount: 1,
+        additionalCount: 4
+    });
 });
 
 test('createMemoryPatch supports replacement, clearing, and legacy memory', () => {

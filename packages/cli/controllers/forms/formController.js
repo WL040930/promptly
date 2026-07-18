@@ -134,6 +134,13 @@ export const acceptFormProposal = asyncHandler(async (req, res) => {
 
     const expectedRevision = baseFormUpdatedAt || proposal.baseFormUpdatedAt;
     if (expectedRevision && new Date(form.updatedAt).getTime() !== new Date(expectedRevision).getTime()) {
+        await message.update({
+            proposal: {
+                ...proposal,
+                status: 'stale',
+                staleReason: 'FORM_VERSION_CHANGED'
+            }
+        });
         return res.status(409).json({ code: 'FORM_PROPOSAL_STALE', message: 'This proposal was created from an older form version. Generate a new suggestion.' });
     }
 
