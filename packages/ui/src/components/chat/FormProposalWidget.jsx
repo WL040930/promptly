@@ -1,5 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Button from '../ui/Button.jsx';
+import { isEmptyFormMemorySummary } from '../../../../shared/formContract.js';
+
+const isMeaningfulPatch = patch => {
+    if (patch?.op !== 'update_memory') return true;
+    const memory = patch.updates?.memory;
+    if (memory?.summary) return !isEmptyFormMemorySummary(memory.summary);
+    return Boolean(patch.originalMemory);
+};
 
 export default function FormProposalWidget({ 
     proposal, 
@@ -14,15 +22,21 @@ export default function FormProposalWidget({
     const isAccepted = status === 'Applied' || status === 'accepted';
     const isRejected = status === 'Ignored' || status === 'rejected';
     const isStale = status === 'stale';
+    const isUnverified = proposal?.verification?.status === 'unverified';
+    const verificationSkippedDueToBudget = proposal?.verification?.skippedReason === 'AI_CALL_BUDGET_EXCEEDED';
 
     // Track which patches are checked by the user
     const [selectedPatches, setSelectedPatches] = useState({});
+    const proposalPatches = useMemo(
+        () => (proposal?.patches || []).filter(isMeaningfulPatch),
+        [proposal?.patches]
+    );
 
     // Initialize all patches to true by default, unless they were previously unselected
     useEffect(() => {
-        if (proposal?.patches) {
+        if (proposalPatches.length > 0) {
             const initial = {};
-            proposal.patches.forEach((patch, idx) => {
+            proposalPatches.forEach((patch, idx) => {
                 if (proposal.unselectedPatchIndices && proposal.unselectedPatchIndices.includes(idx)) {
                     initial[idx] = false;
                 } else {
@@ -31,7 +45,7 @@ export default function FormProposalWidget({
             });
             setSelectedPatches(initial);
         }
-    }, [proposal]);
+    }, [proposal, proposalPatches]);
 
     const handleTogglePatch = (idx) => {
         if (isAccepted || isRejected || isStale) return;
@@ -51,12 +65,12 @@ export default function FormProposalWidget({
             filteredSchema.fields = [...filteredSchema.fields];
         }
         
-        if (unselectedIndices.length > 0 && proposal.patches) {
+        if (unselectedIndices.length > 0 && proposalPatches.length > 0) {
             // Revert patches (process in reverse order of indices)
             const sortedUnselected = [...unselectedIndices].sort((a, b) => b - a);
 
             for (const idx of sortedUnselected) {
-                const patch = proposal.patches[idx];
+                const patch = proposalPatches[idx];
                 if (!patch) continue;
 
                 if (patch.op === 'add') {
@@ -90,7 +104,7 @@ export default function FormProposalWidget({
                 ...proposal,
                 schema: filteredSchema,
                 // Only keep patches that were actually selected so the preview modal renders them correctly
-                patches: proposal.patches.filter((_, idx) => !unselectedIndices.includes(idx))
+                patches: proposalPatches.filter((_, idx) => !unselectedIndices.includes(idx))
             }
         };
     };
@@ -129,13 +143,13 @@ export default function FormProposalWidget({
                 <h4 className="text-sm font-semibold text-slate-800">{proposal?.schema?.title || "Form Update"}</h4>
 
                 {(() => {
-                    if (!proposal?.patches) {
+                    if (proposalPatches.length === 0) {
                         return <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">Adds {proposal?.schema?.fields?.length || 0} fields to your canvas.</p>;
                     }
-                    const adds = proposal.patches.filter(p => p.op === 'add').length;
-                    const removes = proposal.patches.filter(p => p.op === 'remove').length;
-                    const updates = proposal.patches.filter(p => p.op === 'update' || p.op === 'update_meta').length;
-                    const memoryUpdates = proposal.patches.filter(p => p.op === 'update_memory').length;
+                    const adds = proposalPatches.filter(p => p.op === 'add').length;
+                    const removes = proposalPatches.filter(p => p.op === 'remove').length;
+                    const updates = proposalPatches.filter(p => p.op === 'update' || p.op === 'update_meta').length;
+                    const memoryUpdates = proposalPatches.filter(p => p.op === 'update_memory').length;
 
                     const parts = [];
                     if (adds > 0) parts.push(`Added ${adds}`);
@@ -151,9 +165,15 @@ export default function FormProposalWidget({
                 })()}
             </div>
 
-            {proposal?.patches && proposal.patches.length > 0 && (
+            {isUnverified && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+                    <span className="font-semibold">Review required:</span> local form validation passed, but final AI verification was unavailable{verificationSkippedDueToBudget ? ' because the request limit was reached' : ' after the verifier retry'}.
+                </div>
+            )}
+
+            {proposalPatches.length > 0 && (
                 <div className="flex flex-col gap-1.5 mt-1 border border-slate-100 rounded-lg p-2 bg-white">
-                    {proposal.patches.map((patch, idx) => {
+                    {proposalPatches.map((patch, idx) => {
                         const isChecked = selectedPatches[idx];
                         if (patch.op === 'add') {
                             return (

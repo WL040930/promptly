@@ -34,6 +34,22 @@ const getOptionalPositiveInteger = (key) => {
     return Number.isInteger(value) && value > 0 ? value : null;
 };
 
+const getBoolean = (key, fallback = false) => {
+    if (process.env[key] === undefined) return fallback;
+    return ['1', 'true', 'yes', 'on'].includes(String(process.env[key]).trim().toLowerCase());
+};
+
+// These are fallback safeguards when provider-managed form completion is disabled.
+// Keep them internal so the environment only exposes the intentional mode switch.
+const FORM_COMPLETION_LIMITS = Object.freeze({
+    planner: 1800,
+    'planner repair': 2200,
+    worker: 3072,
+    'worker repair': 3072,
+    verifier: 768,
+    'verifier repair': 1024
+});
+
 const getAiThinkingLevel = () => {
     const value = String(process.env.AI_THINKING_LEVEL || 'minimal').trim().toLowerCase();
     return ['minimal', 'low', 'medium', 'high'].includes(value) ? value : 'minimal';
@@ -41,7 +57,17 @@ const getAiThinkingLevel = () => {
 
 const supportedAiProviders = new Set(['gemini', 'openrouter', 'groq', 'cerebras']);
 
-const normalizeAiProvider = value => supportedAiProviders.has(value) ? value : 'gemini';
+const normalizeAiProvider = value => {
+    const normalized = String(value || '').trim().toLowerCase();
+    return supportedAiProviders.has(normalized) ? normalized : 'gemini';
+};
+
+const getAiFallbackProviders = () => [...new Set(
+    String(process.env.AI_FALLBACK_PROVIDERS || '')
+        .split(',')
+        .map(value => value.trim().toLowerCase())
+        .filter(value => supportedAiProviders.has(value))
+)];
 
 const getDefaultAiModel = provider => {
     if (provider === 'openrouter') return 'openai/gpt-4o-mini';
@@ -128,11 +154,13 @@ const env = {
     },
     ai: {
         tiers: aiTiers,
-        tasks: aiTasks
+        tasks: aiTasks,
+        fallbackProviders: getAiFallbackProviders()
     },
     aiThinkingLevel: getAiThinkingLevel(),
     aiTimeoutMs: getAiTimeoutMs(),
-    aiMaxCompletionTokens: getOptionalPositiveInteger('AI_MAX_COMPLETION_TOKENS'),
+    aiFormUnlimitedCompletionTokens: getBoolean('AI_FORM_UNLIMITED_COMPLETION_TOKENS'),
+    aiFormCompletionLimits: FORM_COMPLETION_LIMITS,
     aiChatMaxCompletionTokens: getOptionalPositiveInteger('AI_CHAT_MAX_COMPLETION_TOKENS') || 700,
     aiWorkflowMaxCompletionTokens: getOptionalPositiveInteger('AI_WORKFLOW_MAX_COMPLETION_TOKENS') || 1200,
     aiNodeMaxCompletionTokens: getOptionalPositiveInteger('AI_NODE_MAX_COMPLETION_TOKENS') || 1000,

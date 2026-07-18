@@ -2,12 +2,14 @@
  * Safely parse JSON from AI outputs.
  * Handles markdown code block stripping and common truncation issues.
  */
-export const parseAiJson = (text) => {
+export const parseAiJson = (text, { recoverTruncation = true } = {}) => {
     let cleanedText = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
     
     try {
         return JSON.parse(cleanedText);
     } catch (e) {
+        if (!recoverTruncation) throw e;
+
         // Fallback for truncated JSON commonly seen with LLMs hitting token limits
         if (cleanedText.endsWith(']')) {
             cleanedText += '}';

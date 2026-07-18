@@ -64,7 +64,30 @@ test('validateFormPatches identifies when the form ID is used as a field target'
 
 test('validatePlannerResult and validateWorkerResult reject malformed model contracts', () => {
     assert.ok(validatePlannerResult({ type: 'plan_complete' }).length > 0);
-    assert.ok(validateWorkerResult({ type: 'proposal', patches: [{ op: 'add', field: { type: 'text' } }] }).length > 0);
+    assert.ok(validateWorkerResult({ patches: [{ op: 'add', field: { type: 'text' } }] }).length > 0);
+    assert.deepEqual(validateWorkerResult({ patches: [] }), []);
+});
+
+test('validatePlannerResult rejects duplicate requirement IDs', () => {
+    const issues = validatePlannerResult({
+        type: 'plan_complete',
+        summary: 'Build the form.',
+        requirements: [
+            { id: 'req_1', description: 'Add an email field.' },
+            { id: 'req_1', description: 'Make it required.' }
+        ]
+    });
+
+    assert.ok(issues.some(issue => issue.code === 'DUPLICATE_REQUIREMENT_ID'));
+});
+
+test('validatePlannerResult treats a null memory update as no memory change', () => {
+    assert.deepEqual(validatePlannerResult({
+        type: 'plan_complete',
+        summary: 'Build the form.',
+        requirements: [{ id: 'req_1', description: 'Add an email field.' }],
+        memoryUpdate: null
+    }), []);
 });
 
 test('validatePlannerResult requires usable clarification inputs', () => {
@@ -81,12 +104,15 @@ test('validatePlannerResult requires usable clarification inputs', () => {
     }), []);
 });
 
-test('validateVerifierResult enforces fulfilled requirements and issue shape', () => {
-    assert.ok(validateVerifierResult({ status: 'pass', fulfilledRequirements: [], issues: [{ message: 'Unexpected change.' }] }).some(issue => issue.code === 'PASS_WITH_VERIFIER_ISSUES'));
-    assert.ok(validateVerifierResult({ status: 'repair', fulfilledRequirements: [], issues: [{}] }).some(issue => issue.path === 'issues[0].message'));
+test('validateVerifierResult enforces status and issue shape', () => {
+    assert.ok(validateVerifierResult({ status: 'pass', issues: [{ message: 'Unexpected change.' }] }).some(issue => issue.code === 'PASS_WITH_VERIFIER_ISSUES'));
+    assert.ok(validateVerifierResult({ status: 'repair', issues: [{}] }).some(issue => issue.path === 'issues[0].message'));
     assert.deepEqual(validateVerifierResult({
         status: 'pass',
-        fulfilledRequirements: ['req_1'],
         issues: []
     }), []);
+    assert.ok(validateVerifierResult({
+        status: 'repair',
+        issues: [1, 2, 3, 4].map((_, index) => ({ message: `Issue ${index}` }))
+    }).some(issue => issue.code === 'TOO_MANY_VERIFIER_ISSUES'));
 });

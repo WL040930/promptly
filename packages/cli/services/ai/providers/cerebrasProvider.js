@@ -24,7 +24,8 @@ export class CerebrasProvider extends BaseAIProvider {
             systemInstruction,
             responseMimeType,
             model = 'llama3.1-8b',
-            maxCompletionTokens
+            maxCompletionTokens,
+            operation = 'unknown'
         } = options;
 
         const messages = toChatCompletionMessages(contents, systemInstruction);
@@ -42,17 +43,35 @@ export class CerebrasProvider extends BaseAIProvider {
         }
         applyToolOptions(body, options);
 
+        const startedAt = Date.now();
         try {
             const response = await this.client.chat.completions.create(body, {
                 timeout: env.aiTimeoutMs,
             });
 
-            const message = response.choices?.[0]?.message || {};
+            const choice = response.choices?.[0] || {};
+            const message = choice.message || {};
             const text = message.content || '';
             const usage = response.usage;
+            const finishReason = choice.finish_reason || choice.finishReason || null;
+
+            console.info('[AI Performance]', JSON.stringify({
+                operation,
+                provider: 'cerebras',
+                model,
+                elapsedMs: Date.now() - startedAt,
+                maxCompletionTokens: maxCompletionTokens || null,
+                finishReason,
+                promptTokens: usage?.prompt_tokens || 0,
+                completionTokens: usage?.completion_tokens || 0,
+                totalTokens: usage?.total_tokens || 0,
+                choiceCount: Array.isArray(response.choices) ? response.choices.length : 0,
+                hasText: Boolean(text)
+            }));
 
             return {
                 text,
+                finishReason,
                 usageMetadata: usage ? {
                     promptTokenCount: usage.prompt_tokens,
                     candidatesTokenCount: usage.completion_tokens,

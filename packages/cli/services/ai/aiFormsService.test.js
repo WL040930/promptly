@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+// Keep these contract tests focused on explicit stage limits; the local .env
+// enables provider-managed completion for interactive development.
+process.env.AI_FORM_UNLIMITED_COMPLETION_TOKENS = 'false';
+
 test('generateFormFromPrompt repairs a semantically incorrect proposal once', async () => {
     Object.assign(process.env, {
         AI_TIMEOUT_MS: '50',
@@ -27,7 +31,6 @@ test('generateFormFromPrompt repairs a semantically incorrect proposal once', as
             type: 'plan_complete',
             summary: 'Making the email required.',
             requirements: [{ id: 'req_1', description: 'Make the existing email field required.' }],
-            instructionsForWorker: 'Update the existing email field so required is true.',
             memoryUpdate: { action: 'none' }
         },
         {
@@ -37,7 +40,6 @@ test('generateFormFromPrompt repairs a semantically incorrect proposal once', as
         },
         {
             status: 'repair',
-            fulfilledRequirements: [],
             issues: [{ requirementId: 'req_1', message: 'The email field is still optional.' }]
         },
         {
@@ -47,7 +49,6 @@ test('generateFormFromPrompt repairs a semantically incorrect proposal once', as
         },
         {
             status: 'pass',
-            fulfilledRequirements: ['req_1'],
             issues: []
         }
     ];
@@ -79,9 +80,14 @@ test('generateFormFromPrompt repairs a semantically incorrect proposal once', as
     assert.equal(result.type, 'proposal');
     assert.equal(result.schema.fields[0].required, true);
     assert.equal(result.verification.status, 'pass');
+    assert.deepEqual(result.verification.fulfilledRequirements, ['req_1']);
     assert.equal(outputs.length, 0);
     assert.ok(progress.includes('repairing'));
-    assert.deepEqual(requestOptions.map(options => options.maxCompletionTokens), [800, 2048, 600, 2048, 600]);
+    assert.deepEqual(requestOptions.map(options => options.maxCompletionTokens), [1800, 3072, 768, 3072, 768]);
+    assert.equal(result.tokenUsage.stages.planner.calls, 1);
+    assert.equal(result.tokenUsage.stages.worker.calls, 1);
+    assert.equal(result.tokenUsage.stages['worker repair'].calls, 1);
+    assert.equal(result.tokenUsage.stages.verifier.calls, 2);
 });
 
 test('recovers user-facing labels when the worker and its repair omit them', async () => {
@@ -91,7 +97,6 @@ test('recovers user-facing labels when the worker and its repair omit them', asy
             type: 'plan_complete',
             summary: 'Building the registration form.',
             requirements: [{ id: 'req_1', description: 'Add first name, email, and attendance type fields.' }],
-            instructionsForWorker: 'Add first name, email, and attendance type fields.',
             memoryUpdate: { action: 'none' }
         },
         {
@@ -122,7 +127,7 @@ test('recovers user-facing labels when the worker and its repair omit them', asy
                 { op: 'add', field: { id: 'f_attendance_type', type: 'select', label: 'Attendance Type', choices: ['In-person', 'Virtual'] } }
             ]
         },
-        { status: 'pass', fulfilledRequirements: ['req_1'], issues: [] }
+        { status: 'pass', issues: [] }
     ];
     const provider = {
         async generateContent() {
@@ -150,7 +155,6 @@ test('generateFormFromPrompt fails instead of hanging when a model stage never r
         type: 'plan_complete',
         summary: 'Building the form.',
         requirements: [{ id: 'req_1', description: 'Add a required email field.' }],
-        instructionsForWorker: 'Add a required email field.',
         memoryUpdate: { action: 'none' }
     };
     let calls = 0;
@@ -202,6 +206,27 @@ test('generateFormFromPrompt exposes a retryable rate-limit error', async () => 
     );
 });
 
+test('generateFormFromPrompt normalizes provider deadline errors', async () => {
+    const { generateFormFromPrompt } = await import('./aiFormsService.js');
+    const provider = {
+        async generateContent() {
+            const error = new Error('Deadline expired before operation could complete.');
+            error.status = 504;
+            throw error;
+        }
+    };
+
+    await assert.rejects(
+        generateFormFromPrompt('Add an email field.', { fields: [], settings: {} }, [], null, { provider }),
+        error => {
+            assert.equal(error.code, 'FORM_AI_PROVIDER_TIMEOUT');
+            assert.equal(error.issues?.[0]?.code, 'PROVIDER_TIMEOUT');
+            assert.match(error.issues?.[0]?.message || '', /Deadline expired/);
+            return true;
+        }
+    );
+});
+
 test('worker repair retries a malformed verifier repair response', async () => {
     const { generateFormFromPrompt } = await import('./aiFormsService.js');
     const outputs = [
@@ -209,7 +234,6 @@ test('worker repair retries a malformed verifier repair response', async () => {
             type: 'plan_complete',
             summary: 'Building the form.',
             requirements: [{ id: 'req_1', description: 'Add a required email field.' }],
-            instructionsForWorker: 'Add a required email field.',
             memoryUpdate: { action: 'none' }
         },
         {
@@ -219,7 +243,6 @@ test('worker repair retries a malformed verifier repair response', async () => {
         },
         {
             status: 'repair',
-            fulfilledRequirements: [],
             issues: [{ requirementId: 'req_1', message: 'The field must be required.' }]
         },
         null,
@@ -228,7 +251,7 @@ test('worker repair retries a malformed verifier repair response', async () => {
             message: 'Added the required email field.',
             patches: [{ op: 'add', field: { id: 'email', type: 'email', label: 'Email', required: true } }]
         },
-        { status: 'pass', fulfilledRequirements: ['req_1'], issues: [] }
+        { status: 'pass', issues: [] }
     ];
     let calls = 0;
     const provider = {
@@ -258,7 +281,6 @@ test('worker recovery returns a typed error after malformed repair responses are
             type: 'plan_complete',
             summary: 'Building the form.',
             requirements: [{ id: 'req_1', description: 'Add an email field.' }],
-            instructionsForWorker: 'Add an email field.',
             memoryUpdate: { action: 'none' }
         },
         {
@@ -268,7 +290,6 @@ test('worker recovery returns a typed error after malformed repair responses are
         },
         {
             status: 'repair',
-            fulfilledRequirements: [],
             issues: [{ requirementId: 'req_1', message: 'The field is incomplete.' }]
         },
         null,
@@ -291,4 +312,184 @@ test('worker recovery returns a typed error after malformed repair responses are
         error => error.code === 'FORM_AI_INVALID_WORKER_RESPONSE'
             && error.issues?.[0]?.code === 'INVALID_WORKER_RESPONSE'
     );
+});
+
+test('verifier retries malformed JSON before failing the form proposal', async () => {
+    const { generateFormFromPrompt } = await import('./aiFormsService.js');
+    const outputs = [
+        {
+            type: 'plan_complete',
+            summary: 'Building the form.',
+            requirements: [{ id: 'req_1', description: 'Add an email field.' }],
+            memoryUpdate: { action: 'none' }
+        },
+        {
+            type: 'proposal',
+            message: 'Added the email field.',
+            patches: [{ op: 'add', field: { id: 'email', type: 'email', label: 'Email' } }]
+        },
+        '{"status":"pass","issues":[',
+        { status: 'pass', issues: [] }
+    ];
+    let calls = 0;
+    const provider = {
+        async generateContent() {
+            calls += 1;
+            const output = outputs.shift();
+            return { text: typeof output === 'string' ? output : JSON.stringify(output) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Add an email field.',
+        { id: 'form_1', title: 'Contact', description: '', settings: {}, fields: [] },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.equal(result.verification.status, 'pass');
+    assert.equal(calls, 4);
+});
+
+test('returns an unverified proposal when verifier repair returns no JSON', async () => {
+    const { generateFormFromPrompt } = await import('./aiFormsService.js');
+    const outputs = [
+        {
+            type: 'plan_complete',
+            summary: 'Add an email field.',
+            requirements: [{ id: 'req_1', description: 'Add an email field.' }],
+            memoryUpdate: { action: 'none' }
+        },
+        {
+            patches: [{ op: 'add', field: { id: 'email', type: 'email', label: 'Email' } }]
+        },
+        '{"status":"repair","issues":[',
+        {
+            text: '',
+            finishReason: 'length'
+        }
+    ];
+    const provider = {
+        async generateContent() {
+            const output = outputs.shift();
+            assert.ok(output, 'The fake provider received an unexpected request.');
+            return output.text !== undefined ? output : { text: JSON.stringify(output) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Add an email field.',
+        { id: 'form_1', title: 'Contact', description: '', settings: {}, fields: [] },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.schema.fields[0].label, 'Email');
+    assert.equal(result.verification.status, 'unverified');
+    assert.equal(result.verification.skippedReason, 'VERIFIER_RESPONSE_INVALID');
+});
+
+test('allows the final verifier in the third bounded repair loop', async () => {
+    const { generateFormFromPrompt } = await import('./aiFormsService.js');
+    const outputs = [
+        {
+            type: 'plan_complete',
+            summary: 'Make the email required.',
+            requirements: [{ id: 'req_1', description: 'Make the email field required.' }],
+            memoryUpdate: { action: 'none' }
+        },
+        {
+            patches: [{ op: 'update', id: 'email', updates: { required: false } }]
+        },
+        {
+            status: 'repair',
+            issues: [{ requirementId: 'req_1', message: 'The email field is still optional.' }]
+        },
+        {
+            patches: [{ op: 'update', id: 'email', updates: { required: false } }]
+        },
+        {
+            status: 'repair',
+            issues: [{ requirementId: 'req_1', message: 'The email field is still optional.' }]
+        },
+        {
+            patches: [{ op: 'update', id: 'email', updates: { required: true } }]
+        },
+        {
+            status: 'pass',
+            issues: []
+        }
+    ];
+    const provider = {
+        async generateContent() {
+            const output = outputs.shift();
+            assert.ok(output, 'The fake provider received an unexpected request.');
+            return { text: JSON.stringify(output) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Make the email required.',
+        {
+            id: 'form_1',
+            title: 'Contact form',
+            description: '',
+            settings: {},
+            fields: [{ id: 'email', type: 'email', label: 'Email', required: false }]
+        },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.schema.fields[0].required, true);
+    assert.equal(result.verification.status, 'pass');
+    assert.equal(result.tokenUsage.requestCalls, 7);
+    assert.equal(outputs.length, 0);
+});
+
+test('planner retries a response truncated by the completion limit', async () => {
+    const { generateFormFromPrompt } = await import('./aiFormsService.js');
+    const outputs = [
+        {
+            text: '{"type":"plan_complete","summary":"Building the form.","requirements":[{"id":"req_1","description":"Add an email field."',
+            finishReason: 'length'
+        },
+        {
+            type: 'plan_complete',
+            summary: 'Building the form.',
+            requirements: [{ id: 'req_1', description: 'Add an email field.' }],
+            memoryUpdate: { action: 'none' }
+        },
+        {
+            patches: [{ op: 'add', field: { id: 'email', type: 'email', label: 'Email' } }]
+        },
+        { status: 'pass', issues: [] }
+    ];
+    const requestOptions = [];
+    const provider = {
+        async generateContent(contents, options) {
+            requestOptions.push(options);
+            const output = outputs.shift();
+            return output?.text
+                ? output
+                : { text: JSON.stringify(output) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Add an email field.',
+        { id: 'form_1', title: 'Contact', description: '', settings: {}, fields: [] },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.schema.fields[0].label, 'Email');
+    assert.deepEqual(requestOptions.map(options => options.maxCompletionTokens), [1800, 2200, 3072, 768]);
 });

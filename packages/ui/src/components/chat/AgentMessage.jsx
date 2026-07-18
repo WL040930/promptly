@@ -43,7 +43,7 @@ const TokenUsageBreakdown = ({ tokenUsage }) => {
                             <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Stages</span>
                             {stages.map(([stage, usage]) => (
                                 <span key={stage} className="flex items-center justify-between gap-3 py-0.5">
-                                    <span className="truncate">{stage}</span>
+                                    <span className="truncate">{stage}{usage.calls > 1 ? ` (${usage.calls} calls)` : ''}</span>
                                     <span className="shrink-0 font-medium text-slate-800">{formatTokens(usage.totalTokens)}</span>
                                 </span>
                             ))}

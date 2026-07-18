@@ -4,6 +4,7 @@ import {
     FORM_AI_CONTEXT_LIMIT,
     FORM_AI_HISTORY_LIMIT,
     buildVerifierContext,
+    buildVerifierRepairContext,
     buildPlannerContext,
     compactFormSchema,
     createMemoryPatch,
@@ -35,10 +36,31 @@ test('buildPlannerContext keeps recent conversation bounded and separates memory
     assert.match(context, /Current Request:\nAdd an email field\./);
     assert.match(context, /Clarification:\nimportant_only - Ask only high-impact questions; infer low-risk details\./);
     assert.doesNotMatch(context, /message-0/);
-    assert.match(context, /message-15/);
+    assert.match(context, /message-9/);
     assert.ok(context.length <= FORM_AI_CONTEXT_LIMIT + 2000);
     assert.doesNotMatch(JSON.stringify(compactFormSchema({ settings: { aiMemory: 'private' } })), /private/);
     assert.doesNotMatch(JSON.stringify(compactFormSchema({ id: 'form_1', settings: {} })), /form_1/);
+    const compact = compactFormSchema({
+        title: 'A'.repeat(400),
+        description: 'B'.repeat(1400),
+        settings: { accentColor: '#fff', acceptingResponses: true },
+        fields: [{
+            id: 'email',
+            type: 'email',
+            label: 'Email',
+            required: true,
+            internalNotes: 'drop this',
+            description: 'C'.repeat(500),
+            choices: ['One']
+        }]
+    });
+    assert.equal(compact.title.length, 255);
+    assert.equal(compact.description.length, 1000);
+    assert.equal(compact.settings.acceptingResponses, true);
+    assert.equal(compact.settings.accentColor, undefined);
+    assert.equal(compact.fields[0].internalNotes, undefined);
+    assert.equal(compact.fields[0].description.length, 300);
+    assert.deepEqual(compact.fields[0].choices, ['One']);
 });
 
 test('createMemoryPatch supports replacement, clearing, and legacy memory', () => {
@@ -63,6 +85,10 @@ test('empty or unchanged memory proposals do not create selectable patches', () 
     assert.deepEqual(getMemoryUpdate({
         memoryUpdate: { action: 'replace', summary: 'No durable form-specific rules have been set.' }
     }), { action: 'none' });
+    assert.deepEqual(getMemoryUpdate({
+        memoryUpdate: { action: 'replace', summary: 'No durable rules defined.' }
+    }), { action: 'none' });
+    assert.equal(readFormMemory({ settings: { aiMemory: { summary: 'No durable rules defined.' } } }), null);
     assert.equal(createMemoryPatch({ settings: {} }, { memoryUpdate: { action: 'clear' } }), null);
     assert.equal(createMemoryPatch({ settings: { aiMemory: { version: 1, summary: 'Use short labels.' } } }, {
         memoryUpdate: { action: 'replace', summary: 'Use short labels.' }
@@ -82,4 +108,45 @@ test('buildVerifierContext keeps planner-approved memory changes in scope', () =
     assert.match(context, /Planner-approved Memory Update:/);
     assert.match(context, /Treat this approved memory update as in scope/);
     assert.match(context, /Use a professional tone\./);
+});
+
+test('buildVerifierRepairContext preserves the proposal while explaining the JSON failure', () => {
+    const context = buildVerifierRepairContext({
+        requirements: [{ id: 'req_1', description: 'Add an email field.' }],
+        patches: [{ op: 'add', field: { id: 'email', type: 'email', label: 'Email' } }],
+        response: '{"status":"pass"',
+        issues: 'INVALID_JSON at response: Unexpected end of JSON input'
+    });
+
+    assert.match(context, /Do not change the generated patches or planner requirements/);
+    assert.match(context, /INVALID_JSON/);
+    assert.match(context, /Invalid Verifier Response:/);
+    assert.match(context, /email/);
+});
+
+test('buildVerifierContext keeps omitted update properties omitted', () => {
+    const context = buildVerifierContext({
+        requirements: [{ id: 'req_1', description: 'Make the email field required.' }],
+        patches: [{
+            op: 'update',
+            id: 'email',
+            updates: { required: true }
+        }]
+    });
+
+    assert.match(context, /"updates":\{"required":true\}/);
+    assert.doesNotMatch(context, /"updates":\{"label":""/);
+});
+
+test('buildVerifierContext preserves an explicitly cleared update label', () => {
+    const context = buildVerifierContext({
+        requirements: [{ id: 'req_1', description: 'Make the email field required.' }],
+        patches: [{
+            op: 'update',
+            id: 'email',
+            updates: { required: true, label: '' }
+        }]
+    });
+
+    assert.match(context, /"updates":\{"label":"","required":true\}/);
 });

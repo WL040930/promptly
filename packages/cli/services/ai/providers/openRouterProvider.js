@@ -28,6 +28,9 @@ export class OpenRouterProvider extends BaseAIProvider {
         if (responseMimeType === 'application/json') {
             body.response_format = { type: 'json_object' };
         }
+        if (Number.isInteger(options.maxCompletionTokens) && options.maxCompletionTokens > 0) {
+            body.max_tokens = options.maxCompletionTokens;
+        }
         applyToolOptions(body, options);
 
         try {
@@ -42,16 +45,21 @@ export class OpenRouterProvider extends BaseAIProvider {
 
             if (!response.ok) {
                 const errorText = await response.text();
-                throw new Error(`OpenRouter API Error: ${response.status} - ${errorText}`);
+                const error = new Error(`OpenRouter API Error: ${response.status} - ${errorText}`);
+                error.status = response.status;
+                error.headers = response.headers;
+                throw error;
             }
 
             const data = await response.json();
-            const message = data.choices?.[0]?.message || {};
+            const choice = data.choices?.[0] || {};
+            const message = choice.message || {};
             const text = message.content || '';
             const usage = data.usage;
 
             return {
                 text,
+                finishReason: choice.finish_reason || choice.finishReason || null,
                 usageMetadata: usage ? {
                     promptTokenCount: usage.prompt_tokens,
                     candidatesTokenCount: usage.completion_tokens,

@@ -1,6 +1,7 @@
 import React, { useMemo, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import FieldRenderer from './fields/FieldRenderer';
+import { isEmptyFormMemorySummary } from '../../../shared/formContract.js';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 
@@ -52,7 +53,12 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
         }
     }, [onClose]);
 
-    const patches = proposal?.patches || [];
+    const patches = (proposal?.patches || []).filter(patch => {
+        if (patch?.op !== 'update_memory') return true;
+        const memory = patch.updates?.memory;
+        if (memory?.summary) return !isEmptyFormMemorySummary(memory.summary);
+        return Boolean(patch.originalMemory);
+    });
     const proposedSchema = proposal?.schema || {};
     const metaUpdate = patches.find(p => p.op === 'update_meta');
     const memoryUpdate = patches.find(p => p.op === 'update_memory');
@@ -115,6 +121,13 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
                 {/* Content Body (Scrollable) */}
                 <div className="flex-1 overflow-y-auto p-6 sm:p-10">
                     <div className="max-w-2xl mx-auto bg-white border border-slate-200 shadow-sm rounded-xl p-8">
+
+                        {proposal.verification?.status === 'unverified' && (
+                            <div className="mb-8 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900">
+                                <div className="mb-1 text-xs font-bold uppercase tracking-wider text-amber-700">Verification skipped</div>
+                                This proposal passed local form validation, but final AI verification was unavailable{proposal.verification.skippedReason === 'AI_CALL_BUDGET_EXCEEDED' ? ' because the request limit was reached' : ' after the verifier retry'}. Review the changes carefully before accepting them.
+                            </div>
+                        )}
                         
                         {/* Form Title & Description */}
                         <div className={`mb-10 pb-6 border-b border-slate-100 p-4 rounded-xl -mx-4 -mt-4 ${metaUpdate ? 'bg-amber-50/40 border border-amber-200' : ''}`}>

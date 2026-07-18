@@ -10,6 +10,8 @@ import {
     isFormPatchOperation
 } from '../../../shared/formContract.js';
 
+const MAX_VERIFIER_ISSUES = 3;
+
 const issue = (code, path, message) => ({ code, path, message });
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -230,10 +232,10 @@ export const validatePlannerResult = (result = {}) => {
 
     if (result.type === 'plan_complete') {
         issues.push(...validateText(result.summary, 'summary', { required: true, max: 4000 }));
-        issues.push(...validateText(result.instructionsForWorker, 'instructionsForWorker', { required: true, max: FORM_MAX_TEXT_LENGTH }));
         if (!Array.isArray(result.requirements) || result.requirements.length === 0) {
             issues.push(issue('INVALID_REQUIREMENTS', 'requirements', 'A completed plan must contain at least one requirement.'));
         } else {
+            const requirementIds = new Set();
             result.requirements.forEach((requirement, index) => {
                 if (!isPlainObject(requirement)) {
                     issues.push(issue('INVALID_REQUIREMENT', `requirements[${index}]`, 'Requirement must be an object.'));
@@ -241,9 +243,13 @@ export const validatePlannerResult = (result = {}) => {
                 }
                 issues.push(...validateText(requirement.id, `requirements[${index}].id`, { required: true, max: 100 }));
                 issues.push(...validateText(requirement.description, `requirements[${index}].description`, { required: true, max: 1000 }));
+                if (requirement.id && requirementIds.has(requirement.id)) {
+                    issues.push(issue('DUPLICATE_REQUIREMENT_ID', `requirements[${index}].id`, `Requirement ID '${requirement.id}' is duplicated.`));
+                }
+                if (requirement.id) requirementIds.add(requirement.id);
             });
         }
-        if (result.memoryUpdate !== undefined) {
+        if (result.memoryUpdate !== undefined && result.memoryUpdate !== null) {
             if (!isPlainObject(result.memoryUpdate) || !['none', 'replace', 'clear'].includes(result.memoryUpdate.action)) {
                 issues.push(issue('INVALID_MEMORY_ACTION', 'memoryUpdate.action', 'Memory action must be none, replace, or clear.'));
             }
@@ -257,8 +263,6 @@ export const validatePlannerResult = (result = {}) => {
 export const validateWorkerResult = (result = {}) => {
     const issues = [];
     if (!isPlainObject(result)) return [issue('INVALID_WORKER_RESPONSE', '', 'Worker response must be an object.')];
-    if (result.type !== 'proposal') issues.push(issue('INVALID_WORKER_TYPE', 'type', 'Worker type must be proposal.'));
-    issues.push(...validateText(result.message, 'message', { max: 4000 }));
     if (!Array.isArray(result.patches)) issues.push(issue('INVALID_PATCHES', 'patches', 'Worker patches must be an array.'));
     else result.patches.forEach((patch, index) => issues.push(...validatePatchShape(patch, `patches[${index}]`)));
     return issues;
@@ -268,19 +272,12 @@ export const validateVerifierResult = (result = {}) => {
     const issues = [];
     if (!isPlainObject(result)) return [issue('INVALID_VERIFIER_RESPONSE', '', 'Verifier response must be an object.')];
     if (!['pass', 'repair'].includes(result.status)) issues.push(issue('INVALID_VERIFIER_STATUS', 'status', 'Verifier status must be pass or repair.'));
-    if (!Array.isArray(result.fulfilledRequirements)) {
-        issues.push(issue('INVALID_FULFILLED_REQUIREMENTS', 'fulfilledRequirements', 'fulfilledRequirements must be an array of requirement IDs.'));
-    } else {
-        const requirementIds = new Set();
-        result.fulfilledRequirements.forEach((requirementId, index) => {
-            issues.push(...validateText(requirementId, `fulfilledRequirements[${index}]`, { required: true, max: 100 }));
-            if (requirementId && requirementIds.has(requirementId)) issues.push(issue('DUPLICATE_FULFILLED_REQUIREMENT', `fulfilledRequirements[${index}]`, `Requirement ID '${requirementId}' is duplicated.`));
-            if (requirementId) requirementIds.add(requirementId);
-        });
-    }
     if (!Array.isArray(result.issues)) {
         issues.push(issue('INVALID_VERIFIER_ISSUES', 'issues', 'Verifier issues must be an array.'));
     } else {
+        if (result.issues.length > MAX_VERIFIER_ISSUES) {
+            issues.push(issue('TOO_MANY_VERIFIER_ISSUES', 'issues', `Verifier may return at most ${MAX_VERIFIER_ISSUES} issues.`));
+        }
         result.issues.forEach((verifierIssue, index) => {
             const path = `issues[${index}]`;
             if (!isPlainObject(verifierIssue)) {
