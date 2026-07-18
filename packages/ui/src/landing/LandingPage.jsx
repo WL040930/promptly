@@ -8,19 +8,6 @@ import Metrics from './components/Metrics'
 import CallToAction from './components/CallToAction'
 import Footer from './components/Footer'
 
-const BRANDS = [
-  'AdminX',
-  'WorkflowPro',
-  'TaskMaster',
-  'EfficiencyAI',
-  'CorpSolutions',
-  'StaffSync',
-  'LogiAdmin',
-  'ProcessFlow',
-  'AutomateHQ',
-  'SyncSystems'
-]
-
 function LandingPage({ onLogin, onSecurity }) {
   return (
     <div className="min-h-screen bg-white text-slate-900">
@@ -28,31 +15,18 @@ function LandingPage({ onLogin, onSecurity }) {
       <main>
         <Hero />
 
-        <div className="py-12 bg-white border-y border-slate-100 overflow-hidden relative">
-          <div className="edge-fade-left z-10"></div>
-          <div className="edge-fade-right z-10"></div>
-
-          <div className="animate-marquee-right whitespace-nowrap flex">
-            <div className="flex items-center space-x-16 px-8">
-              {BRANDS.map((brand, i) => (
-                <span
-                  key={`b1-${i}`}
-                  className="text-xl font-bold text-slate-300 hover:text-indigo-500 transition-colors cursor-default select-none uppercase tracking-widest"
-                >
-                  {brand}
-                </span>
-              ))}
-            </div>
-            <div className="flex items-center space-x-16 px-8">
-              {BRANDS.map((brand, i) => (
-                <span
-                  key={`b2-${i}`}
-                  className="text-xl font-bold text-slate-300 hover:text-indigo-500 transition-colors cursor-default select-none uppercase tracking-widest"
-                >
-                  {brand}
-                </span>
-              ))}
-            </div>
+        <div className="py-10 bg-white border-y border-slate-100">
+          <div className="max-w-5xl mx-auto px-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+            {[
+              ['Describe', 'Start with a plain-language task'],
+              ['Review', 'Approve the proposed changes'],
+              ['Run', 'Inspect the result and history']
+            ].map(([title, description]) => (
+              <div key={title} className="rounded-2xl bg-slate-50 border border-slate-100 px-5 py-4">
+                <div className="text-sm font-extrabold uppercase tracking-widest text-indigo-600">{title}</div>
+                <div className="mt-1 text-sm text-slate-500">{description}</div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -66,7 +40,6 @@ function LandingPage({ onLogin, onSecurity }) {
           description="Join dozens of administrative departments that are already redefining productivity with Promptly. Get started in minutes."
           primaryLabel="Start Free Trial"
           onPrimaryClick={onLogin}
-          secondaryLabel="Talk to Sales"
         />
       </main>
       <Footer onSecurity={onSecurity} />

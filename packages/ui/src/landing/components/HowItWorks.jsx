@@ -9,28 +9,28 @@ const STEPS = [
   {
     number: '01',
     title: 'Converse',
-    description: 'Speak or type your requirement. Promptly understands nuance, jargon, and complex instructions.',
+    description: 'Type the result you want. Promptly turns the request into a reviewable automation proposal.',
     visual: '🗣️',
     color: 'from-indigo-500 to-indigo-400'
   },
   {
     number: '02',
     title: 'Analyze',
-    description: 'Our AI model decomposes your request into technical steps and required integrations.',
+    description: 'The AI layer maps the request to available triggers, steps, and supported actions.',
     visual: '🧠',
     color: 'from-indigo-500 to-indigo-400'
   },
   {
     number: '03',
     title: 'Execute',
-    description: 'The agent securely connects to your tools (Email, Sheets, CRM) and performs the work.',
+    description: 'Run the automation through supported actions such as email, Google Sheets, database, or HTTP.',
     visual: '⚡',
     color: 'from-teal-500 to-teal-400'
   },
   {
     number: '04',
     title: 'Report',
-    description: 'Receive a structured summary of what was done and any items requiring human review.',
+    description: 'Inspect the run result, step details, and any failure that needs attention.',
     visual: '📊',
     color: 'from-rose-500 to-rose-400'
   }
@@ -125,10 +125,10 @@ function HowItWorks() {
               </p>
               <ul className="how-features-container space-y-4">
                 {[
-                  'Enterprise-grade API encryption',
-                  'Human-in-the-loop validation for financial tasks',
-                  'Comprehensive audit logs for every prompt',
-                  'Role-based access control (RBAC)'
+                  'Authenticated API requests',
+                  'Review before applying AI proposals',
+                  'Execution history for workflow runs',
+                  'Per-user resource scoping'
                 ].map((item, i) => (
                   <li key={item} className="how-feature flex items-center text-slate-400 group">
                     <div className="w-8 h-8 rounded-lg bg-teal-500/10 flex items-center justify-center mr-4 group-hover:bg-teal-500/20 transition-colors">

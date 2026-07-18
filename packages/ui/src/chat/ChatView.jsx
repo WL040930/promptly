@@ -7,11 +7,11 @@ import LogsTabFallback from './components/log-ui/LogsSkeleton.jsx';
 
 const LogsTab = React.lazy(() => import('./components/LogsTab.jsx'));
 
-const ChatView = ({ user, activeTab = 'chat' }) => {
+const ChatView = ({ user, activeTab = 'chat', setActiveTab }) => {
     const renderActiveTab = () => {
         switch (activeTab) {
             case 'dashboard':
-                return <DashboardTab simplified={true} />;
+                return <DashboardTab compact onNavigateTab={setActiveTab} />;
             case 'workflow':
                 return <WorkflowTab />;
             case 'forms':

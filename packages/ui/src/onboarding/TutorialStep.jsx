@@ -5,37 +5,37 @@ const TutorialStep = ({ selectedRole, tutorialStepIndex, onNext, onBack, onSubmi
 
     const chatFeatures = [
         {
-            title: "Zero-Code Automation",
-            desc: "Simply chat with the Prompty Assistant to map out your automations effortlessly. No technical knowledge required.",
-            tag: "Chat Interface"
+            title: "Describe the task",
+            desc: "Tell the AI workspace what you want to accomplish, then review the proposed automation before it changes anything.",
+            tag: "AI Workspace"
         },
         {
             title: "Identify & Trigger",
-            desc: "Tell the assistant what data sources to watch (emails, sheets) and how to trigger workflows securely.",
-            tag: "Smart Triggers"
+            desc: "Choose the event that starts an automation and define the information it needs to do its work.",
+            tag: "Triggers"
         },
         {
             title: "Format Outputs",
-            desc: "Deliver your formatted results directly to Slack, Excel, or custom dashboards directly via chat commands.",
-            tag: "Integrations"
+            desc: "Review the result, test the run, and connect the supported actions that should happen next.",
+            tag: "Actions"
         }
     ];
 
     const builderFeatures = [
         {
-            title: "Visual Node Canvas",
-            desc: "Connect Incoming Email triggers to AI Extractor nodes and external Actions seamlessly using our interactive drag-and-drop builder.",
-            tag: "Drag & Drop"
+            title: "Map the steps",
+            desc: "Arrange triggers, AI steps, conditions, and actions on the visual canvas so the automation is easy to understand.",
+            tag: "Visual Builder"
         },
         {
-            title: "AI Command Bar",
-            desc: "Type a prompt to instantly generate complex node sequences and inject them directly into your workflow canvas.",
-            tag: "AI Generation"
+            title: "Ask the assistant",
+            desc: "Use the AI assistant to draft or refine steps while keeping the workflow visible and under your control.",
+            tag: "AI Assistant"
         },
         {
             title: "Test & Deploy",
-            desc: "Run real-time test executions, view logs, and deploy your multi-step automations straight from the dashboard.",
-            tag: "Execution"
+            desc: "Test a run, inspect what happened, and activate the automation when the result is ready.",
+            tag: "Runs"
         }
     ];
 
@@ -47,11 +47,11 @@ const TutorialStep = ({ selectedRole, tutorialStepIndex, onNext, onBack, onSubmi
         <div className="w-full max-w-6xl flex flex-col items-center animate-fade-in z-10 h-full py-8">
             <div className="w-full flex-1 bg-white rounded-[2rem] p-8 md:p-12 shadow-2xl shadow-indigo-900/5 border border-slate-100 mb-8 flex flex-col md:flex-row items-center gap-12 min-h-[500px]">
                 
-                {/* Left: Screenshot Placeholder */}
-                <div className="flex-[1.2] w-full bg-slate-50 border-4 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center text-slate-400 h-full min-h-[350px] transition-all hover:bg-slate-100 group">
+                {/* Left: product preview panel */}
+                <div className="flex-[1.2] w-full bg-gradient-to-br from-indigo-50 via-white to-cyan-50 border border-indigo-100 rounded-3xl flex flex-col items-center justify-center text-slate-500 h-full min-h-[350px] transition-all hover:shadow-lg group p-8">
                     <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mb-4 opacity-40 group-hover:scale-110 transition-transform duration-300"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-                    <span className="text-xl font-bold uppercase tracking-widest text-slate-400 mb-2">{currentFeature.title}</span>
-                    <span className="text-sm font-medium text-slate-400">Replace with screenshot</span>
+                    <span className="text-xl font-bold text-slate-700 mb-2 text-center">{currentFeature.title}</span>
+                    <span className="text-sm font-medium text-slate-500 text-center">A preview of this part of your workspace</span>
                 </div>
 
                 {/* Right: Text Content */}

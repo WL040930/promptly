@@ -22,7 +22,7 @@ const LogInspector = ({ logId, isOpen = true, onClose }) => {
             <aside className={`w-full lg:w-[420px] h-full flex flex-col border-l border-slate-200 bg-white shadow-2xl transform transition-transform duration-300 ease-out will-change-transform motion-reduce:transition-none ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
             <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50 shrink-0">
                 <div className="min-w-0">
-                    <h3 className="font-semibold text-slate-900 text-sm sm:text-base">Execution Inspector</h3>
+                    <h3 className="font-semibold text-slate-900 text-sm sm:text-base">Run details</h3>
                     <span className="font-mono text-xs text-slate-500 truncate block max-w-64">{logId}</span>
                 </div>
                 <div className="flex items-center gap-1">

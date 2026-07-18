@@ -49,7 +49,7 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
     const { totalRuns, successRuns } = runAggregate[0] || { totalRuns: 0, successRuns: 0 };
     const totalRunsNum = parseInt(totalRuns, 10);
     const successRunsNum = parseInt(successRuns, 10);
-    const successRate = totalRunsNum === 0 ? '100%' : `${((successRunsNum / totalRunsNum) * 100).toFixed(1)}%`;
+    const successRate = totalRunsNum === 0 ? '—' : `${((successRunsNum / totalRunsNum) * 100).toFixed(1)}%`;
 
     // Fill in any days with zero runs so the chart always shows 7 bars
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -69,7 +69,6 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
         activeWorkflowCount,
         totalRuns: totalRunsNum,
         successRate,
-        aiTokensSaved: '14.2M', // mock — real token tracking not yet implemented
         weeklyData: filledWeeklyData,
         recentActivities: recentActivities.map(log => ({
             id: log.id,

@@ -45,18 +45,37 @@ function Hero() {
           <a href="#demo" className="hero-btn w-full sm:w-auto bg-slate-900 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-slate-800 transition-all shadow-xl hover:-translate-y-1">
             Try the Agent
           </a>
-          <button className="hero-btn w-full sm:w-auto bg-white border border-slate-200 text-slate-900 px-8 py-4 rounded-xl font-bold text-lg hover:bg-slate-50 transition-all shadow-sm">
-            View Roadmap
-          </button>
+          <a href="#how-it-works" className="hero-btn w-full sm:w-auto bg-white border border-slate-200 text-slate-900 px-8 py-4 rounded-xl font-bold text-lg hover:bg-slate-50 transition-all shadow-sm">
+            See how it works
+          </a>
         </div>
         
         <div className="hero-image mt-20 relative max-w-5xl mx-auto">
           <div className="rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden aspect-video relative">
-            <img src="https://picsum.photos/seed/promptly-demo/1200/675" alt="Dashboard Preview" className="w-full h-full object-cover opacity-90" />
-            <div className="absolute inset-0 bg-gradient-to-t from-white/20 to-transparent"></div>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-20 h-20 bg-indigo-600/90 rounded-full flex items-center justify-center cursor-pointer hover:scale-110 transition-transform shadow-2xl">
-                <svg className="w-8 h-8 text-white fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <div className="absolute inset-0 bg-gradient-to-br from-slate-50 via-white to-indigo-50 p-5 sm:p-8 text-left">
+              <div className="h-full rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden">
+                <div className="h-10 border-b border-slate-100 flex items-center gap-2 px-4">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-300"></span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-300"></span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-300"></span>
+                  <span className="ml-3 text-xs font-semibold text-slate-400">Promptly workspace</span>
+                </div>
+                <div className="grid grid-cols-[120px_1fr] sm:grid-cols-[180px_1fr] h-[calc(100%-2.5rem)]">
+                  <div className="border-r border-slate-100 bg-slate-50 p-3 space-y-2">
+                    <div className="h-7 rounded-md bg-indigo-100"></div>
+                    <div className="h-7 rounded-md bg-white border border-slate-100"></div>
+                    <div className="h-7 rounded-md bg-white border border-slate-100"></div>
+                  </div>
+                  <div className="p-4 sm:p-6 space-y-4">
+                    <div className="h-5 w-2/5 rounded bg-slate-200"></div>
+                    <div className="h-20 rounded-lg bg-indigo-50 border border-indigo-100"></div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="h-16 rounded-lg bg-slate-50 border border-slate-100"></div>
+                      <div className="h-16 rounded-lg bg-slate-50 border border-slate-100"></div>
+                      <div className="h-16 rounded-lg bg-slate-50 border border-slate-100"></div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

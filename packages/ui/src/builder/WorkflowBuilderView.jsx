@@ -163,7 +163,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
 
     const handleCreateWorkflow = (e) => {
         const wfData = {
-            name: 'New Sequence Automation',
+            name: 'New Automation',
             folderId: folders.length > 0 ? folders[0].id : null,
             isActive: false,
             status: 'Saved',
@@ -290,7 +290,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
         setIsSubmitting(true);
         try {
             if (modal.type === MODAL_TYPES.EDIT_WORKFLOW_PROPERTIES && activeWorkflowId) {
-                const nameValue = modal.formData.name?.trim() || 'Untitled Workflow';
+                const nameValue = modal.formData.name?.trim() || 'Untitled Automation';
                 const payload = {
                     name: nameValue,
                     icon: modal.formData.icon,
@@ -380,7 +380,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
                 const replace = window.confirm('This workflow already has nodes. Choose OK to replace it, or Cancel to create a separate workflow.');
                 if (!replace) {
                     const created = await createWorkflowMutation.mutateAsync({
-                        name: payload.name || 'New Workflow',
+                        name: payload.name || 'New Automation',
                         status: 'Draft',
                         iconColor: 'text-indigo-600',
                         iconBg: 'bg-indigo-100',
@@ -388,12 +388,12 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
                         edges: payload.edges || []
                     });
                     targetWorkflowId = created.id;
-                    toast.success('Created a separate workflow from the proposal.');
+                    toast.success('Created a separate automation from the proposal.');
                     return { workflowId: targetWorkflowId };
                 }
             }
-            await updateWorkflowMutation.mutateAsync({ id: targetWorkflowId, data: { name: payload.name || activeWorkflow?.name || 'New Workflow', nodes: payload.nodes || [], edges: payload.edges || [] } });
-            toast.success('Workflow proposal applied.');
+            await updateWorkflowMutation.mutateAsync({ id: targetWorkflowId, data: { name: payload.name || activeWorkflow?.name || 'New Automation', nodes: payload.nodes || [], edges: payload.edges || [] } });
+            toast.success('Automation proposal applied.');
             return { workflowId: targetWorkflowId };
         }
         return null;
@@ -548,7 +548,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
     return (
         <div ref={builderContainer} className="flex-1 flex w-full h-full bg-slate-50 overflow-hidden font-sans">
 
-            {/* 1. LEFT SIDEBAR: Node Library */}
+            {/* 1. LEFT SIDEBAR: Add steps */}
             <NodeLibrarySidebar
                 isOpen={isLeftSidebarOpen}
                 onDragStart={(node) => setDraggedNode(node)}
@@ -608,7 +608,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
 
 
 
-            {/* 3. RIGHT PANEL: Promptly Agent & Property Inspector */}
+            {/* 3. RIGHT PANEL: AI assistant & configuration */}
             <aside
                 className={`bg-white/90 backdrop-blur-md border-l border-slate-200/60 flex flex-col h-full transition-all duration-300 relative z-20 shadow-xl shrink-0 ${
                     isRightSidebarOpen ? 'w-[340px]' : 'w-0 opacity-0 overflow-hidden border-none'
@@ -641,7 +641,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
                                         : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
                                 }`}
                             >
-                                Promptly Agent
+                                AI Assistant
                             </button>
                             <button
                                 onClick={() => setRightTab('properties')}
@@ -651,7 +651,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
                                         : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
                                 }`}
                             >
-                                Properties
+                                Configure
                             </button>
                             <button
                                 onClick={() => setIsRightSidebarOpen(false)}

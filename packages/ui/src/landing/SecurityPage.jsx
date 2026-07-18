@@ -48,7 +48,7 @@ const COLOR_CLASS = {
 function SecurityPage({ onHome, onLogin }) {
   return (
     <div className="min-h-screen bg-white text-slate-900">
-      <Header onLogin={onLogin} />
+      <Header onLogin={onLogin} onHome={onHome} />
       <main>
         <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full -z-10">
@@ -61,7 +61,7 @@ function SecurityPage({ onHome, onLogin }) {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
-              <span>Enterprise Security</span>
+              <span>Security foundations</span>
             </div>
             
             <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-slate-900 mb-8 max-w-4xl mx-auto leading-tight">
@@ -69,7 +69,7 @@ function SecurityPage({ onHome, onLogin }) {
             </h1>
             
             <p className="text-lg md:text-xl text-slate-600 max-w-2xl mx-auto mb-10 leading-relaxed">
-              We take the security of your data seriously. Our API is protected by industry-standard protocols, robust rate limiting, and strict authentication mechanisms to ensure your AI workflows remain safe and uninterrupted.
+              We protect the application with authenticated API access, request limits, and standard HTTP security headers. These are the safeguards currently implemented in Promptly; review your deployment configuration before making production commitments.
             </p>
           </div>
         </section>
@@ -106,10 +106,10 @@ function SecurityPage({ onHome, onLogin }) {
           title="Ready to build securely?"
           description="Join Promptly today and start creating complex AI workflows with the peace of mind that your data is protected."
           primaryLabel="Get Started"
-          onPrimaryClick={onHome}
+          onPrimaryClick={onLogin}
         />
       </main>
-      <Footer onSecurity={onHome} />
+      <Footer onHome={onHome} />
     </div>
   )
 }

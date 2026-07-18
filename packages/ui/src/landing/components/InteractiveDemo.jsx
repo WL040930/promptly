@@ -197,7 +197,7 @@ function InteractiveDemo() {
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
                 </button>
               </div>
-              <p className="text-[10px] text-center text-slate-400 mt-3 font-medium">Powered by Gemini AI Engine & Promptly Context Layer</p>
+              <p className="text-[10px] text-center text-slate-400 mt-3 font-medium">Powered by Promptly AI</p>
             </div>
           </div>
         </div>

@@ -36,10 +36,10 @@ const WorkspaceSelectionStep = ({ selectedRole, onSelectRole, onNext }) => {
                         </svg>
                     </div>
                     <h3 className="text-2xl font-bold text-slate-900 mb-3">
-                        Chat Mode
+                        Guided AI workspace
                     </h3>
                     <p className="text-slate-600 text-[0.95rem] leading-relaxed mb-4">
-                        A streamlined conversational interface perfect for quick prompting and easy generation.
+                        Start with a task in plain language, review the proposed automation, and refine it conversationally.
                     </p>
                     <div className="mt-auto px-3 py-1 bg-slate-100 text-slate-500 text-xs font-bold uppercase tracking-wider rounded-md">
                         Recommended for everyone
@@ -64,10 +64,10 @@ const WorkspaceSelectionStep = ({ selectedRole, onSelectRole, onNext }) => {
                         </svg>
                     </div>
                     <h3 className="text-2xl font-bold text-slate-900 mb-3">
-                        Workflow Builder
+                        Visual builder
                     </h3>
                     <p className="text-slate-600 text-[0.95rem] leading-relaxed mb-4">
-                        Advanced node-based builder for complex prompt chaining and logic flow automation.
+                        Arrange triggers, AI steps, conditions, and actions on a canvas for deeper control.
                     </p>
                     <div className="mt-auto px-3 py-1 bg-slate-100 text-slate-500 text-xs font-bold uppercase tracking-wider rounded-md">
                         Recommended for power users

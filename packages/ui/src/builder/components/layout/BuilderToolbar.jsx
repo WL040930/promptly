@@ -44,7 +44,7 @@ const BuilderToolbar = ({
                         variant="ghost"
                         size="icon-sm"
                         onClick={onBack}
-                        title="Back to Workspace Overview"
+                        title="Back to Automations"
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                             <line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline>
@@ -112,7 +112,7 @@ const BuilderToolbar = ({
                             size="md"
                             checked={activeWorkflow?.isActive || false}
                             onChange={onToggleActive}
-                            title={activeWorkflow?.isActive ? 'Deactivate workflow' : 'Activate workflow'}
+                            title={activeWorkflow?.isActive ? 'Deactivate automation' : 'Activate automation'}
                         />
                     </div>
 
@@ -124,7 +124,7 @@ const BuilderToolbar = ({
                         isLoading={isSavingVersion}
                         loadingText="Saving…"
                     >
-                        Save Version
+                        Save version
                     </Button>
 
                     {/* History button */}
@@ -145,7 +145,7 @@ const BuilderToolbar = ({
                         variant={isRightSidebarOpen ? "secondary" : "ghost"}
                         size="icon-sm"
                         onClick={onToggleRight}
-                        title="Toggle Promptly Agent / Inspector"
+                        title="Toggle assistant and configuration"
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="15" y1="3" x2="15" y2="21"></line>

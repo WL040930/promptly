@@ -30,14 +30,38 @@ const SettingsIcon = () => (
     </svg>
 );
 
+const FormsIcon = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        <line x1="3" y1="9" x2="21" y2="9"></line>
+        <line x1="9" y1="21" x2="9" y2="9"></line>
+    </svg>
+);
+
+const CHAT_NAV_ITEMS = [
+    { id: 'dashboard', label: 'Home', icon: DashboardIcon },
+    { id: 'chat', label: 'AI Workspace', icon: MessageSquareIcon },
+    { id: 'workflow', label: 'Automations', icon: WorkflowIcon },
+    { id: 'forms', label: 'Forms', icon: FormsIcon },
+    { id: 'logs', label: 'Runs', icon: LogsIcon }
+];
+
+const WORKFLOW_NAV_ITEMS = [
+    { id: 'dashboard', label: 'Home', icon: DashboardIcon },
+    { id: 'chat', label: 'AI Workspace', icon: MessageSquareIcon, mode: 'chat' },
+    { id: 'workflows', label: 'Automations', icon: WorkflowIcon },
+    { id: 'forms', label: 'Forms', icon: FormsIcon },
+    { id: 'logs', label: 'Runs', icon: LogsIcon }
+];
+
 const RECENT_CHATS_PREVIEW = [
     "Drafting Follow-up Email",
     "Sync Notion with Google Sheets",
     "Slack Notification Setup"
 ];
 
-const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
-    const isChatMode = user?.experienceLevel === 'chat';
+const DashboardShell = ({ user, onUserUpdate, onLogout, children, forceWorkflowMode = false, forceChatMode = false }) => {
+    const isChatMode = forceChatMode || (user?.experienceLevel === 'chat' && !forceWorkflowMode);
     const [isCollapsed, setIsCollapsed] = useState(() => {
         return window.location.pathname.includes('/builder/');
     });
@@ -105,8 +129,8 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
     }, [toast]);
 
     // Navigate and update tab — used by sidebar buttons
-    const setActiveTab = useCallback((tab) => {
-        const mode = isChatMode ? 'chat' : 'workflow';
+    const setActiveTab = useCallback((tab, targetMode = null) => {
+        const mode = targetMode || (isChatMode ? 'chat' : 'workflow');
         const url = buildPath({ mode, tab });
         navigate(url);
         setActiveTabState(tab);
@@ -188,7 +212,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                             isLoading={isCreating}
                             loadingText={!isCollapsed ? <span className="whitespace-nowrap">Creating...</span> : ""}
                             className={`rounded-xl shadow-md shadow-indigo-500/20 hover:shadow-lg hover:shadow-indigo-500/30 hover:-translate-y-0.5 transition-all bg-gradient-to-r from-indigo-600 to-indigo-600 ${isCollapsed ? 'w-10 h-10 mx-auto p-0 shrink-0' : 'w-full py-2.5'}`}
-                            title={isChatMode ? 'Create Chat' : 'Create Workflow'}
+                            title={isChatMode ? 'Start a new task' : 'Create a new automation'}
                             iconLeft={!isCreating && (
                                 <svg className="shrink-0 transition-all duration-300" width={isCollapsed ? "24" : "18"} height={isCollapsed ? "24" : "18"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                     <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -196,7 +220,7 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                                 </svg>
                             )}
                         >
-                            {!isCollapsed && <span className="whitespace-nowrap">{isChatMode ? 'Create Chat' : 'Create Workflow'}</span>}
+                            {!isCollapsed && <span className="whitespace-nowrap">{isChatMode ? 'New task' : 'New automation'}</span>}
                         </Button>
                     </div>
 
@@ -204,22 +228,10 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                     {isChatMode && (
                         <>
                             <div className="px-2 mb-1 mt-2 text-xs font-bold uppercase tracking-wider text-slate-400 opacity-80 whitespace-nowrap overflow-hidden">
-                                {!isCollapsed && 'Chat Workspace'}
+                                {!isCollapsed && 'Workspace'}
                             </div>
 
-                            {[
-                                { id: 'dashboard', label: 'Dashboard', icon: DashboardIcon },
-                                { id: 'chat', label: 'Chat', icon: MessageSquareIcon },
-                                { id: 'workflow', label: 'Workflows', icon: WorkflowIcon },
-                                { id: 'forms', label: 'Forms', icon: () => (
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                                        <line x1="3" y1="9" x2="21" y2="9"></line>
-                                        <line x1="9" y1="21" x2="9" y2="9"></line>
-                                    </svg>
-                                ) },
-                                { id: 'logs', label: 'Logs', icon: LogsIcon }
-                            ].map(item => (
+                            {CHAT_NAV_ITEMS.map(item => (
                                 <div 
                                     key={item.id}
                                     className="relative"
@@ -258,24 +270,13 @@ const DashboardShell = ({ user, onUserUpdate, onLogout, children }) => {
                     {!isChatMode && (
                         <>
                             <div className="px-2 mb-1 mt-2 text-xs font-bold uppercase tracking-wider text-slate-400 opacity-80 whitespace-nowrap overflow-hidden">
-                                {!isCollapsed && 'Workflow Workspace'}
+                                {!isCollapsed && 'Workspace'}
                             </div>
 
-                            {[
-                                { id: 'dashboard', label: 'Dashboard', icon: DashboardIcon },
-                                { id: 'workflows', label: 'Workflows', icon: WorkflowIcon },
-                                { id: 'forms', label: 'Forms', icon: () => (
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                                        <line x1="3" y1="9" x2="21" y2="9"></line>
-                                        <line x1="9" y1="21" x2="9" y2="9"></line>
-                                    </svg>
-                                ) },
-                                { id: 'logs', label: 'Logs', icon: LogsIcon }
-                            ].map(item => (
+                            {WORKFLOW_NAV_ITEMS.map(item => (
                                 <button 
                                     key={item.id}
-                                    onClick={() => setActiveTab(item.id)}
+                                    onClick={() => setActiveTab(item.id, item.mode)}
                                     className={`flex items-center gap-3 w-full p-2.5 rounded-xl font-semibold transition-colors ${
                                         activeTab === item.id 
                                             ? 'bg-white border border-slate-200 text-indigo-600 shadow-sm' 

@@ -227,12 +227,12 @@ const FormsTab = () => {
     const subTabs = [
         {
             id: 'questions',
-            label: 'Questions',
+            label: 'Build',
             icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>,
         },
         {
             id: 'ai',
-            label: 'AI Builder',
+            label: 'AI Assistant',
             icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.29 1.29L3 12l5.8 1.9a2 2 0 0 1 1.29 1.29L12 21l1.9-5.8a2 2 0 0 1 1.29-1.29L21 12l-5.8-1.9a2 2 0 0 1-1.29-1.29L12 3Z"></path></svg>,
         },
         {
@@ -444,7 +444,7 @@ const FormsTab = () => {
                                         <span className={isActive ? 'text-gray-800' : 'text-gray-400'}>
                                             {tab.icon}
                                         </span>
-                                        <span className="hidden 2xl:inline">{tab.label}</span>
+                                        <span className="hidden sm:inline">{tab.label}</span>
                                     </button>
                                 );
                             })}
@@ -460,7 +460,7 @@ const FormsTab = () => {
                             className={`px-3 md:px-4 ${isPreviewMode ? 'bg-gray-900 border-gray-900 hover:bg-gray-800' : ''}`}
                             iconLeft={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>}
                         >
-                            <span className="hidden 2xl:inline">Preview</span>
+                            <span className="hidden sm:inline">Preview</span>
                         </Button>
 
                         {/* Share Button */}
@@ -473,7 +473,7 @@ const FormsTab = () => {
                                 <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
                                 <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
                             </svg>
-                            <span className="hidden 2xl:inline">Share</span>
+                            <span className="hidden sm:inline">Share</span>
                         </button>
                     </div>
                 </div>
@@ -484,7 +484,7 @@ const FormsTab = () => {
                         {isPreviewMode ? (
                             <div className="h-full overflow-y-auto">
                                 <div className="p-6 md:p-10 max-w-3xl mx-auto">
-                                    <FormPreview form={activeForm} accentColor={accentColor} />
+                                    <FormPreview form={activeForm} accentColor={accentColor} embedded />
                                 </div>
                             </div>
                         ) : activeSubTab === 'questions' ? (

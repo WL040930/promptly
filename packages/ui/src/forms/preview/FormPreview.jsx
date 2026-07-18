@@ -9,7 +9,7 @@ import MarkdownRenderer from '../../components/ui/MarkdownRenderer.jsx';
  * Overhauled to look like a premium standalone form (Typeform/Google Forms style),
  * with a themed background based on the accent color.
  */
-const FormPreview = ({ form, accentColor = '#4f46e5', onSubmitCallback }) => {
+const FormPreview = ({ form, accentColor = '#4f46e5', onSubmitCallback, embedded = false }) => {
     const toast = useToast();
     const {
         values,
@@ -30,21 +30,21 @@ const FormPreview = ({ form, accentColor = '#4f46e5', onSubmitCallback }) => {
 
     return (
         <div
-            className={`w-full min-h-screen relative overflow-x-hidden flex flex-col items-center py-12 px-4 sm:px-6 md:py-20 ${submitted ? 'justify-center' : 'justify-start'}`}
+            className={`w-full ${embedded ? 'min-h-full py-6 px-3 sm:px-5' : 'min-h-screen py-12 px-4 sm:px-6 md:py-20'} relative overflow-x-hidden flex flex-col items-center ${submitted ? 'justify-center' : 'justify-start'}`}
             style={{ 
                 background: `radial-gradient(circle at top, ${accentColor}15, transparent 50%), radial-gradient(circle at bottom right, ${accentColor}10, transparent 40%)`,
                 backgroundColor: '#f8fafc' // slate-50 base
             }}
         >
             {/* Progress Bar (Sticky at top) */}
-            <div className="fixed top-0 left-0 w-full h-1.5 bg-gray-200 z-50">
+            <div className={`${embedded ? 'sticky top-0' : 'fixed top-0'} left-0 w-full h-1.5 bg-gray-200 z-50`}>
                 <div 
                     className="h-full transition-all duration-500 ease-out" 
                     style={{ width: `${progress}%`, backgroundColor: accentColor }}
                 />
             </div>
 
-            <div className="w-full max-w-3xl relative z-10 animate-slide-up-fade">
+            <div className={`w-full ${embedded ? 'max-w-2xl' : 'max-w-3xl'} relative z-10 animate-slide-up-fade`}>
                 {submitted ? (
                     // New Success Screen
                     <div className="bg-white rounded-[2rem] p-10 sm:p-16 shadow-2xl text-center border border-gray-100 flex flex-col items-center justify-center min-h-[400px]">

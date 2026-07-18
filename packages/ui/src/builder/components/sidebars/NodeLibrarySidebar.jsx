@@ -19,7 +19,7 @@ const NodeLibrarySidebar = ({ isOpen, onDragStart, onDragEnd }) => {
         >
             {/* Search header */}
             <div className="p-4 border-b border-slate-200 flex flex-col gap-2 shrink-0">
-                <h3 className="font-semibold text-slate-900 text-sm">Node Library</h3>
+                <h3 className="font-semibold text-slate-900 text-sm">Add steps</h3>
                 <div className="relative">
                     <input
                         type="text"

@@ -114,8 +114,8 @@ const LogsTab = () => {
             <div className="flex-1 min-w-0 p-6 md:p-8 overflow-y-auto">
                 <div className="max-w-6xl mx-auto w-full flex flex-col gap-6">
                     <div>
-                        <h2 className="text-2xl font-semibold text-slate-900 tracking-tight">Execution Logs</h2>
-                        <p className="text-sm text-slate-500 mt-1">Inspect workflow runs, outcomes, and execution paths.</p>
+                        <h2 className="text-2xl font-semibold text-slate-900 tracking-tight">Workflow runs</h2>
+                        <p className="text-sm text-slate-500 mt-1">Inspect automation runs, outcomes, and execution details.</p>
                     </div>
 
                     <LogFilters
@@ -141,7 +141,7 @@ const LogsTab = () => {
                         <LogsListSkeleton />
                     ) : logs.length === 0 ? (
                         <div className="p-12 text-center border border-slate-200 rounded-2xl flex flex-col items-center justify-center bg-white/70">
-                            <div className="text-slate-600 font-semibold mb-1">No logs found</div>
+                            <div className="text-slate-600 font-semibold mb-1">No runs found</div>
                             <div className="text-slate-400 text-sm">No runs match your current filters.</div>
                         </div>
                     ) : (

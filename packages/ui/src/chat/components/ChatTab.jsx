@@ -16,7 +16,7 @@ import ClarificationModeSelect from '../../components/chat/ClarificationModeSele
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
 import { getClarificationModePreference, setClarificationModePreference } from '../../utils/storage.js';
 
-const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I can build workflows and forms from a description. What would you like to automate?' };
+const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I can build automations and forms from a description. What would you like to automate?' };
 
 export default function ChatTab() {
     const toast = useToast();
@@ -51,6 +51,22 @@ export default function ChatTab() {
     useGSAP(() => {
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
     }, { scope: container });
+
+    // Automation Center can hand the chat a workflow target and a starter
+    // request through the URL. This keeps the handoff deep: callers only need
+    // to provide context, while chat owns loading and persisting that context.
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const workflowId = params.get('workflowId');
+        const prompt = params.get('prompt');
+        if (!workflowId && !prompt) return;
+
+        if (workflowId) setTargetWorkflowId(workflowId);
+        if (prompt) setInput(prompt);
+
+        const parsed = parsePath(window.location.pathname);
+        window.history.replaceState({}, '', buildPath({ mode: 'chat', tab: 'chat', sessionId: parsed.sessionId || undefined }));
+    }, []);
 
     useEffect(() => {
         if (!session || loadedSessionIdRef.current === sessionId) return;
@@ -138,7 +154,7 @@ export default function ChatTab() {
                     ...previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied' } : item),
                     ...(result.followUpReply ? [result.followUpReply] : [])
                 ]);
-                toast.success(result.followUpReply ? 'Form applied. Workflow proposal is ready.' : 'Proposal applied.');
+                toast.success(result.followUpReply ? 'Form applied. Automation proposal is ready.' : 'Proposal applied.');
                 return;
             }
             let result;
@@ -160,7 +176,7 @@ export default function ChatTab() {
                 await updateWorkflowMutation.mutateAsync({id: workflowId, data: { nodes: payload.nodes, edges: payload.edges }});
                 result = { workflowId };
             } else if (message.kind === 'workflow_proposal') {
-                const saved = await createWorkflowMutation.mutateAsync({ name: payload.name || 'New Workflow', status: 'Draft', iconColor: 'text-indigo-600', iconBg: 'bg-indigo-100', nodes: payload.nodes || [], edges: payload.edges || [] });
+                const saved = await createWorkflowMutation.mutateAsync({ name: payload.name || 'New Automation', status: 'Draft', iconColor: 'text-indigo-600', iconBg: 'bg-indigo-100', nodes: payload.nodes || [], edges: payload.edges || [] });
                 result = { workflowId: saved.id };
             }
             setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied' } : item));
@@ -241,10 +257,10 @@ export default function ChatTab() {
         if (!chatToDelete) return;
         try {
             await deleteChatSessionMutation.mutateAsync(chatToDelete.id);
-            toast.success('Chat deleted');
+            toast.success('Conversation deleted');
             if (sessionId === chatToDelete.id) newChat();
         } catch (error) {
-            toast.error('Failed to delete chat: ' + error.message);
+            toast.error('Failed to delete conversation: ' + error.message);
         } finally {
             setChatToDelete(null);
         }
@@ -261,14 +277,14 @@ export default function ChatTab() {
             <aside className={`w-[280px] min-h-0 border-r border-gray-200/60 bg-white/95 backdrop-blur-md flex flex-col shrink-0 z-30 absolute md:relative h-full overflow-hidden transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}`}>
                 {/* Sidebar Header */}
                 <div className="p-4 flex items-center justify-between shrink-0">
-                    <h3 className="font-extrabold text-gray-900 text-[15px] tracking-tight pl-1">Chats</h3>
+                    <h3 className="font-extrabold text-gray-900 text-[15px] tracking-tight pl-1">Conversations</h3>
                     <div className="flex items-center gap-1">
                         <Button
                             variant="ghost"
                             size="icon-md"
                             onClick={newChat}
                             className="rounded-xl border border-transparent hover:border-gray-100"
-                            title="New Chat"
+                            title="New conversation"
                             iconLeft={
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                                     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -338,7 +354,7 @@ export default function ChatTab() {
                                         setChatToDelete(session);
                                     }}
                                     className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                                    title="Delete Chat"
+                                    title="Delete conversation"
                                 >
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                                 </button>
@@ -347,7 +363,7 @@ export default function ChatTab() {
                     })}
                     {filteredSessions.length === 0 && sidebarSearch && (
                         <div className="text-center py-10">
-                            <p className="text-[13px] font-bold text-gray-400">No chats match "{sidebarSearch}"</p>
+                            <p className="text-[13px] font-bold text-gray-400">No conversations match "{sidebarSearch}"</p>
                         </div>
                     )}
                 </div>
@@ -362,7 +378,7 @@ export default function ChatTab() {
                         </button>
                         <div>
                             <h2 className="text-[15px] font-extrabold text-gray-900 tracking-tight">AI Assistant</h2>
-                            <p className="text-[11px] text-gray-500 font-medium">Chat to build workflows and forms</p>
+                            <p className="text-[11px] text-gray-500 font-medium">Describe and refine automations and forms</p>
                         </div>
                     </div>
                 </div>
@@ -393,7 +409,12 @@ export default function ChatTab() {
                     progressLabel={progressLabel}
                     inputAccessory={<ClarificationModeSelect value={clarificationMode} onChange={handleClarificationModeChange} />}
                     placeholder="Describe what you want to build..."
-                    suggestions={[]}
+                    suggestions={[
+                        'Explain my current automations',
+                        'Create an automation from a form submission',
+                        'Help me fix my latest failed run',
+                        'Improve the selected workflow'
+                    ]}
                     bottomNotice="AI can make mistakes. Please verify."
                     innerClassName="max-w-4xl mx-auto w-full"
                 />

@@ -2,7 +2,6 @@ import React, { useCallback, useMemo, useState, useRef, useEffect } from 'react'
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import OverviewModal from './OverviewModal';
-import StatsCards from './components/StatsCards';
 import FolderNode from './components/FolderNode';
 import WorkflowRow from './components/WorkflowRow';
 import { MODAL_TYPES, MODAL_CONFIG } from './constants.js';
@@ -11,6 +10,7 @@ import { useCreateFolder, useDeleteFolder, useUpdateFolder } from '../../api/hoo
 import { useCreateWorkflow, useDeleteWorkflow, useUpdateWorkflow } from '../../api/hooks/useWorkflows.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import Button from '../../components/ui/Button.jsx';
+import { navigate } from '../../utils/router.js';
 
 const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, onSelectWorkflow }) => {
     // ── State & refs ────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
         return () => clearInterval(timer);
     }, []);
 
-    // Close the "Create workflow" dropdown when clicking outside of it
+    // Close the "Create automation" dropdown when clicking outside of it
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (createDropdownRef.current && !createDropdownRef.current.contains(event.target)) {
@@ -69,19 +69,21 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
     const rootWorkflows = workflowsByFolder.get(null) || [];
     const modalConfig = modal.type ? MODAL_CONFIG[modal.type] : null;
 
-    const activeWorkflowCount = useMemo(
-        () => workflowsArray.filter(w => w.isActive).length,
-        [workflowsArray]
-    );
-
     const handleToggleActive = useCallback(async (workflowId, isActive) => {
         try {
             await updateWorkflowMutation.mutateAsync({ id: workflowId, data: { isActive } });
-            toast.success(`Workflow ${isActive ? 'activated' : 'deactivated'}`);
+            toast.success(`Automation ${isActive ? 'activated' : 'deactivated'}`);
         } catch (error) {
             toast.error('Failed to toggle workflow state');
         }
     }, [updateWorkflowMutation, toast]);
+
+    const openAutomationAssistant = useCallback((workflowId = null, prompt = 'Help me create an automation.') => {
+        const params = new URLSearchParams();
+        if (workflowId) params.set('workflowId', workflowId);
+        if (prompt) params.set('prompt', prompt);
+        navigate(`/chat/chat?${params.toString()}`);
+    }, []);
 
     // ── Modal helpers ────────────────────────────────────────────────────────
     const openModal = useCallback((type, data = null) => {
@@ -132,7 +134,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
                             iconBg: 'bg-indigo-100',
                             nodes: []
                         });
-                        toast.success('Workflow created successfully');
+                        toast.success('Automation created successfully');
                     }
                     break;
 
@@ -146,7 +148,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
                 case MODAL_TYPES.RENAME_WORKFLOW:
                     if (value && modal.data?.workflowId) {
                         await updateWorkflowMutation.mutateAsync({ id: modal.data.workflowId, data: { name: value } });
-                        toast.success('Workflow renamed');
+                        toast.success('Automation renamed');
                     }
                     break;
 
@@ -161,7 +163,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
                                 iconBg: modal.formData.iconBg
                             }
                         });
-                        toast.success('Workflow properties updated');
+                        toast.success('Automation properties updated');
                     }
                     break;
 
@@ -175,7 +177,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
                 case MODAL_TYPES.DELETE_WORKFLOW:
                     if (modal.data?.workflowId) {
                         await deleteWorkflowMutation.mutateAsync(modal.data.workflowId);
-                        toast.success('Workflow deleted');
+                        toast.success('Automation deleted');
                     }
                     break;
 
@@ -271,14 +273,14 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
             if (!data.nodes || !Array.isArray(data.nodes)) throw new Error('Invalid workflow JSON format');
 
             const newWf = await createWorkflowMutation.mutateAsync({
-                name: data.name || 'Imported Workflow',
+                name: data.name || 'Imported Automation',
                 folderId: null,
                 status: data.status || 'Draft',
                 iconColor: data.iconColor || 'text-indigo-600',
                 iconBg: data.iconBg || 'bg-indigo-100',
                 nodes: data.nodes
             });
-            toast.success('Workflow imported successfully');
+            toast.success('Automation imported successfully');
             if (onSelectWorkflow) onSelectWorkflow(newWf.id);
         } catch (error) {
             console.error('Failed to import workflow', error);
@@ -295,7 +297,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
         dragOverFolderId, dragInfo, searchValue, hasSearch,
         toggleFolder, openModal,
         onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop,
-        onSelectWorkflow, onToggleActive: handleToggleActive, currentTime
+        onSelectWorkflow, onToggleActive: handleToggleActive, onAskAI: openAutomationAssistant, currentTime
     };
 
     // ── Render ───────────────────────────────────────────────────────────────
@@ -306,11 +308,11 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
                 {/* Page header */}
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Overview</h1>
+                        <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Automations</h1>
                         <p className="text-sm text-slate-500 mt-1">Manage your automations and workspace health</p>
                     </div>
 
-                    {/* Create workflow dropdown */}
+                    {/* Create automation dropdown */}
                     <div className="relative" ref={createDropdownRef}>
                         <Button
                             variant="primary"
@@ -318,7 +320,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
                             className="shadow-md shadow-indigo-600/20"
                             iconRight={<svg className={`w-4 h-4 transition-transform duration-200 ${isCreateDropdownOpen ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>}
                         >
-                            Create workflow
+                            Create automation
                         </Button>
 
                         {isCreateDropdownOpen && (
@@ -326,11 +328,19 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
                                 <div className="p-1.5 flex flex-col gap-0.5">
                                     <Button
                                         variant="ghost"
+                                        onClick={() => { setIsCreateDropdownOpen(false); openAutomationAssistant(); }}
+                                        className="w-full justify-start font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50"
+                                        iconLeft={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.29 1.29L3 12l5.8 1.9a2 2 0 0 1 1.29 1.29L12 21l1.9-5.8a2 2 0 0 1 1.29-1.29L21 12l-5.8-1.9a2 2 0 0 1-1.29-1.29L12 3Z" /></svg>}
+                                    >
+                                        Describe with AI
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
                                         onClick={() => { setIsCreateDropdownOpen(false); onCreateWorkflow(); }}
                                         className="w-full justify-start font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50"
                                         iconLeft={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>}
                                     >
-                                        Blank workflow
+                                        Blank automation
                                     </Button>
                                     <Button
                                         variant="ghost"
@@ -347,8 +357,6 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
                     </div>
                 </div>
 
-                <StatsCards activeWorkflowCount={activeWorkflowCount} />
-
                 <div className="flex flex-col gap-3 mt-2">
                     {/* Toolbar: search + new folder */}
                     <div className="flex items-center justify-between">
@@ -360,7 +368,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
                                 type="text"
                                 value={searchQuery}
                                 onChange={(event) => setSearchQuery(event.target.value)}
-                                placeholder="Search workflows..."
+                                placeholder="Search automations..."
                                 className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-800 placeholder:text-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 transition-all w-72 shadow-sm"
                             />
                         </div>
@@ -375,7 +383,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
                         </div>
                     </div>
 
-                    {/* Main folder/workflow tree */}
+                    {/* Main folder/automation tree */}
                     <div
                         className="bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col p-2 gap-0.5"
                         onDragOver={(event) => { event.preventDefault(); if (dragOverFolderId !== null) setDragOverFolderId(null); }}
@@ -383,7 +391,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
                     >
                         {rootFolders.length === 0 && rootWorkflows.length === 0 && (
                             <div className="p-8 text-center text-slate-500 font-medium text-sm">
-                                No folders or workflows. Create one to get started.
+                                No folders or automations. Create one to get started.
                             </div>
                         )}
 
@@ -404,6 +412,7 @@ const WorkflowOverview = ({ folders, setFolders, workflows, onCreateWorkflow, on
                                     onDragEnd={onDragEnd}
                                     onSelectWorkflow={onSelectWorkflow}
                                     onToggleActive={handleToggleActive}
+                                    onAskAI={openAutomationAssistant}
                                     folderName="Root"
                                 />
                             );

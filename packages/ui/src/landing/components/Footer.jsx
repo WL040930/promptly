@@ -1,6 +1,6 @@
 import React from 'react'
 
-function Footer({ onSecurity }) {
+function Footer({ onSecurity, onHome }) {
   return (
     <footer className="bg-slate-900 py-16 text-slate-400">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -13,24 +13,28 @@ function Footer({ onSecurity }) {
             <p className="max-w-sm text-slate-500 mb-8">
               Enhancing the workflow efficiency of administrative personnel through advanced conversational Artificial Intelligence agents.
             </p>
-            <div className="flex space-x-4">
-              <a href="#" className="hover:text-white transition-colors">Twitter</a>
-              <a href="#" className="hover:text-white transition-colors">LinkedIn</a>
-              <a href="#" className="hover:text-white transition-colors">GitHub</a>
-            </div>
+            <p className="text-sm text-slate-600">A focused workspace for building and running AI-assisted automations.</p>
           </div>
           <div>
             <h4 className="text-white font-bold mb-6">Product</h4>
             <ul className="space-y-4">
-              <li><a href="#" className="hover:text-white transition-colors">Dashboard</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">AI Agents</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Integrations</a></li>
+              {onHome ? (
+                <li><button type="button" onClick={onHome} className="hover:text-white transition-colors">Back to Promptly</button></li>
+              ) : (
+                <>
+                  <li><a href="#demo" className="hover:text-white transition-colors">AI Workspace</a></li>
+                  <li><a href="#how-it-works" className="hover:text-white transition-colors">Automations</a></li>
+                  <li><a href="#features" className="hover:text-white transition-colors">Capabilities</a></li>
+                </>
+              )}
               <li>
                 <a
                   href="/security"
                   onClick={(e) => {
-                    e.preventDefault();
-                    if (onSecurity) onSecurity();
+                    if (onSecurity) {
+                      e.preventDefault();
+                      onSecurity();
+                    }
                   }}
                   className="hover:text-white transition-colors"
                 >
@@ -42,10 +46,15 @@ function Footer({ onSecurity }) {
           <div>
             <h4 className="text-white font-bold mb-6">Project</h4>
             <ul className="space-y-4">
-              <li><a href="#" className="hover:text-white transition-colors">FYP Details</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Documentation</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Case Studies</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Roadmap</a></li>
+              {onHome ? (
+                <li><span>Security foundations</span></li>
+              ) : (
+                <>
+                  <li><a href="#how-it-works" className="hover:text-white transition-colors">How it works</a></li>
+                  <li><a href="#demo" className="hover:text-white transition-colors">Interactive demo</a></li>
+                  <li><a href="#metrics" className="hover:text-white transition-colors">Project metrics</a></li>
+                </>
+              )}
             </ul>
           </div>
         </div>

@@ -125,7 +125,7 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout, initialTab = 'ge
                 onClick={() => setActiveTab('connections')}
                 className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'connections' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
             >
-                Account Connections
+                Connections
             </button>
         </div>
     );
@@ -134,8 +134,8 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout, initialTab = 'ge
         <div className="p-6 flex flex-col gap-8 relative pb-20">
             <div className="flex flex-col gap-4">
                 <div>
-                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Experience Level</h3>
-                    <p className="text-sm text-slate-500 mt-1">Choose the interface that best fits your workflow.</p>
+                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Default editing experience</h3>
+                    <p className="text-sm text-slate-500 mt-1">Choose whether new work opens in the guided AI workspace or the visual builder.</p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -153,8 +153,8 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout, initialTab = 'ge
                             </div>
                         </div>
                         <div className="mt-2 flex-1">
-                            <h4 className={`font-bold ${selectedRole === 'chat' ? 'text-indigo-900' : 'text-slate-700'}`}>Chat Mode</h4>
-                            <p className="text-xs text-slate-500 mt-1 leading-relaxed">A streamlined chat-based interface perfect for quick prompting and easy generation.</p>
+                            <h4 className={`font-bold ${selectedRole === 'chat' ? 'text-indigo-900' : 'text-slate-700'}`}>Guided AI workspace</h4>
+                            <p className="text-xs text-slate-500 mt-1 leading-relaxed">Start with a task in plain language, review the proposed automation, and make changes conversationally.</p>
                             <div className="mt-3 inline-block px-2 py-1 bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-wider rounded">Recommended for everyone</div>
                         </div>
                     </button>
@@ -173,8 +173,8 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout, initialTab = 'ge
                             </div>
                         </div>
                         <div className="mt-2 flex-1">
-                            <h4 className={`font-bold ${selectedRole === 'builder' ? 'text-indigo-900' : 'text-slate-700'}`}>Workflow Builder Mode</h4>
-                            <p className="text-xs text-slate-500 mt-1 leading-relaxed">Advanced node-based workflow builder for complex prompt chaining and logic.</p>
+                            <h4 className={`font-bold ${selectedRole === 'builder' ? 'text-indigo-900' : 'text-slate-700'}`}>Visual builder</h4>
+                            <p className="text-xs text-slate-500 mt-1 leading-relaxed">Arrange triggers, AI steps, conditions, and actions on a visual canvas for deeper control.</p>
                             <div className="mt-3 inline-block px-2 py-1 bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-wider rounded">Recommended for power users</div>
                         </div>
                     </button>
@@ -283,7 +283,7 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout, initialTab = 'ge
                 >
                     <div className="flex items-center gap-3">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-                        Log out of all devices
+                        Sign out
                     </div>
                 </Button>
             </div>
@@ -319,8 +319,8 @@ const SettingsModal = ({ user, onClose, onSwitchRole, onLogout, initialTab = 'ge
             </div>
 
             <div className="flex flex-col gap-3">
-                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Linked Accounts</h3>
-                <p className="text-sm text-slate-500 mb-2">Connect other accounts to enable quick login and integrations.</p>
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Connected services</h3>
+                <p className="text-sm text-slate-500 mb-2">Connect services that your automations can use. Your login account is shown separately above.</p>
 
                 <div className="flex items-center justify-between p-4 border border-slate-200 rounded-xl bg-white hover:border-slate-300 transition-all">
                     <div className="flex items-center gap-4">

@@ -1,22 +1,6 @@
 import React from 'react';
 import Skeleton from '../../components/ui/Skeleton.jsx';
 
-const OverviewStatSkeleton = () => (
-    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-        <Skeleton className="h-1 w-full rounded-none" />
-        <div className="p-5">
-            <div className="flex items-center justify-between mb-4">
-                <Skeleton className="h-3 w-28 rounded" />
-                <Skeleton className="w-8 h-8 rounded-lg" />
-            </div>
-            <div className="flex items-baseline gap-2.5">
-                <Skeleton className="h-9 w-16 rounded" />
-                <Skeleton className="h-3 w-20 rounded" />
-            </div>
-        </div>
-    </div>
-);
-
 const FolderTreeRowSkeleton = ({ workflow = false, indented = false }) => (
     <div className={`flex items-center gap-2.5 px-2 py-1.5 ${indented ? 'ml-8' : ''}`}>
         <Skeleton className={`${workflow ? 'w-7 h-7 rounded-lg' : 'w-4 h-4 rounded'} shrink-0`} />
@@ -38,12 +22,6 @@ const WorkflowOverviewLoadingSkeleton = () => (
                     <Skeleton className="h-4 w-72 rounded" />
                 </div>
                 <Skeleton className="h-10 w-40 rounded-lg shrink-0" />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <OverviewStatSkeleton />
-                <OverviewStatSkeleton />
-                <OverviewStatSkeleton />
             </div>
 
             <div className="flex flex-col gap-3 mt-2">

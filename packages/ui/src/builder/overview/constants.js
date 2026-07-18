@@ -40,7 +40,7 @@ export const MODAL_CONFIG = {
         isDestructive: false
     },
     [MODAL_TYPES.EDIT_WORKFLOW_PROPERTIES]: {
-        title: 'Edit Workflow Properties',
+        title: 'Edit Automation Properties',
         confirmLabel: 'Save Changes',
         showInput: false,
         showProperties: true,

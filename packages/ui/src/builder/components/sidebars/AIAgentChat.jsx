@@ -11,7 +11,7 @@ const initialMessage = {
     id: 'init',
     sender: 'bot',
     kind: 'text',
-    text: "Hi! I'm your Promptly Agent. I can help you build and configure this workflow. What would you like to automate or modify?"
+    text: "Hi! I'm your AI Assistant. I can help you build and configure this automation. What would you like to automate or modify?"
 };
 
 export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
@@ -45,8 +45,8 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
         if (text?.trim()) setMessages(previous => [...previous, { id: `local_${Date.now()}`, sender: 'user', kind: 'text', text }]);
         setInput('');
         if (text && /form/i.test(text)) setProgressLabel('Designing form');
-        else if (text && workflow?.nodes?.length && /\b(add|remove|change|modify|update|insert|delete|edit)\b/i.test(text)) setProgressLabel('Analysing current workflow');
-        else setProgressLabel(workflow?.nodes?.length ? 'Analysing current workflow' : 'Scanning node library');
+        else if (text && workflow?.nodes?.length && /\b(add|remove|change|modify|update|insert|delete|edit)\b/i.test(text)) setProgressLabel('Analysing current automation');
+        else setProgressLabel(workflow?.nodes?.length ? 'Analysing current automation' : 'Scanning available steps');
         setIsTyping(true);
         try {
             const snapshot = workflow ? {
@@ -134,7 +134,7 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
                 handleOption={handleOption}
                 progressLabel={progressLabel}
                 inputAccessory={<ClarificationModeSelect value={clarificationMode} onChange={handleClarificationModeChange} />}
-                placeholder="Type a workflow instruction…"
+                placeholder="Describe an automation change…"
                 suggestions={SUGGESTIONS}
                 bottomNotice="AI can make mistakes. Please verify."
             />

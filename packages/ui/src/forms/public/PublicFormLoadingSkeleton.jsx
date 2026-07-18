@@ -1,5 +1,5 @@
 import React from 'react';
-import Skeleton from '../components/ui/Skeleton.jsx';
+import Skeleton from '../../components/ui/Skeleton.jsx';
 
 export default function PublicFormLoadingSkeleton() {
     return (

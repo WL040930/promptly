@@ -17,6 +17,7 @@ const WorkflowRow = ({
     onDragEnd,
     onSelectWorkflow,
     onToggleActive,
+    onAskAI,
     folderName,
     style
 }) => {
@@ -72,6 +73,16 @@ const WorkflowRow = ({
                 <button
                     onClick={(event) => {
                         event.stopPropagation();
+                        onAskAI?.(workflow.id, `Help me improve the automation named ${workflow.name}.`);
+                    }}
+                    className="p-1 rounded-md text-indigo-500 hover:text-indigo-700 hover:bg-indigo-100 transition-all"
+                    title="Ask AI about this automation"
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.29 1.29L3 12l5.8 1.9a2 2 0 0 1 1.29 1.29L12 21l1.9-5.8a2 2 0 0 1 1.29-1.29L21 12l-5.8-1.9a2 2 0 0 1-1.29-1.29L12 3Z" /></svg>
+                </button>
+                <button
+                    onClick={(event) => {
+                        event.stopPropagation();
                         openModal(MODAL_TYPES.EDIT_WORKFLOW_PROPERTIES, { 
                             workflowId: workflow.id, 
                             currentName: workflow.name,
@@ -81,7 +92,7 @@ const WorkflowRow = ({
                         });
                     }}
                     className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-all"
-                    title="Edit workflow properties"
+                    title="Edit automation properties"
                 >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
@@ -93,7 +104,7 @@ const WorkflowRow = ({
                         openModal(MODAL_TYPES.DELETE_WORKFLOW, { workflowId: workflow.id });
                     }}
                     className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-200 transition-all"
-                    title="Delete workflow"
+                    title="Delete automation"
                 >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>

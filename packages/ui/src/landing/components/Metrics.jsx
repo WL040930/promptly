@@ -10,28 +10,28 @@ const DATA = [
 
 function Metrics() {
   return (
-    <section className="py-24 bg-white scroll-mt-24">
+    <section id="metrics" className="py-24 bg-white scroll-mt-24">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col lg:flex-row items-center gap-16">
           <div className="lg:w-1/2">
             <h2 className="text-4xl font-bold text-slate-900 mb-6">Efficiency Gains in Seconds</h2>
             <p className="text-lg text-slate-600 mb-8 leading-relaxed">
-              Our research indicates that administrative personnel save up to 85% of their time when switching from manual workflows to conversational AI agents.
+              Use this illustrative comparison to reason about where an automation could reduce repetitive work. Measure the actual impact in your own runs.
             </p>
             <div className="grid grid-cols-2 gap-6">
               <div className="p-6 rounded-2xl bg-indigo-50 border border-indigo-100">
-                <span className="block text-4xl font-bold text-indigo-600 mb-2">12x</span>
-                <span className="text-sm font-medium text-indigo-800 uppercase tracking-wider">Speed Increase</span>
+                <span className="block text-4xl font-bold text-indigo-600 mb-2">1 task</span>
+                <span className="text-sm font-medium text-indigo-800 uppercase tracking-wider">At a time</span>
               </div>
               <div className="p-6 rounded-2xl bg-teal-50 border border-teal-100">
-                <span className="block text-4xl font-bold text-teal-600 mb-2">99%</span>
-                <span className="text-sm font-medium text-teal-800 uppercase tracking-wider">Error Reduction</span>
+                <span className="block text-4xl font-bold text-teal-600 mb-2">100%</span>
+                <span className="text-sm font-medium text-teal-800 uppercase tracking-wider">Reviewable</span>
               </div>
             </div>
           </div>
           
           <div className="lg:w-1/2 w-full h-[400px] bg-slate-50 rounded-3xl p-8 border border-slate-100 shadow-inner">
-            <h4 className="text-center text-slate-500 text-sm font-medium mb-8">Manual Time vs. Promptly Automation (Minutes)</h4>
+            <h4 className="text-center text-slate-500 text-sm font-medium mb-8">Illustrative manual time vs. automation (minutes)</h4>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={DATA}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />

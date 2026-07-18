@@ -12,7 +12,7 @@ const FEATURES = [
     description:
       'Describe what you need in plain English. Our AI understands complex administrative context without rigid logic builders.',
     details:
-      "Leverages Gemini 3 Flash to parse intent, identify variables, and map conversational requests to executable automation scripts.",
+      'Uses the Promptly AI layer to parse intent, identify variables, and map conversational requests to executable automation steps.',
     icon: (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path
@@ -27,11 +27,11 @@ const FEATURES = [
   },
   {
     id: 'data-entry',
-    title: 'Intelligent Data Entry',
+    title: 'AI Data Processing',
     description:
-      'Automatically extract data from unstructured documents and populate your CRM or internal systems accurately.',
+      'Use AI steps to interpret incoming text and prepare structured values for the next automation step.',
     details:
-      "Supports OCR and semantic extraction. It doesn't just see text; it understands what \"Total Amount\" or \"Due Date\" means across different formats.",
+      'Combine AI tasks with validation and transformations so the workflow can make its next action explicit.',
     icon: (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path
@@ -46,10 +46,10 @@ const FEATURES = [
   },
   {
     id: 'spreadsheet',
-    title: 'Spreadsheet Magic',
-    description: 'Format, calculate, and transform complex spreadsheets using simple verbal instructions.',
+    title: 'Data Transformation',
+    description: 'Clean, map, calculate, and format structured data with reusable workflow steps.',
     details:
-      'Direct integration with Google Sheets and Excel APIs. Perform VLOOKUPs, pivot tables, and data cleaning via chat.',
+      'Use data-transform steps, database actions, HTTP requests, and Google Sheets operations where they fit your workflow.',
     icon: (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path
@@ -64,10 +64,10 @@ const FEATURES = [
   },
   {
     id: 'outreach',
-    title: 'Automated Outreach',
-    description: 'Set up personalized email sequences and responses triggered by specific administrative events.',
+    title: 'Email Actions',
+    description: 'Send an email when a form, schedule, webhook, or other supported trigger starts an automation.',
     details:
-      'Maintains context across threads. The AI can draft responses based on past interaction history and company policy.',
+      'Compose plain-text or HTML messages and keep the action inside a reviewable execution path.',
     icon: (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />

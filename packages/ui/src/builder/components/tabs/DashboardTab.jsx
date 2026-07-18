@@ -6,21 +6,11 @@ import Skeleton from '../../../components/ui/Skeleton.jsx';
 
 const SKELETON_BAR_HEIGHTS = [36, 58, 44, 72, 52, 66, 48];
 
-const INTEGRATIONS = [
-    { name: 'OpenAI GPT-4o', category: 'Language Model', status: 'Healthy', uptime: '99.9%', color: 'indigo' },
-    { name: 'Stripe Webhook', category: 'Payment Gateway', status: 'Healthy', uptime: '100%', color: 'emerald' },
-    { name: 'Slack Bot API', category: 'Chat Platform', status: 'Healthy', uptime: '100%', color: 'orange' },
-    { name: 'Resend SMTP', category: 'Email Service', status: 'Healthy', uptime: '99.7%', color: 'blue' },
-    { name: 'PostgreSQL DB', category: 'Database Storage', status: 'Healthy', uptime: '100%', color: 'cyan' }
-];
-
 const KPI_CARDS = [
     {
         label: 'Active Automations',
         valueKey: 'activeWorkflowCount',
-        badge: 'Syncing',
-        badgeClass: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-        subtitle: 'Active triggers polling live data',
+        subtitle: 'Currently enabled automations',
         accentColor: 'from-indigo-500 to-indigo-500',
         icon: (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -33,9 +23,7 @@ const KPI_CARDS = [
     {
         label: 'Avg Success Rate',
         valueKey: 'successRate',
-        badge: 'Target Met',
-        badgeClass: 'bg-indigo-50 text-indigo-600 border-indigo-100',
-        subtitle: 'Based on recent execution cycles',
+        subtitle: 'Across all recorded executions',
         accentColor: 'from-emerald-500 to-teal-500',
         icon: (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -47,9 +35,7 @@ const KPI_CARDS = [
     {
         label: 'Total Run Volume',
         valueKey: 'totalRuns',
-        badge: '+12% MoM',
-        badgeClass: 'bg-slate-100 text-slate-600 border-slate-200',
-        subtitle: 'Calculated run cycles past 30 days',
+        subtitle: 'All recorded executions',
         accentColor: 'from-orange-500 to-amber-500',
         icon: (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -58,33 +44,30 @@ const KPI_CARDS = [
                 <line x1="6" y1="20" x2="6" y2="14"></line>
             </svg>
         )
-    },
-    {
-        label: 'AI Tokens Saved',
-        valueKey: 'aiTokensSaved',
-        badge: 'Optimal',
-        badgeClass: 'bg-cyan-50 text-cyan-600 border-cyan-100',
-        subtitle: 'Saved via cached query templates',
-        accentColor: 'from-cyan-500 to-sky-500',
-        icon: (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-            </svg>
-        )
     }
 ];
 
-const DashboardTab = ({ activeWorkflowCount, onNavigateTab, simplified }) => {
+const DashboardTab = ({ activeWorkflowCount, onNavigateTab, compact = false }) => {
     const { data, isLoading: loading } = useDashboardMetrics();
     
     const metrics = useMemo(() => ({
         activeWorkflowCount: activeWorkflowCount || data?.activeWorkflowCount || 0,
         totalRuns: data?.totalRuns || 0,
-        successRate: data?.successRate || '0%',
-        aiTokensSaved: data?.aiTokensSaved || '0',
+        successRate: data?.successRate || '—',
         weeklyData: data?.weeklyData || [],
         recentActivities: data?.recentActivities || []
     }), [data, activeWorkflowCount]);
+
+    const systemStatus = useMemo(() => {
+        if (loading) return { label: 'Checking recent activity', className: 'bg-slate-50 text-slate-600 border-slate-200' };
+        if (metrics.recentActivities.some(activity => activity.type === 'error')) {
+            return { label: 'Needs attention', className: 'bg-amber-50 text-amber-700 border-amber-200' };
+        }
+        return {
+            label: metrics.recentActivities.length > 0 ? 'No recent failures' : 'No runs yet',
+            className: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+        };
+    }, [loading, metrics.recentActivities]);
 
     const maxRuns = useMemo(() => Math.max(1, ...metrics.weeklyData.map(d => d.runs)), [metrics.weeklyData]);
     const container = useRef(null);
@@ -102,19 +85,19 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, simplified }) => {
                 {/* ─── Section 1: Page Header ─── */}
                 <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
                     <div>
-                        <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Dashboard</h1>
+                        <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Home</h1>
                         <p className="text-sm text-slate-500 mt-1">
                             Overview of your automation workspace health and activity.
                         </p>
                     </div>
-                    <div className="flex items-center gap-2.5 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-sm">
-                        <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                        <span className="text-sm font-medium text-slate-700">All Systems Operational</span>
+                    <div className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border shadow-sm ${systemStatus.className}`}>
+                        <span className="w-2 h-2 rounded-full bg-current"></span>
+                        <span className="text-sm font-medium">{systemStatus.label}</span>
                     </div>
                 </div>
 
                 {/* ─── Section 2: KPI Metric Cards ─── */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {KPI_CARDS.map((kpi, i) => (
                         <div key={i} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
                             {/* Colored accent bar */}
@@ -134,9 +117,6 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, simplified }) => {
                                             <span className="text-3xl font-semibold text-slate-900 tracking-tight">
                                                 {metrics[kpi.valueKey] || 0}
                                             </span>
-                                            <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${kpi.badgeClass}`}>
-                                                {kpi.badge}
-                                            </span>
                                         </>
                                     )}
                                 </div>
@@ -150,10 +130,10 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, simplified }) => {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
                     {/* Bar Chart */}
-                    <div className={`${simplified ? 'lg:col-span-3' : 'lg:col-span-2'} bg-white border border-slate-200 rounded-2xl p-6 shadow-sm`}>
+                    <div className={`${compact ? 'lg:col-span-3' : 'lg:col-span-2'} bg-white border border-slate-200 rounded-2xl p-6 shadow-sm`}>
                         <div className="flex items-center justify-between mb-6">
                             <div>
-                                <h2 className="text-base font-semibold text-slate-900">Execution Volume</h2>
+                            <h2 className="text-base font-semibold text-slate-900">Run volume</h2>
                                 <p className="text-xs text-slate-400 mt-0.5">Automation runs per day this week</p>
                             </div>
                             <span className="text-xs font-medium text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
@@ -200,7 +180,7 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, simplified }) => {
                     </div>
 
                     {/* Quick Actions */}
-                    {!simplified && (
+                    {!compact && (
                     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col">
                         <div className="mb-5">
                             <h2 className="text-base font-semibold text-slate-900">Quick Actions</h2>
@@ -237,7 +217,7 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, simplified }) => {
                                     <line x1="16" y1="13" x2="8" y2="13"></line>
                                     <line x1="16" y1="17" x2="8" y2="17"></line>
                                 </svg>
-                                View Execution Logs
+                                View runs
                             </button>
                         </div>
                     </div>
@@ -247,35 +227,8 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab, simplified }) => {
                 {/* ─── Section 4: Integrations + Activity Feed ─── */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
-                    {/* Integrations Health */}
-                    {!simplified && (
-                    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                        <div className="mb-5">
-                            <h2 className="text-base font-semibold text-slate-900">Integrations</h2>
-                            <p className="text-xs text-slate-400 mt-0.5">Connected services and uptime</p>
-                        </div>
-
-                        <div className="flex flex-col gap-1">
-                            {INTEGRATIONS.map((integration, index) => (
-                                <div key={index} className="flex items-center justify-between py-2.5 border-b border-slate-50 last:border-b-0">
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></div>
-                                        <div className="flex flex-col min-w-0">
-                                            <span className="text-sm font-medium text-slate-800 truncate">{integration.name}</span>
-                                            <span className="text-xs text-slate-400 truncate">{integration.category}</span>
-                                        </div>
-                                    </div>
-                                    <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100 shrink-0">
-                                        {integration.uptime}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                    )}
-
                     {/* Activity Feed */}
-                    <div className={`${simplified ? 'lg:col-span-3' : 'lg:col-span-2'} bg-white border border-slate-200 rounded-2xl p-6 shadow-sm`}>
+                    <div className="lg:col-span-3 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
                         <div className="flex items-center justify-between mb-5">
                             <div>
                                 <h2 className="text-base font-semibold text-slate-900">Recent Activity</h2>

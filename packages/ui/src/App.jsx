@@ -70,6 +70,8 @@ function App() {
     }
 
     const route = getRouteState(path)
+    const isWorkflowRoute = path.startsWith('/workflow/')
+    const isChatRoute = path.startsWith('/chat/')
 
     if (route.isPublicForm) {
         return <PublicFormView />
@@ -94,8 +96,10 @@ function App() {
                 user={user}
                 onUserUpdate={handleUserUpdate}
                 onLogout={handleLogout}
+                forceWorkflowMode={isWorkflowRoute}
+                forceChatMode={isChatRoute}
             >
-                {user.experienceLevel === 'chat' ? (
+                {isChatRoute && !isWorkflowRoute ? (
                     <ChatView user={user} />
                 ) : (
                     <WorkflowBuilderView />
