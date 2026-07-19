@@ -158,6 +158,10 @@ export const validatePatchShape = (patch, path) => {
     if (patch.op === 'add') {
         issues.push(...validateField(patch.field, `${path}.field`));
         if (patch.insertAfter !== undefined) issues.push(...validateText(patch.insertAfter, `${path}.insertAfter`, { max: 100 }));
+        if (patch.insertBefore !== undefined) issues.push(...validateText(patch.insertBefore, `${path}.insertBefore`, { max: 100 }));
+        if (patch.insertAfter !== undefined && patch.insertBefore !== undefined) {
+            issues.push(issue('CONFLICTING_PLACEMENT', path, 'An add patch cannot specify both insertAfter and insertBefore.'));
+        }
     }
     if (patch.op === 'update' || patch.op === 'remove') {
         issues.push(...validateText(patch.id, `${path}.id`, { required: true, max: 100 }));
@@ -220,6 +224,12 @@ export const validateFormPatches = (currentSchema, patches = []) => {
         if (patch.op === 'add' && patch.field?.id) {
             if (fieldIds.has(patch.field.id) || addedIds.has(patch.field.id)) issues.push(issue('DUPLICATE_FIELD_ID', `${path}.field.id`, `Field ID '${patch.field.id}' already exists.`));
             addedIds.add(patch.field.id);
+        }
+        if (patch.op === 'add') {
+            const anchor = patch.insertAfter || patch.insertBefore;
+            if (anchor && !fieldIds.has(anchor) && !addedIds.has(anchor)) {
+                issues.push(issue('UNKNOWN_PLACEMENT_ANCHOR', `${path}.${patch.insertBefore ? 'insertBefore' : 'insertAfter'}`, `Placement anchor '${anchor}' does not exist.`));
+            }
         }
         if ((patch.op === 'update' || patch.op === 'remove') && patch.id) {
             if (patch.id === currentSchema?.id) {

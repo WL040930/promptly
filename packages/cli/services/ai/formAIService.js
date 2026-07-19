@@ -42,6 +42,7 @@ export const runFormTurn = async ({
     history = [],
     pendingProposal = null,
     clarificationMode,
+    turnContext = null,
     onProgress = null,
     provider = null
 } = {}) => normalizeFormAIResult(await generateFormFromPrompt(
@@ -58,5 +59,5 @@ export const runFormTurn = async ({
         ]
         : history,
     onProgress,
-    { clarificationMode, provider }
+    { clarificationMode, provider, turnContext }
 ));

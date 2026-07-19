@@ -1,14 +1,14 @@
 import {
     FORM_AI_MEMORY_LIMIT as SHARED_FORM_AI_MEMORY_LIMIT,
     FORM_SETTINGS_KEYS,
-    isEmptyFormMemorySummary
+    isEmptyFormMemorySummary,
+    countsAsQuestion
 } from '../../../../../shared/formContract.js';
 import { getClarificationModeInstruction, normalizeClarificationMode } from '../../../../../shared/agentContract.js';
 
 export const FORM_AI_HISTORY_LIMIT = 6;
 const FORM_AI_MEMORY_LIMIT = SHARED_FORM_AI_MEMORY_LIMIT;
 export const FORM_AI_CONTEXT_LIMIT = 12000;
-const NON_QUESTION_FIELD_TYPES = new Set(['heading', 'hidden']);
 
 const clampText = (value, limit) => String(value || '').trim().slice(0, limit);
 const FORM_AI_FIELD_KEYS = Object.freeze([
@@ -75,7 +75,7 @@ export const compactFormSchema = (schema = {}) => {
 };
 
 export const getActiveQuestionCount = (schema = {}) => (Array.isArray(schema.fields) ? schema.fields : [])
-    .filter(field => !field?.deleted && !NON_QUESTION_FIELD_TYPES.has(field?.type))
+    .filter(countsAsQuestion)
     .length;
 
 export const validateQuestionCardinality = ({ schema = {}, cardinality = null } = {}) => {
@@ -195,7 +195,7 @@ const compactPendingProposal = (messages = []) => {
     };
 };
 
-export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarificationMode, cardinality = null }) => {
+export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarificationMode, cardinality = null, turnContext = null, forceDecision = false }) => {
     const memory = readFormMemory(schema);
     const recentConversation = selectRecentMessages(chatHistory);
     const pendingProposal = compactPendingProposal(chatHistory);
@@ -215,6 +215,15 @@ export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarific
         '',
         'Clarification:',
         `${normalizeClarificationMode(clarificationMode)} - ${getClarificationModeInstruction(clarificationMode)}`,
+        forceDecision
+            ? 'Decision resolution: choose sensible defaults now. Do not ask the user another ordinary clarification question.'
+            : '',
+        '',
+        'Resolved Turn Intent:',
+        turnContext ? JSON.stringify(turnContext) : '(none)',
+        turnContext?.scope === 'heading_only'
+            ? 'Hard rule: this request may add section heading layout fields only. Do not add, remove, or modify question fields.'
+            : '',
         '',
         'Recent Conversation:',
         recentConversation.length > 0 ? recentConversation.join('\n') : '(none)',
@@ -230,7 +239,7 @@ export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarific
     ].join('\n');
 };
 
-export const buildWorkerContext = ({ schema, requirements = [], cardinality = null }) => [
+export const buildWorkerContext = ({ schema, requirements = [], cardinality = null, turnContext = null }) => [
     'Current Form Schema:',
     JSON.stringify(compactFormSchema(schema)),
     '',
@@ -238,6 +247,11 @@ export const buildWorkerContext = ({ schema, requirements = [], cardinality = nu
     JSON.stringify((Array.isArray(schema.fields) ? schema.fields : []).map(field => field.id).filter(Boolean)),
     'The form ID is not a field ID. Never use it as a patch id.',
     'Every add patch must include a complete field object with non-empty id, type, and label.',
+    'For layout headings, use type "heading" and store the visible heading text in label. Headings are not questions.',
+    turnContext ? `Resolved Turn Intent: ${JSON.stringify(turnContext)}` : 'Resolved Turn Intent: (none)',
+    turnContext?.scope === 'heading_only'
+        ? 'Hard rule: only add heading fields for this request. Do not add or modify normal question fields.'
+        : '',
     'Question Cardinality:',
     cardinality
         ? JSON.stringify(cardinality)
@@ -365,7 +379,7 @@ export const buildVerifierRepairContext = ({
     clampText(response, 2000)
 ].join('\n');
 
-export const buildWorkerRepairContext = ({ schema, requirements = [], response, issues, cardinality = null }) => [
+export const buildWorkerRepairContext = ({ schema, requirements = [], response, issues, cardinality = null, turnContext = null }) => [
     'Repair the worker proposal below.',
     'Return a complete replacement proposal as JSON only.',
     'Preserve the planner requirements and current form. Correct every listed issue.',
@@ -383,6 +397,10 @@ export const buildWorkerRepairContext = ({ schema, requirements = [], response, 
         : '(no explicit question count requested)',
     'Cardinality is a hard requirement. For total_questions, make the final active question count equal targetCount. For add_questions, add exactly additionalCount new questions. Preserve valid patches and correct only the count mismatch.',
     'For update patches, include only properties explicitly requested. To change requiredness, use only { "required": true } or { "required": false }; never include label, type, choices, or other preserved properties unless they are explicitly being changed. Never clear an existing label.',
+    turnContext ? `Resolved Turn Intent: ${JSON.stringify(turnContext)}` : 'Resolved Turn Intent: (none)',
+    turnContext?.scope === 'heading_only'
+        ? 'Hard rule: repair to heading additions only. Remove every non-heading field patch.'
+        : '',
     '',
     'Planner Requirements:',
     JSON.stringify(requirements),

@@ -60,7 +60,10 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
     const payload = message.payload || message.proposal || {};
     const isProposal = message.proposal != null || ['workflow_proposal', 'workflow_diff', 'form_proposal'].includes(message.kind);
     const status = statusLabel(message.proposalStatus || payload.status);
-    const options = message.options || payload.options || [];
+    const clarification = (message.options && !Array.isArray(message.options)) ? message.options : null;
+    const options = Array.isArray(message.options)
+        ? message.options
+        : (clarification?.inputs || payload.options || []);
     const kind = message.kind || (message.proposal ? 'form_proposal' : (options.length > 0 ? 'clarification' : 'text'));
     const planSteps = Array.isArray(payload.plan) ? payload.plan : (Array.isArray(payload.plan?.steps) ? payload.plan.steps : []);
     const planSummary = typeof payload.plan?.summary === 'string' ? payload.plan.summary : null;
@@ -142,6 +145,8 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                 {kind === 'clarification' && options.length > 0 && (
                     <MessageOptionsWidget 
                         options={options}
+                        allowDecide={clarification?.allowDecide === true}
+                        clarificationId={clarification?.clarificationId || clarification?.id}
                         onSend={(selected) => onOption?.(selected)}
                         isTyping={isTyping}
                     />

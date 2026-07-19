@@ -5,6 +5,7 @@ import {
     getQuestionCardinality
 } from '../context/formContext.js';
 import { validatePlannerResult } from '../domain/formSchemaValidator.js';
+import { evaluatePlannerOutcome } from '../domain/formClarificationPolicy.js';
 import { plannerInstruction } from '../shared/instructions.js';
 import {
     createAIOutputError,
@@ -56,20 +57,22 @@ export const generateFormFromPrompt = async (
 
         // The planner owns the conversational decision: reply, clarify, or
         // produce a proposal plan for the worker/verification pipeline.
-        const plannerContents = [{
+        const buildPlannerContents = (forceDecision = false) => [{
             role: 'user',
             parts: [{ text: buildPlannerContext({
                 schema: currentSchema || {},
                 chatHistory,
                 prompt,
                 clarificationMode: normalizeClarificationMode(options.clarificationMode),
-                cardinality
+                cardinality,
+                turnContext: options.turnContext || null,
+                forceDecision
             }) }]
         }];
 
         let plannerCall = await requestJson({
             provider,
-            contents: plannerContents,
+            contents: buildPlannerContents(false),
             systemInstruction: plannerInstruction,
             label: 'planner',
             budget
@@ -101,9 +104,40 @@ export const generateFormFromPrompt = async (
             }
         }
 
+        const plannerPolicy = evaluatePlannerOutcome({
+            clarificationMode: options.clarificationMode,
+            plannerResult,
+            delegated: options.turnContext?.authority === 'assistant'
+        });
+
+        if (plannerPolicy.action === 'resolve_defaults' && !options.forceDecision) {
+            if (onProgress) onProgress({ status: 'deciding', message: 'Choosing sensible defaults...' });
+            plannerCall = await requestJson({
+                provider,
+                contents: buildPlannerContents(true),
+                systemInstruction: `${plannerInstruction}\n\nThe previous planner response asked for defaultable details. Resolve those details yourself now and return a completed plan.`,
+                label: 'planner',
+                budget
+            });
+            tokenUsage = addTokenUsage(tokenUsage, plannerCall.response, 'planner');
+            plannerResult = plannerCall.value;
+            plannerIssues = getOutputIssues({ ...plannerCall, validate: validatePlannerResult });
+            if (plannerIssues.length > 0) {
+                throw createAIOutputError('I could not create a reliable plan for this request.', 'FORM_AI_UNSAFE_PLAN', plannerIssues);
+            }
+        }
+
         // Conversational replies and clarification questions are terminal and
-        // non-mutating outcomes. Only a completed plan reaches the worker.
+        // non-mutating outcomes. Decide-everything has already had one bounded
+        // internal defaults-resolution attempt and never exposes ordinary inputs.
         if (plannerResult.type === 'reply' || plannerResult.type === 'message') {
+            if (plannerResult.type === 'message' && plannerPolicy.action === 'resolve_defaults') {
+                return {
+                    type: 'reply',
+                    message: 'I could not safely choose defaults for this request. Please make the form change more specific.',
+                    tokenUsage: { ...tokenUsage, requestCalls: budget.calls }
+                };
+            }
             plannerResult.tokenUsage = tokenUsage;
             plannerResult.tokenUsage.requestCalls = budget.calls;
             return plannerResult;
@@ -114,9 +148,10 @@ export const generateFormFromPrompt = async (
             const workerContents = [{
                 role: 'user',
                 parts: [{ text: buildWorkerContext({
-                    schema: currentSchema || {},
-                    requirements: plannerResult.requirements,
-                    cardinality
+                schema: currentSchema || {},
+                requirements: plannerResult.requirements,
+                    cardinality,
+                    turnContext: options.turnContext || null
                 }) }]
             }];
             const workerResult = await recoverWorkerProposal({
@@ -128,7 +163,8 @@ export const generateFormFromPrompt = async (
                 tokenUsage,
                 onProgress,
                 budget,
-                cardinality
+                cardinality,
+                turnContext: options.turnContext || null
             });
             const result = workerResult.result;
             const appliedProposal = workerResult.appliedProposal;

@@ -17,6 +17,8 @@ export const FORM_FIELD_TYPES = Object.freeze([
 ]);
 
 export const FORM_CHOICE_FIELD_TYPES = Object.freeze(['select', 'radio', 'checkbox']);
+export const FORM_LAYOUT_FIELD_TYPES = Object.freeze(['heading']);
+export const FORM_NON_QUESTION_FIELD_TYPES = Object.freeze(['heading', 'hidden']);
 export const FORM_SETTINGS_KEYS = Object.freeze([
     'acceptingResponses',
     'limitOnePerBrowser',
@@ -40,4 +42,7 @@ export const isEmptyFormMemorySummary = value => {
 
 export const isFormFieldType = (type) => FORM_FIELD_TYPES.includes(type);
 export const isChoiceFieldType = (type) => FORM_CHOICE_FIELD_TYPES.includes(type);
+export const isLayoutFieldType = (type) => FORM_LAYOUT_FIELD_TYPES.includes(type);
+export const isQuestionFieldType = (type) => isFormFieldType(type) && !FORM_NON_QUESTION_FIELD_TYPES.includes(type);
+export const countsAsQuestion = (field = {}) => !field?.deleted && isQuestionFieldType(field?.type);
 export const isFormPatchOperation = (operation) => FORM_PATCH_OPERATIONS.includes(operation);

@@ -62,7 +62,11 @@ const FormAIAssistant = ({ form }) => {
                             return prev;
                         });
                     } else {
-                        handleSend(option);
+                        if (option?.type === 'decide_for_me') {
+                            handleSend('Use sensible defaults.', option);
+                        } else {
+                            handleSend(option);
+                        }
                     }
                 }}
                 acceptingProposalId={acceptingProposalId}

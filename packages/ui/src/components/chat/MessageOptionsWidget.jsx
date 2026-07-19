@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import Button from '../ui/Button.jsx';
 
-export default function MessageOptionsWidget({ options, onSend, isTyping }) {
+export default function MessageOptionsWidget({ options, onSend, isTyping, allowDecide = false, clarificationId = null }) {
     // Store state for each input field by its ID
     const [formState, setFormState] = useState({});
 
@@ -150,6 +150,17 @@ export default function MessageOptionsWidget({ options, onSend, isTyping }) {
                     className="w-full mt-1"
                 >
                     Send Selected
+                </Button>
+            )}
+            {allowDecide && (
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onSend?.({ type: 'decide_for_me', clarificationId })}
+                    disabled={isTyping}
+                    className="w-full"
+                >
+                    Use sensible defaults
                 </Button>
             )}
         </div>

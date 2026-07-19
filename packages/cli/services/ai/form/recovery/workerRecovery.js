@@ -5,6 +5,7 @@ import {
 } from '../context/formContext.js';
 import { applyFormPatches } from '../domain/formPatchEngine.js';
 import { validateWorkerResult } from '../domain/formSchemaValidator.js';
+import { validateFormProposalScope } from '../domain/formProposalScope.js';
 import { workerInstruction } from '../shared/instructions.js';
 import {
     createAIOutputError,
@@ -119,7 +120,8 @@ export const recoverWorkerProposal = async ({
     tokenUsage,
     onProgress,
     budget,
-    cardinality
+    cardinality,
+    turnContext = null
 }) => {
     const memoryUpdate = getMemoryUpdate(plannerResult);
     let totalTokenUsage = tokenUsage;
@@ -158,7 +160,8 @@ export const recoverWorkerProposal = async ({
                 issues: failure?.issues || [],
                 tokenUsage: totalTokenUsage,
                 budget,
-                cardinality
+                cardinality,
+                turnContext
             });
             totalTokenUsage = workerCall.tokenUsage;
         }
@@ -186,6 +189,20 @@ export const recoverWorkerProposal = async ({
                 stage: 'patch',
                 kind: 'invalid_proposal',
                 issues: error.issues || [],
+                rawText: JSON.stringify(result)
+            };
+            continue;
+        }
+
+        const scopeIssues = validateFormProposalScope({
+            scope: turnContext?.scope,
+            patches: appliedProposal.patches
+        });
+        if (scopeIssues.length > 0) {
+            failure = {
+                stage: 'patch',
+                kind: 'invalid_proposal',
+                issues: scopeIssues,
                 rawText: JSON.stringify(result)
             };
             continue;

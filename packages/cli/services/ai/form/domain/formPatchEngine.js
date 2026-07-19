@@ -32,9 +32,12 @@ export const applyFormPatches = ({ currentSchema = {}, patches = [] }) => {
     for (const patch of normalizedPatches) {
         if (patch.op === 'add') {
             const field = cloneJson(patch.field);
-            if (patch.insertAfter) {
+            if (patch.insertBefore) {
+                const index = updatedSchema.fields.findIndex(fieldItem => fieldItem.id === patch.insertBefore);
+                updatedSchema.fields.splice(index, 0, field);
+            } else if (patch.insertAfter) {
                 const index = updatedSchema.fields.findIndex(fieldItem => fieldItem.id === patch.insertAfter);
-                updatedSchema.fields.splice(index === -1 ? updatedSchema.fields.length : index + 1, 0, field);
+                updatedSchema.fields.splice(index + 1, 0, field);
             } else {
                 updatedSchema.fields.push(field);
             }

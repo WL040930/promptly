@@ -47,6 +47,44 @@ test('applyFormPatches applies and preserves form settings updates', () => {
     assert.equal(currentSchema.settings.acceptingResponses, false);
 });
 
+test('applyFormPatches supports explicit before placement for layout fields', () => {
+    const result = applyFormPatches({
+        currentSchema: {
+            title: 'Registration',
+            description: '',
+            settings: {},
+            fields: [{ id: 'name', type: 'text', label: 'Full Name' }]
+        },
+        patches: [{
+            op: 'add',
+            field: { id: 'heading_contact', type: 'heading', label: 'Contact Information' },
+            insertBefore: 'name'
+        }]
+    });
+
+    assert.deepEqual(result.schema.fields.map(field => field.id), ['heading_contact', 'name']);
+});
+
+test('applyFormPatches rejects an unknown placement anchor', () => {
+    assert.throws(
+        () => applyFormPatches({
+            currentSchema: {
+                title: 'Registration',
+                description: '',
+                settings: {},
+                fields: [{ id: 'name', type: 'text', label: 'Full Name' }]
+            },
+            patches: [{
+                op: 'add',
+                field: { id: 'heading_contact', type: 'heading', label: 'Contact Information' },
+                insertBefore: 'missing'
+            }]
+        }),
+        error => error.code === 'FORM_PROPOSAL_INVALID'
+            && error.issues?.some(issue => issue.code === 'UNKNOWN_PLACEMENT_ANCHOR')
+    );
+});
+
 test('applyFormPatches fails closed when a patch would create an invalid form', () => {
     assert.throws(() => applyFormPatches({
         currentSchema: form,

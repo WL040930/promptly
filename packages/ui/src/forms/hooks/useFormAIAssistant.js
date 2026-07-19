@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { acceptFormProposal, getFormChatHistory, addFormChatMessage, updateFormChatMessage } from '../../api/backend.js';
-import { generateFormFromPromptStream } from '../../api/aiStream.js';
+import { acceptFormProposal, getFormChatHistory, updateFormChatMessage } from '../../api/backend.js';
+import { submitFormAITurnStream } from '../../api/aiStream.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useAIStream } from '../../context/AIStreamContext.jsx';
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
@@ -38,6 +38,7 @@ export const useFormAIAssistant = (form) => {
     const toast = useToast();
     const [input, setInput] = useState('');
     const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
+    const [aiStateVersion, setAIStateVersion] = useState(null);
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
     const { isTyping, progressLabel, setStreamState, clearStreamState } = useAIStream(form?.id);
@@ -79,41 +80,13 @@ export const useFormAIAssistant = (form) => {
     }, [data]);
 
     const sendMessageMutation = useMutation({
-        mutationFn: async (text) => {
-            // Save user message to DB
-            const savedUserMsg = await addFormChatMessage(form.id, { sender: 'user', text });
-            
-            // Generate AI response
-            const result = await generateFormFromPromptStream(text, form, form.id, (progress) => {
+        mutationFn: async ({ text, command }) => {
+            const result = await submitFormAITurnStream(form.id, command, clarificationMode, (progress) => {
                 setStreamState({ progressLabel: progress.message || 'Thinking...' });
-            }, { clarificationMode });
-            
-            // Save bot message to DB
-            let botMsgData = { sender: 'bot', text: result.message };
-
-            if (result.type === 'proposal') {
-                botMsgData.proposal = {
-                    schema: result.schema,
-                    patches: result.patches,
-                    requirements: result.requirements,
-                    verification: result.verification,
-                    cardinality: result.cardinality,
-                    baseFormUpdatedAt: result.baseFormUpdatedAt || form.updatedAt,
-                    status: 'pending'
-                };
-            } else if (result.type === 'message') {
-                if (result.inputs) botMsgData.options = result.inputs;
-                else if (result.options) botMsgData.options = result.options;
-            }
-
-            if (result.tokenUsage) {
-                botMsgData.tokenUsage = result.tokenUsage;
-            }
-
-            const savedBotMsg = await addFormChatMessage(form.id, botMsgData);
-            return { userMsg: savedUserMsg, botMsg: savedBotMsg };
+            }, { expectedStateVersion: aiStateVersion });
+            return result;
         },
-        onMutate: async (text) => {
+        onMutate: async ({ text }) => {
             setStreamState({ isTyping: true, progressLabel: 'Thinking...' });
             setInput('');
             await queryClient.cancelQueries({ queryKey });
@@ -146,32 +119,20 @@ export const useFormAIAssistant = (form) => {
                 : 'Failed to generate form with AI.';
             toast.error(safeErrorMessage);
 
-            let persistedErrorMessage;
-            try {
-                persistedErrorMessage = await addFormChatMessage(form.id, {
-                    sender: 'bot',
-                    text: safeErrorMessage,
-                    isError: true,
-                    errorMetadata: getErrorMetadata(err)
-                });
-            } catch (persistError) {
-                console.error('Failed to persist form AI error message:', persistError);
-            }
-
             queryClient.setQueryData(queryKey, (old) => {
                 if (!old) return old;
                 const newPages = [...old.pages];
                 const currentMessages = [...newPages[0].messages];
-                if (variables && !currentMessages.some(message => message.id === context?.optimisticUserId)) {
+                if (variables?.text && !currentMessages.some(message => message.id === context?.optimisticUserId)) {
                     currentMessages.push({
                         id: context?.optimisticUserId || `failed_${Date.now()}`,
                         sender: 'user',
-                        text: variables
+                        text: variables.text
                     });
                 }
                 newPages[0] = {
                     ...newPages[0],
-                    messages: [...currentMessages, persistedErrorMessage || {
+                    messages: [...currentMessages, {
                         id: Date.now().toString(),
                         sender: 'bot',
                         text: safeErrorMessage,
@@ -184,13 +145,14 @@ export const useFormAIAssistant = (form) => {
         },
         onSuccess: (data, variables, context) => {
             clearStreamState();
+            if (Number.isInteger(data.state?.version)) setAIStateVersion(data.state.version);
             queryClient.setQueryData(queryKey, (old) => {
                 if (!old) return old;
                 const newPages = [...old.pages];
                 // Remove optimistic message and any existing copies of the userMsg/botMsg that might have been fetched from DB
                 let currentMessages = newPages[0].messages.filter(m => 
                     m.id !== context.optimisticUserId && 
-                    m.id !== data.userMsg.id && 
+                    m.id !== data.userMsg.id &&
                     m.id !== data.botMsg.id
                 );
                 const supersededMessageIds = new Set(data.botMsg.supersededMessageIds || []);
@@ -218,8 +180,8 @@ export const useFormAIAssistant = (form) => {
                     ...(unselectedIndices ? { unselectedPatchIndices: unselectedIndices } : {})
                 } 
             };
-            await updateFormChatMessage(msgId, updates);
-            return { msgId, status, updates };
+            const result = await updateFormChatMessage(msgId, updates);
+            return { msgId, status, updates, stateVersion: result.stateVersion };
         },
         onMutate: async ({ msgId, originalProposal, status, schema, unselectedIndices }) => {
             await queryClient.cancelQueries({ queryKey });
@@ -253,12 +215,21 @@ export const useFormAIAssistant = (form) => {
                 queryClient.setQueryData(queryKey, context.previousData);
             }
             toast.error(`Failed to ${variables.status} proposal.`);
+        },
+        onSuccess: (data) => {
+            if (Number.isInteger(data?.stateVersion)) setAIStateVersion(data.stateVersion);
         }
     });
 
-    const handleSend = useCallback((text) => {
+    const handleSend = useCallback((value, command = null) => {
+        const text = typeof value === 'string'
+            ? value
+            : (value?.type === 'decide_for_me'
+                ? 'Use sensible defaults.'
+                : String(value?.name || value?.title || value?.label || ''));
+        const nextCommand = command || { type: 'submit_text', text };
         if (!text.trim() || isTyping || !form?.id) return;
-        sendMessageMutation.mutate(text);
+        sendMessageMutation.mutate({ text, command: nextCommand });
     }, [form?.id, isTyping, sendMessageMutation]);
 
     const handleAcceptProposal = useCallback(async (msgId, unselectedIndices = []) => {
@@ -276,6 +247,7 @@ export const useFormAIAssistant = (form) => {
                 selectedPatchIds,
                 baseFormUpdatedAt: originalProposal.baseFormUpdatedAt || form.updatedAt
             });
+            if (Number.isInteger(result.state?.version)) setAIStateVersion(result.state.version);
 
             queryClient.setQueryData(['forms'], old => old ? old.map(item => item.id === form.id ? result.form : item) : old);
             queryClient.setQueryData(['forms', form.id], result.form);

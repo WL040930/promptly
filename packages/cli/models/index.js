@@ -1,7 +1,7 @@
 import { User, Folder, Connection, OnboardingProgress } from './core/index.js';
 import { ChatSession, ChatMessage } from './chat/index.js';
 import { AgentRun } from './agent/index.js';
-import { Form, FormResponse, FormChatMessage } from './forms/index.js';
+import { Form, FormResponse, FormChatMessage, FormAIState } from './forms/index.js';
 import { Workflow, Automation, WorkflowVersion, AutomationRevision } from './workflows/index.js';
 import { ExecutionLog, EmailDelivery } from './execution/index.js';
 import { TriggerSubscription, TriggerEvent, DatabaseChangeEvent } from './triggers/index.js';
@@ -71,6 +71,17 @@ Form.hasMany(FormChatMessage, {
     onDelete: 'CASCADE'
 });
 
+FormAIState.belongsTo(Form, {
+    foreignKey: { name: 'formId', allowNull: false },
+    as: 'form',
+    onDelete: 'CASCADE'
+});
+Form.hasOne(FormAIState, {
+    foreignKey: { name: 'formId', allowNull: false },
+    as: 'aiState',
+    onDelete: 'CASCADE'
+});
+
 // --- Agent Associations ---
 AgentRun.belongsTo(ChatSession, { foreignKey: 'sessionId', as: 'session' });
 ChatSession.hasMany(AgentRun, { foreignKey: 'sessionId', as: 'agentRuns', onDelete: 'CASCADE' });
@@ -91,6 +102,7 @@ export {
     ChatSession,
     ChatMessage,
     FormChatMessage,
+    FormAIState,
     WorkflowVersion,
     AutomationRevision,
     EmailDelivery,

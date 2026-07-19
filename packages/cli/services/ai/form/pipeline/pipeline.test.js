@@ -35,6 +35,65 @@ test('generateFormFromPrompt returns a non-mutating conversational reply', async
     assert.equal(result.tokenUsage.requestCalls, 1);
 });
 
+test('decide_everything resolves a section-heading clarification and rejects unrelated field scope', async () => {
+    const { generateFormFromPrompt } = await import('./pipeline.js');
+    const outputs = [
+        {
+            type: 'message',
+            message: 'Which heading text should I use?',
+            inputs: [{ id: 'heading', type: 'text', label: 'Section heading text' }]
+        },
+        {
+            type: 'plan_complete',
+            summary: 'Organizing the form with section headings.',
+            requirements: [{ id: 'req_headings', description: 'Add section heading layout fields only.' }],
+            memoryUpdate: { action: 'none' }
+        },
+        {
+            patches: [{
+                op: 'add',
+                field: { id: 'heading_contact', type: 'heading', label: 'Contact Information' },
+                insertBefore: 'full_name'
+            }]
+        },
+        { status: 'pass', issues: [] }
+    ];
+    const provider = {
+        async generateContent() {
+            const output = outputs.shift();
+            assert.ok(output, 'The fake provider received an unexpected request.');
+            return { text: JSON.stringify(output) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'u decide',
+        {
+            id: 'form_1',
+            title: 'Event Registration',
+            description: '',
+            settings: {},
+            fields: [{ id: 'full_name', type: 'text', label: 'Full Name' }]
+        },
+        [],
+        null,
+        {
+            provider,
+            clarificationMode: 'decide_everything',
+            turnContext: {
+                sourceText: 'I mean section heading',
+                scope: 'heading_only',
+                relationToPending: 'replace',
+                authority: 'assistant'
+            }
+        }
+    );
+
+    assert.equal(result.type, 'proposal');
+    assert.deepEqual(result.schema.fields.map(field => field.type), ['heading', 'text']);
+    assert.equal(result.schema.fields[0].label, 'Contact Information');
+});
+
 test('generateFormFromPrompt preserves normalized token usage from the AI client', async () => {
     const { generateFormFromPrompt } = await import('./pipeline.js');
     const provider = {

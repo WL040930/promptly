@@ -26,7 +26,7 @@ export const repairPlanner = async ({ provider, rawText, issues, tokenUsage, bud
     };
 };
 
-export const repairWorker = async ({ provider, schema, requirements, rawText, issues, tokenUsage, budget, cardinality }) => {
+export const repairWorker = async ({ provider, schema, requirements, rawText, issues, tokenUsage, budget, cardinality, turnContext = null }) => {
     const repaired = await requestJson({
         provider,
         contents: [{ role: 'user', parts: [{ text: buildWorkerRepairContext({
@@ -34,7 +34,8 @@ export const repairWorker = async ({ provider, schema, requirements, rawText, is
             requirements,
             response: rawText,
             issues: summarizeValidationIssues(issues),
-            cardinality
+            cardinality,
+            turnContext
         }) }] }],
         systemInstruction: workerInstruction,
         label: 'worker repair',

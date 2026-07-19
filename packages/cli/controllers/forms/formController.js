@@ -1,5 +1,5 @@
 import sequelize from '../../db/index.js';
-import { Form, FormResponse, FormChatMessage, Workflow } from '../../models/index.js';
+import { Form, FormResponse, FormChatMessage, FormAIState, Workflow } from '../../models/index.js';
 import { runFormTurn } from '../../services/ai/formAIService.js';
 import { FORM_AI_HISTORY_LIMIT, validateQuestionCardinality } from '../../services/ai/form/context/formContext.js';
 import { applyFormPatches } from '../../services/ai/form/domain/formPatchEngine.js';
@@ -7,6 +7,7 @@ import { validateFormSchema } from '../../services/ai/form/domain/formSchemaVali
 import asyncHandler from '../../utils/asyncHandler.js';
 import { executeWorkflow } from '../../services/engine/executionEngine.js';
 import { supersedePendingFormChatProposals } from '../../services/proposalLifecycle.js';
+import { formAssistant } from '../../services/ai/form/formAssistant.js';
 
 export const getForms = asyncHandler(async (req, res) => {
     const forms = await Form.findAll({ where: { userId: req.user.id } });
@@ -85,6 +86,67 @@ export const generateForm = asyncHandler(async (req, res) => {
     }
 });
 
+// One server-owned turn: persist the user input, run the AI, persist the
+// assistant result, and update the form conversation state as one lifecycle.
+export const submitFormAITurn = asyncHandler(async (req, res) => {
+    const { formId } = req.params;
+    const { command, text, clarificationMode, requestId, expectedStateVersion } = req.body || {};
+    const useSSE = req.headers.accept === 'text/event-stream';
+
+    if (useSSE) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+    }
+
+    const onProgress = data => {
+        if (useSSE) res.write(`data: ${JSON.stringify({ type: 'progress', ...data })}\n\n`);
+    };
+    const result = await formAssistant.submitTurn({
+        userId: req.user.id,
+        formId,
+        command,
+        text,
+        clarificationMode,
+        expectedStateVersion,
+        requestId,
+        onProgress
+    });
+
+    if (useSSE) {
+        res.write(`data: ${JSON.stringify({ type: 'complete', result })}\n\n`);
+        return res.end();
+    }
+    res.status(201).json(result);
+});
+
+export const decideFormProposal = asyncHandler(async (req, res) => {
+    const { formId, messageId } = req.params;
+    const { action = 'accept', selectedPatchIds, baseFormUpdatedAt } = req.body || {};
+    try {
+        const result = await formAssistant.decideProposal({
+            userId: req.user.id,
+            formId,
+            proposalMessageId: messageId,
+            action,
+            selectedPatchIds,
+            baseFormUpdatedAt
+        });
+        res.json(result);
+    } catch (error) {
+        if (error.code === 'FORM_PROPOSAL_STALE') {
+            return res.status(409).json({ code: error.code, message: error.message });
+        }
+        if (error.code === 'FORM_PROPOSAL_CARDINALITY_MISMATCH') {
+            return res.status(400).json({ code: error.code, message: error.message, issues: error.issues || [] });
+        }
+        if (error.code === 'FORM_PROPOSAL_NOT_PENDING') {
+            return res.status(409).json({ code: error.code, message: error.message });
+        }
+        throw error;
+    }
+});
+
 export const updateForm = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { title, description, settings, fields, baseFormUpdatedAt } = req.body;
@@ -153,6 +215,16 @@ export const acceptFormProposal = asyncHandler(async (req, res) => {
                 staleReason: 'FORM_VERSION_CHANGED'
             }
         });
+        const state = await FormAIState.findOne({ where: { formId } });
+        if (state?.activeProposalMessageId === message.id) {
+            await state.update({
+                phase: 'idle',
+                activeProposalMessageId: null,
+                openClarification: null,
+                activeWork: null,
+                version: state.version + 1
+            });
+        }
         return res.status(409).json({ code: 'FORM_PROPOSAL_STALE', message: 'This proposal was created from an older form version. Generate a new suggestion.' });
     }
 
@@ -181,6 +253,17 @@ export const acceptFormProposal = asyncHandler(async (req, res) => {
             settings: applied.schema.settings,
             fields: applied.schema.fields
         }, { transaction });
+
+        const state = await FormAIState.findOne({ where: { formId }, transaction });
+        if (state) {
+            await state.update({
+                phase: 'idle',
+                activeProposalMessageId: null,
+                openClarification: null,
+                activeWork: null,
+                version: state.version + 1
+            }, { transaction });
+        }
 
         await message.update({
             proposal: {
@@ -384,5 +467,20 @@ export const updateFormChatMessage = asyncHandler(async (req, res) => {
     if (!message) return res.status(404).json({ message: 'Message not found' });
 
     await message.update({ proposal });
-    res.json(message);
+    let stateVersion = null;
+    if (['rejected', 'stale', 'superseded', 'accepted'].includes(proposal?.status)) {
+        const formId = message.formId;
+        const state = await FormAIState.findOne({ where: { formId } });
+        if (state?.activeProposalMessageId === message.id) {
+            await state.update({
+                phase: 'idle',
+                activeProposalMessageId: null,
+                openClarification: null,
+                activeWork: null,
+                version: state.version + 1
+            });
+            stateVersion = state.version;
+        }
+    }
+    res.json({ ...message.toJSON(), stateVersion });
 });
