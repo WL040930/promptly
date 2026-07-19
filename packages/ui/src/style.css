@@ -87,4 +87,13 @@ button {
   .form-card-inactive {
     @apply border-l-4 border-l-transparent border-gray-200 hover:shadow-sm transition-all duration-300 ease-out;
   }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
 }
+

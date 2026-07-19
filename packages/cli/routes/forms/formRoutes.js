@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { requireAuth } from '../../middleware/authMiddleware.js';
 import { 
-    getForms, createForm, updateForm, deleteForm, submitFormResponse, getFormResponses, getPublicForm, generateForm,
-    getFormChatHistory, addFormChatMessage, updateFormChatMessage, submitFormAITurn, decideFormProposal
+    getForms, createForm, updateForm, deleteForm, submitFormResponse, getFormResponses, getPublicForm,
+    getFormChatHistory, updateFormChatMessage, submitFormAITurn, decideFormProposal
 } from '../../controllers/forms/formController.js';
 
 const router = Router();
@@ -16,7 +16,6 @@ router.use(requireAuth);
 
 router.get('/', getForms);
 router.post('/', createForm);
-router.post('/generate', generateForm);
 router.post('/:formId/ai-turns', submitFormAITurn);
 router.put('/:id', updateForm);
 router.delete('/:id', deleteForm);
@@ -26,7 +25,6 @@ router.post('/:formId/ai-proposals/:messageId/decide', decideFormProposal);
 
 // Chat History routes
 router.get('/:formId/chat', getFormChatHistory);
-router.post('/:formId/chat', addFormChatMessage);
 router.put('/chat/:messageId', updateFormChatMessage);
 
 export default router;

@@ -378,7 +378,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
             </aside>
 
             {/* ═══ MAIN CONTENT ═══ */}
-            <main className="flex-1 flex flex-col h-full overflow-hidden bg-transparent">
+            <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-transparent">
                 {!activeForm ? (
                     <div className="flex-1 flex items-center justify-center p-8">
                         <div className="p-12 text-center border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center bg-white/50 max-w-md w-full mx-auto">
@@ -412,72 +412,93 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                 ) : (
                     <>
                         {/* Top Bar */}
-                        <div className="h-16 bg-white/80 backdrop-blur-md border-b border-gray-200/60 px-3 md:px-6 flex items-center justify-between shrink-0 z-10 shadow-sm">
-                            {/* Left: Form name + sub-tabs */}
-                            <div className="flex items-center gap-2 md:gap-6 min-w-0 flex-1">
-                                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden text-slate-500 hover:text-slate-800 p-1 shrink-0">
+                        <div className="h-14 md:h-16 bg-white/90 backdrop-blur-md border-b border-gray-200/60 px-3 md:px-6 flex items-center justify-between shrink-0 z-10 shadow-sm transition-all">
+                            {/* Left: Form name */}
+                            <div className="flex items-center gap-2 md:gap-4 min-w-0 pr-2 md:pr-4 flex-1">
+                                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden text-slate-500 hover:text-slate-800 p-1 shrink-0 rounded-lg hover:bg-slate-100 transition-colors">
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
                                 </button>
-                                    <input
-                                        type="text"
-                                        value={activeForm.title}
-                                        onChange={(e) => updateForm({ title: e.target.value })}
-                                        placeholder="Untitled Form"
-                                        title="Click to rename"
-                                        size={Math.max(15, activeForm.title.length || 15)}
-                                        className="text-[15px] font-extrabold text-gray-900 truncate min-w-0 max-w-[150px] md:max-w-[300px] lg:max-w-[400px] 2xl:max-w-[600px] tracking-tight bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 rounded hover:bg-gray-100 transition-colors px-2 py-1 -ml-2"
-                                    />
+                                <input
+                                    type="text"
+                                    value={activeForm.title}
+                                    onChange={(e) => updateForm({ title: e.target.value })}
+                                    placeholder="Untitled Form"
+                                    title="Click to rename"
+                                    className="text-[15px] font-extrabold text-gray-900 truncate bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 rounded-lg hover:bg-gray-100 transition-colors px-2 py-1.5 -ml-2 w-full max-w-[400px]"
+                                />
+                            </div>
 
-                        {/* Sub-tabs */}
-                        <div className="flex items-center gap-1 border-l-2 border-gray-100 pl-4 md:pl-6 h-8">
+                            {/* Center: Sub-tabs (Desktop) */}
+                            <div className="hidden md:flex flex-none items-center justify-center">
+                                <div className="flex items-center gap-1 p-1 bg-gray-100/80 rounded-xl border border-gray-200/50">
+                                    {subTabs.map(tab => {
+                                        const isActive = activeSubTab === tab.id && !isPreviewMode;
+                                        return (
+                                            <button
+                                                key={tab.id}
+                                                onClick={() => { setActiveSubTab(tab.id); setIsPreviewMode(false); }}
+                                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-bold whitespace-nowrap transition-all duration-300 ${
+                                                    isActive
+                                                        ? 'bg-white text-gray-900 shadow-sm border border-gray-200/60'
+                                                        : 'text-gray-500 hover:text-gray-800 hover:bg-black/5 border border-transparent'
+                                                }`}
+                                            >
+                                                <span className={isActive ? 'text-indigo-600' : 'text-gray-400'}>
+                                                    {tab.icon}
+                                                </span>
+                                                <span>{tab.label}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Right: Actions */}
+                            <div className="flex items-center justify-end gap-2 shrink-0 pl-2 md:pl-4 flex-1">
+                                <Button
+                                    variant={isPreviewMode ? 'primary' : 'outline'}
+                                    onClick={() => setIsPreviewMode(!isPreviewMode)}
+                                    className={`px-3 md:px-4 h-9 !rounded-xl ${isPreviewMode ? 'bg-gray-900 border-gray-900 hover:bg-gray-800' : ''}`}
+                                    iconLeft={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>}
+                                >
+                                    <span className="hidden sm:inline">Preview</span>
+                                </Button>
+                                <button
+                                    onClick={() => setIsShareOpen(true)}
+                                    className="flex items-center justify-center h-9 px-3 sm:px-4 rounded-xl text-[13px] font-bold text-white whitespace-nowrap transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
+                                    style={{ backgroundColor: accentColor, boxShadow: `0 4px 14px ${accentColor}40` }}
+                                >
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0">
+                                        <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+                                        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                                    </svg>
+                                    <span className="hidden sm:inline ml-2">Share</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Sub-tabs (Mobile) */}
+                        <div className="md:hidden flex items-center overflow-x-auto gap-2 px-3 py-2 bg-white/80 backdrop-blur-md border-b border-gray-200/60 shrink-0 shadow-sm z-10 no-scrollbar">
                             {subTabs.map(tab => {
                                 const isActive = activeSubTab === tab.id && !isPreviewMode;
                                 return (
                                     <button
                                         key={tab.id}
                                         onClick={() => { setActiveSubTab(tab.id); setIsPreviewMode(false); }}
-                                        className={`flex items-center gap-2 px-2.5 md:px-3.5 py-2 rounded-xl text-[13px] font-bold transition-all duration-300 ${
+                                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-bold whitespace-nowrap transition-all duration-300 ${
                                             isActive
-                                                ? 'bg-gray-100 text-gray-900 shadow-sm'
-                                                : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50/80'
+                                                ? 'bg-gray-100 text-gray-900 shadow-sm border border-gray-200/50'
+                                                : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50/80 border border-transparent'
                                         }`}
                                     >
-                                        <span className={isActive ? 'text-gray-800' : 'text-gray-400'}>
+                                        <span className={isActive ? 'text-indigo-600' : 'text-gray-400'}>
                                             {tab.icon}
                                         </span>
-                                        <span className="hidden sm:inline">{tab.label}</span>
+                                        <span>{tab.label}</span>
                                     </button>
                                 );
                             })}
                         </div>
-                    </div>
-
-                    {/* Right: Actions */}
-                    <div className="flex items-center gap-2 md:gap-3 shrink-0">
-                        {/* Preview Toggle */}
-                        <Button
-                            variant={isPreviewMode ? 'primary' : 'outline'}
-                            onClick={() => setIsPreviewMode(!isPreviewMode)}
-                            className={`px-3 md:px-4 ${isPreviewMode ? 'bg-gray-900 border-gray-900 hover:bg-gray-800' : ''}`}
-                            iconLeft={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>}
-                        >
-                            <span className="hidden sm:inline">Preview</span>
-                        </Button>
-
-                        {/* Share Button */}
-                        <button
-                            onClick={() => setIsShareOpen(true)}
-                            className="flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl text-[13px] font-bold text-white transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5"
-                            style={{ backgroundColor: accentColor, boxShadow: `0 4px 14px ${accentColor}40` }}
-                        >
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-                                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                            </svg>
-                            <span className="hidden sm:inline">Share</span>
-                        </button>
-                    </div>
-                </div>
 
                 {/* Body Container */}
                 <div className="flex-1 overflow-hidden relative">
