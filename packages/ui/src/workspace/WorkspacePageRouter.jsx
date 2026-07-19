@@ -48,7 +48,7 @@ function NewAutomationPage({ method = 'ai' }) {
     return <PageFrame><ChatTab startNewAutomation method={method} /></PageFrame>;
 }
 
-export default function WorkspacePageRouter({ route }) {
+export default function WorkspacePageRouter({ route, isSidebarCollapsed, setSidebarCollapsed }) {
     switch (route.page) {
         case 'home':
             return <PageFrame><DashboardTab compact /></PageFrame>;
@@ -61,7 +61,7 @@ export default function WorkspacePageRouter({ route }) {
         case 'automation-build':
             return route.editor === 'ai'
                 ? <PageFrame><ChatTab automationId={route.automationId} conversationId={new URLSearchParams(window.location.search).get('conversation')} /></PageFrame>
-                : <PageFrame><WorkflowBuilderView route={route} /></PageFrame>;
+                : <PageFrame><WorkflowBuilderView route={route} isSidebarCollapsed={isSidebarCollapsed} setSidebarCollapsed={setSidebarCollapsed} /></PageFrame>;
         case 'automation-runs':
             return <PageFrame><Suspense fallback={<div className="p-8 text-sm text-slate-500">Loading runs…</div>}><LogsTab workflowId={route.automationId} /></Suspense></PageFrame>;
         case 'automation-versions':

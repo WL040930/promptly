@@ -89,21 +89,25 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
     // The builder temporarily collapses the global sidebar, then restores the
     // state the user had before entering it.
     useEffect(() => {
-        if (viewMode === 'builder') {
-            if (!wasBuilderRoute.current) {
-                previousGlobalSidebarState.current = isSidebarCollapsed;
-                wasBuilderRoute.current = true;
-            }
-
-            setSidebarCollapsed?.(true);
-            return;
-        }
-
-        if (wasBuilderRoute.current) {
+        const restoreGlobalSidebar = () => {
+            if (!wasBuilderRoute.current) return;
             setSidebarCollapsed?.(previousGlobalSidebarState.current ?? false);
             previousGlobalSidebarState.current = null;
             wasBuilderRoute.current = false;
+        };
+
+        if (viewMode !== 'builder' || !setSidebarCollapsed) {
+            restoreGlobalSidebar();
+            return undefined;
         }
+
+        if (!wasBuilderRoute.current) {
+            previousGlobalSidebarState.current = isSidebarCollapsed;
+            wasBuilderRoute.current = true;
+        }
+
+        setSidebarCollapsed(true);
+        return restoreGlobalSidebar;
     }, [viewMode, setSidebarCollapsed]);
 
     // ── Execution panel state ─────────────────────────────────────────────

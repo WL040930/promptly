@@ -63,6 +63,13 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
         });
     };
 
+    const content = React.isValidElement(children)
+        ? React.cloneElement(children, {
+            isSidebarCollapsed: collapsed,
+            setSidebarCollapsed: setCollapsed
+        })
+        : children;
+
     return (
         <div className="flex h-screen overflow-hidden bg-[#f7f9fc] font-sans text-slate-900">
             <aside className={`relative z-50 flex shrink-0 flex-col border-r border-slate-200 bg-slate-50 transition-all duration-300 ${collapsed ? 'w-[70px]' : 'w-[252px]'}`}>
@@ -100,7 +107,7 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
                 </div>
             </aside>
 
-            <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">{children}</main>
+            <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">{content}</main>
 
             {settingsOpen && <SettingsModal user={user} onClose={() => setSettingsOpen(false)} onLogout={onLogout} initialTab={settingsTab} />}
         </div>

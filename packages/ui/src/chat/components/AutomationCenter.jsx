@@ -1,4 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
+import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
 import {
     Activity,
     AlertTriangle,
@@ -244,6 +246,7 @@ function ExecutionRow({ log }) {
 export default function AutomationCenter() {
     const toast = useToast();
     const queryClient = useQueryClient();
+    const container = useRef(null);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('All');
     const [healthFilter, setHealthFilter] = useState('All');
@@ -261,6 +264,15 @@ export default function AutomationCenter() {
     const pauseWorkflowMutation = usePauseWorkflow();
     const deleteWorkflowMutation = useDeleteWorkflow();
     const runWorkflowMutation = useRunWorkflow();
+
+    useGSAP(() => {
+        gsap.from(container.current, {
+            autoAlpha: 0,
+            y: 15,
+            duration: 0.3,
+            ease: 'power2.out'
+        });
+    }, { scope: container });
 
     const rows = useMemo(() => workflows.map(workflow => ({
         ...workflow,
@@ -332,7 +344,7 @@ export default function AutomationCenter() {
     };
 
     return (
-        <div className="flex min-h-0 flex-1 overflow-hidden bg-slate-50/70 font-sans">
+        <div ref={container} className="flex min-h-0 flex-1 overflow-hidden bg-slate-50/70 font-sans">
             <main className="min-w-0 flex-1 overflow-y-auto p-5 md:p-8">
                 <div className="mx-auto flex max-w-7xl flex-col gap-6">
                     <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
