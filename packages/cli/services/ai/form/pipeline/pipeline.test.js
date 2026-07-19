@@ -708,7 +708,7 @@ test('returns the latest locally valid proposal when semantic verification canno
             requirements: [{ id: 'req_4', description: 'Number of Attendees must be required with a minimum value of 1.' }],
             memoryUpdate: { action: 'none' }
         },
-        ...Array.from({ length: 5 }, () => [
+        ...Array.from({ length: 3 }, () => [
             {
                 patches: [{
                     op: 'add',

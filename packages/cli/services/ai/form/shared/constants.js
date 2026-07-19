@@ -1,7 +1,7 @@
 import { AI_TASKS } from '../../core/aiTasks.js';
 
 const MAX_PLANNER_ATTEMPTS = 2;
-export const MAX_FORM_REPAIR_LOOPS = 5;
+export const MAX_FORM_REPAIR_LOOPS = 3;
 export const MAX_VERIFIER_ATTEMPTS = 2;
 const MAX_PROVIDER_ROUTE_ATTEMPTS = 4;
 
