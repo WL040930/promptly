@@ -45,3 +45,26 @@ test('allows an inactive draft to retain a disabled node while it is being repai
 
     assert.equal(result.valid, true);
 });
+
+test('allows an inactive draft to save a node before required configuration is filled in', () => {
+    const result = validateWorkflow({
+        registry,
+        isActive: false,
+        nodes: [{ id: 'action_1', type: 'action', subType: 'http', config: {} }],
+        edges: []
+    });
+
+    assert.equal(result.valid, true);
+});
+
+test('rejects an active workflow without exactly one trigger', () => {
+    const result = validateWorkflow({
+        registry,
+        isActive: true,
+        nodes: [node('action_1', 'action', 'http')],
+        edges: []
+    });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.issues.some(item => item.code === 'TRIGGER_COUNT'));
+});

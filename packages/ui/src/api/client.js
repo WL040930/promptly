@@ -30,7 +30,7 @@ const apiRequest = async (path, options = {}) => {
             window.location.href = '/login';
         }
 
-        const error = new Error(payload?.error || 'Request failed.');
+        const error = new Error(payload?.message || payload?.error || 'Request failed.');
         error.status = response.status;
         error.payload = payload;
         throw error;

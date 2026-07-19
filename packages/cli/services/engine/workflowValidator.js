@@ -76,7 +76,7 @@ export const validateWorkflow = ({ nodes = [], edges = [], isActive = false, reg
                 issues.push(issue('UNSUPPORTED_NODE', `nodes[${index}]`, `Node "${node.type}:${node.subType}" is not implemented.`));
             }
             for (const input of definition.configSchema.inputs || []) {
-                if (input.required === true && (node.config?.[input.name] === undefined || node.config?.[input.name] === '')) {
+                if (isActive && input.required === true && (node.config?.[input.name] === undefined || node.config?.[input.name] === '')) {
                     issues.push(issue('MISSING_NODE_CONFIG', `nodes[${index}].config.${input.name}`, `Required configuration "${input.name}" is missing.`));
                 }
             }

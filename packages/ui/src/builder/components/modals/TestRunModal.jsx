@@ -232,7 +232,7 @@ const TestRunModal = ({ isOpen, onClose, onConfirm, isLoading, workflowId, nodes
     const showFooterRun = activeTab !== 'form' || trigger.type === 'schedule';
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
 
                 <div className="p-5 border-b border-slate-100 flex items-start justify-between bg-slate-50/50 shrink-0">

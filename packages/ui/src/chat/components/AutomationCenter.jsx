@@ -60,8 +60,18 @@ const getTriggerLabel = (workflow) => {
     if (subtype.includes('form')) return 'Form submission';
     if (subtype.includes('webhook')) return 'Webhook';
     if (subtype.includes('schedule') || subtype.includes('cron')) return 'Schedule';
-    return workflow?.triggerType || 'Manual';
+    return workflow?.triggerType || 'No trigger';
 };
+
+const getActivationIssue = workflow => {
+    if (!workflow || workflow.isActive) return null;
+    const triggerCount = (workflow.nodes || []).filter(node => node.type === 'trigger').length;
+    if (triggerCount === 0) return 'Add exactly one trigger node in Builder before activating this automation.';
+    if (triggerCount !== 1) return 'This automation must contain exactly one trigger node before it can be activated.';
+    return null;
+};
+
+const getWorkflowErrorMessage = error => error?.payload?.issues?.[0]?.message || error?.message || 'Could not update automation status.';
 
 const getHealth = (workflow, logs) => {
     const workflowLogs = logs.filter(log => log.workflowId === workflow.id || log.workflow?.id === workflow.id);
@@ -134,8 +144,9 @@ function EmptyState({ onCreateWithAI, onBuildManually }) {
     );
 }
 
-function WorkflowDetailDrawer({ workflowId, onClose, onRun, onOpenBuilder, onAskAI, onDiagnose, onToggleActive, onDuplicate }) {
+function WorkflowDetailDrawer({ workflowId, onClose, onClosed, isClosing = false, onRun, onOpenBuilder, onAskAI, onDiagnose, onToggleActive, onDuplicate }) {
     const toast = useToast();
+    const drawerRef = useRef(null);
     const [showVersions, setShowVersions] = useState(false);
     const [versionToRestore, setVersionToRestore] = useState(null);
     const { data: workflow, isPending } = useWorkflow(workflowId);
@@ -146,9 +157,29 @@ function WorkflowDetailDrawer({ workflowId, onClose, onRun, onOpenBuilder, onAsk
     const latestFailure = logs.find(log => log.status === 'Failed');
     const health = workflow ? getHealth(workflow, logs) : 'No runs';
     const nodeCount = workflow?.nodes?.length || 0;
+    const activationIssue = getActivationIssue(workflow);
+
+    useGSAP(() => {
+        if (!drawerRef.current) return;
+
+        if (isClosing) {
+            gsap.to(drawerRef.current, {
+                xPercent: 100,
+                duration: 0.24,
+                ease: 'power2.in',
+                onComplete: onClosed
+            });
+            return;
+        }
+
+        gsap.fromTo(drawerRef.current,
+            { xPercent: 100 },
+            { xPercent: 0, duration: 0.3, ease: 'power3.out' }
+        );
+    }, { scope: drawerRef, dependencies: [isClosing], revertOnUpdate: true });
 
     return (
-        <aside className="fixed inset-y-0 right-0 z-40 flex w-full max-w-xl flex-col border-l border-slate-200 bg-white shadow-2xl">
+        <aside ref={drawerRef} className="fixed inset-y-0 right-0 z-[70] flex w-full max-w-xl flex-col border-l border-slate-200 bg-white shadow-2xl">
             <div className="flex items-start justify-between border-b border-slate-200 bg-slate-50/80 p-5">
                 <div className="min-w-0">
                     <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-indigo-500">Automation details</p>
@@ -170,6 +201,8 @@ function WorkflowDetailDrawer({ workflowId, onClose, onRun, onOpenBuilder, onAsk
                             <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${getHealthStyles(health)}`}>{health}</span>
                             <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-500">{getTriggerLabel(workflow)}</span>
                         </div>
+
+                        {activationIssue && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"><p className="font-bold text-amber-900">Activation needs one more step</p><p className="mt-1 leading-5">{activationIssue}</p></div>}
 
                         <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                             <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Workflow map</p>
@@ -222,7 +255,7 @@ function WorkflowDetailDrawer({ workflowId, onClose, onRun, onOpenBuilder, onAsk
                     <button type="button" onClick={() => onAskAI('Explain this workflow in simple terms.')} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100"><Bot size={14} />Ask AI</button>
                     <button type="button" onClick={onOpenBuilder} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"><ExternalLink size={14} />Builder</button>
                     <button type="button" onClick={() => onDuplicate(workflow)} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"><Copy size={14} />Duplicate</button>
-                    <button type="button" onClick={() => onToggleActive(workflow)} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50">{workflow.isActive ? <Pause size={14} /> : <Play size={14} />}{workflow.isActive ? 'Pause' : 'Activate'}</button>
+                    <button type="button" onClick={() => onToggleActive(workflow)} disabled={Boolean(activationIssue)} title={activationIssue || undefined} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">{workflow.isActive ? <Pause size={14} /> : <Play size={14} />}{workflow.isActive ? 'Pause' : 'Activate'}</button>
                 </div>
             )}
             <ConfirmModal isOpen={!!versionToRestore} onClose={() => setVersionToRestore(null)} onConfirm={() => restoreVersionMutation.mutate({ id: workflowId, versionId: versionToRestore.id }, { onSuccess: () => { setVersionToRestore(null); toast.success('Workflow version restored.'); }, onError: error => toast.error(error.message || 'Could not restore this version.') })} title="Restore this version?" message={`Version ${versionToRestore?.versionNumber || ''} will replace the current workflow steps.`} confirmText="Restore" confirmVariant="primary" isLoading={restoreVersionMutation.isPending} />
@@ -247,10 +280,12 @@ export default function AutomationCenter() {
     const toast = useToast();
     const queryClient = useQueryClient();
     const container = useRef(null);
+    const drawerOverlayRef = useRef(null);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('All');
     const [healthFilter, setHealthFilter] = useState('All');
     const [selectedWorkflowId, setSelectedWorkflowId] = useState(null);
+    const [isClosingWorkflow, setIsClosingWorkflow] = useState(false);
     const [workflowToDelete, setWorkflowToDelete] = useState(null);
     const [runWorkflow, setRunWorkflow] = useState(null);
 
@@ -273,6 +308,20 @@ export default function AutomationCenter() {
             ease: 'power2.out'
         });
     }, { scope: container });
+
+    useGSAP(() => {
+        if (!drawerOverlayRef.current || !selectedWorkflowId) return;
+
+        if (isClosingWorkflow) {
+            gsap.to(drawerOverlayRef.current, { autoAlpha: 0, duration: 0.2, ease: 'power2.in' });
+            return;
+        }
+
+        gsap.fromTo(drawerOverlayRef.current,
+            { autoAlpha: 0 },
+            { autoAlpha: 1, duration: 0.2, ease: 'power2.out' }
+        );
+    }, { scope: drawerOverlayRef, dependencies: [selectedWorkflowId, isClosingWorkflow], revertOnUpdate: true });
 
     const rows = useMemo(() => workflows.map(workflow => ({
         ...workflow,
@@ -314,10 +363,15 @@ export default function AutomationCenter() {
         });
     };
     const toggleWorkflow = workflow => {
+        const activationIssue = getActivationIssue(workflow);
+        if (activationIssue) {
+            toast.error(activationIssue);
+            return;
+        }
         const mutation = workflow.isActive ? pauseWorkflowMutation : publishWorkflowMutation;
         mutation.mutate(workflow.id, {
             onSuccess: () => toast.success(workflow.isActive ? 'Automation paused.' : 'Automation activated.'),
-            onError: error => toast.error(error.message || 'Could not update automation status.')
+            onError: error => toast.error(getWorkflowErrorMessage(error))
         });
     };
     const duplicateWorkflow = workflow => {
@@ -342,39 +396,50 @@ export default function AutomationCenter() {
             onError: error => toast.error(error.message || 'Could not delete automation.')
         });
     };
+    const openWorkflowDetails = workflowId => {
+        setIsClosingWorkflow(false);
+        setSelectedWorkflowId(workflowId);
+    };
+    const closeWorkflowDetails = () => setIsClosingWorkflow(true);
+    const finishClosingWorkflow = () => {
+        setSelectedWorkflowId(null);
+        setIsClosingWorkflow(false);
+    };
 
     return (
-        <div ref={container} className="flex min-h-0 flex-1 overflow-hidden bg-slate-50/70 font-sans">
-            <main className="min-w-0 flex-1 overflow-y-auto p-5 md:p-8">
-                <div className="mx-auto flex max-w-7xl flex-col gap-6">
-                    <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-                        <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-500">Automation Center</p><h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">Your automations</h1><p className="mt-2 max-w-2xl text-sm text-slate-500">Create, monitor and improve the processes that run your work.</p></div>
-                        <div className="flex flex-wrap gap-2"><button type="button" onClick={() => openCreateAI()} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-500/20 hover:bg-indigo-700"><Sparkles size={16} />Create with AI</button><button type="button" onClick={createManually} disabled={createWorkflowMutation.isPending} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"><Plus size={16} />Build manually</button></div>
-                    </header>
+        <>
+            <div ref={container} className="flex min-h-0 flex-1 overflow-hidden bg-slate-50/70 font-sans">
+                <main className="min-w-0 flex-1 overflow-y-auto p-5 md:p-8">
+                    <div className="mx-auto flex max-w-7xl flex-col gap-6">
+                        <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+                            <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-500">Automation Center</p><h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">Your automations</h1><p className="mt-2 max-w-2xl text-sm text-slate-500">Create, monitor and improve the processes that run your work.</p></div>
+                            <div className="flex flex-wrap gap-2"><button type="button" onClick={() => openCreateAI()} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-500/20 hover:bg-indigo-700"><Sparkles size={16} />Create with AI</button><button type="button" onClick={createManually} disabled={createWorkflowMutation.isPending} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"><Plus size={16} />Build manually</button></div>
+                        </header>
 
-                    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                        <StatCard label="Active" value={activeCount} detail="Ready to run" icon={Zap} tone="indigo" />
-                        <StatCard label="Draft" value={draftCount} detail="Still being designed" icon={WorkflowIcon} />
-                        <StatCard label="Success rate" value={metrics?.successRate || '—'} detail={`${metrics?.totalRuns ?? 0} total executions`} icon={CheckCircle2} tone="emerald" />
-                        <StatCard label="Needs attention" value={attentionCount} detail="Recent failures detected" icon={AlertTriangle} tone="amber" />
-                    </section>
+                        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            <StatCard label="Active" value={activeCount} detail="Ready to run" icon={Zap} tone="indigo" />
+                            <StatCard label="Draft" value={draftCount} detail="Still being designed" icon={WorkflowIcon} />
+                            <StatCard label="Success rate" value={metrics?.successRate || '—'} detail={`${metrics?.totalRuns ?? 0} total executions`} icon={CheckCircle2} tone="emerald" />
+                            <StatCard label="Needs attention" value={attentionCount} detail="Recent failures detected" icon={AlertTriangle} tone="amber" />
+                        </section>
 
-                    <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-                            <div className="relative min-w-0 flex-1"><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search automations…" className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-800 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10" /></div>
-                            <div className="flex flex-wrap items-center gap-2"><Filter size={15} className="text-slate-400" /><FilterSelect value={statusFilter} onChange={setStatusFilter} options={STATUS_FILTERS} /><FilterSelect value={healthFilter} onChange={setHealthFilter} options={HEALTH_FILTERS} /><button type="button" onClick={() => refetch()} className="rounded-xl border border-slate-200 p-2.5 text-slate-500 hover:bg-slate-50" title="Refresh automations"><RefreshCw size={16} /></button></div>
-                        </div>
-                    </section>
+                        <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                                <div className="relative min-w-0 flex-1"><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search automations…" className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-800 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10" /></div>
+                                <div className="flex flex-wrap items-center gap-2"><Filter size={15} className="text-slate-400" /><FilterSelect value={statusFilter} onChange={setStatusFilter} options={STATUS_FILTERS} /><FilterSelect value={healthFilter} onChange={setHealthFilter} options={HEALTH_FILTERS} /><button type="button" onClick={() => refetch()} className="rounded-xl border border-slate-200 p-2.5 text-slate-500 hover:bg-slate-50" title="Refresh automations"><RefreshCw size={16} /></button></div>
+                            </div>
+                        </section>
 
-                    {isError ? <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center"><p className="font-semibold text-red-700">Unable to load automations.</p><button type="button" onClick={() => refetch()} className="mt-3 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white">Try again</button></div> : isPending ? <div className="space-y-3">{[1, 2, 3].map(item => <div key={item} className="h-20 animate-pulse rounded-2xl bg-white" />)}</div> : workflows.length === 0 ? <EmptyState onCreateWithAI={openCreateAI} onBuildManually={createManually} /> : filteredRows.length === 0 ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center"><Search size={24} className="mx-auto text-slate-300" /><p className="mt-3 font-semibold text-slate-700">No automations match these filters.</p><button type="button" onClick={() => { setSearch(''); setStatusFilter('All'); setHealthFilter('All'); }} className="mt-3 text-sm font-semibold text-indigo-600">Clear filters</button></div> : <WorkflowTable rows={filteredRows} onSelect={setSelectedWorkflowId} onRun={setRunWorkflow} onOpenBuilder={id => navigate(`/app/automations/${id}/build?editor=visual`)} onAskAI={openWorkflowAI} onDelete={setWorkflowToDelete} onToggle={toggleWorkflow} onDuplicate={duplicateWorkflow} />}
-                </div>
-            </main>
+                        {isError ? <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center"><p className="font-semibold text-red-700">Unable to load automations.</p><button type="button" onClick={() => refetch()} className="mt-3 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white">Try again</button></div> : isPending ? <div className="space-y-3">{[1, 2, 3].map(item => <div key={item} className="h-20 animate-pulse rounded-2xl bg-white" />)}</div> : workflows.length === 0 ? <EmptyState onCreateWithAI={openCreateAI} onBuildManually={createManually} /> : filteredRows.length === 0 ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center"><Search size={24} className="mx-auto text-slate-300" /><p className="mt-3 font-semibold text-slate-700">No automations match these filters.</p><button type="button" onClick={() => { setSearch(''); setStatusFilter('All'); setHealthFilter('All'); }} className="mt-3 text-sm font-semibold text-indigo-600">Clear filters</button></div> : <WorkflowTable rows={filteredRows} onSelect={openWorkflowDetails} onRun={setRunWorkflow} onOpenBuilder={id => navigate(`/app/automations/${id}/build?editor=visual`)} onAskAI={openWorkflowAI} onDelete={setWorkflowToDelete} onToggle={toggleWorkflow} onDuplicate={duplicateWorkflow} />}
+                    </div>
+                </main>
+            </div>
 
-            {selectedWorkflowId && <><button type="button" aria-label="Close workflow details" onClick={() => setSelectedWorkflowId(null)} className="fixed inset-0 z-30 cursor-default bg-slate-900/20 backdrop-blur-[1px]" /><WorkflowDetailDrawer workflowId={selectedWorkflowId} onClose={() => setSelectedWorkflowId(null)} onRun={() => { const workflow = workflows.find(item => item.id === selectedWorkflowId); setRunWorkflow(workflow || null); }} onOpenBuilder={() => navigate(`/app/automations/${selectedWorkflowId}/build?editor=visual`)} onAskAI={prompt => openWorkflowAI(selectedWorkflowId, prompt)} onDiagnose={log => openWorkflowAI(selectedWorkflowId, `Diagnose this failed execution (${log.id}). Explain the root cause and propose a safe fix.`)} onToggleActive={toggleWorkflow} onDuplicate={duplicateWorkflow} /></>}
+            {selectedWorkflowId && <><button ref={drawerOverlayRef} type="button" aria-label="Close workflow details" onClick={closeWorkflowDetails} className="fixed inset-0 z-[60] cursor-default bg-slate-900/20 backdrop-blur-[1px]" /><WorkflowDetailDrawer workflowId={selectedWorkflowId} isClosing={isClosingWorkflow} onClose={closeWorkflowDetails} onClosed={finishClosingWorkflow} onRun={() => { const workflow = workflows.find(item => item.id === selectedWorkflowId); setRunWorkflow(workflow || null); }} onOpenBuilder={() => navigate(`/app/automations/${selectedWorkflowId}/build?editor=visual`)} onAskAI={prompt => openWorkflowAI(selectedWorkflowId, prompt)} onDiagnose={log => openWorkflowAI(selectedWorkflowId, `Diagnose this failed execution (${log.id}). Explain the root cause and propose a safe fix.`)} onToggleActive={toggleWorkflow} onDuplicate={duplicateWorkflow} /></>}
 
             <ConfirmModal isOpen={!!workflowToDelete} onClose={() => setWorkflowToDelete(null)} onConfirm={confirmDelete} title="Delete automation?" message={`This permanently deletes “${workflowToDelete?.name || 'this automation'}” and its configuration.`} confirmText="Delete" confirmVariant="danger" isLoading={deleteWorkflowMutation.isPending} />
             {runWorkflow && <TestRunModal isOpen={true} onClose={() => setRunWorkflow(null)} onConfirm={runSelectedWorkflow} isLoading={runWorkflowMutation.isPending} workflowId={runWorkflow.id} nodes={runWorkflowDetails?.nodes || runWorkflow.nodes || []} />}
-        </div>
+        </>
     );
 }
 

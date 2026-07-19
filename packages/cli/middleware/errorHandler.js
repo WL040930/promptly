@@ -13,9 +13,10 @@ const errorHandler = (err, req, res, next) => {
         console.error(err.stack);
     }
 
-    res.status(status).json({
-        error: message
-    });
+    const payload = { error: message };
+    if (err.code) payload.code = err.code;
+    if (err.issues) payload.issues = err.issues;
+    res.status(status).json(payload);
 };
 
 export default errorHandler;
