@@ -252,6 +252,7 @@ export const buildWorkerContext = ({ schema, requirements = [], cardinality = nu
 export const buildPlannerRepairContext = ({ response, issues, cardinality = null }) => [
     'Repair the planner response below and return a complete compact JSON response.',
     'Do not include worker instructions. Keep the summary and requirement descriptions concise.',
+    'Direct proposals are only for updates to existing fields or settings. If the invalid response contains an add patch or malformed field object, return plan_complete with the same requirements and no patches so the worker can build the fields safely.',
     '',
     'Validation Issues:',
     clampText(issues, 6000),

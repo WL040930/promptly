@@ -15,6 +15,27 @@ import { repairPlanner } from '../recovery/repairs.js';
 import { recoverWorkerProposal } from '../recovery/workerRecovery.js';
 import { addTokenUsage } from '../shared/usage.js';
 
+const canRebuildDirectProposal = (plannerResult, issues = []) => {
+    if (plannerResult?.type !== 'direct_proposal' || !Array.isArray(plannerResult.requirements) || plannerResult.requirements.length === 0) {
+        return false;
+    }
+
+    // A malformed patch must never be applied. If the planner requirements are
+    // intact and validation only found patch-shape problems, let the worker
+    // rebuild the proposal from those requirements instead.
+    return issues.length > 0 && issues.every(({ path = '' }) => (
+        path === 'patches' || /^patches\[\d+\](?:\.|$)/.test(path)
+    ));
+};
+
+const rebuildAsWorkerPlan = (plannerResult) => {
+    const workerPlan = Object.fromEntries(
+        Object.entries(plannerResult).filter(([key]) => key !== 'patches')
+    );
+    workerPlan.type = 'plan_complete';
+    return workerPlan;
+};
+
 export const generateFormFromPrompt = async (
     prompt,
     currentSchema,
@@ -71,7 +92,12 @@ export const generateFormFromPrompt = async (
             plannerResult = plannerCall.value;
             plannerIssues = getOutputIssues({ ...plannerCall, validate: validatePlannerResult });
             if (plannerIssues.length > 0) {
-                throw createAIOutputError('I could not create a reliable plan for this request.', 'FORM_AI_UNSAFE_PLAN', plannerIssues);
+                if (canRebuildDirectProposal(plannerResult, plannerIssues)) {
+                    plannerResult = rebuildAsWorkerPlan(plannerResult);
+                    plannerIssues = [];
+                } else {
+                    throw createAIOutputError('I could not create a reliable plan for this request.', 'FORM_AI_UNSAFE_PLAN', plannerIssues);
+                }
             }
         }
 

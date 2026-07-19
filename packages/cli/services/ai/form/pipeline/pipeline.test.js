@@ -109,6 +109,61 @@ test('generateFormFromPrompt uses the direct proposal fast path for a clear smal
     assert.deepEqual(operations, ['form:planner', 'form:verifier']);
 });
 
+test('falls back to the worker when planner repair cannot fix malformed direct-proposal fields', async () => {
+    const { generateFormFromPrompt } = await import('./pipeline.js');
+    const operations = [];
+    const outputs = [
+        {
+            type: 'direct_proposal',
+            summary: 'Add the requested fields.',
+            requirements: [{ id: 'req_1', description: 'Add name, email, and role fields.' }],
+            patches: [
+                { op: 'add', field: 'name' },
+                { op: 'add', field: 'email' },
+                { op: 'add', field: 'role' }
+            ]
+        },
+        {
+            type: 'direct_proposal',
+            summary: 'Add the requested fields.',
+            requirements: [{ id: 'req_1', description: 'Add name, email, and role fields.' }],
+            patches: [
+                { op: 'add', field: 'name' },
+                { op: 'add', field: 'email' },
+                { op: 'add', field: 'role' }
+            ]
+        },
+        {
+            patches: [
+                { op: 'add', field: { id: 'name', type: 'text', label: 'Name' } },
+                { op: 'add', field: { id: 'email', type: 'email', label: 'Email' } },
+                { op: 'add', field: { id: 'role', type: 'text', label: 'Role' } }
+            ]
+        },
+        { status: 'pass', issues: [] }
+    ];
+    const provider = {
+        async generateContent(contents, options) {
+            operations.push(options.operation);
+            const output = outputs.shift();
+            assert.ok(output, 'The fake provider received an unexpected request.');
+            return { text: JSON.stringify(output) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Create a form with name, email, and role fields.',
+        { id: 'form_1', title: 'Contact', description: '', settings: {}, fields: [] },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.equal(result.type, 'proposal');
+    assert.deepEqual(result.schema.fields.map(field => field.id), ['name', 'email', 'role']);
+    assert.deepEqual(operations, ['form:planner', 'form:planner repair', 'form:worker', 'form:verifier']);
+});
+
 test('generateFormFromPrompt repairs a semantically incorrect proposal once', async () => {
     Object.assign(process.env, {
         AI_TIMEOUT_MS: '50',
