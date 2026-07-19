@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-export const PROVIDERS = Object.freeze({
+const PROVIDERS = Object.freeze({
     database: 'database',
     email: 'gmail',
     googleSheets: 'google-drive'

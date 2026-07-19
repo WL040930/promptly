@@ -17,9 +17,3 @@ export const evaluatePlannerOutcome = ({
 
     return { action: 'expose' };
 };
-
-export const isClarificationAllowed = ({ clarificationMode, reason } = {}) => {
-    const mode = normalizeClarificationMode(clarificationMode);
-    if (mode !== CLARIFICATION_MODES.DECIDE_EVERYTHING) return true;
-    return reason === 'safety_blocked' || reason === 'execution_blocked';
-};

@@ -8,7 +8,7 @@ export class AIError extends Error {
     }
 }
 
-export const getRetryAfterSeconds = error => {
+const getRetryAfterSeconds = error => {
     const value = error?.retryAfterSeconds
         ?? error?.headers?.['retry-after']
         ?? error?.headers?.get?.('retry-after');

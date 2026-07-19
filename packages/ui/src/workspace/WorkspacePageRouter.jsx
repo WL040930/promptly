@@ -51,7 +51,7 @@ function NewAutomationPage({ method = 'ai' }) {
 export default function WorkspacePageRouter({ route, isSidebarCollapsed, setSidebarCollapsed }) {
     switch (route.page) {
         case 'home':
-            return <PageFrame><DashboardTab compact /></PageFrame>;
+            return <PageFrame><DashboardTab /></PageFrame>;
         case 'automations':
             return <PageFrame><AutomationCenter /></PageFrame>;
         case 'automation-new':
@@ -78,6 +78,6 @@ export default function WorkspacePageRouter({ route, isSidebarCollapsed, setSide
         case 'assistant':
             return <PageFrame><ChatTab conversationId={route.conversationId} /></PageFrame>;
         default:
-            return <PageFrame><DashboardTab compact /></PageFrame>;
+            return <PageFrame><DashboardTab /></PageFrame>;
     }
 }

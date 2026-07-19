@@ -94,7 +94,7 @@ const publishOneChange = async change => {
     }
 };
 
-export const publishPendingDatabaseChanges = async ({ limit = 100 } = {}) => {
+const publishPendingDatabaseChanges = async ({ limit = 100 } = {}) => {
     const changes = await DatabaseChangeEvent.findAll({
         where: { publishedAt: null },
         order: [['createdAt', 'ASC']],
@@ -116,9 +116,4 @@ export const startDatabaseChangePublisher = () => {
     publisherTimer = setInterval(() => publishPendingDatabaseChanges().catch(error => {
         console.error('[DatabaseTrigger] Publisher failed:', error.message);
     }), 1000);
-};
-
-export const stopDatabaseChangePublisher = () => {
-    if (publisherTimer) clearInterval(publisherTimer);
-    publisherTimer = null;
 };

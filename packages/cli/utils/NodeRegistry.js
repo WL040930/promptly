@@ -19,8 +19,6 @@ const implementationStatusFor = (NodeClass) => {
 class NodeRegistry {
     constructor() {
         this.nodesByNodeKey = new Map();
-        // Keep this alias for callers that still use the old property name.
-        this.nodesBySubType = this.nodesByNodeKey;
         this.nodesBySubTypeName = new Map();
         this.uiLibrary = []; // Array of categories for the UI
     }

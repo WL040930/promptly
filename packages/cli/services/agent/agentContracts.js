@@ -1,22 +1,5 @@
 import crypto from 'crypto';
 
-export const AGENT_STATUSES = Object.freeze([
-    'received',
-    'understanding',
-    'awaiting_clarification',
-    'researching',
-    'planning',
-    'designing',
-    'verifying',
-    'awaiting_approval',
-    'applying',
-    'completed',
-    'failed',
-    'blocked'
-]);
-
-export const terminalStatuses = new Set(['completed', 'failed', 'blocked']);
-
 export const makeIntent = (value = {}) => ({
     goal: ['create', 'modify', 'explain', 'debug', 'connect'].includes(value.goal) ? value.goal : 'create',
     domains: [...new Set((Array.isArray(value.domains) ? value.domains : []).filter(domain => ['form', 'workflow', 'integration'].includes(domain)))],

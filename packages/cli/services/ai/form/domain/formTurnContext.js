@@ -63,5 +63,4 @@ export const resolveFormTurnContext = ({
     };
 };
 
-export const isDelegationText = isDelegation;
 export const detectFormIntentScope = detectScope;

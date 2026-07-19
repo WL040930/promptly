@@ -1,5 +1,4 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import WorkflowCanvas from './components/canvas/WorkflowCanvas';
@@ -7,73 +6,34 @@ import PropertyInspector from './components/panels/PropertyInspector';
 import AIAgentChat from './components/sidebars/AIAgentChat';
 import NodeLibrarySidebar from './components/sidebars/NodeLibrarySidebar';
 import BuilderToolbar from './components/layout/BuilderToolbar';
-import WorkflowOverview from './overview/WorkflowOverview';
 import OverviewModal from './overview/OverviewModal';
 import { MODAL_TYPES, MODAL_CONFIG } from './overview/constants.js';
-import DashboardTab from './components/tabs/DashboardTab';
-import FormsTab from './components/tabs/FormsTab';
-import LogsTab from '../chat/components/LogsTab';
 import TestRunModal from './components/modals/TestRunModal';
 import VersionHistorySidebar from './components/sidebars/VersionHistorySidebar';
-import { navigate, parsePath } from '../utils/router.js';
-import { useWorkflows, useWorkflow, useCreateWorkflow, useUpdateWorkflow, useSaveWorkflowVersion } from '../api/hooks/useWorkflows.js';
-import { useFolders } from '../api/hooks/useFolders.js';
+import { navigate } from '../utils/router.js';
+import { useWorkflow, useCreateWorkflow, useUpdateWorkflow, useSaveWorkflowVersion } from '../api/hooks/useWorkflows.js';
 import { useRunWorkflow } from '../api/hooks/useRunWorkflow.js';
 import { useCreateForm, useUpdateForm } from '../api/hooks/useForms.js';
 import ExecutionPanel from './components/panels/ExecutionPanel';
 import BuilderLoadingSkeleton from './components/layout/BuilderLoadingSkeleton.jsx';
-import WorkflowOverviewLoadingSkeleton from './overview/WorkflowOverviewLoadingSkeleton.jsx';
 import { useUndoRedo } from '../hooks/useUndoRedo';
 import { useToast } from '../context/ToastContext.jsx';
 
-const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setSidebarCollapsed }) => {
+const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed }) => {
     // ── Server data ──────────────────────────────────────────────────────────
-    const getViewStateFromUrl = () => {
-        const parsed = parsePath(window.location.href);
-        return {
-            viewMode: parsed.page === 'automation-build' ? 'builder' : 'overview',
-            workflowId: parsed.automationId || null
-        };
-    };
-
-    const { data: folders = [], isPending: isFoldersPending } = useFolders();
-    const { data: workflowsData = [], isPending: isWorkflowsPending } = useWorkflows();
-    const [activeWorkflowId, setActiveWorkflowId] = useState(() => getViewStateFromUrl().workflowId);
-
-    // Automatically select the first workflow if none is selected
-    const derivedWorkflowId = activeWorkflowId || (workflowsData.length > 0 ? workflowsData[0].id : null);
-    const { data: activeWorkflowData, isPending: isActiveWorkflowPending } = useWorkflow(derivedWorkflowId);
+    const activeWorkflowId = route?.automationId || null;
+    const { data: activeWorkflowData, isPending: isActiveWorkflowPending } = useWorkflow(activeWorkflowId);
 
     const [activeNodeId, setActiveNodeId] = useState(null);
-    const [viewMode, setViewModeState] = useState(() => getViewStateFromUrl().viewMode);
-
     const createWorkflowMutation = useCreateWorkflow();
     const updateWorkflowMutation = useUpdateWorkflow();
     const saveVersionMutation = useSaveWorkflowVersion();
     const createFormMutation = useCreateForm();
     const updateFormMutation = useUpdateForm();
-    const queryClient = useQueryClient();
     const toast = useToast();
 
-    // ── Optimistic cache updaters ────────────────────────────────────────────
-    const setFolders = (updater) => {
-        queryClient.setQueryData(['folders'], old => {
-            const current = old || [];
-            return typeof updater === 'function' ? updater(current) : updater;
-        });
-    };
-
     // Only show skeleton on initial load (no data yet), not on background refetches
-    const loading = (isFoldersPending && folders.length === 0) ||
-        (isWorkflowsPending && workflowsData.length === 0) ||
-        (viewMode === 'builder' && derivedWorkflowId && isActiveWorkflowPending && !activeWorkflowData);
-
-    // Normalise workflows array → id-keyed map for fast lookup
-    const workflows = useMemo(() => {
-        const map = {};
-        workflowsData.forEach(w => { map[w.id] = w; });
-        return map;
-    }, [workflowsData]);
+    const loading = isActiveWorkflowPending && !activeWorkflowData;
 
     // ── UI state ─────────────────────────────────────────────────────────────
     const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
@@ -96,10 +56,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
             wasBuilderRoute.current = false;
         };
 
-        if (viewMode !== 'builder' || !setSidebarCollapsed) {
-            restoreGlobalSidebar();
-            return undefined;
-        }
+        if (!setSidebarCollapsed) return undefined;
 
         if (!wasBuilderRoute.current) {
             previousGlobalSidebarState.current = isSidebarCollapsed;
@@ -108,7 +65,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
 
         setSidebarCollapsed(true);
         return restoreGlobalSidebar;
-    }, [viewMode, setSidebarCollapsed]);
+    }, [setSidebarCollapsed]);
 
     // ── Execution panel state ─────────────────────────────────────────────
     const [isExecutionPanelOpen, setIsExecutionPanelOpen] = useState(false);
@@ -117,7 +74,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
     const runWorkflowMutation = useRunWorkflow();
 
     const handleTestRunClick = () => {
-        if (!derivedWorkflowId) return;
+        if (!activeWorkflowId) return;
         setIsTestRunModalOpen(true);
     };
 
@@ -126,7 +83,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
         setIsExecutionPanelOpen(true);
         setLastExecutionLog(null);
         try {
-            const log = await runWorkflowMutation.mutateAsync({ workflowId: derivedWorkflowId, payload, revisionId: activeWorkflowData?.draftRevisionId || null });
+            const log = await runWorkflowMutation.mutateAsync({ workflowId: activeWorkflowId, payload, revisionId: activeWorkflowData?.draftRevisionId || null });
             setLastExecutionLog(log);
         } catch (err) {
             setLastExecutionLog({ status: 'Failed', durationMs: 0, steps: [], error: err.message });
@@ -135,90 +92,24 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
 
     // Real-time relative timestamp ticker removed for performance, handled by child components now
 
-    // ── Handlers ─────────────────────────────────────────────────────────────
-    // Sync view state when user hits back/forward
-    useEffect(() => {
-        const handler = () => {
-            const { viewMode: vm, workflowId: wid } = getViewStateFromUrl();
-            setViewModeState(vm);
-            setActiveWorkflowId(wid);
-        };
-        window.addEventListener('popstate', handler);
-        return () => window.removeEventListener('popstate', handler);
-    }, []);
-
-    // ── Navigation helpers ───────────────────────────────────────────────────
-    const navigateToBuilder = (wfId) => {
-        navigate(`/app/automations/${wfId}/build?editor=visual`);
-        setViewModeState('builder');
-        setActiveWorkflowId(wfId);
-    };
-
-    const navigateToOverview = () => {
-        navigate('/app/automations');
-        setViewModeState('overview');
-    };
-
-    const setViewMode = (mode) => {
-        if (mode === 'overview') navigateToOverview();
-    };
-
-    const handleSelectWorkflow = (wfId) => navigateToBuilder(wfId);
-
-    const handleCreateWorkflow = (e) => {
-        const wfData = {
-            name: 'New Automation',
-            folderId: folders.length > 0 ? folders[0].id : null,
-            isActive: false,
-            status: 'Saved',
-            iconColor: 'text-indigo-600',
-            iconBg: 'bg-indigo-100',
-            nodes: []
-        };
-        createWorkflowMutation.mutate(wfData, {
-            onSuccess: (newWorkflow) => navigateToBuilder(newWorkflow.id),
-            onSettled: () => { if (e?.detail?.onComplete) e.detail.onComplete(); }
-        });
-    };
-
-    // Listen for the custom create-workflow event (from other parts of the UI)
-    useEffect(() => {
-        window.addEventListener('create-workflow', handleCreateWorkflow);
-        return () => window.removeEventListener('create-workflow', handleCreateWorkflow);
-    }, [folders]);
-
     // ── Derived data ─────────────────────────────────────────────────────────
-    const activeWorkflow = useMemo(
-        () => activeWorkflowData || workflows[derivedWorkflowId] || null,
-        [activeWorkflowData, workflows, derivedWorkflowId]
-    );
+    const activeWorkflow = activeWorkflowData || null;
     const nodes = useMemo(() => activeWorkflow?.nodes || [], [activeWorkflow?.nodes]);
     const edges = useMemo(() => activeWorkflow?.edges || [], [activeWorkflow?.edges]);
     const activeNode = useMemo(() => nodes.find(n => n.id === activeNodeId) || null, [nodes, activeNodeId]);
-
-    const activeFolder = useMemo(() => {
-        if (!activeWorkflow?.folderId) return null;
-        return folders.find(f => f.id === activeWorkflow.folderId);
-    }, [folders, activeWorkflow]);
-    const activeFolderName = activeFolder ? activeFolder.name : 'Root';
-
-    const activeWorkflowCount = useMemo(
-        () => Object.values(workflows).filter(w => w.status === 'Active').length,
-        [workflows]
-    );
 
     const { takeSnapshot, undo, redo } = useUndoRedo(20);
 
     // ── Workflow mutation helpers ─────────────────────────────────────────────
     const handleWorkflowUpdate = useCallback((updatedFields, skipSnapshot = false) => {
-        if (!derivedWorkflowId) return;
+        if (!activeWorkflowId) return;
 
         if (!skipSnapshot && (updatedFields.nodes || updatedFields.edges)) {
             takeSnapshot({ nodes, edges });
         }
 
-        updateWorkflowMutation.mutate({ id: derivedWorkflowId, data: updatedFields });
-    }, [derivedWorkflowId, updateWorkflowMutation, nodes, edges, takeSnapshot]);
+        updateWorkflowMutation.mutate({ id: activeWorkflowId, data: updatedFields });
+    }, [activeWorkflowId, updateWorkflowMutation, nodes, edges, takeSnapshot]);
 
     const handleToggleActive = useCallback(() => {
         if (!activeWorkflow) return;
@@ -226,12 +117,12 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
     }, [activeWorkflow, handleWorkflowUpdate]);
 
     const handleSaveVersion = useCallback(() => {
-        if (!derivedWorkflowId) return;
-        saveVersionMutation.mutate(derivedWorkflowId, {
+        if (!activeWorkflowId) return;
+        saveVersionMutation.mutate(activeWorkflowId, {
             onSuccess: () => toast.success('New version snapshot saved!'),
             onError: () => toast.error('Failed to save version')
         });
-    }, [derivedWorkflowId, saveVersionMutation, toast]);
+    }, [activeWorkflowId, saveVersionMutation, toast]);
 
     // ── Undo / Redo Keybinds ──────────────────────────────────────────────────
     const handleUndo = useCallback(() => {
@@ -312,14 +203,13 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
     }, [modal, activeWorkflowId, updateWorkflowMutation, closeModal]);
 
     const handleTitleEditStart = useCallback(() => {
-        const activeWorkflow = workflows[activeWorkflowId];
         openModal(MODAL_TYPES.EDIT_WORKFLOW_PROPERTIES, {
             currentName: activeWorkflow?.name,
             icon: activeWorkflow?.icon,
             iconBg: activeWorkflow?.iconBg,
             iconColor: activeWorkflow?.iconColor,
         });
-    }, [workflows, activeWorkflowId, openModal]);
+    }, [activeWorkflow, openModal]);
 
     // ── Node operations ──────────────────────────────────────────────────────
     const handleNodeClick = useCallback((nodeId) => {
@@ -509,10 +399,10 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
     // ── GSAP entrance animation ───────────────────────────────────────────────
     const builderContainer = useRef(null);
     useGSAP(() => {
-        if (viewMode === 'builder' && builderContainer.current) {
+        if (builderContainer.current) {
             gsap.from(builderContainer.current, { opacity: 0, duration: 0.3, ease: 'power2.out' });
         }
-    }, { dependencies: [viewMode] });
+    }, []);
 
     // ── GSAP Right Panel Animations ───────────────────────────────────────────
     const rightPanelContentRef = useRef(null);
@@ -525,27 +415,8 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
         }
     }, { dependencies: [isHistorySidebarOpen, rightTab] });
 
-    // ── Early returns ────────────────────────────────────────────────────────
-    if (activeTab === 'dashboard') return <DashboardTab activeWorkflowCount={activeWorkflowCount} onNavigateTab={setActiveTab} />;
-    if (activeTab === 'forms') return <FormsTab />;
-    if (activeTab === 'logs') return <LogsTab />;
-
     if (loading) {
-        return viewMode === 'overview'
-            ? <WorkflowOverviewLoadingSkeleton />
-            : <BuilderLoadingSkeleton />;
-    }
-
-    if (viewMode === 'overview') {
-        return (
-            <WorkflowOverview
-                folders={folders}
-                setFolders={setFolders}
-                workflows={workflows}
-                onCreateWorkflow={handleCreateWorkflow}
-                onSelectWorkflow={handleSelectWorkflow}
-            />
-        );
+        return <BuilderLoadingSkeleton />;
     }
 
     // ── Builder view ─────────────────────────────────────────────────────────
@@ -578,8 +449,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
                     isRightSidebarOpen={isRightSidebarOpen}
                     onToggleLeft={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)}
                     onToggleRight={() => setIsRightSidebarOpen(!isRightSidebarOpen)}
-                    onBack={navigateToOverview}
-                    activeFolderName={activeFolderName}
+                    onBack={() => navigate('/app/automations')}
                     activeWorkflow={activeWorkflow}
                     onTitleEditStart={handleTitleEditStart}
                     nodeCount={nodes.length}
@@ -685,7 +555,7 @@ const WorkflowBuilderView = ({ activeTab, setActiveTab, isSidebarCollapsed, setS
                 onClose={() => setIsTestRunModalOpen(false)}
                 onConfirm={handleTestRunConfirm}
                 isLoading={runWorkflowMutation.isPending}
-                workflowId={derivedWorkflowId}
+                workflowId={activeWorkflowId}
                 nodes={nodes}
             />
 

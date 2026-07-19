@@ -14,7 +14,7 @@ const adapters = new Map();
 let workerTimer = null;
 let renewalTimer = null;
 
-export const registerTriggerAdapter = (provider, adapter) => {
+const registerTriggerAdapter = (provider, adapter) => {
     if (!provider || !adapter?.reconcile || !adapter?.remove) throw new Error(`Invalid trigger adapter for ${provider}.`);
     adapters.set(provider, adapter);
 };
@@ -163,7 +163,7 @@ const claimEvent = async () => {
     }
 };
 
-export const processPendingEvents = async ({ limit = 10 } = {}) => {
+const processPendingEvents = async ({ limit = 10 } = {}) => {
     let processed = 0;
     while (processed < limit) {
         const event = await claimEvent();
@@ -198,7 +198,7 @@ export const processPendingEvents = async ({ limit = 10 } = {}) => {
     return processed;
 };
 
-export const renewSubscriptions = async () => {
+const renewSubscriptions = async () => {
     const expiringAt = new Date(Date.now() + 60 * 60 * 1000);
     const subscriptions = await TriggerSubscription.findAll({
         where: { status: 'active', expiresAt: { [Op.ne]: null, [Op.lte]: expiringAt } }
@@ -217,11 +217,4 @@ export const startTriggerRuntime = async () => {
     workerTimer = setInterval(() => processPendingEvents().catch(error => console.error('[TriggerRuntime] Worker failed:', error.message)), 1000);
     renewalTimer = setInterval(() => renewSubscriptions().catch(error => console.error('[TriggerRuntime] Renewal failed:', error.message)), 15 * 60 * 1000);
     await renewSubscriptions();
-};
-
-export const stopTriggerRuntime = () => {
-    if (workerTimer) clearInterval(workerTimer);
-    if (renewalTimer) clearInterval(renewalTimer);
-    workerTimer = null;
-    renewalTimer = null;
 };

@@ -10,7 +10,6 @@ const BuilderToolbar = ({
     onToggleLeft,
     onToggleRight,
     onBack,
-    activeFolderName,
     activeWorkflow,
     onTitleEditStart,
     nodeCount = 0,
@@ -54,9 +53,6 @@ const BuilderToolbar = ({
 
                 {/* CENTER: breadcrumb + title — strictly contained, never overflows */}
                 <div className="flex items-center gap-1.5 min-w-0 overflow-hidden px-1">
-                    <span className="text-slate-400 text-sm font-medium truncate shrink-0 max-w-[100px] hidden sm:block">{activeFolderName}</span>
-                    <span className="text-slate-300 text-sm shrink-0 hidden sm:block">/</span>
-
                     <Button
                         variant="ghost"
                         className="group px-1.5 py-0.5 transition-colors min-w-0 overflow-hidden font-normal"

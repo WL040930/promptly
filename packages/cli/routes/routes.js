@@ -1,12 +1,10 @@
 import { Router } from 'express';
 import healthRoutes from './system/health.js';
-import promptsRoutes from './chat/prompts.js';
 import authRoutes from './auth/authRoutes.js';
 import resetPasswordRoutes from './auth/resetPasswordRoutes.js';
 import onboardingRoutes from './auth/onboardingRoutes.js';
 import googleConnectionRoutes from './connection/googleConnection.js';
 import workflowRoutes from './builder/workflowRoutes.js';
-import folderRoutes from './builder/folderRoutes.js';
 import formRoutes from './forms/formRoutes.js';
 import logRoutes from './builder/logRoutes.js';
 import dashboardRoutes from './dashboard/dashboardRoutes.js';
@@ -26,14 +24,12 @@ const authLimiter = rateLimit({
 });
 
 router.use('/health', healthRoutes);
-router.use('/prompts', promptsRoutes);
 router.use('/auth', authLimiter, authRoutes);
 router.use('/storage', storageRoutes);
 router.use('/auth', authLimiter, resetPasswordRoutes);
 router.use('/onboarding', onboardingRoutes);
 router.use('/auth/google', authLimiter, googleConnectionRoutes);
 router.use('/automations', workflowRoutes);
-router.use('/folders', folderRoutes);
 router.use('/forms', formRoutes);
 router.use('/runs', logRoutes);
 router.use('/dashboard', dashboardRoutes);

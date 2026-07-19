@@ -12,12 +12,6 @@ export const getWorkflowVersions = (id) => apiRequest(`/api/automations/${id}/ve
 export const saveWorkflowVersion = (id) => apiRequest(`/api/automations/${id}/versions`, { method: 'POST' });
 export const restoreWorkflowVersion = (id, versionId) => apiRequest(`/api/automations/${id}/versions/${versionId}/restore`, { method: 'POST' });
 
-// --- Folders ---
-export const getFolders = () => apiRequest('/api/folders');
-export const createFolder = (data) => apiRequest('/api/folders', { method: 'POST', body: JSON.stringify(data) });
-export const updateFolder = (id, data) => apiRequest(`/api/folders/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-export const deleteFolder = (id) => apiRequest(`/api/folders/${id}`, { method: 'DELETE' });
-
 // --- Forms ---
 export const getForms = () => apiRequest('/api/forms');
 export const getForm = (id) => apiRequest(`/api/forms/${id}`);
@@ -55,9 +49,7 @@ export const sendChatMessage = (sessionId, message, context = {}, event = null) 
     body: JSON.stringify({ sessionId, message, context, ...(event ? { event } : {}) })
 });
 export const getChatSession = (sessionId) => apiRequest(`/api/conversations/${sessionId}`);
-export const updateChatSession = (sessionId, title) => apiRequest(`/api/conversations/${sessionId}`, { method: 'PUT', body: JSON.stringify({ title }) });
 export const deleteChatSession = (sessionId) => apiRequest(`/api/conversations/${sessionId}`, { method: 'DELETE' });
-export const getAgentRun = (runId) => apiRequest(`/api/conversations/agent-runs/${runId}`);
 export const approveAgentRun = (runId, idempotencyKey) => apiRequest(`/api/conversations/agent-runs/${runId}/approve`, {
     method: 'POST',
     headers: { 'Idempotency-Key': idempotencyKey },

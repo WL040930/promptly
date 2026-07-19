@@ -29,7 +29,7 @@ const scoreResource = (resource, reference, labelField) => {
     return matchedWords > 0 ? 100 + matchedWords : 0;
 };
 
-export const summarizeResource = (resource, type) => {
+const summarizeResource = (resource, type) => {
     const labelField = RESOURCE_CONFIG[type]?.labelField;
     return {
         id: resource.id,

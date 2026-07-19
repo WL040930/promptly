@@ -2,7 +2,7 @@ import { User, Folder, Connection, OnboardingProgress } from './core/index.js';
 import { ChatSession, ChatMessage } from './chat/index.js';
 import { AgentRun } from './agent/index.js';
 import { Form, FormResponse, FormChatMessage, FormAIState } from './forms/index.js';
-import { Workflow, Automation, WorkflowVersion, AutomationRevision } from './workflows/index.js';
+import { Workflow, WorkflowVersion } from './workflows/index.js';
 import { ExecutionLog, EmailDelivery } from './execution/index.js';
 import { TriggerSubscription, TriggerEvent, DatabaseChangeEvent } from './triggers/index.js';
 
@@ -95,7 +95,6 @@ export {
     Connection,
     OnboardingProgress,
     Workflow,
-    Automation,
     Form,
     FormResponse,
     ExecutionLog,
@@ -104,7 +103,6 @@ export {
     FormChatMessage,
     FormAIState,
     WorkflowVersion,
-    AutomationRevision,
     EmailDelivery,
     TriggerSubscription,
     TriggerEvent,

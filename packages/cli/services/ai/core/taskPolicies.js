@@ -138,8 +138,4 @@ export const getTaskPolicy = (task, { mode = null } = {}) => {
     };
 };
 
-export const getAllTaskPolicies = () => Object.fromEntries(
-    Object.keys(TASK_POLICIES).map(task => [task, getTaskPolicy(task)])
-);
-
 export { TASK_POLICIES };

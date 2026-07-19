@@ -88,8 +88,6 @@ const sheetsAdapter = {
     }
 };
 
-export const verifyGoogleDriveChannel = subscription => channelToken(subscription.id);
-
 export const handleGoogleDriveNotification = async headers => {
     const channelId = headers['x-goog-channel-id'];
     const token = headers['x-goog-channel-token'];

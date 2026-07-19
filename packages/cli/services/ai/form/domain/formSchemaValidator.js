@@ -148,7 +148,7 @@ export const validateFormSchema = (schema = {}) => {
     return issues;
 };
 
-export const validatePatchShape = (patch, path) => {
+const validatePatchShape = (patch, path) => {
     const issues = [];
     if (!isPlainObject(patch)) return [issue('INVALID_PATCH', path, 'Expected a patch object.')];
     if (!isFormPatchOperation(patch.op)) {

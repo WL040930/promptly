@@ -11,14 +11,12 @@ const providerFactories = Object.freeze({
     cerebras: options => new CerebrasProvider(options)
 });
 
-export const DEFAULT_PROVIDER_MODELS = Object.freeze({
+const DEFAULT_PROVIDER_MODELS = Object.freeze({
     gemini: 'gemini-3.5-flash',
     openrouter: 'openai/gpt-4o-mini',
     groq: 'llama3-8b-8192',
     cerebras: 'llama3.1-8b'
 });
-
-export const getDefaultProviderModel = providerName => DEFAULT_PROVIDER_MODELS[providerName];
 
 export const createProviderRegistry = ({ config = env } = {}) => {
     const instances = new Map();

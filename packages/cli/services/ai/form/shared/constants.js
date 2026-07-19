@@ -1,9 +1,9 @@
 import { AI_TASKS } from '../../core/aiTasks.js';
 
-export const MAX_PLANNER_ATTEMPTS = 2;
+const MAX_PLANNER_ATTEMPTS = 2;
 export const MAX_FORM_REPAIR_LOOPS = 5;
 export const MAX_VERIFIER_ATTEMPTS = 2;
-export const MAX_PROVIDER_ROUTE_ATTEMPTS = 4;
+const MAX_PROVIDER_ROUTE_ATTEMPTS = 4;
 
 // The budget covers the planner, worker/verifier repair loop, and every
 // provider route that may be tried for each model request.

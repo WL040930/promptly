@@ -30,7 +30,7 @@ const normalizeDefinition = definition => {
     });
 };
 
-export class AgentCapabilityRegistry {
+class AgentCapabilityRegistry {
     #capabilities = new Map();
 
     constructor(definitions = []) {

@@ -114,7 +114,7 @@ function EmptyPanel({ icon: Icon, title, detail, action, onAction }) {
     );
 }
 
-const DashboardTab = ({ activeWorkflowCount, onNavigateTab }) => {
+const DashboardTab = () => {
     const metricsQuery = useDashboardMetrics();
     const workflowsQuery = useWorkflows();
     const logsQuery = useExecutionLogs({ page: 1, pageSize: 8 });
@@ -132,10 +132,6 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab }) => {
     }, { scope: container });
 
     const go = page => {
-        if (onNavigateTab) {
-            if (page === 'workflows') return onNavigateTab('overview');
-            return onNavigateTab(page);
-        }
         if (page === 'workflows') return navigateTo({ page: 'automations' });
         if (page === 'forms') return navigateTo({ page: 'forms' });
         if (page === 'logs') return navigateTo({ page: 'runs' });
@@ -183,12 +179,12 @@ const DashboardTab = ({ activeWorkflowCount, onNavigateTab }) => {
             paused,
             failures,
             attentionItems: [...failureItems, ...draftItems].slice(0, 5),
-            activeCount: activeWorkflowCount ?? active.length,
+            activeCount: active.length,
             draftCount: drafts.length,
             pausedCount: paused.length,
             attentionCount: failures.length + drafts.length + paused.length
         };
-    }, [activeWorkflowCount, recentLogs, workflows]);
+    }, [recentLogs, workflows]);
 
     const weeklyData = metrics.weeklyData || [];
     const maxRuns = Math.max(1, ...weeklyData.map(item => Number(item.runs) || 0));

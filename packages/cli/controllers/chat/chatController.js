@@ -74,15 +74,6 @@ export const getSessions = asyncHandler(async (req, res) => {
     res.json(sessions);
 });
 
-export const updateSession = asyncHandler(async (req, res) => {
-    const { sessionId } = req.params;
-    const { title, agentContext } = req.body;
-    const session = await ChatSession.findOne({ where: { id: sessionId, userId: req.user.id } });
-    if (!session) return res.status(404).json({ message: 'Session not found' });
-    await session.update({ title, ...(agentContext ? { agentContext } : {}) });
-    res.json(session);
-});
-
 export const deleteSession = asyncHandler(async (req, res) => {
     const { sessionId } = req.params;
     const session = await ChatSession.findOne({ where: { id: sessionId, userId: req.user.id } });

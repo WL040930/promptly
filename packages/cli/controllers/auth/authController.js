@@ -107,18 +107,6 @@ const completeOnboarding = async (req, res) => {
     });
 };
 
-const startOnboarding = async (req, res) => {
-    const [onboarding] = await OnboardingProgress.findOrCreate({ where: { userId: req.user.id }, defaults: { version: 1 } });
-    await onboarding.update({ status: 'in_progress', currentStep: req.body?.step || 'goal', startedAt: onboarding.startedAt || new Date() });
-    return res.json({ onboarding });
-};
-
-const skipOnboarding = async (req, res) => {
-    const [onboarding] = await OnboardingProgress.findOrCreate({ where: { userId: req.user.id }, defaults: { version: 1 } });
-    await onboarding.update({ status: 'skipped', currentStep: 'skipped', completedAt: onboarding.completedAt || new Date() });
-    return res.json({ onboarding, user: await serializeUser(await User.findByPk(req.user.id)) });
-};
-
 const getMe = async (req, res) => {
     const user = await User.findByPk(req.user.id);
     if (!user) {
@@ -222,4 +210,4 @@ export const changePassword = async (req, res) => {
     return res.json({ message: 'Password updated successfully.' });
 };
 
-export { register, login, completeOnboarding, startOnboarding, skipOnboarding, getMe };
+export { register, login, completeOnboarding, getMe };
