@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ClipboardCheck, Rocket, Target, Workflow } from 'lucide-react';
 import { useCompleteOnboarding } from '../api/hooks/useAuth.js';
 import { navigateTo } from '../utils/router.js';

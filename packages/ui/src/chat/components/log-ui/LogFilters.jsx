@@ -1,4 +1,3 @@
-import React from 'react';
 import { ChevronDown, Search, SlidersHorizontal, X } from 'lucide-react';
 
 const STATUS_OPTIONS = ['All', 'Success', 'Failed'];

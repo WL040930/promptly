@@ -1,4 +1,3 @@
-import React from 'react';
 import AlertCircle from 'lucide-react/dist/esm/icons/alert-circle.mjs';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.mjs';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check.mjs';

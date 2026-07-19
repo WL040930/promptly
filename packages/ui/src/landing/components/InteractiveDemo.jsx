@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { getGeminiResponse, analyzeWorkflowTask } from '../services/geminiService'
 
 const SUGGESTIONS = [

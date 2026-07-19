@@ -1,4 +1,3 @@
-import React from 'react';
 
 const FormEditorHeader = ({ form, onUpdateForm, accentColor = '#4f46e5' }) => {
     return (

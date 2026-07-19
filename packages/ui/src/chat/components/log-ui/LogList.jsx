@@ -1,4 +1,3 @@
-import React from 'react';
 import { CheckCircle2, Clock3, XCircle } from 'lucide-react';
 import { formatDuration, formatLogDate, getStatusClasses, getWorkflowName } from './logFormatters.js';
 

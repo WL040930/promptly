@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useFormAIAssistant } from '../hooks/useFormAIAssistant';
 import FormDiffPreviewModal from './FormDiffPreviewModal';
 import GenericChatWidget from '../../components/chat/GenericChatWidget.jsx';

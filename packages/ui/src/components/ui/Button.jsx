@@ -1,4 +1,4 @@
-import React, { forwardRef, useRef } from 'react';
+import { forwardRef, useRef } from 'react';
 import { cn } from '../../utils/cn';
 import { useGSAP } from '@gsap/react';
 import gsap from 'gsap';

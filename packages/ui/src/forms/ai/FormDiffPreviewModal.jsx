@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef, useCallback } from 'react';
+import { useMemo, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import FieldRenderer from '../preview/FieldRenderer';
 import { isEmptyFormMemorySummary } from '../../../../shared/formContract.js';

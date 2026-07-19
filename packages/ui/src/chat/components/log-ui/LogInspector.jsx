@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Check, CheckCircle2, Circle, Copy, X, XCircle } from 'lucide-react';
 import { useExecutionLog } from '../../../api/hooks/useLogs.js';
 import { formatDuration, formatLogDate, getStatusClasses, getWorkflowName } from './logFormatters.js';

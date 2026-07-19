@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Button from '../ui/Button.jsx';
 
 export default function MessageOptionsWidget({ options, onSend, isTyping, allowDecide = false, clarificationId = null }) {

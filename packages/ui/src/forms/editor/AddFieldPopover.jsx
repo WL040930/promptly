@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import { useRef } from 'react';
 import { FIELD_TYPES, getTypesByCategory } from './fields/fieldTypes';
 import TypeIcon from './fields/TypeIcon';
 import { useClickOutside } from '../hooks/useClickOutside';

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 
 const selectClass = "bg-slate-50 border border-slate-200 rounded-lg text-slate-800 px-3 py-2 outline-none text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 transition-all shadow-inner appearance-none cursor-pointer pr-8";
 const numberClass = "bg-slate-50 border border-slate-200 rounded-lg text-slate-800 px-3 py-2 outline-none text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 transition-all shadow-inner w-20 text-center";

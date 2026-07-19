@@ -1,4 +1,3 @@
-import React from 'react';
 import { useWorkflow, useRestoreWorkflowVersion, useWorkflowVersions } from '../api/hooks/useWorkflows.js';
 import { useToast } from '../context/ToastContext.jsx';
 

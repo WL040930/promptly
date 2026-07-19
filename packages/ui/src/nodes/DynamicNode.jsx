@@ -1,4 +1,3 @@
-import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { getIconByName, resolveNodeUi } from '../builder/utils/iconMap.jsx';
 

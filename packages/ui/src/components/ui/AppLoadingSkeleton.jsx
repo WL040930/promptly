@@ -1,4 +1,3 @@
-import React from 'react';
 import Skeleton from './Skeleton.jsx';
 
 export default function AppLoadingSkeleton() {

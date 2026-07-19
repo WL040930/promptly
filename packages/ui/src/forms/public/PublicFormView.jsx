@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import FormPreview from '../preview/FormPreview';
 import PublicFormStatus from './PublicFormStatus';
 import PublicFormLoadingSkeleton from './PublicFormLoadingSkeleton.jsx';

@@ -1,4 +1,3 @@
-import React from 'react';
 import { FIELD_TYPES } from './fieldTypes';
 
 const TypeIcon = ({ typeName, size = 16 }) => {

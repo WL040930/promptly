@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import FieldCard from './fields/FieldCard';
 import { createField } from './fields/fieldTypes';
 import { useFieldDnD } from '../hooks/useFieldDnD';

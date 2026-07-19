@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { login } from '../api/auth.js'
 import { navigate } from '../utils/router.js'
 import AuthShell from './components/AuthShell.jsx'

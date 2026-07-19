@@ -1,4 +1,3 @@
-import React from 'react'
 
 function AuthShell({ icon, title, subtitle, children }) {
     return (

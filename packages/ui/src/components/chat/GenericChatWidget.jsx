@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
 import { ArrowUp, LoaderCircle } from 'lucide-react';
 import AgentMessage from './AgentMessage.jsx';
 import ChatHistorySkeleton from './ChatHistorySkeleton.jsx';

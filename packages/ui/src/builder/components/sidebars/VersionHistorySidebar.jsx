@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useWorkflowVersions, useRestoreWorkflowVersion } from '../../../api/hooks/useWorkflows.js';
 import WorkflowDiffPreviewModal from '../modals/WorkflowDiffPreviewModal.jsx';
 import { useToast } from '../../../context/ToastContext.jsx';

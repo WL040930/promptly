@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import { useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { ICON_MAP } from '../utils/iconMap.jsx';
 import { gsap } from 'gsap';

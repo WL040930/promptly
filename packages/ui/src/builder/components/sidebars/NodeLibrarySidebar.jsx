@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { getIconByName, resolveNodeUi } from '../../utils/iconMap.jsx';
 import { useNodeLibrary } from '../../hooks/useNodeLibrary.js';
 import NodeLibrarySkeleton from './NodeLibrarySkeleton.jsx';

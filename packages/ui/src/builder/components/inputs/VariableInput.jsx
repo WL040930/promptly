@@ -1,29 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import VariablePickerModal from '../modals/VariablePickerModal';
-
-/* ─── Type-colour map for the variable pill badges ─────────────────────── */
-const TYPE_COLORS = {
-  string: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  text: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  number: 'bg-blue-100   text-blue-700   border-blue-200',
-  boolean: 'bg-amber-100  text-amber-700  border-amber-200',
-  object: 'bg-violet-100 text-violet-700 border-violet-200',
-  array: 'bg-pink-100   text-pink-700   border-pink-200',
-  any: 'bg-slate-100  text-slate-600  border-slate-200',
-};
-
-function typeColor(type) {
-  return TYPE_COLORS[type] ?? TYPE_COLORS.any;
-}
-
-function isObjectLike(v) {
-  return v?.hasChildren || ['object', 'array', 'any'].includes(v?.type);
-}
-
-function canUseCustomPath(v) {
-  return ['object', 'any'].includes(v?.type) || v?.hasChildren;
-}
 
 /* ─── Token preview — renders {{...}} as colored pills ─────────────────── */
 function TokenPreview({ value, availableVars = [], className, onClick }) {

@@ -1,4 +1,3 @@
-import React from 'react';
 import { ChevronDown, Settings2 } from 'lucide-react';
 import { CLARIFICATION_MODES } from '../../../../shared/agentContract.js';
 

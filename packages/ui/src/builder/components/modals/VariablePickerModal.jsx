@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 
 const TYPE_COLORS = {
   string: 'bg-emerald-100 text-emerald-700 border-emerald-200',

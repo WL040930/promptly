@@ -1,4 +1,3 @@
-import React from 'react';
 import { ICON_MAP } from '../../utils/iconMap.jsx';
 import Switch from '../../../components/ui/Switch.jsx';
 import RelativeTimeDisplay from '../../../components/ui/RelativeTimeDisplay.jsx';

@@ -1,4 +1,3 @@
-import React from 'react';
 import Button from '../ui/Button.jsx';
 import FormProposalWidget from './FormProposalWidget.jsx';
 import MarkdownRenderer from '../ui/MarkdownRenderer.jsx';
