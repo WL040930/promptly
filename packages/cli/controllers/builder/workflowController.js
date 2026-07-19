@@ -46,11 +46,11 @@ export const getWorkflow = asyncHandler(async (req, res) => {
 });
 
 export const createWorkflow = asyncHandler(async (req, res) => {
-    const { name, description, folderId, isActive, status, lifecycleStatus, icon, iconColor, iconBg, nodes = [], edges = [], source = 'system', summary = 'Initial automation draft' } = req.body;
+    const { name, description, isActive, status, lifecycleStatus, icon, iconColor, iconBg, nodes = [], edges = [], source = 'system', summary = 'Initial automation draft' } = req.body;
     const validationResponse = workflowValidationResponse(res, { nodes, edges, isActive });
     if (validationResponse) return validationResponse;
     const workflow = await Workflow.create({
-        name, description, folderId, isActive, status: status || lifecycleStatus || 'Draft', icon, iconColor, iconBg, nodes, edges, revision: 1,
+        name, description, isActive, status: status || lifecycleStatus || 'Draft', icon, iconColor, iconBg, nodes, edges, revision: 1,
         userId: req.user.id
     });
     const initialVersion = await WorkflowVersion.create({ workflowId: workflow.id, versionNumber: 1, baseRevisionId: null, nodes, edges, source, summary });
@@ -67,7 +67,7 @@ export const createWorkflow = asyncHandler(async (req, res) => {
 
 export const updateWorkflow = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { name, description, folderId, isActive, status, lifecycleStatus, icon, iconColor, iconBg, nodes, edges, expectedRevision, source = 'visual', summary } = req.body;
+    const { name, description, isActive, status, lifecycleStatus, icon, iconColor, iconBg, nodes, edges, expectedRevision, source = 'visual', summary } = req.body;
     
     let workflow = await Workflow.findOne({ where: { id, userId: req.user.id } });
     if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
@@ -95,7 +95,6 @@ export const updateWorkflow = asyncHandler(async (req, res) => {
     await workflow.update({
         ...(name !== undefined ? { name } : {}),
         ...(description !== undefined ? { description } : {}),
-        ...(folderId !== undefined ? { folderId } : {}),
         ...(isActive !== undefined ? { isActive } : {}),
         ...(status !== undefined || lifecycleStatus !== undefined ? { status: status || lifecycleStatus } : {}),
         ...(icon !== undefined ? { icon } : {}),

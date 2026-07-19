@@ -6,7 +6,6 @@ import { matchesDatabaseSubscription } from './triggerContracts.js';
 const WATCHED_TABLES = [
     ['forms', 'forms'],
     ['automations', 'automations'],
-    ['folders', 'folders'],
     ['automation_runs', 'automationRuns']
 ];
 

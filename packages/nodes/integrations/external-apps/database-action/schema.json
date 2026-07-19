@@ -14,7 +14,6 @@
       "options": [
         { "label": "Forms", "value": "forms" },
         { "label": "Workflows", "value": "workflows" },
-        { "label": "Folders", "value": "folders" },
         { "label": "Execution Logs", "value": "executionLogs" }
       ],
       "defaultValue": "forms"

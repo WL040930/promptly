@@ -1,4 +1,4 @@
-import { Form, Workflow, Folder, ExecutionLog } from '../../../../cli/models/index.js';
+import { Form, Workflow, ExecutionLog } from '../../../../cli/models/index.js';
 
 const RESOURCE_DEFINITIONS = Object.freeze({
     forms: {
@@ -10,15 +10,8 @@ const RESOURCE_DEFINITIONS = Object.freeze({
     },
     workflows: {
         model: Workflow,
-        filters: new Set(['id', 'name', 'status', 'folderId']),
+        filters: new Set(['id', 'name', 'status']),
         writable: new Set(['name', 'status', 'icon', 'iconColor', 'iconBg', 'nodes', 'edges']),
-        orderFields: new Set(['createdAt', 'updatedAt', 'id']),
-        defaultOrder: 'updatedAt'
-    },
-    folders: {
-        model: Folder,
-        filters: new Set(['id', 'name', 'parentId']),
-        writable: new Set(['name', 'parentId']),
         orderFields: new Set(['createdAt', 'updatedAt', 'id']),
         defaultOrder: 'updatedAt'
     },
@@ -81,4 +74,3 @@ export const buildOrder = ({ definition, orderBy, orderDirection }) => {
 export const requireRecordFilter = filters => {
     if (!filters.id) throw new Error('Update and delete actions require an exact "id" filter.');
 };
-

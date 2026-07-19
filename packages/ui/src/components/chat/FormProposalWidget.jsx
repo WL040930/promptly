@@ -25,6 +25,10 @@ export default function FormProposalWidget({
     const isStale = status === 'stale' || status === 'Superseded' || status === 'superseded';
     const isUnverified = proposal?.verification?.status === 'unverified';
     const verificationSkippedDueToBudget = proposal?.verification?.skippedReason === 'AI_CALL_BUDGET_EXCEEDED';
+    const verificationWasRejected = proposal?.verification?.skippedReason === 'VERIFICATION_REJECTED';
+    const verificationIssues = (proposal?.verification?.issues || [])
+        .map(issue => issue?.message)
+        .filter(Boolean);
 
     // Track which patches are checked by the user
     const [selectedPatches, setSelectedPatches] = useState({});
@@ -177,7 +181,14 @@ export default function FormProposalWidget({
 
             {isUnverified && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
-                    <span className="font-semibold">Review required:</span> local form validation passed, but final AI verification was unavailable{verificationSkippedDueToBudget ? ' because the request limit was reached' : ' after the verifier retry'}.
+                    {verificationWasRejected ? (
+                        <>
+                            <span className="font-semibold">Review required:</span> the latest locally valid proposal is available, but the verifier still found an unresolved requirement.
+                            {verificationIssues.length > 0 && <ul className="mt-1 list-disc pl-4">{verificationIssues.map((message, index) => <li key={`${message}-${index}`}>{message}</li>)}</ul>}
+                        </>
+                    ) : (
+                        <><span className="font-semibold">Review required:</span> local form validation passed, but final AI verification was unavailable{verificationSkippedDueToBudget ? ' because the request limit was reached' : ' after the verifier retry'}.</>
+                    )}
                 </div>
             )}
 

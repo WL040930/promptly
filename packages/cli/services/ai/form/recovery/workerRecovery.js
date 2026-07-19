@@ -127,6 +127,7 @@ export const recoverWorkerProposal = async ({
     let totalTokenUsage = tokenUsage;
     let failure = null;
     let result = null;
+    let appliedProposal = null;
 
     for (let attempt = 0; attempt < MAX_FORM_REPAIR_LOOPS; attempt += 1) {
         let workerCall;
@@ -181,7 +182,6 @@ export const recoverWorkerProposal = async ({
         if (onProgress) onProgress({ status: 'checking', message: 'Checking generated form...' });
         const memoryPatch = createMemoryPatch(schema, plannerResult);
         const patches = memoryPatch ? [memoryPatch, ...(result.patches || [])] : (result.patches || []);
-        let appliedProposal;
         try {
             appliedProposal = applyFormPatches({ currentSchema: schema, patches });
         } catch (error) {
@@ -264,6 +264,15 @@ export const recoverWorkerProposal = async ({
             kind: 'verification_repair',
             issues: verification.issues,
             rawText: JSON.stringify(result)
+        };
+    }
+
+    if (failure?.stage === 'verifier' && appliedProposal) {
+        return {
+            result,
+            appliedProposal,
+            verification: createUnverifiedVerification(budget, 'VERIFICATION_REJECTED', failure.issues),
+            tokenUsage: totalTokenUsage
         };
     }
 

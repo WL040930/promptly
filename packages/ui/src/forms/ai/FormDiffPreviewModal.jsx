@@ -126,8 +126,17 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
 
                         {proposal.verification?.status === 'unverified' && (
                             <div className="mb-8 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900">
-                                <div className="mb-1 text-xs font-bold uppercase tracking-wider text-amber-700">Verification skipped</div>
-                                This proposal passed local form validation, but final AI verification was unavailable{proposal.verification.skippedReason === 'AI_CALL_BUDGET_EXCEEDED' ? ' because the request limit was reached' : ' after the verifier retry'}. Review the changes carefully before accepting them.
+                                <div className="mb-1 text-xs font-bold uppercase tracking-wider text-amber-700">
+                                    {proposal.verification.skippedReason === 'VERIFICATION_REJECTED' ? 'Review required' : 'Verification skipped'}
+                                </div>
+                                {proposal.verification.skippedReason === 'VERIFICATION_REJECTED' ? (
+                                    <>
+                                        The latest locally valid proposal is available, but the verifier still found an unresolved requirement. Review the changes carefully before accepting them.
+                                        {proposal.verification.issues?.length > 0 && <ul className="mt-2 list-disc pl-5">{proposal.verification.issues.map((issue, index) => <li key={`${issue.message}-${index}`}>{issue.message}</li>)}</ul>}
+                                    </>
+                                ) : (
+                                    <>This proposal passed local form validation, but final AI verification was unavailable{proposal.verification.skippedReason === 'AI_CALL_BUDGET_EXCEEDED' ? ' because the request limit was reached' : ' after the verifier retry'}. Review the changes carefully before accepting them.</>
+                                )}
                             </div>
                         )}
                         

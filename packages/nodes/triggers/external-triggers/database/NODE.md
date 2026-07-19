@@ -14,7 +14,7 @@ ui:
 # Database Event Node
 
 ## When to use this node
-Trigger when a Promptly-owned form, workflow, folder, or execution log is created, updated, or deleted.
+Trigger when a Promptly-owned form, workflow, or execution log is created, updated, or deleted.
 
 ## Configuration Schema
 The LLM must configure this node with the following JSON schema:

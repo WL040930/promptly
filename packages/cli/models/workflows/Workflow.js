@@ -68,7 +68,6 @@ const Workflow = sequelize.define(
             { fields: ['userId', 'isActive'], name: 'workflows_user_active' },
             { fields: ['userId', 'status'], name: 'workflows_user_status' },
             { fields: ['isActive'], name: 'workflows_active' },
-            { fields: ['folderId'], name: 'workflows_folder' }
         ]
     }
 );

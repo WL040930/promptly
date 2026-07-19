@@ -5,7 +5,7 @@
       "type": "select",
       "label": "Promptly Resource",
       "required": true,
-      "options": ["forms", "workflows", "folders", "executionLogs"],
+      "options": ["forms", "workflows", "executionLogs"],
       "defaultValue": "forms"
     },
     {

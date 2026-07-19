@@ -1,4 +1,4 @@
-import { User, Folder, Connection, OnboardingProgress } from './core/index.js';
+import { User, Connection, OnboardingProgress } from './core/index.js';
 import { ChatSession, ChatMessage } from './chat/index.js';
 import { AgentRun } from './agent/index.js';
 import { Form, FormResponse, FormChatMessage, FormAIState } from './forms/index.js';
@@ -6,23 +6,14 @@ import { Workflow, WorkflowVersion } from './workflows/index.js';
 import { ExecutionLog, EmailDelivery } from './execution/index.js';
 import { TriggerSubscription, TriggerEvent, DatabaseChangeEvent } from './triggers/index.js';
 
-// --- Folder Associations ---
-Folder.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-User.hasMany(Folder, { foreignKey: 'userId', as: 'folders' });
 Connection.belongsTo(User, { foreignKey: 'userId', as: 'user', onDelete: 'CASCADE' });
 User.hasMany(Connection, { foreignKey: 'userId', as: 'connections', onDelete: 'CASCADE' });
 OnboardingProgress.belongsTo(User, { foreignKey: 'userId', as: 'user', onDelete: 'CASCADE' });
 User.hasOne(OnboardingProgress, { foreignKey: 'userId', as: 'onboarding', onDelete: 'CASCADE' });
 
-Folder.belongsTo(Folder, { foreignKey: 'parentId', as: 'parent' });
-Folder.hasMany(Folder, { foreignKey: 'parentId', as: 'subfolders' });
-
 // --- Workflow Associations ---
 Workflow.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 User.hasMany(Workflow, { foreignKey: 'userId', as: 'workflows' });
-
-Workflow.belongsTo(Folder, { foreignKey: 'folderId', as: 'folder' });
-Folder.hasMany(Workflow, { foreignKey: 'folderId', as: 'workflows' });
 
 Workflow.hasMany(WorkflowVersion, { foreignKey: 'workflowId', as: 'versions', onDelete: 'CASCADE' });
 WorkflowVersion.belongsTo(Workflow, { foreignKey: 'workflowId', as: 'workflow' });
@@ -91,7 +82,6 @@ User.hasMany(AgentRun, { foreignKey: 'userId', as: 'agentRuns', onDelete: 'CASCA
 
 export {
     User,
-    Folder,
     Connection,
     OnboardingProgress,
     Workflow,

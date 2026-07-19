@@ -40,9 +40,9 @@ export const createProviderUnavailableError = (label, cause) => createAIOutputEr
 
 export const createRequestBudget = () => ({ calls: 0, maxCalls: MAX_FORM_AI_CALLS });
 
-export const createUnverifiedVerification = (budget, reason = 'AI_CALL_BUDGET_EXCEEDED') => ({
+export const createUnverifiedVerification = (budget, reason = 'AI_CALL_BUDGET_EXCEEDED', issues = null) => ({
     status: 'unverified',
-    issues: [{
+    issues: Array.isArray(issues) && issues.length > 0 ? issues : [{
         code: 'VERIFICATION_SKIPPED',
         path: 'verifier',
         message: reason === 'AI_CALL_BUDGET_EXCEEDED'

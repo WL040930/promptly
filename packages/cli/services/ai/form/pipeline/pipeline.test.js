@@ -695,6 +695,52 @@ test('returns an unverified proposal when verifier repair returns no JSON', asyn
     assert.equal(result.verification.skippedReason, 'VERIFIER_RESPONSE_INVALID');
 });
 
+test('returns the latest locally valid proposal when semantic verification cannot pass', async () => {
+    const { generateFormFromPrompt } = await import('./pipeline.js');
+    const verificationIssue = {
+        requirementId: 'req_4',
+        message: 'The Number of Attendees field is required but does not specify the required minimum value of 1.'
+    };
+    const outputs = [
+        {
+            type: 'plan_complete',
+            summary: 'Build the event registration form.',
+            requirements: [{ id: 'req_4', description: 'Number of Attendees must be required with a minimum value of 1.' }],
+            memoryUpdate: { action: 'none' }
+        },
+        ...Array.from({ length: 5 }, () => [
+            {
+                patches: [{
+                    op: 'add',
+                    field: { id: 'attendees', type: 'number', label: 'Number of Attendees', required: true, min: 0 }
+                }]
+            },
+            { status: 'repair', issues: [verificationIssue] }
+        ]).flat()
+    ];
+    const provider = {
+        async generateContent() {
+            const output = outputs.shift();
+            assert.ok(output, 'The fake provider received an unexpected request.');
+            return { text: JSON.stringify(output) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Create an event registration form with the number of attendees required to be at least 1.',
+        { id: 'form_1', title: 'Event Registration', description: '', settings: {}, fields: [] },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.schema.fields[0].label, 'Number of Attendees');
+    assert.equal(result.schema.fields[0].min, 0);
+    assert.equal(result.verification.status, 'unverified');
+    assert.deepEqual(result.verification.issues, [verificationIssue]);
+});
+
 test('allows the final verifier in the third bounded repair loop', async () => {
     const { generateFormFromPrompt } = await import('./pipeline.js');
     const outputs = [
