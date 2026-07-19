@@ -426,6 +426,7 @@ export default function ChatTab({ conversationId = null, automationId = null, st
                     ]}
                     bottomNotice="AI can make mistakes. Please verify."
                     innerClassName="max-w-4xl mx-auto w-full"
+                    composerClassName="w-full max-w-none"
                 />
             </div>
             

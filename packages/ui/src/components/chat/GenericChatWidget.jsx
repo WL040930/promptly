@@ -22,6 +22,7 @@ export default function GenericChatWidget({
     suggestions = [],
     bottomNotice = "AI can make mistakes. Please verify.",
     innerClassName = "w-full",
+    composerClassName = innerClassName,
     inputAccessory = null
 }) {
     const scrollContainerRef = useRef(null);
@@ -146,7 +147,7 @@ export default function GenericChatWidget({
 
             {/* Input Box */}
             <div className="p-4 bg-white/80 backdrop-blur-md border-t border-gray-200/60 shrink-0 z-10 relative">
-                <div className={innerClassName}>
+                <div className={composerClassName}>
                     <form
                         onSubmit={(e) => { e.preventDefault(); handleSend(input); }}
                         className="relative w-full overflow-hidden rounded-[24px] border border-slate-300/80 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)] transition focus-within:border-slate-400 focus-within:shadow-[0_3px_18px_rgba(15,23,42,0.1)]"

@@ -6,6 +6,7 @@ import {
     AlertTriangle,
     Bot,
     CheckCircle2,
+    ChevronDown,
     ChevronRight,
     Clock3,
     Copy,
@@ -286,10 +287,11 @@ export default function AutomationCenter() {
     const [healthFilter, setHealthFilter] = useState('All');
     const [selectedWorkflowId, setSelectedWorkflowId] = useState(null);
     const [isClosingWorkflow, setIsClosingWorkflow] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [workflowToDelete, setWorkflowToDelete] = useState(null);
     const [runWorkflow, setRunWorkflow] = useState(null);
 
-    const { data: workflows = [], isPending, isError, refetch } = useWorkflows();
+    const { data: workflows = [], isPending, isFetching, isError, refetch } = useWorkflows();
     const { data: metrics } = useDashboardMetrics();
     const { data: runWorkflowDetails } = useWorkflow(runWorkflow?.id);
     const { data: logsResponse } = useExecutionLogs({ page: 1, pageSize: 100 });
@@ -405,6 +407,13 @@ export default function AutomationCenter() {
         setSelectedWorkflowId(null);
         setIsClosingWorkflow(false);
     };
+    const refreshAutomationList = () => {
+        setIsRefreshing(true);
+        Promise.all([
+            refetch(),
+            new Promise(resolve => window.setTimeout(resolve, 350))
+        ]).finally(() => setIsRefreshing(false));
+    };
 
     return (
         <>
@@ -425,8 +434,8 @@ export default function AutomationCenter() {
 
                         <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-                                <div className="relative min-w-0 flex-1"><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search automations…" className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-800 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10" /></div>
-                                <div className="flex flex-wrap items-center gap-2"><Filter size={15} className="text-slate-400" /><FilterSelect value={statusFilter} onChange={setStatusFilter} options={STATUS_FILTERS} /><FilterSelect value={healthFilter} onChange={setHealthFilter} options={HEALTH_FILTERS} /><button type="button" onClick={() => refetch()} className="rounded-xl border border-slate-200 p-2.5 text-slate-500 hover:bg-slate-50" title="Refresh automations"><RefreshCw size={16} /></button></div>
+                                <div className="relative min-w-0 flex-1"><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search automations…" className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-slate-800 outline-none transition-colors focus:border-indigo-400" /></div>
+                                <div className="flex flex-wrap items-center gap-2"><Filter size={15} className="text-slate-400" /><FilterSelect value={statusFilter} onChange={setStatusFilter} options={STATUS_FILTERS} /><FilterSelect value={healthFilter} onChange={setHealthFilter} options={HEALTH_FILTERS} /><button type="button" onClick={refreshAutomationList} disabled={isRefreshing || isFetching} aria-label="Refresh automations" aria-busy={isRefreshing || isFetching} className="group inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition duration-200 hover:bg-slate-50 hover:text-indigo-600 active:scale-95 disabled:cursor-wait disabled:opacity-70" title="Refresh automations"><RefreshCw size={16} className={`transition-transform duration-500 ${isRefreshing || isFetching ? 'animate-spin' : 'group-hover:rotate-180'}`} /></button></div>
                             </div>
                         </section>
 
@@ -444,7 +453,13 @@ export default function AutomationCenter() {
 }
 
 function FilterSelect({ value, onChange, options }) {
-    return <select value={value} onChange={event => onChange(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-600 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10">{options.map(option => <option key={option}>{option}</option>)}</select>;
+    const widthClass = options.includes('Needs attention') ? 'w-[150px]' : 'w-[112px]';
+    return <div className={`relative ${widthClass}`}>
+        <select value={value} onChange={event => onChange(event.target.value)} className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3 pr-9 text-sm font-medium leading-5 text-slate-700 outline-none transition-colors focus:border-indigo-400">
+            {options.map(option => <option key={option}>{option}</option>)}
+        </select>
+        <ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
+    </div>;
 }
 
 function WorkflowTable({ rows, onSelect, onRun, onOpenBuilder, onAskAI, onDelete, onToggle, onDuplicate }) {

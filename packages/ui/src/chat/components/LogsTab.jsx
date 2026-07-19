@@ -110,12 +110,13 @@ const LogsTab = ({ workflowId: initialWorkflowId = '' } = {}) => {
     }
 
     return (
-        <div ref={container} className="tab-content flex-1 flex min-h-0 overflow-hidden bg-slate-50/50 font-sans h-full">
-            <div className="flex-1 min-w-0 p-6 md:p-8 overflow-y-auto">
-                <div className="max-w-6xl mx-auto w-full flex flex-col gap-6">
+        <div ref={container} className="tab-content flex flex-1 min-h-0 h-full overflow-hidden bg-slate-50/80 font-sans">
+            <div className="flex-1 min-w-0 overflow-y-auto p-5 md:p-8">
+                <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
                     <div>
-                        <h2 className="text-2xl font-semibold text-slate-900 tracking-tight">Automation runs</h2>
-                        <p className="text-sm text-slate-500 mt-1">Inspect automation runs, outcomes, and execution details.</p>
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-500">Run history</p>
+                        <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">Automation runs</h1>
+                        <p className="mt-2 text-sm text-slate-500">Inspect automation runs, outcomes, and execution details.</p>
                     </div>
 
                     <LogFilters
