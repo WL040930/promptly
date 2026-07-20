@@ -7,7 +7,7 @@ const AddFieldPopover = ({
     showAddMenu, 
     setShowAddMenu, 
     handleAddFieldOfType, 
-    accentColor = '#4f46e5' 
+    accentColor = '#5b4ee8'
 }) => {
     const addMenuRef = useRef(null);
     useClickOutside(addMenuRef, showAddMenu, () => setShowAddMenu(false));
@@ -17,6 +17,9 @@ const AddFieldPopover = ({
             <div className="flex gap-3" ref={addMenuRef}>
                 <button
                     onClick={() => setShowAddMenu(!showAddMenu)}
+                    aria-expanded={showAddMenu}
+                    aria-haspopup="menu"
+                    aria-controls="form-field-type-menu"
                     className="flex items-center gap-2.5 px-6 py-3.5 bg-white border border-gray-200 hover:border-gray-300 hover:shadow-lg rounded-full text-[15px] font-bold text-gray-700 transition-all duration-300 transform hover:-translate-y-1 group"
                 >
                     <div className="w-6 h-6 rounded-full flex items-center justify-center transition-colors" style={{ backgroundColor: accentColor + '20', color: accentColor }}>
@@ -29,7 +32,7 @@ const AddFieldPopover = ({
 
                 {/* Add Question Type Picker Popover */}
                 {showAddMenu && (
-                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-4 w-80 bg-white/95 backdrop-blur-xl border border-gray-200 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.1)] z-50 overflow-hidden animate-slide-up-fade origin-bottom">
+                    <div id="form-field-type-menu" role="menu" className="absolute left-1/2 -translate-x-1/2 bottom-full mb-4 w-[min(20rem,calc(100vw-2rem))] bg-white/95 backdrop-blur-xl border border-gray-200 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.1)] z-50 overflow-hidden animate-slide-up-fade origin-bottom">
                         <div className="p-4 border-b border-gray-100/50 bg-gray-50/50 flex justify-between items-center">
                             <span className="text-[13px] font-bold text-gray-800">Add new block</span>
                             <button onClick={() => setShowAddMenu(false)} className="text-gray-400 hover:text-gray-600 p-1">
@@ -51,6 +54,7 @@ const AddFieldPopover = ({
                                                 <button
                                                     key={typeKey}
                                                     onClick={() => handleAddFieldOfType(typeKey)}
+                                                    role="menuitem"
                                                     className="flex flex-col items-center gap-2 p-3 rounded-2xl text-center transition-all hover:bg-gray-50 hover:scale-105"
                                                 >
                                                     <div className="w-10 h-10 rounded-xl bg-white shadow-sm border border-gray-100 flex items-center justify-center text-gray-600">

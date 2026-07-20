@@ -4,11 +4,11 @@ import { useGSAP } from '@gsap/react';
 import gsap from 'gsap';
 
 const variants = {
-    primary: 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm border border-transparent',
-    secondary: 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 shadow-sm',
+    primary: 'bg-[#5b4ee8] text-white hover:bg-[#4e42d0] shadow-[0_8px_18px_rgba(91,78,232,0.2)] border border-transparent',
+    secondary: 'bg-[#f1efff] text-[#5143cc] border border-[#d9d5ff] hover:bg-[#e8e4ff] shadow-sm',
     danger: 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 shadow-sm',
-    dangerSolid: 'bg-red-600 text-white hover:bg-red-700 shadow-sm border border-transparent',
-    outline: 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 shadow-sm',
+    dangerSolid: 'bg-[#d9485f] text-white hover:bg-[#bd354b] shadow-[0_8px_18px_rgba(217,72,95,0.18)] border border-transparent',
+    outline: 'bg-white text-slate-700 border border-slate-200 hover:border-[#c9c4ff] hover:bg-[#fafaff] shadow-sm',
     ghost: 'bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900',
     soft: 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-transparent',
 };
@@ -52,6 +52,7 @@ const Button = forwardRef(({
 
     useGSAP(() => {
         if (!internalRef.current) return;
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
         const btn = internalRef.current;
         
         const handleMouseDown = () => {
@@ -82,7 +83,7 @@ const Button = forwardRef(({
         };
     }, [disabled, isLoading]);
 
-    const baseStyles = 'font-bold rounded-lg flex items-center justify-center gap-2 transition-colors focus:outline-none select-none';
+    const baseStyles = 'font-bold rounded-xl flex items-center justify-center gap-2 transition-[background-color,border-color,color,box-shadow] focus:outline-none select-none';
     const variantStyles = variants[variant] || variants.primary;
     const sizeStyles = sizes[size] || sizes.md;
     

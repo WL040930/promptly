@@ -10,7 +10,14 @@ const errorHandler = (err, req, res, next) => {
     }
 
     if (status >= 500) {
-        console.error(err.stack);
+        console.error('Unhandled request error', {
+            name: err.name,
+            message: err.message || err.original?.message,
+            code: err.code || err.original?.code,
+            method: req.method,
+            path: req.originalUrl,
+            stack: err.stack
+        });
     }
 
     const payload = { error: message };

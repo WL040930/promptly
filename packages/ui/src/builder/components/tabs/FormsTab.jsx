@@ -106,7 +106,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
     }, { scope: container });
 
     const activeForm = forms.find(f => f.id === activeFormId) || forms[0];
-    const accentColor = activeForm?.settings?.accentColor || '#4f46e5';
+    const accentColor = activeForm?.settings?.accentColor || '#5b4ee8';
 
     // ── Form CRUD ──────────────────────────────────────────────────────────────
 
@@ -119,7 +119,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
         const newFormPayload = {
             title: 'Untitled Form',
             description: '',
-            settings: { accentColor: '#4f46e5', acceptingResponses: true },
+            settings: { accentColor: '#5b4ee8', acceptingResponses: true },
             fields: [createField('text')],
         };
         createFormMutation.mutate(newFormPayload, {
@@ -249,7 +249,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
     ];
 
     return (
-        <div ref={container} className="tab-content flex-1 flex overflow-hidden bg-[#f4f7f9] font-sans h-full relative">
+        <div ref={container} className="tab-content surface-grid relative flex h-full flex-1 overflow-hidden font-sans">
 
             {/* Mobile Overlay */}
             {isSidebarOpen && (
@@ -260,10 +260,10 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
             )}
 
             {/* ═══ LEFT SIDEBAR ═══ */}
-            <aside className={`w-[280px] border-r border-gray-200/60 bg-white/95 backdrop-blur-md flex flex-col shrink-0 z-30 absolute md:relative h-full transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}`}>
+            <aside className={`z-30 flex h-full w-[280px] shrink-0 flex-col border-r border-slate-200/80 bg-white/95 backdrop-blur-md transition-transform duration-300 md:relative ${isSidebarOpen ? 'absolute translate-x-0 shadow-2xl' : 'absolute -translate-x-full md:relative md:translate-x-0'}`}>
                 {/* Sidebar Header */}
                 <div className="p-4 flex items-center justify-between shrink-0">
-                    <h3 className="font-extrabold text-gray-900 text-[15px] tracking-tight pl-1">Forms</h3>
+                    <h3 className="pl-1 font-display text-[15px] font-bold tracking-tight text-[#171827]">Forms</h3>
                     <div className="flex items-center gap-1">
                         <Button
                             variant="ghost"
@@ -273,6 +273,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                             isLoading={isCreatingForm}
                             className="rounded-xl border border-transparent hover:border-gray-100"
                             title="Create new form"
+                            aria-label="Create new form"
                             iconLeft={!isCreatingForm && (
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                                     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -285,6 +286,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                             onClick={() => setIsSidebarOpen(false)}
                             className="md:hidden rounded-xl border border-transparent hover:border-gray-100 text-gray-500"
                             title="Close Sidebar"
+                            aria-label="Close forms sidebar"
                             iconLeft={
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                                     <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -302,6 +304,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                             value={sidebarSearch}
                             onChange={e => setSidebarSearch(e.target.value)}
                             placeholder="Search forms..."
+                            aria-label="Search forms"
                             className="w-full bg-white/50 backdrop-blur-sm border border-gray-200/80 hover:border-gray-300 rounded-xl pl-9 pr-3 py-2 text-[13px] font-medium text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white transition-all shadow-inner"
                         />
                         <svg className="absolute left-3 top-2.5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -314,16 +317,27 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                 <div className="flex-1 overflow-y-auto px-3 pb-4 flex flex-col gap-1.5">
                     {filteredForms.map(form => {
                         const isActive = activeForm.id === form.id;
-                        const formAccent = form.settings?.accentColor || '#4f46e5';
+                        const formAccent = form.settings?.accentColor || '#5b4ee8';
                         const timeAgo = formatCompactRelativeTime(form.updatedAt);
                         
                         return (
                             <div
                                 key={form.id}
                                 onClick={() => { setActiveFormId(form.id); setIsPreviewMode(false); setActiveSubTab('questions'); setIsSidebarOpen(false); }}
-                                className={`flex items-start gap-3 px-3.5 py-3.5 rounded-xl cursor-pointer transition-all duration-300 group ${
+                                onKeyDown={(event) => {
+                                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                                    event.preventDefault();
+                                    setActiveFormId(form.id);
+                                    setIsPreviewMode(false);
+                                    setActiveSubTab('questions');
+                                    setIsSidebarOpen(false);
+                                }}
+                                role="button"
+                                tabIndex={0}
+                                aria-current={isActive ? 'page' : undefined}
+                                className={`group flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-3.5 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5b4ee8]/40 ${
                                     isActive
-                                        ? 'bg-white shadow-md shadow-gray-200/40 border border-gray-100 scale-[1.02]'
+                                        ? 'scale-[1.02] border-gray-100 bg-white shadow-md shadow-gray-200/40'
                                         : 'text-gray-600 hover:bg-white/50 border border-transparent'
                                 }`}
                             >
@@ -343,11 +357,12 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                                 </div>
                                 
                                 {/* Actions */}
-                                <div className={`flex items-center shrink-0 -mt-0.5 -mr-1 transition-opacity duration-300 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                                <div className={`flex items-center shrink-0 -mt-0.5 -mr-1 transition-opacity duration-300 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`}>
                                     <button
                                         onClick={(e) => { e.stopPropagation(); handleDuplicateForm(form.id); }}
                                         className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
                                         title="Duplicate"
+                                        aria-label={`Duplicate ${form.title}`}
                                     >
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
@@ -358,6 +373,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                                         onClick={(e) => handleDeleteForm(e, form.id)}
                                         className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                         title="Delete"
+                                        aria-label={`Delete ${form.title}`}
                                     >
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                                             <polyline points="3 6 5 6 21 6" />
@@ -415,7 +431,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                         <div className="h-14 md:h-16 bg-white/90 backdrop-blur-md border-b border-gray-200/60 px-3 md:px-6 flex items-center justify-between shrink-0 z-10 shadow-sm transition-all">
                             {/* Left: Form name */}
                             <div className="flex items-center gap-2 md:gap-4 min-w-0 pr-2 md:pr-4 flex-1">
-                                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden text-slate-500 hover:text-slate-800 p-1 shrink-0 rounded-lg hover:bg-slate-100 transition-colors">
+                                <button onClick={() => setIsSidebarOpen(true)} aria-label="Open forms sidebar" className="md:hidden text-slate-500 hover:text-slate-800 p-1 shrink-0 rounded-lg hover:bg-slate-100 transition-colors">
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
                                 </button>
                                 <input
@@ -430,12 +446,14 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
 
                             {/* Center: Sub-tabs (Desktop) */}
                             <div className="hidden md:flex flex-none items-center justify-center">
-                                <div className="flex items-center gap-1 p-1 bg-gray-100/80 rounded-xl border border-gray-200/50">
+                                <div role="tablist" aria-label="Form workspace sections" className="flex items-center gap-1 p-1 bg-gray-100/80 rounded-xl border border-gray-200/50">
                                     {subTabs.map(tab => {
                                         const isActive = activeSubTab === tab.id && !isPreviewMode;
                                         return (
                                             <button
                                                 key={tab.id}
+                                                role="tab"
+                                                aria-selected={isActive}
                                                 onClick={() => { setActiveSubTab(tab.id); setIsPreviewMode(false); }}
                                                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-bold whitespace-nowrap transition-all duration-300 ${
                                                     isActive
@@ -478,12 +496,14 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                         </div>
 
                         {/* Sub-tabs (Mobile) */}
-                        <div className="md:hidden flex items-center overflow-x-auto gap-2 px-3 py-2 bg-white/80 backdrop-blur-md border-b border-gray-200/60 shrink-0 shadow-sm z-10 no-scrollbar">
+                        <div role="tablist" aria-label="Form workspace sections" className="md:hidden flex items-center overflow-x-auto gap-2 px-3 py-2 bg-white/80 backdrop-blur-md border-b border-gray-200/60 shrink-0 shadow-sm z-10 no-scrollbar">
                             {subTabs.map(tab => {
                                 const isActive = activeSubTab === tab.id && !isPreviewMode;
                                 return (
                                     <button
                                         key={tab.id}
+                                        role="tab"
+                                        aria-selected={isActive}
                                         onClick={() => { setActiveSubTab(tab.id); setIsPreviewMode(false); }}
                                         className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-bold whitespace-nowrap transition-all duration-300 ${
                                             isActive

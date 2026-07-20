@@ -1,13 +1,13 @@
 
 function Footer({ onSecurity, onHome }) {
   return (
-    <footer className="bg-slate-900 py-16 text-slate-400">
+    <footer className="bg-[#10101a] py-16 text-slate-400">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
           <div className="col-span-1 md:col-span-2">
             <div className="flex items-center gap-2 mb-6">
               <img src="/logo.png" alt="Promptly Logo" className="w-8 h-8 object-contain rounded-lg overflow-hidden" />
-              <span className="text-2xl font-bold text-white">Promptly</span>
+              <span className="font-display text-2xl font-bold text-white">Promptly<span className="text-[#c8f17b]">.</span></span>
             </div>
             <p className="max-w-sm text-slate-500 mb-8">
               Enhancing the workflow efficiency of administrative personnel through advanced conversational Artificial Intelligence agents.

@@ -118,16 +118,17 @@ function Features() {
   }, { scope: container })
 
   return (
-    <section ref={container} id="features" className="py-24 bg-white relative scroll-mt-24">
+    <section ref={container} id="features" className="relative scroll-mt-24 bg-white py-24">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="features-heading text-center mb-16">
-          <h2 className="text-3xl md:text-5xl font-bold text-slate-900 mb-6">Built for Modern Administration</h2>
-          <p className="text-xl text-slate-600 max-w-3xl mx-auto">
+        <div className="features-heading mb-16 max-w-3xl">
+          <p className="landing-kicker mb-6">The useful parts, in one place</p>
+          <h2 className="landing-section-title mb-6">The workbench for everyday operations.</h2>
+          <p className="text-lg leading-8 text-slate-600">
             Traditional RPA is brittle and hard to set up. Promptly uses Large Language Models to create flexible, resilient automations that anyone can manage.
           </p>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           {FEATURES.map((feature) => {
             const colorClass = COLOR_CLASS[feature.color] || 'text-indigo-600'
             return (
@@ -135,8 +136,8 @@ function Features() {
                 key={feature.id}
                 onMouseEnter={() => setActiveId(feature.id)}
                 onMouseLeave={() => setActiveId(null)}
-                className={`feature-card group p-8 rounded-3xl border transition-all duration-300 h-full flex flex-col ${
-                  activeId === feature.id ? 'bg-slate-900 border-slate-900 shadow-2xl scale-105' : 'bg-slate-50 border-slate-100'
+                className={`feature-card group flex h-full flex-col rounded-[1.5rem] border p-7 transition-all duration-300 ${
+                  activeId === feature.id ? 'scale-[1.02] border-[#171827] bg-[#171827] shadow-2xl' : 'border-slate-200 bg-[#f8f8fc] hover:-translate-y-1 hover:border-[#c9c4ff] hover:bg-white'
                 }`}
               >
                 <div
@@ -148,7 +149,7 @@ function Features() {
                 </div>
                 
                 <h3
-                  className={`text-2xl font-bold mb-4 transition-colors duration-300 ${
+                  className={`font-display mb-4 text-xl font-bold tracking-tight transition-colors duration-300 ${
                     activeId === feature.id ? 'text-white' : 'text-slate-900'
                   }`}
                 >
@@ -156,7 +157,7 @@ function Features() {
                 </h3>
                 
                 <p
-                  className={`text-lg leading-relaxed mb-6 transition-colors duration-300 ${
+                  className={`mb-6 text-base leading-7 transition-colors duration-300 ${
                     activeId === feature.id ? 'text-slate-300' : 'text-slate-600'
                   }`}
                 >
@@ -173,16 +174,16 @@ function Features() {
           })}
         </div>
 
-        <div className="mt-20 p-8 rounded-3xl bg-gradient-to-r from-indigo-600 to-indigo-700 text-white flex flex-col md:flex-row items-center justify-between shadow-xl">
+        <div className="mt-20 flex flex-col items-start justify-between rounded-[1.75rem] bg-[#171827] p-8 text-white shadow-xl shadow-[#171827]/10 md:flex-row md:items-center">
           <div className="mb-6 md:mb-0">
-            <h4 className="text-2xl font-bold mb-2">Want to see a specific feature in action?</h4>
-            <p className="text-indigo-100">Our live demo includes real-time workflow generation for all modules.</p>
+            <h4 className="font-display mb-2 text-2xl font-bold">Want to see it think?</h4>
+            <p className="text-slate-300">Try a real admin task in the live workspace below.</p>
           </div>
           <a
             href="#demo"
-            className="px-8 py-4 bg-white text-indigo-600 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-lg active:scale-95 whitespace-nowrap"
+            className="whitespace-nowrap rounded-xl bg-[#c8f17b] px-6 py-3.5 font-bold text-[#171827] shadow-lg transition-all hover:-translate-y-0.5 hover:bg-[#d5f89b] active:scale-95"
           >
-            Launch Sandbox
+            Open the live demo
           </a>
         </div>
       </div>

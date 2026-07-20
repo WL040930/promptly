@@ -2,7 +2,7 @@ import Skeleton from '../../../components/ui/Skeleton.jsx';
 
 export default function FormsLoadingSkeleton() {
     return (
-        <div className="tab-content flex-1 flex overflow-hidden bg-[#f4f7f9] font-sans h-full">
+        <div className="tab-content surface-grid flex h-full flex-1 overflow-hidden font-sans">
             <aside className="hidden md:flex w-[280px] border-r border-gray-200/60 bg-white/95 flex-col shrink-0">
                 <div className="p-4 flex items-center justify-between shrink-0">
                     <Skeleton className="h-5 w-20 rounded" />

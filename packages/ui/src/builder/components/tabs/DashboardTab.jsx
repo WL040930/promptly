@@ -199,12 +199,12 @@ const DashboardTab = () => {
                     : 'Ready for your first automation';
 
     return (
-        <div ref={container} className="flex min-h-0 flex-1 overflow-y-auto bg-slate-50/80 p-4 font-sans sm:p-6 lg:p-8">
+        <div ref={container} className="surface-grid flex min-h-0 flex-1 overflow-y-auto p-4 font-sans sm:p-6 lg:p-8">
             <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-                <header className="flex flex-col gap-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7 lg:flex-row lg:items-end lg:justify-between">
+                <header className="workspace-surface flex flex-col gap-5 rounded-[1.75rem] p-5 sm:p-7 lg:flex-row lg:items-end lg:justify-between">
                     <div className="min-w-0">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-500">Workspace overview</p>
-                        <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Make work move forward.</h1>
+                        <p className="eyebrow">Workspace overview</p>
+                        <h1 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Make work move forward.</h1>
                         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">See what is running, what needs attention, and where to continue building.</p>
                         <div className="mt-4 inline-flex max-w-full items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600">
                             <span className={`h-2 w-2 shrink-0 rounded-full ${summary.failures.length > 0 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
@@ -212,7 +212,7 @@ const DashboardTab = () => {
                         </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={() => navigateTo({ page: 'automation-new', method: 'ai' })} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-500/20 transition hover:-translate-y-0.5 hover:bg-indigo-700"><Sparkles size={16} />Create with AI</button>
+                        <button type="button" onClick={() => navigateTo({ page: 'automation-new', method: 'ai' })} className="inline-flex items-center gap-2 rounded-xl bg-[#5b4ee8] px-4 py-2.5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(91,78,232,0.2)] transition hover:-translate-y-0.5 hover:bg-[#4e42d0]"><Sparkles size={16} />Create with AI</button>
                         <button type="button" onClick={() => navigateTo({ page: 'automation-new', method: 'visual' })} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:-translate-y-0.5 hover:bg-slate-50"><Plus size={16} />Build manually</button>
                     </div>
                 </header>

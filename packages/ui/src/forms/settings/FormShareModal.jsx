@@ -55,7 +55,7 @@ const FormShareModal = ({ form, isOpen, onClose }) => {
 
     const formUrl = `${window.location.origin}/f/${form.id}`;
     const embedCode = `<iframe src="${formUrl}" width="100%" height="600" frameborder="0" style="border:none;border-radius:24px;"></iframe>`;
-    const accentColor = form?.settings?.accentColor || '#4f46e5';
+    const accentColor = form?.settings?.accentColor || '#5b4ee8';
 
     const handleCopy = (text) => {
         navigator.clipboard.writeText(text).then(() => {
@@ -80,6 +80,7 @@ const FormShareModal = ({ form, isOpen, onClose }) => {
                     <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">Share Form</h2>
                     <button
                         onClick={handleClose}
+                        aria-label="Close share dialog"
                         className="p-2 text-gray-400 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 rounded-full transition-colors"
                     >
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -98,6 +99,8 @@ const FormShareModal = ({ form, isOpen, onClose }) => {
                         return (
                             <button
                                 key={tab.id}
+                                role="tab"
+                                aria-selected={isActive}
                                 onClick={() => { setActiveShareTab(tab.id); setCopied(false); }}
                                 className={`flex items-center justify-center gap-2.5 pb-4 px-2 text-[15px] font-bold transition-all border-b-[3px] mr-8 ${
                                     isActive
@@ -184,6 +187,7 @@ const FormShareModal = ({ form, isOpen, onClose }) => {
                     </div>
                     <button
                         onClick={handleClose}
+                        aria-label="Close share dialog"
                         className="text-[14px] font-bold text-gray-600 hover:text-gray-900 transition-colors px-4 py-2 hover:bg-gray-200/50 rounded-xl"
                     >
                         Done

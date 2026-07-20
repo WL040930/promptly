@@ -276,17 +276,17 @@ export default function ChatTab({ conversationId = null, automationId = null, st
     };
 
     return (
-        <div ref={container} className="flex min-h-0 w-full h-full bg-[#f4f7f9] relative overflow-hidden font-sans">
+        <div ref={container} className="surface-grid relative flex h-full min-h-0 w-full overflow-hidden font-sans">
             {isSidebarOpen && (
                 <div 
                     className="md:hidden absolute inset-0 z-20 bg-slate-900/40 backdrop-blur-sm transition-opacity"
                     onClick={() => setIsSidebarOpen(false)}
                 />
             )}
-            <aside className={`w-[280px] min-h-0 border-r border-gray-200/60 bg-white/95 backdrop-blur-md flex flex-col shrink-0 z-30 absolute md:relative h-full overflow-hidden transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}`}>
+            <aside className={`z-30 flex h-full min-h-0 w-[280px] shrink-0 flex-col overflow-hidden border-r border-slate-200/80 bg-white/95 backdrop-blur-md transition-transform duration-300 md:relative ${isSidebarOpen ? 'absolute translate-x-0 shadow-2xl' : 'absolute -translate-x-full md:relative md:translate-x-0'}`}>
                 {/* Sidebar Header */}
                 <div className="p-4 flex items-center justify-between shrink-0">
-                    <h3 className="font-extrabold text-gray-900 text-[15px] tracking-tight pl-1">Conversations</h3>
+                    <h3 className="pl-1 font-display text-[15px] font-bold tracking-tight text-[#171827]">Conversations</h3>
                     <div className="flex items-center gap-1">
                         <Button
                             variant="ghost"

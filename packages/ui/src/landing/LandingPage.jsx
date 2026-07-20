@@ -9,21 +9,21 @@ import Footer from './components/Footer'
 
 function LandingPage({ onLogin, onSecurity }) {
   return (
-    <div className="min-h-screen bg-white text-slate-900">
+    <div className="min-h-screen bg-[#f8f8fc] text-[#171827]">
       <Header onLogin={onLogin} />
       <main>
         <Hero />
 
-        <div className="py-10 bg-white border-y border-slate-100">
-          <div className="max-w-5xl mx-auto px-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+        <div className="border-y border-slate-200/80 bg-white py-8">
+          <div className="mx-auto grid max-w-5xl grid-cols-1 gap-3 px-4 text-left sm:grid-cols-3">
             {[
               ['Describe', 'Start with a plain-language task'],
               ['Review', 'Approve the proposed changes'],
               ['Run', 'Inspect the result and history']
             ].map(([title, description]) => (
-              <div key={title} className="rounded-2xl bg-slate-50 border border-slate-100 px-5 py-4">
-                <div className="text-sm font-extrabold uppercase tracking-widest text-indigo-600">{title}</div>
-                <div className="mt-1 text-sm text-slate-500">{description}</div>
+              <div key={title} className="rounded-2xl border border-slate-200 bg-[#f8f8fc] px-5 py-4">
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#5b4ee8]">{title}</div>
+                <div className="mt-1 text-sm text-slate-600">{description}</div>
               </div>
             ))}
           </div>

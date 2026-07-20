@@ -21,7 +21,7 @@ const UploadedFileCard = ({ value, onClear }) => (
                 </a>
             </div>
         </div>
-        <button type="button" onClick={onClear} className="p-2 text-emerald-600 hover:bg-emerald-100 rounded-full transition-colors shrink-0">
+        <button type="button" onClick={onClear} aria-label="Remove uploaded file" className="p-2 text-emerald-600 hover:bg-emerald-100 rounded-full transition-colors shrink-0">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -29,9 +29,10 @@ const UploadedFileCard = ({ value, onClear }) => (
     </div>
 );
 
-const DropZone = ({ accept, isUploading, onChange }) => (
+const DropZone = ({ id, accept, isUploading, onChange }) => (
     <div className="relative border-2 border-dashed border-gray-300 bg-white rounded-2xl p-8 text-center hover:bg-gray-50 hover:border-gray-400 transition-all duration-300 cursor-pointer group">
         <input
+            id={id}
             type="file"
             accept={accept || '*/*'}
             onChange={onChange}
@@ -110,7 +111,7 @@ const FileUploadField = ({ field, value, onChange, labelEl }) => {
             {labelEl}
             {value
                 ? <UploadedFileCard value={value} onClear={() => onChange?.('')} />
-                : <DropZone accept={field.accept} isUploading={isUploading} onChange={handleFileSelect} />
+                : <DropZone id={`field-${field.id}`} accept={field.accept} isUploading={isUploading} onChange={handleFileSelect} />
             }
             {uploadError && <UploadErrorMessage message={uploadError} />}
         </div>

@@ -49,7 +49,7 @@ const FormEditor = ({
     onDuplicateField,
     onAddField,
     onReorderFields,
-    accentColor = '#4f46e5',
+    accentColor = '#5b4ee8',
 }) => {
     const [selectedFieldId, setSelectedFieldId] = useState(null);
     const [showAddMenu, setShowAddMenu] = useState(false);
@@ -70,6 +70,17 @@ const FormEditor = ({
             <FormEditorHeader form={form} onUpdateForm={onUpdateForm} accentColor={accentColor} />
 
             <div className="flex flex-col gap-4">
+                {activeFields.length === 0 && (
+                    <div className="rounded-2xl border border-dashed border-[#c9c4ff] bg-[#fafaff] px-6 py-10 text-center">
+                        <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-[#eeeaff] text-[#5b4ee8]">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M12 5v14M5 12h14" />
+                            </svg>
+                        </div>
+                        <h3 className="font-display text-base font-bold text-[#171827]">Your form is empty</h3>
+                        <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">Add a question to give respondents something to answer.</p>
+                    </div>
+                )}
                 {activeFields.map((field, index) => (
                     <DraggableFieldWrapper
                         key={field.id}

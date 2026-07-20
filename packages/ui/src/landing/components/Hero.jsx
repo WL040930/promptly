@@ -18,63 +18,56 @@ function Hero() {
   }, { scope: container })
 
   return (
-    <section ref={container} className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full -z-10">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-200/40 rounded-full blur-[120px]"></div>
-        <div className="absolute bottom-[10%] right-[-10%] w-[40%] h-[40%] bg-teal-200/40 rounded-full blur-[120px]"></div>
-      </div>
-      
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-        <div className="hero-badge inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 text-sm font-medium mb-6">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
-          </span>
-          <span>Enhance Your Admin Workflow</span>
+    <section ref={container} className="surface-grid relative overflow-hidden pb-20 pt-32 lg:pb-28 lg:pt-44">
+      <div className="pointer-events-none absolute -right-24 top-24 h-80 w-80 rounded-full bg-[#bdb7ff]/35 blur-[110px]" />
+      <div className="pointer-events-none absolute -left-24 bottom-0 h-72 w-72 rounded-full bg-[#c8f17b]/20 blur-[110px]" />
+
+      <div className="relative mx-auto grid max-w-7xl items-center gap-14 px-4 sm:px-6 lg:grid-cols-[0.92fr_1.08fr] lg:gap-20 lg:px-8">
+        <div className="text-left">
+          <div className="hero-badge landing-kicker mb-7">The calm way to automate operations</div>
+          <h1 className="hero-title max-w-2xl font-display text-5xl font-bold leading-[1.02] tracking-[-0.055em] text-[#171827] md:text-7xl">
+            Turn a sentence into <span className="gradient-text">work that runs.</span>
+          </h1>
+          <p className="hero-desc mt-7 max-w-xl text-lg leading-8 text-slate-600 md:text-xl">
+            Promptly helps teams describe an outcome, review the proposed steps, and keep every automation visible after it ships.
+          </p>
+          <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+            <a href="#demo" className="hero-btn inline-flex items-center justify-center rounded-xl bg-[#171827] px-6 py-3.5 text-base font-bold text-white shadow-[0_12px_24px_rgba(23,24,39,0.18)] transition-all hover:-translate-y-1 hover:bg-[#252438]">
+              Try the agent <span className="ml-2 text-[#c8f17b]">↗</span>
+            </a>
+            <a href="#how-it-works" className="hero-btn inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white/70 px-6 py-3.5 text-base font-bold text-[#171827] transition-all hover:-translate-y-1 hover:border-[#aaa2ff] hover:bg-white">
+              See how it works
+            </a>
+          </div>
+          <div className="hero-desc mt-9 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-semibold text-slate-500">
+            <span className="inline-flex items-center gap-2"><span className="status-dot" />Human review built in</span>
+            <span>Per-workspace history</span>
+            <span>Start free</span>
+          </div>
         </div>
-        
-        <h1 className="hero-title text-5xl md:text-7xl font-extrabold tracking-tight text-slate-900 mb-8 max-w-4xl mx-auto leading-tight">
-          Automate Your Admin Work via <span className="gradient-text">Conversational AI</span>
-        </h1>
-        
-        <p className="hero-desc text-lg md:text-xl text-slate-600 max-w-2xl mx-auto mb-10 leading-relaxed">
-          Empower your non-technical staff to use simple conversational prompts to automate complex operations like data entry, email automation, and spreadsheet manipulation.
-        </p>
-        
-        <div className="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-4">
-          <a href="#demo" className="hero-btn w-full sm:w-auto bg-slate-900 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-slate-800 transition-all shadow-xl hover:-translate-y-1">
-            Try the Agent
-          </a>
-          <a href="#how-it-works" className="hero-btn w-full sm:w-auto bg-white border border-slate-200 text-slate-900 px-8 py-4 rounded-xl font-bold text-lg hover:bg-slate-50 transition-all shadow-sm">
-            See how it works
-          </a>
-        </div>
-        
-        <div className="hero-image mt-20 relative max-w-5xl mx-auto">
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden aspect-video relative">
-            <div className="absolute inset-0 bg-gradient-to-br from-slate-50 via-white to-indigo-50 p-5 sm:p-8 text-left">
-              <div className="h-full rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden">
-                <div className="h-10 border-b border-slate-100 flex items-center gap-2 px-4">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-300"></span>
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-300"></span>
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-300"></span>
-                  <span className="ml-3 text-xs font-semibold text-slate-400">Promptly workspace</span>
+
+        <div className="hero-image relative lg:pt-6">
+          <div className="absolute -right-5 -top-1 z-10 rounded-2xl border border-white/80 bg-[#171827] px-4 py-3 text-left text-white shadow-xl shadow-[#171827]/20 sm:right-2">
+            <div className="flex items-center gap-2 text-xs font-bold"><span className="status-dot" />Agent ready</div>
+            <p className="mt-1 text-[10px] text-slate-400">No changes applied yet</p>
+          </div>
+          <div className="relative overflow-hidden rounded-[2rem] border border-white bg-white p-2 shadow-[0_28px_70px_rgba(23,24,39,0.16)]">
+            <div className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-[#f7f7fb]">
+              <div className="flex h-11 items-center justify-between border-b border-slate-200 bg-white px-4 text-left">
+                <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#ff8d8d]" /><span className="h-2.5 w-2.5 rounded-full bg-[#ffd166]" /><span className="h-2.5 w-2.5 rounded-full bg-[#c8f17b]" /></div>
+                <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Promptly / Assistant</span>
+                <span className="status-dot" />
+              </div>
+              <div className="grid min-h-[320px] grid-cols-[108px_1fr] sm:grid-cols-[156px_1fr]">
+                <div className="border-r border-slate-200 bg-[#171827] p-3 text-left">
+                  <div className="mb-6 flex items-center gap-2"><img src="/logo.png" alt="" className="h-5 w-5 rounded-md" /><span className="font-display text-xs font-bold text-white">Promptly</span></div>
+                  <div className="space-y-2 text-[9px] font-semibold"><div className="rounded-lg bg-white px-2 py-2 text-[#5143cc]">Home</div><div className="rounded-lg px-2 py-2 text-slate-400">Automations</div><div className="rounded-lg px-2 py-2 text-slate-400">Forms</div><div className="rounded-lg px-2 py-2 text-slate-400">Runs</div></div>
                 </div>
-                <div className="grid grid-cols-[120px_1fr] sm:grid-cols-[180px_1fr] h-[calc(100%-2.5rem)]">
-                  <div className="border-r border-slate-100 bg-slate-50 p-3 space-y-2">
-                    <div className="h-7 rounded-md bg-indigo-100"></div>
-                    <div className="h-7 rounded-md bg-white border border-slate-100"></div>
-                    <div className="h-7 rounded-md bg-white border border-slate-100"></div>
-                  </div>
-                  <div className="p-4 sm:p-6 space-y-4">
-                    <div className="h-5 w-2/5 rounded bg-slate-200"></div>
-                    <div className="h-20 rounded-lg bg-indigo-50 border border-indigo-100"></div>
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="h-16 rounded-lg bg-slate-50 border border-slate-100"></div>
-                      <div className="h-16 rounded-lg bg-slate-50 border border-slate-100"></div>
-                      <div className="h-16 rounded-lg bg-slate-50 border border-slate-100"></div>
-                    </div>
-                  </div>
+                <div className="p-4 text-left sm:p-7">
+                  <div className="flex items-start justify-between gap-3"><div><p className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#5b4ee8]">Workspace overview</p><p className="mt-1 font-display text-lg font-bold text-[#171827] sm:text-2xl">Make work move forward.</p></div><span className="rounded-lg bg-[#f1efff] px-2 py-1 text-[9px] font-bold text-[#5143cc]">Healthy</span></div>
+                  <div className="mt-5 rounded-2xl border border-[#d9d5ff] bg-[#f1efff] p-4"><div className="flex items-center gap-2 text-[10px] font-bold text-[#5143cc]"><span className="status-dot" />What should happen next?</div><p className="mt-2 text-xs leading-5 text-slate-600">“When a request arrives, summarize it and notify the team.”</p></div>
+                  <div className="mt-4 grid grid-cols-3 gap-2"><div className="rounded-xl border border-slate-200 bg-white p-3"><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Active</p><p className="mt-2 font-display text-lg font-bold text-[#171827]">08</p></div><div className="rounded-xl border border-slate-200 bg-white p-3"><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Runs</p><p className="mt-2 font-display text-lg font-bold text-[#171827]">124</p></div><div className="rounded-xl border border-slate-200 bg-white p-3"><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Success</p><p className="mt-2 font-display text-lg font-bold text-[#171827]">98%</p></div></div>
+                  <div className="mt-4 flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5"><span className="status-dot" /><span className="text-[10px] font-semibold text-slate-600">All active automations are running normally</span></div>
                 </div>
               </div>
             </div>

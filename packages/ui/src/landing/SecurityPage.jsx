@@ -46,52 +46,50 @@ const COLOR_CLASS = {
 
 function SecurityPage({ onHome, onLogin }) {
   return (
-    <div className="min-h-screen bg-white text-slate-900">
+    <div className="min-h-screen bg-[#f8f8fc] text-[#171827]">
       <Header onLogin={onLogin} onHome={onHome} />
       <main>
-        <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full -z-10">
-            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-200/40 rounded-full blur-[120px]"></div>
-            <div className="absolute bottom-[10%] right-[-10%] w-[40%] h-[40%] bg-teal-200/40 rounded-full blur-[120px]"></div>
-          </div>
+        <section className="surface-grid relative overflow-hidden pb-20 pt-32 lg:pb-28 lg:pt-44">
+          <div className="pointer-events-none absolute -right-24 top-24 h-80 w-80 rounded-full bg-[#bdb7ff]/35 blur-[110px]" />
+          <div className="pointer-events-none absolute -left-24 bottom-0 h-72 w-72 rounded-full bg-[#c8f17b]/20 blur-[110px]" />
           
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 text-sm font-medium mb-6 animate-fade-in">
+          <div className="mx-auto max-w-4xl px-4 text-left sm:px-6 lg:px-8">
+            <div className="landing-kicker mb-6 animate-fade-in">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
               <span>Security foundations</span>
             </div>
             
-            <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-slate-900 mb-8 max-w-4xl mx-auto leading-tight">
-              Securing your <span className="gradient-text">Prompts</span>
+            <h1 className="mb-8 max-w-4xl font-display text-5xl font-bold leading-[1.02] tracking-[-0.055em] text-[#171827] md:text-7xl">
+              A visible foundation for <span className="gradient-text">safer automation.</span>
             </h1>
             
-            <p className="text-lg md:text-xl text-slate-600 max-w-2xl mx-auto mb-10 leading-relaxed">
+            <p className="mb-10 max-w-2xl text-lg leading-8 text-slate-600 md:text-xl">
               We protect the application with authenticated API access, request limits, and standard HTTP security headers. These are the safeguards currently implemented in Promptly; review your deployment configuration before making production commitments.
             </p>
           </div>
         </section>
 
-        <section className="py-24 bg-white relative">
+        <section className="relative bg-white py-24">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               {SECURITY_FEATURES.map((feature) => {
                 const colorClass = COLOR_CLASS[feature.color] || 'text-indigo-600'
                 return (
                   <div
                     key={feature.id}
-                    className="group p-8 rounded-3xl border border-slate-100 bg-slate-50 transition-all duration-300 h-full flex flex-col hover:shadow-2xl hover:scale-105 hover:bg-white"
+                    className="group flex h-full flex-col rounded-[1.5rem] border border-slate-200 bg-[#f8f8fc] p-7 transition-all duration-300 hover:-translate-y-1 hover:border-[#c9c4ff] hover:bg-white hover:shadow-xl"
                   >
                     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-8 shadow-sm bg-white ${colorClass}`}>
                       {feature.icon}
                     </div>
                     
-                    <h3 className="text-2xl font-bold mb-4 text-slate-900">
+                    <h3 className="mb-4 font-display text-xl font-bold tracking-tight text-slate-900">
                       {feature.title}
                     </h3>
                     
-                    <p className="text-lg leading-relaxed mb-6 text-slate-600">
+                    <p className="mb-6 text-base leading-7 text-slate-600">
                       {feature.description}
                     </p>
                   </div>

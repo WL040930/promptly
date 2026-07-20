@@ -417,12 +417,12 @@ export default function AutomationCenter() {
 
     return (
         <>
-            <div ref={container} className="flex min-h-0 flex-1 overflow-hidden bg-slate-50/70 font-sans">
+            <div ref={container} className="surface-grid flex min-h-0 flex-1 overflow-hidden font-sans">
                 <main className="min-w-0 flex-1 overflow-y-auto p-5 md:p-8">
                     <div className="mx-auto flex max-w-7xl flex-col gap-6">
                         <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-                            <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-500">Automation Center</p><h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">Your automations</h1><p className="mt-2 max-w-2xl text-sm text-slate-500">Create, monitor and improve the processes that run your work.</p></div>
-                            <div className="flex flex-wrap gap-2"><button type="button" onClick={() => openCreateAI()} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-500/20 hover:bg-indigo-700"><Sparkles size={16} />Create with AI</button><button type="button" onClick={createManually} disabled={createWorkflowMutation.isPending} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"><Plus size={16} />Build manually</button></div>
+                            <div><p className="eyebrow">Automation center</p><h1 className="mt-1 font-display text-3xl font-bold tracking-tight text-slate-900">Your automations</h1><p className="mt-2 max-w-2xl text-sm text-slate-500">Create, monitor and improve the processes that run your work.</p></div>
+                            <div className="flex flex-wrap gap-2"><button type="button" onClick={() => openCreateAI()} className="inline-flex items-center gap-2 rounded-xl bg-[#5b4ee8] px-4 py-2.5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(91,78,232,0.2)] hover:bg-[#4e42d0]"><Sparkles size={16} />Create with AI</button><button type="button" onClick={createManually} disabled={createWorkflowMutation.isPending} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm hover:border-[#c9c4ff] hover:bg-white disabled:opacity-60"><Plus size={16} />Build manually</button></div>
                         </header>
 
                         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

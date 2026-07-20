@@ -111,6 +111,7 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
                     </div>
                     <button 
                         onClick={handleClose}
+                        aria-label="Close preview changes dialog"
                         className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
                     >
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -212,7 +213,7 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
                                                 field={field} 
                                                 value="" 
                                                 onChange={() => {}} 
-                                                accentColor="#4f46e5"
+                                                accentColor="#5b4ee8"
                                             />
                                         </div>
                                     </div>
@@ -227,6 +228,7 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
                 <div className="px-6 py-4 border-t border-slate-200 bg-white flex justify-end shrink-0">
                     <button 
                         onClick={handleClose}
+                        aria-label="Close preview changes dialog"
                         className="px-6 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors"
                     >
                         Done

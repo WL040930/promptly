@@ -42,7 +42,7 @@ export function LogInspectorSkeleton() {
 
 export default function LogsTabFallback() {
     return (
-        <div className="tab-content flex-1 overflow-y-auto bg-slate-50/50 font-sans h-full p-6 md:p-8">
+        <div className="tab-content surface-grid h-full flex-1 overflow-y-auto p-6 font-sans md:p-8">
             <div className="max-w-6xl mx-auto flex flex-col gap-8">
                 <div>
                     <Skeleton className="h-8 w-48 rounded" />

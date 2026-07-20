@@ -30,11 +30,12 @@ export default function Switch({
     checked,
     onChange,
     size = 'md',
-    activeColor = '#10b981', // Default emerald-500
-    inactiveColor = '#f3f4f6', // Default gray-100
-    inactiveBorderColor = '#e5e7eb', // Default gray-200
+    activeColor = '#c8f17b', // Promptly health signal
+    inactiveColor = '#ececf2',
+    inactiveBorderColor = '#d9d9e5',
     className = '',
-    title = ''
+    title = '',
+    ariaLabel = ''
 }) {
     const s = SIZES[size] || SIZES.md;
     
@@ -43,6 +44,7 @@ export default function Switch({
             type="button"
             role="switch"
             aria-checked={checked}
+            aria-label={ariaLabel || title || undefined}
             onClick={(e) => {
                 e.stopPropagation();
                 onChange(!checked);

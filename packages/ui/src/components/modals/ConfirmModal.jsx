@@ -31,6 +31,7 @@ export default function ConfirmModal({
     const modalRef = useRef(null);
 
     useGSAP(() => {
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
         if (isOpen && overlayRef.current && modalRef.current) {
             gsap.fromTo(overlayRef.current, 
                 { opacity: 0 }, 
@@ -45,6 +46,10 @@ export default function ConfirmModal({
     }, { dependencies: [isOpen] });
 
     const handleClose = () => {
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+            onClose();
+            return;
+        }
         if (overlayRef.current && modalRef.current) {
             gsap.to(overlayRef.current, { opacity: 0, duration: 0.15, ease: 'power2.in' });
             gsap.to(modalRef.current, { 

@@ -2,7 +2,7 @@ import Skeleton from '../../../components/ui/Skeleton.jsx';
 
 export default function BuilderLoadingSkeleton() {
     return (
-        <div className="flex-1 flex w-full h-full bg-slate-50 overflow-hidden font-sans">
+        <div className="surface-grid flex h-full w-full flex-1 overflow-hidden font-sans">
             <aside className="w-72 bg-slate-50/90 border-r border-slate-200/60 flex flex-col h-full shrink-0">
                 <div className="p-4 border-b border-slate-200 shrink-0">
                     <Skeleton className="h-4 w-24 rounded mb-4" />

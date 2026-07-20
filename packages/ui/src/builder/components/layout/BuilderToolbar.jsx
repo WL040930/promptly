@@ -22,10 +22,10 @@ const BuilderToolbar = ({
     return (
         <div className="flex flex-col shrink-0 z-10">
             {/* Main toolbar row — 3-column grid: [left-icons | title | right-actions] */}
-            <div className="w-full h-14 bg-white/80 backdrop-blur-md border-b border-slate-200/60 grid grid-cols-[auto_1fr_auto] items-center px-3 shadow-sm gap-2">
+            <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 overflow-hidden border-b border-slate-200/60 bg-white/80 px-3 shadow-sm backdrop-blur-md">
 
                 {/* LEFT: sidebar toggles + back */}
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex shrink-0 items-center gap-2">
                     <Button
                         variant={isLeftSidebarOpen ? "secondary" : "ghost"}
                         size="icon-sm"
@@ -79,7 +79,7 @@ const BuilderToolbar = ({
                 </div>
 
                 {/* RIGHT: actions — fixed, never shrinks */}
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="no-scrollbar flex max-w-[58vw] shrink-0 items-center gap-2 overflow-x-auto lg:max-w-none">
                     <Button
                         variant="outline"
                         size="sm"

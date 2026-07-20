@@ -13,8 +13,8 @@ const NodeLibrarySidebar = ({ isOpen, onDragStart, onDragEnd }) => {
 
     return (
         <aside
-            className={`bg-slate-50/90 backdrop-blur-md border-r border-slate-200/60 flex flex-col h-full transition-all duration-300 relative z-20 shrink-0 ${
-                isOpen ? 'w-72' : 'w-0 opacity-0 overflow-hidden border-none'
+            className={`absolute inset-y-0 left-0 z-40 flex h-full shrink-0 flex-col border-r border-slate-200/60 bg-slate-50/95 backdrop-blur-md transition-all duration-300 md:relative md:inset-auto md:z-20 ${
+                isOpen ? 'w-72 shadow-2xl md:shadow-none' : 'w-0 overflow-hidden border-none opacity-0'
             }`}
         >
             {/* Search header */}

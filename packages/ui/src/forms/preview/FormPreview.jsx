@@ -8,7 +8,7 @@ import MarkdownRenderer from '../../components/ui/MarkdownRenderer.jsx';
  * Overhauled to look like a premium standalone form (Typeform/Google Forms style),
  * with a themed background based on the accent color.
  */
-const FormPreview = ({ form, accentColor = '#4f46e5', onSubmitCallback, embedded = false }) => {
+const FormPreview = ({ form, accentColor = '#5b4ee8', onSubmitCallback, embedded = false }) => {
     const toast = useToast();
     const {
         values,

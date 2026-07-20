@@ -86,12 +86,12 @@ export default function OnboardingPage({ onOnboardingComplete }) {
     };
 
     return (
-        <div className="min-h-screen bg-[#f7f9fc] px-4 py-5 font-sans text-slate-900 sm:px-6 lg:h-screen lg:overflow-hidden lg:px-8 lg:py-6">
+        <div className="surface-grid min-h-screen px-4 py-5 font-sans text-slate-900 sm:px-6 lg:h-screen lg:overflow-hidden lg:px-8 lg:py-6">
             <div className="mx-auto flex h-full w-full max-w-[1440px] flex-col">
                 <header className="flex items-center justify-between px-1">
                     <div className="flex items-center gap-2">
                         <img src="/logo.png" alt="Promptly" className="h-9 w-9 rounded-xl" />
-                        <span className="text-xl font-bold tracking-tight text-indigo-600">Promptly</span>
+                        <span className="font-display text-xl font-bold tracking-tight text-[#171827]">Promptly<span className="text-[#5b4ee8]">.</span></span>
                     </div>
                     <span className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Getting started guide</span>
                 </header>
@@ -115,7 +115,7 @@ export default function OnboardingPage({ onOnboardingComplete }) {
                         </div>
                     </aside>
 
-                    <main className="flex min-h-0 flex-col overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/5 md:p-10 xl:p-12">
+                    <main className="workspace-surface flex min-h-0 flex-col overflow-hidden rounded-[2rem] p-6 md:p-10 xl:p-12">
                         <div className="flex items-start justify-between gap-6 border-b border-slate-100 pb-6">
                             <div>
                                 <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-indigo-500">Step {step} of {steps.length}</p>

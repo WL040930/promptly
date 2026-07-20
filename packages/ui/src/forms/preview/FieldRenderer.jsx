@@ -42,8 +42,10 @@ const getPlaceholder = (field) => field.placeholder || DEFAULT_PLACEHOLDERS[fiel
 // ---------------------------------------------------------------------------
 
 /** Label element shared across all field types */
+const getFieldInputId = (field) => `field-${field.id}`;
+
 const FieldLabel = ({ field, accentColor }) => (
-    <label className="block text-[15px] font-semibold text-gray-800 mb-2.5 tracking-tight">
+    <label htmlFor={getFieldInputId(field)} className="block text-[15px] font-semibold text-gray-800 mb-2.5 tracking-tight">
         {field.label}
         {field.required && <span className="ml-1 font-bold" style={{ color: accentColor }}>*</span>}
     </label>
@@ -61,11 +63,10 @@ const FieldWrapper = ({ field, accentColor, children }) => (
  * A single option row used by both radio and checkbox renderers.
  * `indicator` is the custom radio dot or checkbox box rendered inside the option.
  */
-const ChoiceOptionRow = ({ choice, isChecked, accentColor, onClick, indicator }) => (
+const ChoiceOptionRow = ({ choice, isChecked, accentColor, indicator }) => (
     <label
         className={`${CHOICE_ROW_BASE} ${isChecked ? 'shadow-md' : CHOICE_ROW_INACTIVE}`}
         style={isChecked ? { borderColor: accentColor, backgroundColor: accentColor + '08' } : {}}
-        onClick={onClick}
     >
         <div className="relative flex items-center justify-center shrink-0">
             {indicator}
@@ -94,6 +95,7 @@ const HeadingField = ({ field, accentColor }) => (
 
 const TextareaField = ({ field, value, onChange, inputStyle }) => (
     <textarea
+        id={getFieldInputId(field)}
         rows={field.rows || 4}
         className={`${INPUT_CLASS} resize-none`}
         placeholder={getPlaceholder(field)}
@@ -106,6 +108,7 @@ const TextareaField = ({ field, value, onChange, inputStyle }) => (
 const SelectField = ({ field, value, onChange, inputStyle }) => (
     <div className="relative">
         <select
+            id={getFieldInputId(field)}
             className={`${INPUT_CLASS} appearance-none cursor-pointer pr-10`}
             style={inputStyle}
             value={value || ''}
@@ -132,7 +135,6 @@ const RadioField = ({ field, value, onChange, accentColor }) => (
                     choice={choice}
                     isChecked={isChecked}
                     accentColor={accentColor}
-                    onClick={() => onChange?.(choice)}
                     indicator={
                         <>
                             <input type="radio" name={`radio-${field.id}`} value={choice} checked={isChecked} onChange={() => onChange?.(choice)} className="sr-only peer" />
@@ -160,7 +162,6 @@ const CheckboxField = ({ field, value, onChange, accentColor }) => (
                     choice={choice}
                     isChecked={isChecked}
                     accentColor={accentColor}
-                    onClick={toggle}
                     indicator={
                         <>
                             <input type="checkbox" value={choice} checked={isChecked} onChange={toggle} className="sr-only peer" />
@@ -196,6 +197,7 @@ const RatingField = ({ field, value, onChange, accentColor }) => {
                         onMouseEnter={() => setHoveredStar(star)}
                         onMouseLeave={() => setHoveredStar(0)}
                         onClick={() => onChange?.(currentValue === star ? 0 : star)}
+                        aria-label={`Rate ${star} out of ${max}`}
                         className={`p-1.5 transition-all duration-300 rounded-full ${isFilled ? 'scale-110' : 'hover:scale-110'} ${hoveredStar === star ? 'scale-125' : ''}`}
                     >
                         <svg width="32" height="32" viewBox="0 0 24 24" fill={isFilled ? accentColor : 'none'} stroke={isFilled ? accentColor : '#d1d5db'} strokeWidth="1.5" className="drop-shadow-sm transition-colors duration-300">
@@ -212,6 +214,7 @@ const DefaultTextField = ({ field, value, onChange, inputStyle }) => {
     const isDateOrTime = field.type === 'date' || field.type === 'time';
     return (
         <input
+            id={getFieldInputId(field)}
             type={getInputType(field.type)}
             className={`${INPUT_CLASS} ${isDateOrTime ? 'cursor-pointer' : ''}`}
             placeholder={getPlaceholder(field)}
@@ -228,7 +231,7 @@ const DefaultTextField = ({ field, value, onChange, inputStyle }) => {
 // Main component
 // ---------------------------------------------------------------------------
 
-const FieldRenderer = ({ field, accentColor = '#4f46e5', value, onChange }) => {
+const FieldRenderer = ({ field, accentColor = '#5b4ee8', value, onChange }) => {
     const inputStyle = {
         '--tw-ring-color': accentColor + '40',
         '--tw-ring-offset-width': '2px',

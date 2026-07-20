@@ -9,28 +9,29 @@ const DATA = [
 
 function Metrics() {
   return (
-    <section id="metrics" className="py-24 bg-white scroll-mt-24">
+    <section id="metrics" className="scroll-mt-24 bg-white py-24">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col lg:flex-row items-center gap-16">
           <div className="lg:w-1/2">
-            <h2 className="text-4xl font-bold text-slate-900 mb-6">Efficiency Gains in Seconds</h2>
-            <p className="text-lg text-slate-600 mb-8 leading-relaxed">
+            <p className="landing-kicker mb-6">Make the trade-off visible</p>
+            <h2 className="landing-section-title mb-6">Less repetitive work. More room for judgment.</h2>
+            <p className="mb-8 text-lg leading-8 text-slate-600">
               Use this illustrative comparison to reason about where an automation could reduce repetitive work. Measure the actual impact in your own runs.
             </p>
             <div className="grid grid-cols-2 gap-6">
-              <div className="p-6 rounded-2xl bg-indigo-50 border border-indigo-100">
-                <span className="block text-4xl font-bold text-indigo-600 mb-2">1 task</span>
-                <span className="text-sm font-medium text-indigo-800 uppercase tracking-wider">At a time</span>
+              <div className="rounded-2xl border border-[#d9d5ff] bg-[#f1efff] p-6">
+                <span className="mb-2 block font-display text-4xl font-bold text-[#5143cc]">1 task</span>
+                <span className="text-sm font-medium uppercase tracking-wider text-[#5143cc]">At a time</span>
               </div>
-              <div className="p-6 rounded-2xl bg-teal-50 border border-teal-100">
-                <span className="block text-4xl font-bold text-teal-600 mb-2">100%</span>
-                <span className="text-sm font-medium text-teal-800 uppercase tracking-wider">Reviewable</span>
+              <div className="rounded-2xl border border-[#d9efb4] bg-[#f5fbe9] p-6">
+                <span className="mb-2 block font-display text-4xl font-bold text-[#50720e]">100%</span>
+                <span className="text-sm font-medium uppercase tracking-wider text-[#50720e]">Reviewable</span>
               </div>
             </div>
           </div>
           
-          <div className="lg:w-1/2 w-full h-[400px] bg-slate-50 rounded-3xl p-8 border border-slate-100 shadow-inner">
-            <h4 className="text-center text-slate-500 text-sm font-medium mb-8">Illustrative manual time vs. automation (minutes)</h4>
+          <div className="h-[400px] w-full rounded-[1.75rem] border border-slate-200 bg-[#f8f8fc] p-8 shadow-inner lg:w-1/2">
+            <h4 className="mb-8 text-center text-sm font-semibold text-slate-500">Illustrative manual time vs. automation (minutes)</h4>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={DATA}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -43,7 +44,7 @@ function Metrics() {
                 <Bar dataKey="manual" name="Manual Work" fill="#cbd5e1" radius={[6, 6, 0, 0]} />
                 <Bar dataKey="prompt" name="With Promptly" radius={[6, 6, 0, 0]}>
                   {DATA.map((entry, index) => (
-                    <Cell key={`${entry.name}-${index}`} fill="#3b82f6" />
+                    <Cell key={`${entry.name}-${index}`} fill="#5b4ee8" />
                   ))}
                 </Bar>
               </BarChart>

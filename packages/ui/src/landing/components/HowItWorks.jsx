@@ -68,14 +68,15 @@ function HowItWorks() {
   }, { scope: container })
 
   return (
-    <section ref={container} id="how-it-works" className="py-24 bg-slate-900 text-white overflow-hidden relative scroll-mt-24">
+    <section ref={container} id="how-it-works" className="landing-ink-panel relative scroll-mt-24 overflow-hidden py-24 text-white">
       <div className="absolute top-0 right-0 w-1/3 h-full bg-indigo-500/5 blur-[120px] rounded-full pointer-events-none"></div>
       <div className="absolute bottom-0 left-0 w-1/4 h-1/2 bg-indigo-500/5 blur-[100px] rounded-full pointer-events-none"></div>
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <div className="text-center mb-20">
-          <h2 className="text-4xl md:text-5xl font-bold mb-6">How it Works</h2>
-          <p className="text-xl text-slate-400 max-w-2xl mx-auto">
+        <div className="mb-20 max-w-3xl">
+          <p className="mb-6 text-xs font-bold uppercase tracking-[0.2em] text-[#c8f17b]">A visible lifecycle</p>
+          <h2 className="mb-6 font-display text-4xl font-bold tracking-[-0.04em] md:text-5xl">From intent to a run you can trust.</h2>
+          <p className="max-w-2xl text-lg leading-8 text-slate-400">
             From natural language to finished automation in seconds. The technical complexity is hidden behind a simple chat interface.
           </p>
         </div>
@@ -102,19 +103,19 @@ function HowItWorks() {
               )}
               
               <div className="relative z-10 flex flex-col items-center">
-                <div className={`w-20 h-20 rounded-full bg-gradient-to-br ${step.color} flex items-center justify-center text-3xl mb-8 shadow-2xl group-hover:scale-110 transition-transform duration-500 ring-8 ring-slate-900/50`}>
-                  {step.visual}
+                <div className={`flex h-20 w-20 items-center justify-center rounded-[1.5rem] bg-gradient-to-br ${step.color} mb-8 text-3xl shadow-2xl shadow-indigo-950/30 transition-transform duration-500 ring-8 ring-[#171827]/50 group-hover:scale-110`}>
+                  <span aria-hidden="true">{step.visual}</span>
                 </div>
                 
-                <div className="text-indigo-500 font-mono font-bold text-sm mb-2 tracking-widest">{step.number}</div>
-                <h3 className="text-2xl font-bold mb-4 group-hover:text-indigo-400 transition-colors">{step.title}</h3>
-                <p className="text-slate-400 leading-relaxed max-w-[250px]">{step.description}</p>
+                <div className="mb-2 font-mono text-sm font-bold tracking-widest text-[#c8f17b]">{step.number}</div>
+                <h3 className="mb-4 font-display text-2xl font-bold transition-colors group-hover:text-[#c8f17b]">{step.title}</h3>
+                <p className="max-w-[250px] leading-relaxed text-slate-400">{step.description}</p>
               </div>
             </div>
           ))}
         </div>
 
-        <div className="mt-32 p-1 md:p-12 rounded-[40px] bg-white/5 backdrop-blur-sm border border-white/10 overflow-hidden relative">
+        <div className="relative mt-32 overflow-hidden rounded-[2rem] border border-white/10 bg-white/5 p-1 backdrop-blur-sm md:p-12">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500 to-transparent opacity-50"></div>
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">

@@ -6,7 +6,7 @@ import Switch from '../../components/ui/Switch.jsx';
  */
 
 const ACCENT_COLORS = [
-    { name: 'Indigo', value: '#4f46e5' },
+    { name: 'Indigo', value: '#5b4ee8' },
     { name: 'Blue', value: '#2563eb' },
     { name: 'Teal', value: '#0d9488' },
     { name: 'Emerald', value: '#059669' },
@@ -29,7 +29,7 @@ const FormSettings = ({ form, onUpdateForm }) => {
         <div className="flex flex-col gap-6 animate-slide-up-fade pb-16">
             
             {/* Confirmation Message */}
-            <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 transition-all hover:shadow-md">
+            <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_12px_28px_rgba(23,24,39,0.04)] transition-all hover:shadow-md sm:p-8">
                 <h3 className="text-lg font-extrabold text-gray-900 tracking-tight mb-2">Confirmation Message</h3>
                 <p className="text-[14px] font-medium text-gray-500 mb-5">Shown to respondents after they successfully submit the form.</p>
                 <textarea
@@ -42,16 +42,18 @@ const FormSettings = ({ form, onUpdateForm }) => {
             </div>
 
             {/* Accent Color */}
-            <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 transition-all hover:shadow-md">
+            <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_12px_28px_rgba(23,24,39,0.04)] transition-all hover:shadow-md sm:p-8">
                 <h3 className="text-lg font-extrabold text-gray-900 tracking-tight mb-2">Accent Color</h3>
                 <p className="text-[14px] font-medium text-gray-500 mb-6">Used for the form header, submit button, background theme, and focus rings.</p>
                 <div className="flex flex-wrap gap-4">
                     {ACCENT_COLORS.map(color => {
-                        const isActive = (settings.accentColor || '#4f46e5') === color.value;
+                        const isActive = (settings.accentColor || '#5b4ee8') === color.value;
                         return (
                             <button
                                 key={color.value}
                                 onClick={() => updateSetting('accentColor', color.value)}
+                                aria-label={`Use ${color.name} accent color`}
+                                aria-pressed={isActive}
                                 className={`w-12 h-12 rounded-2xl transition-all duration-300 relative ${
                                     isActive ? 'scale-110 shadow-lg' : 'hover:scale-110 hover:shadow-md shadow-sm'
                                 }`}
@@ -70,11 +72,13 @@ const FormSettings = ({ form, onUpdateForm }) => {
                         );
                     })}
                     {/* Custom color input */}
-                    <div className="relative group">
+                    <label htmlFor="custom-accent-color" className="relative group" title="Choose a custom accent color">
                         <input
+                            id="custom-accent-color"
                             type="color"
-                            value={settings.accentColor || '#4f46e5'}
+                            value={settings.accentColor || '#5b4ee8'}
                             onChange={e => updateSetting('accentColor', e.target.value)}
+                            aria-label="Choose a custom accent color"
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                         />
                         <div className="w-12 h-12 rounded-2xl border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 group-hover:border-gray-400 group-hover:bg-gray-50 transition-all duration-300 shadow-sm">
@@ -82,57 +86,60 @@ const FormSettings = ({ form, onUpdateForm }) => {
                                 <circle cx="12" cy="12" r="10" /><path d="M12 8v8M8 12h8" />
                             </svg>
                         </div>
-                    </div>
+                    </label>
                 </div>
             </div>
 
             {/* Toggles */}
-            <div className="bg-white rounded-3xl p-4 shadow-sm border border-gray-100 transition-all hover:shadow-md divide-y divide-gray-100">
+            <div className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-[0_12px_28px_rgba(23,24,39,0.04)] transition-all hover:shadow-md divide-y divide-gray-100 sm:p-4">
                 
                 {/* Form Status */}
-                <div className="p-4 flex items-center justify-between">
+                <div className="flex flex-col items-start justify-between gap-4 p-4 sm:flex-row sm:items-center">
                     <div>
                         <h3 className="text-[16px] font-extrabold text-gray-900">Accepting Responses</h3>
                         <p className="text-[13px] font-medium text-gray-500 mt-1">When off, the form will show a closed message.</p>
                     </div>
                     <Switch
                         size="lg"
+                        ariaLabel="Accepting responses"
                         checked={settings.acceptingResponses !== false}
                         onChange={(val) => updateSetting('acceptingResponses', val)}
-                        activeColor={settings.accentColor || '#4f46e5'}
+                        activeColor={settings.accentColor || '#5b4ee8'}
                     />
                 </div>
 
                 {/* Limit 1 per Browser */}
-                <div className="p-4 flex items-center justify-between">
+                <div className="flex flex-col items-start justify-between gap-4 p-4 sm:flex-row sm:items-center">
                     <div>
                         <h3 className="text-[16px] font-extrabold text-gray-900">Limit to 1 response per browser</h3>
                         <p className="text-[13px] font-medium text-gray-500 mt-1">Respondents can only submit this form once per browser.</p>
                     </div>
                     <Switch
                         size="lg"
+                        ariaLabel="Limit to one response per browser"
                         checked={settings.limitOnePerBrowser || false}
                         onChange={(val) => updateSetting('limitOnePerBrowser', val)}
-                        activeColor={settings.accentColor || '#4f46e5'}
+                        activeColor={settings.accentColor || '#5b4ee8'}
                     />
                 </div>
 
                 {/* Response Limit */}
                 <div className="p-4">
-                    <div className="flex items-center justify-between mb-4">
-                        <div>
+                    <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+                        <div className="min-w-0">
                             <h3 className="text-[16px] font-extrabold text-gray-900">Response Limit</h3>
                             <p className="text-[13px] font-medium text-gray-500 mt-1">Automatically close after reaching the limit.</p>
                         </div>
                         <Switch
                             size="lg"
+                            ariaLabel="Enable response limit"
                             checked={settings.hasResponseLimit || false}
                             onChange={(val) => updateSetting('hasResponseLimit', val)}
-                            activeColor={settings.accentColor || '#4f46e5'}
+                            activeColor={settings.accentColor || '#5b4ee8'}
                         />
                     </div>
                     {settings.hasResponseLimit && (
-                        <div className="animate-slide-up-fade bg-gray-50/50 border border-gray-200 rounded-2xl p-4 flex items-center gap-4 mt-2">
+                        <div className="animate-slide-up-fade mt-2 flex flex-wrap items-center gap-4 rounded-2xl border border-gray-200 bg-gray-50/50 p-4">
                             <span className="text-[14px] font-bold text-gray-700">Maximum responses:</span>
                             <input
                                 type="number"

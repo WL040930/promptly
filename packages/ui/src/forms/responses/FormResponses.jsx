@@ -198,7 +198,7 @@ const FormResponses = ({ form }) => {
     return (
         <div className="flex flex-col gap-6 animate-slide-up-fade pb-16">
             {/* Summary Stats */}
-            <div className="grid grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-5">
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
                     <div className="text-3xl font-extrabold text-gray-900 tracking-tight">{responseCount}</div>
                     <div className="text-[13px] text-gray-500 mt-1 font-bold tracking-wide uppercase">Total responses</div>
@@ -215,14 +215,14 @@ const FormResponses = ({ form }) => {
 
             {/* Loading / Error States */}
             {error ? (
-                <div className="bg-red-50 text-red-600 p-6 rounded-3xl text-center shadow-sm border border-red-100">
+                    <div className="rounded-2xl border border-red-100 bg-red-50 p-6 text-center text-red-600 shadow-sm">
                     <p className="font-bold">{error.message || 'Failed to load responses'}</p>
                 </div>
             ) : responses.length > 0 ? (
-                <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100">
+                <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_12px_28px_rgba(23,24,39,0.04)]">
                     {/* Table Header */}
-                    <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gray-50/50">
-                        <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 bg-gray-50/50 px-5 py-4 sm:px-6 sm:py-5">
+                        <div className="flex min-w-0 flex-wrap items-center gap-3">
                             <h3 className="text-lg font-extrabold text-gray-900 tracking-tight">All Responses</h3>
                             {removedColumnCount > 0 && (
                                 <span
@@ -238,7 +238,7 @@ const FormResponses = ({ form }) => {
                         </div>
                         <button 
                             onClick={handleExportCsv}
-                            className="text-[13px] font-bold text-gray-600 hover:text-gray-900 flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-gray-200 hover:border-gray-300 hover:bg-white transition-all shadow-sm"
+                            className="flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-[13px] font-bold text-gray-600 shadow-sm transition-all hover:border-gray-300 hover:bg-white hover:text-gray-900"
                         >
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
@@ -305,7 +305,7 @@ const FormResponses = ({ form }) => {
                 </div>
             ) : (
                 /* Empty State */
-                <div className="bg-white rounded-3xl p-16 text-center shadow-sm border border-gray-100 flex flex-col items-center justify-center">
+                <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200/80 bg-white p-10 text-center shadow-[0_12px_28px_rgba(23,24,39,0.04)] sm:p-16">
                     <div className="w-20 h-20 rounded-full bg-gray-50 flex items-center justify-center mb-6 shadow-inner border border-gray-100">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />

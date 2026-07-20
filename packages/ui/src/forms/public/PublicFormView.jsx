@@ -56,7 +56,7 @@ const PublicFormView = () => {
         <div className="app-page">
             <FormPreview
                 form={form}
-                accentColor={form.settings?.accentColor || '#4f46e5'}
+                accentColor={form.settings?.accentColor || '#5b4ee8'}
                 onSubmitCallback={handleSubmit}
             />
         </div>

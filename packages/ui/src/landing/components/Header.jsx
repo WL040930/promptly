@@ -10,37 +10,37 @@ function scrollToSection(id) {
 
 function Header({ onLogin, onHome }) {
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
+    <header className="fixed left-0 right-0 top-0 z-50 border-b border-slate-200/70 bg-[#f8f8fc]/85 backdrop-blur-xl">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <button type="button" onClick={onHome} disabled={!onHome} className={`flex items-center gap-2 ${onHome ? 'cursor-pointer' : 'cursor-default'}`}>
-            <img src="/logo.png" alt="Promptly Logo" className="w-8 h-8 object-contain rounded-lg overflow-hidden" />
-            <span className="text-2xl font-bold tracking-tight text-indigo-600">Promptly</span>
+            <img src="/logo.png" alt="Promptly Logo" className="h-8 w-8 rounded-[10px] object-contain shadow-sm" />
+            <span className="font-display text-xl font-bold tracking-tight text-[#171827]">Promptly<span className="text-[#5b4ee8]">.</span></span>
           </button>
-          <nav className="hidden md:flex space-x-8">
+          <nav className="hidden items-center gap-8 md:flex">
             {onHome ? (
-              <button type="button" onClick={onHome} className="text-slate-600 hover:text-indigo-600 font-medium transition-colors">Back to home</button>
+              <button type="button" onClick={onHome} className="text-sm font-semibold text-slate-600 transition-colors hover:text-[#5b4ee8]">Back to home</button>
             ) : (
               <>
-                <a href="#features" onClick={(e) => { e.preventDefault(); scrollToSection('features') }} className="text-slate-600 hover:text-indigo-600 font-medium transition-colors">Features</a>
-                <a href="#how-it-works" onClick={(e) => { e.preventDefault(); scrollToSection('how-it-works') }} className="text-slate-600 hover:text-indigo-600 font-medium transition-colors">How it Works</a>
-                <a href="#demo" onClick={(e) => { e.preventDefault(); scrollToSection('demo') }} className="text-slate-600 hover:text-indigo-600 font-medium transition-colors">Live Demo</a>
+                <a href="#features" onClick={(e) => { e.preventDefault(); scrollToSection('features') }} className="text-sm font-semibold text-slate-600 transition-colors hover:text-[#5b4ee8]">Capabilities</a>
+                <a href="#how-it-works" onClick={(e) => { e.preventDefault(); scrollToSection('how-it-works') }} className="text-sm font-semibold text-slate-600 transition-colors hover:text-[#5b4ee8]">How it works</a>
+                <a href="#demo" onClick={(e) => { e.preventDefault(); scrollToSection('demo') }} className="text-sm font-semibold text-slate-600 transition-colors hover:text-[#5b4ee8]">Try it</a>
               </>
             )}
           </nav>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center gap-4">
             <button
               onClick={() => {
                 if (onLogin) onLogin()
                 else window.location.href = '/login'
               }}
-              className="hidden sm:inline-flex text-slate-600 hover:text-indigo-600 font-medium"
+              className="hidden text-sm font-semibold text-slate-600 transition-colors hover:text-[#5b4ee8] sm:inline-flex"
             >
               Log in
             </button>
             <button
               onClick={() => onHome ? onLogin?.() : scrollToSection('demo')}
-              className="bg-indigo-600 text-white px-5 py-2 rounded-full font-medium hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg active:scale-95"
+              className="rounded-xl bg-[#171827] px-4 py-2.5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(23,24,39,0.16)] transition-all hover:-translate-y-0.5 hover:bg-[#252438] active:scale-95"
             >
               Get Started
             </button>

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Button from '../ui/Button.jsx';
 import { isEmptyFormMemorySummary } from '../../../../shared/formContract.js';
 import { formatFormSettingValue, getFormSettingLabel } from '../../forms/settings/formSettingPresentation.js';
+import { isAcceptedProposalStatus, isRejectedProposalStatus, isStaleProposalStatus, normalizeProposalStatus } from './proposalStatus.js';
 
 const isMeaningfulPatch = patch => {
     if (patch?.op !== 'update_memory') return true;
@@ -20,9 +21,9 @@ export default function FormProposalWidget({
     accepting, 
     rejecting 
 }) {
-    const isAccepted = status === 'Applied' || status === 'accepted';
-    const isRejected = status === 'Ignored' || status === 'rejected';
-    const isStale = status === 'stale' || status === 'Superseded' || status === 'superseded';
+    const isAccepted = isAcceptedProposalStatus(status);
+    const isRejected = isRejectedProposalStatus(status);
+    const isStale = isStaleProposalStatus(status);
     const isUnverified = proposal?.verification?.status === 'unverified';
     const verificationSkippedDueToBudget = proposal?.verification?.skippedReason === 'AI_CALL_BUDGET_EXCEEDED';
     const verificationWasRejected = proposal?.verification?.skippedReason === 'VERIFICATION_REJECTED';
@@ -307,7 +308,7 @@ export default function FormProposalWidget({
                 </div>
             ) : isStale ? (
                 <div className="flex items-center justify-center py-1.5 px-3 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-xs font-semibold">
-                    {status === 'Superseded' || status === 'superseded'
+                    {isStaleProposalStatus(status) && normalizeProposalStatus(status) === 'superseded'
                         ? 'A newer proposal replaced this suggestion.'
                         : 'This suggestion is outdated. Generate a new one.'}
                 </div>

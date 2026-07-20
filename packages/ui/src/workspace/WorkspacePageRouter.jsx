@@ -12,19 +12,19 @@ import AutomationSettingsPage from './AutomationSettingsPage.jsx';
 const LogsTab = React.lazy(() => import('../chat/components/LogsTab.jsx'));
 
 function PageFrame({ children }) {
-    return <section className="flex min-h-0 h-full w-full flex-col overflow-hidden bg-white">{children}</section>;
+    return <section className="flex min-h-0 h-full w-full flex-col overflow-hidden bg-[#f5f6fb]">{children}</section>;
 }
 
 function AutomationDetailPage({ automationId }) {
     return (
         <PageFrame>
-            <div className="flex min-h-0 flex-1 items-center justify-center bg-slate-50 p-6">
-                <div className="max-w-xl rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-500">Automation</p>
-                    <h1 className="mt-2 text-2xl font-bold text-slate-900">Choose how you want to build</h1>
+            <div className="surface-grid flex min-h-0 flex-1 items-center justify-center p-6">
+                <div className="workspace-surface max-w-xl rounded-[1.75rem] p-8 text-center">
+                    <p className="eyebrow">Automation</p>
+                    <h1 className="mt-2 font-display text-2xl font-bold text-slate-900">Choose how you want to build</h1>
                     <p className="mt-3 text-sm leading-6 text-slate-500">Both editors work on the same automation. You can switch at any time without creating a copy.</p>
                     <div className="mt-6 flex flex-wrap justify-center gap-3">
-                        <button type="button" onClick={() => navigateTo({ page: 'automation-build', automationId, editor: 'ai' })} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-700">Open AI editor</button>
+                        <button type="button" onClick={() => navigateTo({ page: 'automation-build', automationId, editor: 'ai' })} className="rounded-xl bg-[#5b4ee8] px-4 py-2.5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(91,78,232,0.18)] hover:bg-[#4e42d0]">Open AI editor</button>
                         <button type="button" onClick={() => navigateTo({ page: 'automation-build', automationId, editor: 'visual' })} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Open visual editor</button>
                     </div>
                     <div className="mt-6 flex justify-center gap-5 text-xs font-bold text-indigo-600"><button type="button" onClick={() => navigateTo({ page: 'automation-runs', automationId })}>Runs</button><button type="button" onClick={() => navigateTo({ page: 'automation-versions', automationId })}>Versions</button><button type="button" onClick={() => navigateTo({ page: 'automation-settings', automationId })}>Settings</button></div>

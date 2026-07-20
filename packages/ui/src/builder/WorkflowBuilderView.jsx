@@ -36,8 +36,8 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     const loading = isActiveWorkflowPending && !activeWorkflowData;
 
     // ── UI state ─────────────────────────────────────────────────────────────
-    const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
-    const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
+    const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(() => !window.matchMedia?.('(max-width: 767px)').matches);
+    const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(() => !window.matchMedia?.('(max-width: 767px)').matches);
     const [isHistorySidebarOpen, setIsHistorySidebarOpen] = useState(false);
     const [rightTab, setRightTab] = useState('chat');
     const [draggedNode, setDraggedNode] = useState(null);
@@ -421,7 +421,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
 
     // ── Builder view ─────────────────────────────────────────────────────────
     return (
-        <div ref={builderContainer} className="flex-1 flex w-full h-full bg-slate-50 overflow-hidden font-sans">
+        <div ref={builderContainer} className="relative flex h-full w-full flex-1 overflow-hidden bg-slate-50 font-sans">
 
             {/* 1. LEFT SIDEBAR: Add steps */}
             <NodeLibrarySidebar
@@ -484,7 +484,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
 
             {/* 3. RIGHT PANEL: AI assistant & configuration */}
             <aside
-                className={`bg-white/90 backdrop-blur-md border-l border-slate-200/60 flex flex-col h-full transition-all duration-300 relative z-20 shadow-xl shrink-0 ${isRightSidebarOpen ? 'w-[340px]' : 'w-0 opacity-0 overflow-hidden border-none'
+                className={`absolute inset-y-0 right-0 z-30 flex h-full shrink-0 flex-col border-l border-slate-200/60 bg-white/95 backdrop-blur-md transition-all duration-300 shadow-2xl md:relative md:inset-auto md:z-20 md:shadow-xl ${isRightSidebarOpen ? 'w-[min(340px,100vw)]' : 'w-0 overflow-hidden border-none opacity-0'
                     }`}
             >
                 <div className="flex border-b border-slate-200/60 shrink-0">

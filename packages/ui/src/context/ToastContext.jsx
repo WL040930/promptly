@@ -52,6 +52,10 @@ const ToastItem = ({ toast, removeToast }) => {
     const el = useRef(null);
 
     useGSAP(() => {
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+            const timer = window.setTimeout(() => removeToast(toast.id), 3000);
+            return () => window.clearTimeout(timer);
+        }
         // Entrance animation
         const tl = gsap.timeline();
         tl.from(el.current, {
@@ -102,6 +106,10 @@ const ToastItem = ({ toast, removeToast }) => {
             <span className="text-sm font-semibold text-slate-800">{toast.message}</span>
             <button 
                 onClick={() => {
+                    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+                        removeToast(toast.id);
+                        return;
+                    }
                     gsap.to(el.current, { y: -10, opacity: 0, duration: 0.2, onComplete: () => removeToast(toast.id) });
                 }} 
                 className="ml-2 p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors shrink-0"

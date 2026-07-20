@@ -1,5 +1,6 @@
 import app from './app.js';
 import sequelize from './db/index.js';
+import { ensureDatabaseSchema } from './db/schema.js';
 import env from './config/env.js';
 import './models/index.js';
 import NodeRegistry from './utils/NodeRegistry.js';
@@ -13,8 +14,9 @@ const startServer = async () => {
     assertAIConfig();
     await sequelize.authenticate();
     // The clean-slate schema is created explicitly by the database bootstrap.
-    // Startup must never alter a live schema implicitly.
+    // Keep sync non-destructive, then apply only explicit additive compatibility changes.
     await sequelize.sync();
+    await ensureDatabaseSchema(sequelize);
     await ensureDatabaseChangeTriggers(sequelize);
     
     // Initialize the dynamic node registry
