@@ -19,6 +19,7 @@ const sizes = {
     'icon-md': 'p-2',
     xs: 'px-2.5 py-1 text-xs',
     sm: 'px-4 py-1.5 text-sm',
+    action: 'min-h-10 px-4 py-2.5 text-sm',
     md: 'px-5 py-2 text-sm',
     lg: 'px-6 py-3 text-base',
 };
@@ -93,6 +94,7 @@ const Button = forwardRef(({
             ref={ref}
             type={type}
             disabled={isDisabled}
+            aria-busy={isLoading || undefined}
             onClick={onClick}
             className={cn(baseStyles, variantStyles, sizeStyles, disabledStyles, className)}
             {...props}

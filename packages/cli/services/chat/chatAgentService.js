@@ -58,6 +58,20 @@ const saveReply = async (session, { text, kind = 'text', payload = null, tokenUs
     return messagePayload(reply);
 };
 
+const chatAIErrorMessage = error => {
+    switch (error?.category) {
+        case 'timeout':
+            return 'The AI provider took too long to respond. Please try again.';
+        case 'rate_limited':
+            return 'The AI provider is temporarily rate-limited. Please try again shortly.';
+        case 'unavailable':
+        case 'network':
+            return 'The AI provider is temporarily unavailable. Please try again.';
+        default:
+            return 'I could not continue this request because the AI provider returned an error. Please try again.';
+    }
+};
+
 export const saveUserMessage = async (session, message) => {
     if (!message || !message.trim()) return null;
     const saved = await ChatMessage.create({ sessionId: session.id, sender: 'user', text: message.trim(), kind: 'text' });
@@ -114,8 +128,45 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
             return;
         }
 
-        const formKinds = ['form_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_response_clear_proposal'];
+        const formKinds = ['form_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'];
         if (formKinds.includes(message.kind)) {
+            if (message.kind === 'form_bulk_delete_proposal') {
+                const proposedForms = Array.isArray(proposal.forms) ? proposal.forms : [];
+                const formIds = [...new Set(proposedForms.map(form => form?.id).filter(Boolean))];
+                if (formIds.length === 0) {
+                    const error = new Error('The bulk deletion proposal does not contain any forms.');
+                    error.code = 'FORM_BULK_DELETE_EMPTY';
+                    error.status = 422;
+                    throw error;
+                }
+                const forms = await Form.findAll({
+                    where: { userId, id: formIds },
+                    transaction,
+                    lock: transaction.LOCK.UPDATE
+                });
+                if (forms.length !== formIds.length) {
+                    const error = new Error('One or more forms in this proposal no longer exist.');
+                    error.code = 'FORM_BULK_DELETE_NOT_FOUND';
+                    error.status = 404;
+                    throw error;
+                }
+                const workflows = await Workflow.findAll({ where: { userId }, transaction, attributes: ['id', 'name', 'nodes'] });
+                const dependencies = workflows.filter(workflow => formIds.some(formId => formUses(workflow, formId)));
+                if (dependencies.length > 0) {
+                    const error = new Error('One or more forms are still used by workflows.');
+                    error.code = 'FORM_BULK_DELETE_DEPENDENCIES';
+                    error.status = 409;
+                    error.issues = dependencies.map(workflow => ({ id: workflow.id, name: workflow.name }));
+                    throw error;
+                }
+                const proposedById = new Map(proposedForms.map(form => [form.id, form]));
+                forms.forEach(form => ensureFormRevision(form, proposedById.get(form.id)?.baseFormUpdatedAt));
+                await FormChatMessage.destroy({ where: { formId: formIds }, transaction });
+                await FormAIState.destroy({ where: { formId: formIds }, transaction });
+                await FormResponse.destroy({ where: { formId: formIds }, transaction });
+                await Form.destroy({ where: { userId, id: formIds }, transaction });
+                result = { formIds, formCount: forms.length, action: 'delete_forms' };
+            } else {
             const form = proposal.formId
                 ? await Form.findOne({ where: { id: proposal.formId, userId }, transaction, lock: transaction.LOCK.UPDATE })
                 : null;
@@ -181,6 +232,7 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
             await FormResponse.destroy({ where: { formId: form.id }, transaction });
             await form.update({ responseCount: 0 }, { transaction });
             result = { formId: form.id, action: 'clear_form_responses' };
+            }
             }
         } else if (message.kind === 'workflow_diff' || message.kind === 'workflow_proposal') {
             const workflow = proposal.workflowId
@@ -510,7 +562,7 @@ export const applyEvent = async (session, userId, event) => {
 
 const systemInstruction = `You are Promptly Agent, an AI assistant helping users build automation workflows and forms.
 Use the registered capabilities when you need account facts or when preparing a reviewable proposal.
-Never invent resource IDs. Resolve named resources before editing them. Never apply changes directly; proposals require explicit user approval.
+Never invent resource IDs. Resolve named resources before editing them. Never apply changes directly; proposals require explicit user approval. For requests to delete multiple or all forms, use propose_delete_all_forms so the user can review one complete proposal; never issue repeated single-form deletes silently.
 If native function calling is unavailable, output a tool request exactly as <TOOL>{"name":"tool_name","args":{...}}</TOOL> and wait for <TOOL_RESPONSE>...</TOOL_RESPONSE> before continuing.`;
 
 // Tool definitions are generated by chatCapabilityRegistry.js.
@@ -614,16 +666,28 @@ export const processChatMessage = async ({ session, userId, context = {}, onEven
     while (loopCount < maxLoops) {
         loopCount++;
         onEvent?.({ type: 'assistant_step_started', step: 'respond', attempt: loopCount });
-        const response = await ai.run({
-            task: AI_TASKS.CHAT_RESPOND,
-            messages: aiMessages,
-            systemInstruction: `${systemInstruction}
+        let response;
+        try {
+            response = await ai.run({
+                task: AI_TASKS.CHAT_RESPOND,
+                messages: aiMessages,
+                systemInstruction: `${systemInstruction}
 Available capabilities:
 ${capabilitySummary}
 Clarification for form requirements: ${normalizeClarificationMode(effectiveContext.clarificationMode)} - ${getClarificationModeInstruction(effectiveContext.clarificationMode)}${selectedWorkflowInstruction}${selectedFormInstruction}`,
-            operation: 'chat',
-            tools: capabilityTools
-        });
+                operation: 'chat',
+                tools: capabilityTools
+            });
+        } catch (error) {
+            const message = await saveReply(session, {
+                text: chatAIErrorMessage(error),
+                kind: 'error',
+                payload: { code: error.code || 'CHAT_AI_PROVIDER_FAILED' }
+            });
+            onEvent?.({ type: 'assistant_step_failed', step: 'respond', code: error.code || 'CHAT_AI_PROVIDER_FAILED' });
+            replyObj = message;
+            break;
+        }
 
         if (response.usageMetadata) {
             totalTokenUsage.promptTokens += response.usageMetadata.promptTokens || response.usageMetadata.promptTokenCount || 0;

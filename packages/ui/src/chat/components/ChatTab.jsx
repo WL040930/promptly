@@ -33,6 +33,8 @@ export default function ChatTab({ conversationId = null, automationId = null, st
     const [chatToDelete, setChatToDelete] = useState(null);
     const [previewProposal, setPreviewProposal] = useState(null);
     const [previewFormId, setPreviewFormId] = useState(null);
+    const [acceptingProposalId, setAcceptingProposalId] = useState(null);
+    const [rejectingProposalId, setRejectingProposalId] = useState(null);
     const loadedSessionIdRef = useRef(null);
 
     const { data: sessions = [], isPending: isSessionsPending } = useChatSessions();
@@ -144,6 +146,7 @@ export default function ChatTab({ conversationId = null, automationId = null, st
     };
 
     const handleApply = async (message, filteredSchema = null) => {
+        setAcceptingProposalId(message.id);
         try {
             const payload = message.payload || {};
             if (payload.runId) {
@@ -159,10 +162,10 @@ export default function ChatTab({ conversationId = null, automationId = null, st
                 return;
             }
             let result;
-            if (['form_duplicate_proposal', 'form_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
+            if (['form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
                 result = await decideChatProposalMutation.mutateAsync({ sessionId, messageId: message.id, action: 'approve' });
                 setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied', payload: result?.message?.payload || item.payload } : item));
-                toast.success(message.kind === 'form_delete_proposal' ? 'Form deleted.' : message.kind === 'form_response_clear_proposal' ? 'Form responses cleared.' : 'Form duplicated.');
+                toast.success(message.kind === 'form_bulk_delete_proposal' ? 'Forms deleted.' : message.kind === 'form_delete_proposal' ? 'Form deleted.' : message.kind === 'form_response_clear_proposal' ? 'Form responses cleared.' : 'Form duplicated.');
                 return;
             } else if (['form_proposal', 'workflow_diff', 'workflow_proposal'].includes(message.kind)) {
                 const overrides = message.kind === 'form_proposal' && filteredSchema ? { schema: filteredSchema } : null;
@@ -188,20 +191,27 @@ export default function ChatTab({ conversationId = null, automationId = null, st
             } else {
                 toast.error(error.message || 'Failed to apply proposal.');
             }
+        } finally {
+            setAcceptingProposalId(null);
         }
     };
 
-    const handleIgnore = (message) => {
-        setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'ignored' } : item));
-        if (message.payload?.runId) {
-            rejectAgentRunMutation.mutate(message.payload.runId);
-            return;
+    const handleIgnore = async (message) => {
+        setRejectingProposalId(message.id);
+        try {
+            if (message.payload?.runId) {
+                await rejectAgentRunMutation.mutateAsync(message.payload.runId);
+            } else if (['form_proposal', 'workflow_diff', 'workflow_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
+                await decideChatProposalMutation.mutateAsync({ sessionId, messageId: message.id, action: 'reject' });
+            } else {
+                await send(null, { type: 'proposal_ignored', messageId: message.id });
+            }
+            setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'ignored' } : item));
+        } catch (error) {
+            toast.error(error.message || 'Failed to ignore proposal.');
+        } finally {
+            setRejectingProposalId(null);
         }
-        if (['form_proposal', 'workflow_diff', 'workflow_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
-            decideChatProposalMutation.mutate({ sessionId, messageId: message.id, action: 'reject' });
-            return;
-        }
-        send(null, { type: 'proposal_ignored', messageId: message.id });
     };
 
     const handleOption = (option) => {
@@ -405,6 +415,8 @@ export default function ChatTab({ conversationId = null, automationId = null, st
                         setPreviewProposal(null);
                     }}
                     handleOption={handleOption}
+                    acceptingProposalId={acceptingProposalId}
+                    rejectingProposalId={rejectingProposalId}
                     progressLabel={progressLabel}
                     inputAccessory={<ClarificationModeSelect value={clarificationMode} onChange={handleClarificationModeChange} />}
                     placeholder="Describe what you want to build..."

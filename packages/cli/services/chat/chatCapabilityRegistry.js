@@ -15,6 +15,9 @@ const clarification = reply => ({ status: 'awaiting_clarification', reply, outpu
 
 const approval = reply => ({ status: 'awaiting_approval', reply, output: { replyId: reply?.id || null } });
 
+const formUses = (workflow, formId) => (workflow.nodes || [])
+    .some(node => node.subType === 'form-submission' && node.config?.formId === formId);
+
 const SENSITIVE_KEY = /(?:api[_-]?key|access[_-]?token|auth(?:orization)?|credential|password|private[_-]?key|secret)/i;
 
 const redactSensitive = (value, key = '', depth = 0) => {
@@ -395,6 +398,72 @@ export const createChatCapabilityRegistry = ({
                     proposalStatus: 'pending'
                 });
                 await session.update({ agentState: { status: 'awaiting_form_delete_approval', formId: form.id, proposalMessageId: reply.id } });
+                return approval(reply);
+            },
+            'proposal'
+        ),
+        tool(
+            'propose_delete_all_forms',
+            'Prepare one reviewable permanent deletion proposal for every form in the account. Never apply the deletion without explicit user approval.',
+            {},
+            async () => {
+                const forms = await Form.findAll({
+                    where: { userId },
+                    attributes: ['id', 'title', 'updatedAt', 'responseCount'],
+                    order: [['updatedAt', 'DESC']]
+                });
+                if (forms.length === 0) {
+                    return completed({ message: 'There are no forms in this account to delete.', forms: [] });
+                }
+
+                const workflows = await Workflow.findAll({
+                    where: { userId },
+                    attributes: ['id', 'name', 'updatedAt', 'isActive', 'nodes']
+                });
+                const dependencies = forms
+                    .map(form => ({
+                        formId: form.id,
+                        title: form.title,
+                        workflows: workflows
+                            .filter(workflow => formUses(workflow, form.id))
+                            .map(workflow => ({ id: workflow.id, name: workflow.name, isActive: workflow.isActive }))
+                    }))
+                    .filter(item => item.workflows.length > 0);
+                if (dependencies.length > 0) {
+                    const blockedCount = dependencies.reduce((total, item) => total + item.workflows.length, 0);
+                    return clarification(await saveReply(session, {
+                        text: `I cannot prepare an all-forms deletion yet because ${dependencies.length} form${dependencies.length === 1 ? '' : 's'} are still used by ${blockedCount} workflow${blockedCount === 1 ? '' : 's'}. Remove or update those workflow references first.`,
+                        kind: 'clarification',
+                        payload: { action: 'delete_all_forms_blocked', dependencies }
+                    }));
+                }
+
+                const formSummaries = forms.map(form => ({
+                    id: form.id,
+                    title: form.title,
+                    responseCount: Number(form.responseCount || 0),
+                    baseFormUpdatedAt: form.updatedAt
+                }));
+                const totalResponseCount = formSummaries.reduce((total, form) => total + form.responseCount, 0);
+                const reply = await saveReply(session, {
+                    text: `I prepared permanent deletion of all ${forms.length} forms. This will remove ${totalResponseCount} response${totalResponseCount === 1 ? '' : 's'} as well.`,
+                    kind: 'form_bulk_delete_proposal',
+                    payload: {
+                        action: 'delete_forms',
+                        forms: formSummaries,
+                        formCount: forms.length,
+                        totalResponseCount,
+                        permanent: true
+                    },
+                    proposalStatus: 'pending'
+                });
+                await session.update({
+                    agentState: {
+                        status: 'awaiting_form_bulk_delete_approval',
+                        formIds: forms.map(form => form.id),
+                        proposalMessageId: reply.id
+                    }
+                });
                 return approval(reply);
             },
             'proposal'

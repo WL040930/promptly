@@ -17,6 +17,45 @@ const getThinkingLevel = (model, configuredLevel) => {
     return ThinkingLevel[key] || ThinkingLevel.MINIMAL;
 };
 
+const textFromParts = parts => Array.isArray(parts)
+    ? parts.map(part => part?.text || '').filter(Boolean).join('\n')
+    : String(parts || '');
+
+const serializeToolCall = call => {
+    if (!call?.name) return '';
+    return `<TOOL>${JSON.stringify({ name: call.name, args: call.args || {} })}</TOOL>`;
+};
+
+/**
+ * Gemini's generateContent API accepts Content objects with `parts` and only
+ * supports `user`/`model` roles here. The chat service also uses the
+ * OpenAI-compatible `tool`/`content` shape for providers that support native
+ * function calling. Render those events as the textual fallback protocol so
+ * sessions can safely continue on Gemini or after provider failover.
+ */
+export const toGeminiContents = contents => (contents || []).flatMap(content => {
+    if (typeof content === 'string') {
+        return [{ role: 'user', parts: [{ text: content }] }];
+    }
+
+    if (content?.role === 'tool') {
+        const response = content.content ?? textFromParts(content.parts);
+        return [{
+            role: 'user',
+            parts: [{ text: `<TOOL_RESPONSE>${response}</TOOL_RESPONSE>` }]
+        }];
+    }
+
+    const role = content?.role === 'model' ? 'model' : 'user';
+    const text = textFromParts(content?.parts);
+    const toolCalls = Array.isArray(content?.toolCalls)
+        ? content.toolCalls.map(serializeToolCall).filter(Boolean)
+        : [];
+    const combinedText = [text, ...toolCalls].filter(Boolean).join('\n');
+
+    return combinedText ? [{ role, parts: [{ text: combinedText }] }] : [];
+});
+
 export class GeminiProvider extends BaseAIProvider {
     constructor({ apiKey = env.gemini.apiKey, timeoutMs = env.aiTimeoutMs, thinkingLevel = env.aiThinkingLevel } = {}) {
         super();
@@ -49,7 +88,7 @@ export class GeminiProvider extends BaseAIProvider {
         };
         const response = await this.ai.models.generateContent({
             model,
-            contents,
+            contents: toGeminiContents(contents),
             config
         });
 

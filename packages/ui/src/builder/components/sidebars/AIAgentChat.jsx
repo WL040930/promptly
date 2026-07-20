@@ -21,6 +21,8 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
     const [progressLabel, setProgressLabel] = useState('Scanning node library');
     const [sessionId, setSessionId] = useState(null);
     const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
+    const [acceptingProposalId, setAcceptingProposalId] = useState(null);
+    const [rejectingProposalId, setRejectingProposalId] = useState(null);
     const sendChatMessageMutation = useSendChatMessage();
     const approveAgentRunMutation = useApproveAgentRun();
     const rejectAgentRunMutation = useRejectAgentRun();
@@ -75,6 +77,7 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
     };
 
     const handleApply = async (message) => {
+        setAcceptingProposalId(message.id);
         try {
             if (message.payload?.runId) {
                 const result = await approveAgentRunMutation.mutateAsync({
@@ -87,7 +90,7 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
                 ]);
                 return;
             }
-            if (['form_duplicate_proposal', 'form_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
+            if (['form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
                 const result = await decideChatProposalMutation.mutateAsync({ sessionId, messageId: message.id, action: 'approve' });
                 setMessages(previous => previous.map(item => item.id === message.id
                     ? { ...item, proposalStatus: 'applied', payload: result?.message?.payload || item.payload }
@@ -103,20 +106,27 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
             }
         } catch (error) {
             setMessages(previous => [...previous, { id: `error_${Date.now()}`, sender: 'bot', kind: 'error', text: error.message || 'The proposal could not be applied.' }]);
+        } finally {
+            setAcceptingProposalId(null);
         }
     };
 
-    const handleIgnore = (message) => {
-        setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'ignored' } : item));
-        if (message.payload?.runId) {
-            rejectAgentRunMutation.mutate(message.payload.runId);
-            return;
+    const handleIgnore = async (message) => {
+        setRejectingProposalId(message.id);
+        try {
+            if (message.payload?.runId) {
+                await rejectAgentRunMutation.mutateAsync(message.payload.runId);
+            } else if (['form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
+                await decideChatProposalMutation.mutateAsync({ sessionId, messageId: message.id, action: 'reject' });
+            } else {
+                await send(null, { type: 'proposal_ignored', messageId: message.id });
+            }
+            setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'ignored' } : item));
+        } catch (error) {
+            setMessages(previous => [...previous, { id: `error_${Date.now()}`, sender: 'bot', kind: 'error', text: error.message || 'The proposal could not be ignored.' }]);
+        } finally {
+            setRejectingProposalId(null);
         }
-        if (['form_duplicate_proposal', 'form_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
-            decideChatProposalMutation.mutate({ sessionId, messageId: message.id, action: 'reject' });
-            return;
-        }
-        send(null, { type: 'proposal_ignored', messageId: message.id });
     };
 
     const handleOption = (option) => {
@@ -144,6 +154,8 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
                 handleApply={handleApply}
                 handleIgnore={handleIgnore}
                 handleOption={handleOption}
+                acceptingProposalId={acceptingProposalId}
+                rejectingProposalId={rejectingProposalId}
                 progressLabel={progressLabel}
                 inputAccessory={<ClarificationModeSelect value={clarificationMode} onChange={handleClarificationModeChange} />}
                 placeholder="Describe an automation change…"

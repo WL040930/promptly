@@ -2,14 +2,8 @@ import Button from '../ui/Button.jsx';
 import FormProposalWidget from './FormProposalWidget.jsx';
 import MarkdownRenderer from '../ui/MarkdownRenderer.jsx';
 import MessageOptionsWidget from './MessageOptionsWidget.jsx';
-import { Zap } from 'lucide-react';
-
-const statusLabel = (status) => {
-    if (status === 'applied') return 'Applied';
-    if (status === 'ignored') return 'Ignored';
-    if (status === 'superseded') return 'Superseded';
-    return status;
-};
+import { proposalStatusLabel, shouldShowProposalActions } from './proposalStatus.js';
+import { AlertTriangle, CheckCircle2, Copy, GitBranch, ShieldAlert, Trash2, Zap } from 'lucide-react';
 
 const formatTokens = (value) => (value || 0).toLocaleString();
 
@@ -57,8 +51,10 @@ const TokenUsageBreakdown = ({ tokenUsage }) => {
 
 export default function AgentMessage({ message, onApply, onIgnore, onOption, isTyping, isAccepting, isRejecting }) {
     const payload = message.payload || message.proposal || {};
-    const isProposal = message.proposal != null || ['workflow_proposal', 'workflow_diff', 'form_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_response_clear_proposal'].includes(message.kind);
-    const status = statusLabel(message.proposalStatus || payload.status);
+    const isProposal = message.proposal != null || ['workflow_proposal', 'workflow_diff', 'form_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind);
+    const rawStatus = message.proposalStatus || payload.status;
+    const status = proposalStatusLabel(rawStatus);
+    const showProposalActions = shouldShowProposalActions(rawStatus);
     const clarification = (message.options && !Array.isArray(message.options)) ? message.options : null;
     const options = Array.isArray(message.options)
         ? message.options
@@ -66,6 +62,43 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
     const kind = message.kind || (message.proposal ? 'form_proposal' : (options.length > 0 ? 'clarification' : 'text'));
     const planSteps = Array.isArray(payload.plan) ? payload.plan : (Array.isArray(payload.plan?.steps) ? payload.plan.steps : []);
     const planSummary = typeof payload.plan?.summary === 'string' ? payload.plan.summary : null;
+    const isDeleteProposal = message.kind === 'form_delete_proposal';
+    const isBulkDeleteProposal = message.kind === 'form_bulk_delete_proposal';
+    const isDuplicateProposal = message.kind === 'form_duplicate_proposal';
+    const isResponseClearProposal = message.kind === 'form_response_clear_proposal';
+    const proposalTitle = message.kind === 'workflow_diff'
+        ? 'Workflow changes'
+        : isBulkDeleteProposal
+            ? 'Delete all forms'
+            : isDeleteProposal
+            ? 'Delete form'
+            : isDuplicateProposal
+                ? 'Duplicate form'
+                : isResponseClearProposal
+                    ? 'Clear form responses'
+                    : 'Workflow proposal';
+    const ProposalIcon = message.kind === 'workflow_diff' || message.kind === 'workflow_proposal'
+        ? GitBranch
+        : isDeleteProposal || isBulkDeleteProposal
+            ? Trash2
+            : isDuplicateProposal
+                ? Copy
+                : ShieldAlert;
+    const proposalTone = isDeleteProposal || isBulkDeleteProposal
+        ? {
+            card: 'border-red-200/80 bg-white shadow-sm shadow-red-900/5',
+            header: 'border-red-100 bg-red-50/70',
+            icon: 'bg-red-100 text-red-600 border-red-200',
+            eyebrow: 'text-red-700',
+            badge: 'border-amber-200 bg-amber-50 text-amber-700'
+        }
+        : {
+            card: 'border-indigo-100 bg-white shadow-sm shadow-slate-900/5',
+            header: 'border-indigo-100 bg-indigo-50/60',
+            icon: 'bg-indigo-100 text-indigo-600 border-indigo-200',
+            eyebrow: 'text-indigo-700',
+            badge: 'border-indigo-200 bg-white text-indigo-700'
+        };
 
     return (
         <div className={`flex w-full ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -165,21 +198,24 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                 )}
 
                 {isProposal && kind !== 'form_proposal' && (
-                    <div className="mt-2 w-full border border-slate-200 rounded-xl bg-slate-50 p-3 flex flex-col gap-3">
-                        <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                            {message.kind === 'workflow_diff'
-                                ? 'Workflow changes'
-                                : message.kind === 'form_delete_proposal'
-                                    ? 'Delete form'
-                                    : message.kind === 'form_duplicate_proposal'
-                                        ? 'Duplicate form'
-                                        : message.kind === 'form_response_clear_proposal'
-                                            ? 'Clear form responses'
-                                            : 'Workflow proposal'}
+                    <div className={`mt-2 w-full overflow-hidden rounded-2xl border flex flex-col ${proposalTone.card}`}>
+                        <div className={`flex items-start gap-3 border-b px-4 py-3 ${proposalTone.header}`}>
+                            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${proposalTone.icon}`}>
+                                <ProposalIcon size={16} strokeWidth={2.25} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <div className={`text-[10px] font-extrabold uppercase tracking-[0.14em] ${proposalTone.eyebrow}`}>
+                                    {proposalTitle}
+                                </div>
+                                <div className="mt-1 text-xs leading-5 text-slate-500">
+                                    {isBulkDeleteProposal ? 'Review every form before permanently deleting them.' : isDeleteProposal ? 'Review the details before permanently deleting this form.' : 'Review the proposed changes before applying them.'}
+                                </div>
+                            </div>
+                            <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold ${!showProposalActions ? 'border-slate-200 bg-white text-slate-500' : proposalTone.badge}`}>
+                                {!showProposalActions ? status : 'Awaiting approval'}
                             </span>
-                            {payload.name && <span className="text-xs font-bold text-slate-700">{payload.name}</span>}
                         </div>
+                        <div className="flex flex-col gap-3 p-4">
                         {message.kind === 'workflow_proposal' && (
                             <div className="flex flex-col gap-1">
                                 {planSteps.map((item, index) => <div key={`${item.subType || item.id || item.type}-${index}`} className="text-xs text-slate-600"><span className="font-bold text-slate-800">{item.title || item.type}</span>{item.reason || item.description ? ` — ${item.reason || item.description}` : ''}</div>)}
@@ -194,22 +230,70 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                                 {(payload.diff?.edges || []).length > 0 && <div className="text-indigo-700">↔ Edge connections changed</div>}
                             </div>
                         )}
-                        {['form_delete_proposal', 'form_duplicate_proposal', 'form_response_clear_proposal'].includes(message.kind) && (
-                            <div className="flex flex-col gap-1 text-xs text-slate-600">
-                                {payload.title && <div><span className="font-semibold text-slate-800">Form:</span> {payload.title}</div>}
-                                {payload.sourceTitle && <div><span className="font-semibold text-slate-800">Copy of:</span> {payload.sourceTitle}</div>}
-                                {payload.responseCount !== undefined && <div><span className="font-semibold text-slate-800">Responses affected:</span> {payload.responseCount}</div>}
-                                {payload.permanent && <div className="font-semibold text-red-700">This deletion is permanent.</div>}
+                        {['form_delete_proposal', 'form_bulk_delete_proposal', 'form_duplicate_proposal', 'form_response_clear_proposal'].includes(message.kind) && (
+                            <div className="flex flex-col gap-3">
+                                <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-3">
+                                    {isBulkDeleteProposal ? (
+                                        <>
+                                            <div className="text-sm font-bold text-slate-800">{payload.formCount || payload.forms?.length || 0} forms selected</div>
+                                            <div className="mt-2 max-h-36 overflow-y-auto border-t border-slate-200/80 pt-2 text-xs text-slate-600">
+                                                {(payload.forms || []).map(form => <div key={form.id} className="flex items-center justify-between gap-3 py-1"><span className="truncate">{form.title || form.id}</span><span className="shrink-0 text-slate-400">{form.responseCount || 0} responses</span></div>)}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            {payload.title && <div className="text-sm font-bold text-slate-800">{payload.title}</div>}
+                                            {payload.sourceTitle && <div className="mt-1 text-xs text-slate-500">Copy of {payload.sourceTitle}</div>}
+                                        </>
+                                    )}
+                                    {payload.responseCount !== undefined && !isBulkDeleteProposal && (
+                                        <div className="mt-3 flex items-center justify-between border-t border-slate-200/80 pt-2.5 text-xs">
+                                            <span className="text-slate-500">Responses affected</span>
+                                            <span className="font-bold text-slate-800">{payload.responseCount}</span>
+                                        </div>
+                                    )}
+                                    {isBulkDeleteProposal && payload.totalResponseCount !== undefined && <div className="mt-3 flex items-center justify-between border-t border-slate-200/80 pt-2.5 text-xs"><span className="text-slate-500">Total responses affected</span><span className="font-bold text-slate-800">{payload.totalResponseCount}</span></div>}
+                                </div>
+                                {payload.permanent && (
+                                    <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50/70 px-3.5 py-3 text-xs leading-5 text-red-800">
+                                        <AlertTriangle size={15} className="mt-0.5 shrink-0 text-red-600" />
+                                        <span><span className="font-bold">Permanent deletion.</span> These forms and their responses cannot be recovered.</span>
+                                    </div>
+                                )}
                             </div>
                         )}
-                        {status ? (
-                            <div className={`text-center text-xs font-semibold py-2 rounded-lg ${status === 'Applied' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{status}</div>
+                        {!showProposalActions ? (
+                            <div className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold ${status === 'Applied' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+                                {status === 'Applied' ? <CheckCircle2 size={14} /> : null}
+                                {status}
+                            </div>
                         ) : (
-                            <div className="flex gap-2">
-                                <Button variant="primary" size="sm" className="flex-1" onClick={() => onApply?.(message)}>Apply</Button>
-                                <Button variant="outline" size="sm" className="flex-1" onClick={() => onIgnore?.(message)}>Ignore</Button>
+                            <div className="flex flex-col gap-2 border-t border-slate-100 pt-3 sm:flex-row">
+                                <Button
+                                    variant={isDeleteProposal || isBulkDeleteProposal ? 'dangerSolid' : 'primary'}
+                                    size="action"
+                                    className="!rounded-xl flex-1"
+                                    onClick={() => onApply?.(message)}
+                                    isLoading={isAccepting}
+                                    disabled={isRejecting}
+                                    loadingText={isBulkDeleteProposal ? 'Deleting forms…' : isDeleteProposal ? 'Deleting…' : 'Applying…'}
+                                >
+                                    {isBulkDeleteProposal ? 'Delete all forms' : isDeleteProposal ? 'Delete form' : 'Apply'}
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="action"
+                                    className="!rounded-xl flex-1"
+                                    onClick={() => onIgnore?.(message)}
+                                    isLoading={isRejecting}
+                                    disabled={isAccepting}
+                                    loadingText={isBulkDeleteProposal ? 'Keeping forms…' : isDeleteProposal ? 'Keeping…' : 'Ignoring…'}
+                                >
+                                    {isBulkDeleteProposal ? 'Keep forms' : isDeleteProposal ? 'Keep form' : 'Ignore'}
+                                </Button>
                             </div>
                         )}
+                        </div>
                     </div>
                 )}
             </div>

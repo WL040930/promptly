@@ -31,6 +31,7 @@ test('chat capability registry owns the complete typed tool surface', () => {
         'propose_form_change',
         'propose_form_duplicate',
         'propose_form_delete',
+        'propose_delete_all_forms',
         'propose_form_response_clear',
         'propose_workflow_change'
     ]);
