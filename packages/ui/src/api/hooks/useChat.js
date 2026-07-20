@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { approveAgentRun, deleteChatSession, getChatSession, getChatSessions, rejectAgentRun, sendChatMessage } from '../backend.js';
+import { approveAgentRun, decideChatProposal, deleteChatSession, getChatSession, getChatSessions, rejectAgentRun, sendChatMessage } from '../backend.js';
+import { submitAssistantTurnStream } from '../aiStream.js';
 
 const CHAT_SESSIONS_KEY = ['chatSessions'];
 
@@ -33,6 +34,16 @@ export function useSendChatMessage() {
     });
 }
 
+export function useSendAssistantTurnStream() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ sessionId, message, context, event, onEvent }) => submitAssistantTurnStream({ sessionId, message, context, event, onEvent }),
+        onSuccess: response => {
+            if (response?.sessionId) queryClient.invalidateQueries({ queryKey: CHAT_SESSIONS_KEY });
+        }
+    });
+}
+
 export function useDeleteChatSession() {
     const queryClient = useQueryClient();
 
@@ -61,5 +72,17 @@ export function useRejectAgentRun() {
     return useMutation({
         mutationFn: rejectAgentRun,
         onSuccess: () => queryClient.invalidateQueries({ queryKey: CHAT_SESSIONS_KEY })
+    });
+}
+
+export function useDecideChatProposal() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ sessionId, messageId, action, overrides }) => decideChatProposal(sessionId, messageId, action, overrides),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: CHAT_SESSIONS_KEY });
+            queryClient.invalidateQueries({ queryKey: ['forms'] });
+            queryClient.invalidateQueries({ queryKey: ['formResponses'] });
+        }
     });
 }

@@ -1,12 +1,22 @@
 import { ChatSession, ChatMessage } from '../../models/index.js';
 import { Op } from 'sequelize';
 import asyncHandler from '../../utils/asyncHandler.js';
-import { processChatMessage, applyEvent, saveUserMessage } from '../../services/chat/chatAgentService.js';
+import { processChatMessage, applyEvent, decideChatProposal, saveUserMessage } from '../../services/chat/chatAgentService.js';
 import { mergeAgentContext } from '../../services/chat/resourceResolver.js';
 
 export const sendMessage = asyncHandler(async (req, res) => {
     let { sessionId, message, context = {}, event } = req.body || {};
     const userId = req.user.id;
+    const useSSE = String(req.headers.accept || '').includes('text/event-stream');
+    if (useSSE) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders?.();
+    }
+    const emit = data => {
+        if (useSSE && !res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
     let session = sessionId ? await ChatSession.findOne({ where: { id: sessionId, userId } }) : null;
     if (!session) {
         const titleSource = message || 'New Agent Session';
@@ -18,9 +28,17 @@ export const sendMessage = asyncHandler(async (req, res) => {
         });
     }
 
+    try {
     if (event) {
         const eventResult = await applyEvent(session, userId, event);
-        if (eventResult?.reply) return res.json({ sessionId: session.id, reply: eventResult.reply, tokenUsage: eventResult.tokenUsage || null });
+        if (eventResult?.reply) {
+            const payload = { sessionId: session.id, reply: eventResult.reply, tokenUsage: eventResult.tokenUsage || null };
+            if (useSSE) {
+                emit({ type: 'turn.completed', result: payload });
+                return res.end();
+            }
+            return res.json(payload);
+        }
         if (eventResult?.resume) {
             message = eventResult.resume.message;
             context = { ...context, ...eventResult.resume.context };
@@ -35,9 +53,21 @@ export const sendMessage = asyncHandler(async (req, res) => {
         await session.update({ agentContext: nextAgentContext });
     }
 
-    const { replyObj, totalTokenUsage } = await processChatMessage({ session, userId, context });
+    const { replyObj, totalTokenUsage } = await processChatMessage({ session, userId, context, onEvent: emit });
 
-    return res.json({ sessionId: session.id, userMessage, reply: replyObj, tokenUsage: totalTokenUsage });
+    const payload = { sessionId: session.id, userMessage, reply: replyObj, tokenUsage: totalTokenUsage };
+    if (useSSE) {
+        emit({ type: 'turn.completed', result: payload });
+        return res.end();
+    }
+    return res.json(payload);
+    } catch (error) {
+        if (useSSE && !res.writableEnded) {
+            emit({ type: 'turn.failed', code: error.code || 'ASSISTANT_TURN_FAILED', message: error.message || 'Assistant turn failed.' });
+            return res.end();
+        }
+        throw error;
+    }
 });
 
 export const getSession = asyncHandler(async (req, res) => {
@@ -47,10 +77,10 @@ export const getSession = asyncHandler(async (req, res) => {
     if (!session) return res.status(404).json({ message: 'Session not found' });
     const whereClause = { sessionId };
     if (before) {
-        const cursorMsg = await ChatMessage.findByPk(before);
+        const cursorMsg = await ChatMessage.findOne({ where: { id: before, sessionId } });
         if (cursorMsg) whereClause.createdAt = { [Op.lt]: cursorMsg.createdAt };
     }
-    const messages = await ChatMessage.findAll({ where: whereClause, order: [['createdAt', 'ASC']], limit: parseInt(limit, 10) });
+    const messages = await ChatMessage.findAll({ where: whereClause, order: [['createdAt', 'DESC']], limit: parseInt(limit, 10) });
     
     const messagePayload = (msg) => {
         const json = msg.toJSON();
@@ -66,7 +96,20 @@ export const getSession = asyncHandler(async (req, res) => {
         };
     };
     
-    res.json({ ...session.toJSON(), messages: messages.map(messagePayload) });
+    res.json({ ...session.toJSON(), messages: messages.reverse().map(messagePayload) });
+});
+
+export const decideProposal = asyncHandler(async (req, res) => {
+    const session = await ChatSession.findOne({ where: { id: req.body?.sessionId, userId: req.user.id } });
+    if (!session) return res.status(404).json({ message: 'Session not found' });
+    const result = await decideChatProposal({
+        session,
+        userId: req.user.id,
+        messageId: req.params.messageId,
+        action: req.body?.action || 'approve',
+        overrides: req.body?.overrides || null
+    });
+    res.json(result);
 });
 
 export const getSessions = asyncHandler(async (req, res) => {

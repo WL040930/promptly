@@ -14,10 +14,6 @@ const ChatSession = sequelize.define(
             type: DataTypes.STRING,
             defaultValue: 'New Chat'
         },
-        messages: {
-            type: DataTypes.JSONB,
-            defaultValue: []
-        },
         agentContext: {
             type: DataTypes.JSONB,
             defaultValue: {}

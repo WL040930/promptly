@@ -57,7 +57,7 @@ const TokenUsageBreakdown = ({ tokenUsage }) => {
 
 export default function AgentMessage({ message, onApply, onIgnore, onOption, isTyping, isAccepting, isRejecting }) {
     const payload = message.payload || message.proposal || {};
-    const isProposal = message.proposal != null || ['workflow_proposal', 'workflow_diff', 'form_proposal'].includes(message.kind);
+    const isProposal = message.proposal != null || ['workflow_proposal', 'workflow_diff', 'form_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_response_clear_proposal'].includes(message.kind);
     const status = statusLabel(message.proposalStatus || payload.status);
     const clarification = (message.options && !Array.isArray(message.options)) ? message.options : null;
     const options = Array.isArray(message.options)
@@ -168,7 +168,15 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                     <div className="mt-2 w-full border border-slate-200 rounded-xl bg-slate-50 p-3 flex flex-col gap-3">
                         <div className="flex items-center justify-between">
                             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                                {message.kind === 'workflow_diff' ? 'Workflow changes' : 'Workflow proposal'}
+                            {message.kind === 'workflow_diff'
+                                ? 'Workflow changes'
+                                : message.kind === 'form_delete_proposal'
+                                    ? 'Delete form'
+                                    : message.kind === 'form_duplicate_proposal'
+                                        ? 'Duplicate form'
+                                        : message.kind === 'form_response_clear_proposal'
+                                            ? 'Clear form responses'
+                                            : 'Workflow proposal'}
                             </span>
                             {payload.name && <span className="text-xs font-bold text-slate-700">{payload.name}</span>}
                         </div>
@@ -184,6 +192,14 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                                 {(payload.diff?.updatedNodes || []).map(node => <div key={`u-${node.id}`} className="text-amber-700">~ {node.title}</div>)}
                                 {(payload.diff?.removedNodes || []).map(node => <div key={`r-${node.id}`} className="text-red-700">− {node.title}</div>)}
                                 {(payload.diff?.edges || []).length > 0 && <div className="text-indigo-700">↔ Edge connections changed</div>}
+                            </div>
+                        )}
+                        {['form_delete_proposal', 'form_duplicate_proposal', 'form_response_clear_proposal'].includes(message.kind) && (
+                            <div className="flex flex-col gap-1 text-xs text-slate-600">
+                                {payload.title && <div><span className="font-semibold text-slate-800">Form:</span> {payload.title}</div>}
+                                {payload.sourceTitle && <div><span className="font-semibold text-slate-800">Copy of:</span> {payload.sourceTitle}</div>}
+                                {payload.responseCount !== undefined && <div><span className="font-semibold text-slate-800">Responses affected:</span> {payload.responseCount}</div>}
+                                {payload.permanent && <div className="font-semibold text-red-700">This deletion is permanent.</div>}
                             </div>
                         )}
                         {status ? (

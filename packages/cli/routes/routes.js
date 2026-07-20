@@ -34,6 +34,9 @@ router.use('/forms', formRoutes);
 router.use('/runs', logRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/conversations', chatRoutes);
+// Assistant aliases keep the chat transport compatible while exposing the
+// resource-oriented interface used by the new UI.
+router.use('/assistant', chatRoutes);
 router.use('/nodes', nodeRoutes);
 router.use('/webhooks', webhookRoutes);
 router.use('/provider-events', providerEventRoutes);

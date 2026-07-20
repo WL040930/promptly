@@ -1,10 +1,10 @@
 import crypto from 'crypto';
 
 export const makeIntent = (value = {}) => ({
-    goal: ['create', 'modify', 'explain', 'debug', 'connect'].includes(value.goal) ? value.goal : 'create',
-    domains: [...new Set((Array.isArray(value.domains) ? value.domains : []).filter(domain => ['form', 'workflow', 'integration'].includes(domain)))],
+    goal: ['create', 'modify', 'delete', 'explain', 'debug', 'connect'].includes(value.goal) ? value.goal : 'create',
+    domains: [...new Set((Array.isArray(value.domains) ? value.domains : []).filter(domain => ['form', 'workflow', 'execution', 'integration'].includes(domain)))],
     resourceReferences: Array.isArray(value.resourceReferences) ? value.resourceReferences.slice(0, 8).map(reference => ({
-        type: reference?.type === 'form' ? 'form' : 'workflow',
+        type: ['form', 'workflow', 'execution'].includes(reference?.type) ? reference.type : 'workflow',
         query: String(reference?.query || '').trim().slice(0, 255)
     })).filter(reference => reference.query) : [],
     requirements: Array.isArray(value.requirements) ? value.requirements.slice(0, 20).map(item => String(item).trim().slice(0, 1000)).filter(Boolean) : [],

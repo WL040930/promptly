@@ -1,4 +1,4 @@
-import { ExecutionLog, Form, Workflow } from '../../models/index.js';
+import { ExecutionLog, Form, FormResponse, Workflow } from '../../models/index.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { resolveResource } from './resourceResolver.js';
 import {
@@ -157,7 +157,7 @@ export const createChatCapabilityRegistry = ({
             'search_resources',
             'Find a form or workflow by its ID or name. Use this before editing a named resource.',
             {
-                resourceType: { type: 'string', enum: ['form', 'workflow'] },
+                resourceType: { type: 'string', enum: ['form', 'workflow', 'execution'] },
                 query: { type: 'string' }
             },
             async ({ args }) => {
@@ -214,6 +214,49 @@ export const createChatCapabilityRegistry = ({
             'Get a compact definition of one form without loading response data.',
             { formId: { type: 'string' } },
             async ({ args }) => completed(compactFormContext(await formForRequest(userId, args.formId)))
+        ),
+        tool(
+            'get_form_dependencies',
+            'Find workflows that use a form submission trigger for this form.',
+            { formId: { type: 'string' } },
+            async ({ args }) => {
+                const form = await Form.findOne({ where: { id: args.formId, userId }, attributes: ['id', 'title', 'updatedAt', 'responseCount'] });
+                if (!form) return completed({ error: 'Form not found' });
+                const workflows = await Workflow.findAll({
+                    where: { userId },
+                    attributes: ['id', 'name', 'updatedAt', 'isActive', 'nodes'],
+                    order: [['updatedAt', 'DESC']]
+                });
+                const dependencies = workflows
+                    .filter(workflow => (workflow.nodes || []).some(node => node.subType === 'form-submission' && node.config?.formId === form.id))
+                    .map(workflow => redactSensitive(workflow.toJSON ? workflow.toJSON() : workflow));
+                return completed({
+                    form: redactSensitive(form.toJSON ? form.toJSON() : form),
+                    workflows: dependencies,
+                    canDelete: dependencies.length === 0
+                });
+            }
+        ),
+        tool(
+            'get_form_response_summary',
+            'Get a count and recent timestamps for a form without loading response contents.',
+            { formId: { type: 'string' } },
+            async ({ args }) => {
+                const form = await Form.findOne({ where: { id: args.formId, userId }, attributes: ['id', 'title', 'responseCount'] });
+                if (!form) return completed({ error: 'Form not found' });
+                const recent = await FormResponse.findAll({
+                    where: { formId: form.id },
+                    attributes: ['id', 'createdAt'],
+                    order: [['createdAt', 'DESC']],
+                    limit: 5
+                });
+                return completed({
+                    formId: form.id,
+                    title: form.title,
+                    responseCount: Number(form.responseCount || 0),
+                    recentResponses: recent.map(response => ({ id: response.id, createdAt: response.createdAt }))
+                });
+            }
         ),
         tool(
             'get_workflow_context',
@@ -284,6 +327,99 @@ export const createChatCapabilityRegistry = ({
                 }
                 if (result.reply?.kind === 'text') return completed(result.reply);
                 return clarification(result.reply);
+            },
+            'proposal'
+        ),
+        tool(
+            'propose_form_duplicate',
+            'Prepare a reviewable copy of an existing form. Do not create the copy yet.',
+            {
+                formId: { type: 'string' },
+                title: { type: 'string' }
+            },
+            async ({ args }) => {
+                const form = await formForRequest(userId, args.formId);
+                if (!form) return completed({ error: 'Form not found' });
+                const reply = await saveReply(session, {
+                    text: 'I prepared a copy of the form for your review.',
+                    kind: 'form_duplicate_proposal',
+                    payload: {
+                        action: 'duplicate_form',
+                        formId: form.id,
+                        sourceTitle: form.title,
+                        title: String(args.title || `${form.title} copy`).trim().slice(0, 255),
+                        schema: {
+                            title: String(args.title || `${form.title} copy`).trim().slice(0, 255),
+                            description: form.description || '',
+                            settings: form.settings || {},
+                            fields: form.fields || []
+                        },
+                        baseFormUpdatedAt: form.updatedAt
+                    },
+                    proposalStatus: 'pending'
+                });
+                await session.update({ agentState: { status: 'awaiting_form_approval', formId: form.id, proposalMessageId: reply.id } });
+                return approval(reply);
+            },
+            'proposal'
+        ),
+        tool(
+            'propose_form_delete',
+            'Prepare a reviewable permanent form deletion. Always inspect dependencies and response count first.',
+            { formId: { type: 'string' } },
+            async ({ args }) => {
+                const form = await Form.findOne({ where: { id: args.formId, userId }, attributes: ['id', 'title', 'updatedAt', 'responseCount'] });
+                if (!form) return completed({ error: 'Form not found' });
+                const workflows = await Workflow.findAll({ where: { userId }, attributes: ['id', 'name', 'updatedAt', 'isActive', 'nodes'] });
+                const dependencies = workflows
+                    .filter(workflow => (workflow.nodes || []).some(node => node.subType === 'form-submission' && node.config?.formId === form.id))
+                    .map(workflow => ({ id: workflow.id, name: workflow.name, isActive: workflow.isActive }));
+                if (dependencies.length > 0) {
+                    return clarification(await saveReply(session, {
+                        text: `I cannot prepare deletion yet because ${dependencies.length} workflow${dependencies.length === 1 ? '' : 's'} still use this form. Remove or update those workflow references first.`,
+                        kind: 'clarification',
+                        payload: { formId: form.id, dependencies }
+                    }));
+                }
+                const reply = await saveReply(session, {
+                    text: `I prepared permanent deletion of “${form.title}”. This will remove the form and its ${Number(form.responseCount || 0)} response${Number(form.responseCount || 0) === 1 ? '' : 's'}.`,
+                    kind: 'form_delete_proposal',
+                    payload: {
+                        action: 'delete_form',
+                        formId: form.id,
+                        title: form.title,
+                        responseCount: Number(form.responseCount || 0),
+                        permanent: true,
+                        baseFormUpdatedAt: form.updatedAt
+                    },
+                    proposalStatus: 'pending'
+                });
+                await session.update({ agentState: { status: 'awaiting_form_delete_approval', formId: form.id, proposalMessageId: reply.id } });
+                return approval(reply);
+            },
+            'proposal'
+        ),
+        tool(
+            'propose_form_response_clear',
+            'Prepare a reviewable permanent deletion of all responses for a form.',
+            { formId: { type: 'string' } },
+            async ({ args }) => {
+                const form = await formForRequest(userId, args.formId);
+                if (!form) return completed({ error: 'Form not found' });
+                const reply = await saveReply(session, {
+                    text: `I prepared deletion of all ${Number(form.responseCount || 0)} responses for “${form.title}”.`,
+                    kind: 'form_response_clear_proposal',
+                    payload: {
+                        action: 'clear_form_responses',
+                        formId: form.id,
+                        title: form.title,
+                        responseCount: Number(form.responseCount || 0),
+                        baseFormUpdatedAt: form.updatedAt
+                    },
+                    proposalStatus: 'pending'
+                });
+                await session.update({ agentState: { status: 'awaiting_form_response_clear_approval', formId: form.id, proposalMessageId: reply.id } });
+                return approval(reply);
             },
             'proposal'
         ),

@@ -56,3 +56,7 @@ export const approveAgentRun = (runId, idempotencyKey) => apiRequest(`/api/conve
     body: JSON.stringify({ idempotencyKey })
 });
 export const rejectAgentRun = (runId) => apiRequest(`/api/conversations/agent-runs/${runId}/reject`, { method: 'POST' });
+export const decideChatProposal = (sessionId, messageId, action = 'approve', overrides = null) => apiRequest(`/api/assistant/proposals/${messageId}/decision`, {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, action, ...(overrides ? { overrides } : {}) })
+});

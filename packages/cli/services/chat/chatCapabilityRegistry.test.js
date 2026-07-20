@@ -23,10 +23,15 @@ test('chat capability registry owns the complete typed tool surface', () => {
         'get_form',
         'get_workflow',
         'get_form_context',
+        'get_form_dependencies',
+        'get_form_response_summary',
         'get_workflow_context',
         'get_execution_summary',
         'get_execution_details',
         'propose_form_change',
+        'propose_form_duplicate',
+        'propose_form_delete',
+        'propose_form_response_clear',
         'propose_workflow_change'
     ]);
     assert.equal(registry.toToolDefinitions().every(tool => tool.function.strict === true), true);

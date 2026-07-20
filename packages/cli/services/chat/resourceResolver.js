@@ -1,9 +1,10 @@
-import { Form, Workflow } from '../../models/index.js';
+import { ExecutionLog, Form, Workflow } from '../../models/index.js';
 import { normalizeClarificationMode } from '../../../shared/agentContract.js';
 
 const RESOURCE_CONFIG = {
     workflow: { model: Workflow, labelField: 'name' },
-    form: { model: Form, labelField: 'title' }
+    form: { model: Form, labelField: 'title' },
+    execution: { model: ExecutionLog, labelField: 'id' }
 };
 
 const normalize = (value) => String(value || '').trim().toLocaleLowerCase();
@@ -43,15 +44,15 @@ export const findResourceCandidates = async ({
     type,
     reference = '',
     limit = 50,
-    models = { Form, Workflow }
+    models = { Form, Workflow, ExecutionLog }
 }) => {
     const config = RESOURCE_CONFIG[type];
     if (!config) throw new Error(`Unsupported resource type: ${type}`);
 
-    const model = models[type === 'workflow' ? 'Workflow' : 'Form'] || config.model;
+    const model = models[type === 'workflow' ? 'Workflow' : type === 'form' ? 'Form' : 'ExecutionLog'] || config.model;
     const resources = await model.findAll({
         where: { userId },
-        attributes: ['id', config.labelField, 'updatedAt'],
+        attributes: [...new Set(['id', config.labelField, 'updatedAt'])],
         order: [['updatedAt', 'DESC']],
         limit
     });
@@ -69,13 +70,13 @@ export const resolveResource = async ({
     type,
     reference,
     selectedId = null,
-    models = { Form, Workflow }
+    models = { Form, Workflow, ExecutionLog }
 }) => {
     const config = RESOURCE_CONFIG[type];
     if (!config) throw new Error(`Unsupported resource type: ${type}`);
 
     if (selectedId) {
-        const model = models[type === 'workflow' ? 'Workflow' : 'Form'] || config.model;
+        const model = models[type === 'workflow' ? 'Workflow' : type === 'form' ? 'Form' : 'ExecutionLog'] || config.model;
         const selected = await model.findOne({ where: { id: selectedId, userId } });
         if (selected) return { status: 'resolved', resource: selected, source: 'selected' };
     }
@@ -96,6 +97,9 @@ export const mergeAgentContext = (stored = {}, incoming = {}) => {
     const merged = { ...stored };
     if (Object.prototype.hasOwnProperty.call(incoming, 'workflowId')) {
         merged.workflowId = incoming.workflowId || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(incoming, 'executionId')) {
+        merged.executionId = incoming.executionId || null;
     }
     if (Object.prototype.hasOwnProperty.call(incoming, 'formId')) {
         merged.formId = incoming.formId || null;

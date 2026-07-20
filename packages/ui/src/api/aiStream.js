@@ -9,6 +9,61 @@ const createStreamError = (message, code) => {
     return error;
 };
 
+export const submitAssistantTurnStream = async ({ sessionId = null, message = '', context = {}, event = null, onEvent, signal: externalSignal } = {}) => {
+    const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream'
+    };
+    const token = getAuthToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const controller = new AbortController();
+    const abortExternal = () => controller.abort();
+    externalSignal?.addEventListener('abort', abortExternal, { once: true });
+    try {
+        const response = await fetch(`${apiBase}/api/assistant/turns`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ sessionId, message, context, ...(event ? { event } : {}) }),
+            signal: controller.signal
+        });
+        if (!response.ok || !response.body) throw createStreamError('Failed to start assistant turn.', 'ASSISTANT_STREAM_START_FAILED');
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const events = buffer.split('\n\n');
+            buffer = events.pop() || '';
+            for (const rawEvent of events) {
+                if (!rawEvent.startsWith('data: ')) continue;
+                let data;
+                try {
+                    data = JSON.parse(rawEvent.substring(6));
+                } catch {
+                    continue;
+                }
+                onEvent?.(data);
+                if (data.type === 'turn.completed') return data.result;
+                if (data.type === 'turn.failed') {
+                    const error = createStreamError(data.message || 'Assistant turn failed.', data.code || 'ASSISTANT_TURN_FAILED');
+                    error.issues = data.issues;
+                    throw error;
+                }
+            }
+        }
+        throw createStreamError('Assistant turn ended before a result was received.', 'ASSISTANT_STREAM_INCOMPLETE');
+    } catch (error) {
+        if (error.name === 'AbortError') throw createStreamError('Assistant turn cancelled.', 'ASSISTANT_TURN_CANCELLED');
+        throw error;
+    } finally {
+        externalSignal?.removeEventListener('abort', abortExternal);
+    }
+};
+
 export const submitFormAITurnStream = async (formId, command, clarificationMode, onProgress, options = {}) => {
     const headers = {
         'Content-Type': 'application/json',

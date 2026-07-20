@@ -1,4 +1,4 @@
-import { ChatMessage, Form, Workflow } from '../../models/index.js';
+import { ChatMessage, ExecutionLog, Form, Workflow } from '../../models/index.js';
 import { runFormTurn } from '../ai/formAIService.js';
 import {
     assembleWorkflow,
@@ -78,17 +78,21 @@ const deterministicIntent = ({ message, context = {} }) => {
     const domains = [];
     if (/\b(form|survey|field|question|response)\b/i.test(text)) domains.push('form');
     if (/\b(workflow|automation|trigger|node|email|sheet|webhook|database)\b/i.test(text)) domains.push('workflow');
+    if (/\b(execution|run|failed|failure|error|diagnos)\b/i.test(text)) domains.push('execution');
     if (/\b(connect|integration|google|gmail|sheets|webhook)\b/i.test(text)) domains.push('integration');
     if (context.formId && !domains.includes('form')) domains.push('form');
     if (context.workflowId && !domains.includes('workflow')) domains.push('workflow');
-    const isModification = /\b(modify|update|change|add|remove|delete|edit|improve)\b/i.test(text);
+    if (context.executionId && !domains.includes('execution')) domains.push('execution');
+    const isDeletion = /\b(delete|remove|clear)\b/i.test(text);
+    const isModification = /\b(modify|update|change|add|remove|edit|improve)\b/i.test(text);
     const isActionRequest = /\b(create|build|design|draft|make|set up|setup|automate|connect|i need|i want|please)\b/i.test(text);
     return makeIntent({
-        goal: isModification ? 'modify' : isActionRequest ? 'create' : 'explain',
+        goal: isDeletion ? 'delete' : isModification ? 'modify' : isActionRequest ? 'create' : 'explain',
         domains,
         resourceReferences: [
             context.formId ? { type: 'form', query: context.formId } : null,
-            context.workflowId ? { type: 'workflow', query: context.workflowId } : null
+            context.workflowId ? { type: 'workflow', query: context.workflowId } : null,
+            context.executionId ? { type: 'execution', query: context.executionId } : null
         ].filter(Boolean),
         requirements: [text],
         confidence: 0.45,
@@ -98,13 +102,14 @@ const deterministicIntent = ({ message, context = {} }) => {
 
 const analyzeIntent = async ({ message, context }) => {
     const fallback = deterministicIntent({ message, context });
+    if (fallback.goal === 'delete') return { intent: fallback, tokenUsage: {} };
     try {
         const result = await requestAgentJson({
             label: 'intent',
             prompt: [
                 'User request:', message,
                 '',
-                'Selected UI context:', JSON.stringify({ formId: context.formId || null, workflowId: context.workflowId || null }),
+                'Selected UI context:', JSON.stringify({ formId: context.formId || null, workflowId: context.workflowId || null, executionId: context.executionId || null }),
                 '',
                 'Return the typed intent. Keep requirements concise.'
             ].join('\n')
@@ -123,6 +128,7 @@ const research = async ({ userId, intent, context }) => {
     const references = [
         context.formId ? { type: 'form', query: context.formId } : null,
         context.workflowId ? { type: 'workflow', query: context.workflowId } : null,
+        context.executionId ? { type: 'execution', query: context.executionId } : null,
         ...(intent.resourceReferences || [])
     ].filter(Boolean);
 
@@ -136,14 +142,17 @@ const research = async ({ userId, intent, context }) => {
             return { status: 'not_found', type: reference.type, query: reference.query };
         }
         if (result.status === 'resolved') {
-            const resource = reference.type === 'form'
-                ? await Form.findOne({ where: { id: result.resource.id, userId } })
-                : await Workflow.findOne({ where: { id: result.resource.id, userId } });
+            const resourceModel = reference.type === 'form' ? Form : reference.type === 'workflow' ? Workflow : ExecutionLog;
+            const resource = await resourceModel.findOne({ where: { id: result.resource.id, userId } });
             if (!resource) continue;
             resources.push({
                 type: reference.type,
                 id: resource.id,
-                resource: reference.type === 'form' ? compactForm(resource) : compactWorkflow(resource),
+                resource: reference.type === 'form'
+                    ? compactForm(resource)
+                    : reference.type === 'workflow'
+                        ? compactWorkflow(resource)
+                        : { id: resource.id, type: 'execution', updatedAt: resource.updatedAt, status: resource.status, workflowId: resource.workflowId },
                 full: resource
             });
         }
@@ -459,7 +468,7 @@ const saveClarification = async ({ session, run, type, candidates, text }) => {
     });
 };
 
-export const processAgenticTurn = async ({ session, userId, message, context = {}, run: existingRun = null, force = false, skipPlanReview = false, approvedPlan = null }) => {
+export const processAgenticTurn = async ({ session, userId, message, context = {}, run: existingRun = null, force = false, skipPlanReview = false, approvedPlan = null, onEvent = null }) => {
     // Intent classification is the routing seam. The old implementation used
     // a fixed keyword gate here, which made natural-language requests fall
     // into a different agent. Keep the exported predicate for compatibility,
@@ -473,6 +482,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         surface: context.surface || 'chat',
         formId: context.formId || null,
         workflowId: context.workflowId || null,
+        executionId: context.executionId || null,
         activeResource: context.activeResource || null,
         clarificationMode: normalizeClarificationMode(context.clarificationMode)
     };
@@ -488,7 +498,9 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
     }
     let totalUsage = {};
     try {
+        onEvent?.({ type: 'run.started', runId: run.id });
         await updateRun(run, { status: 'understanding', currentStep: 'understand' });
+        onEvent?.({ type: 'step.started', runId: run.id, step: 'understand' });
         const intentStep = await createStep(run, { stepKey: 'understand', type: 'understand' });
         await startStep(intentStep);
         const analyzed = preAnalyzed || await analyzeIntent({ message, context });
@@ -496,7 +508,9 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         await updateRun(run, { intent: analyzed.intent, tokenUsage: totalUsage });
         await completeStep(intentStep, { result: analyzed.intent, tokenUsage: analyzed.tokenUsage });
 
+        onEvent?.({ type: 'step.completed', runId: run.id, step: 'understand' });
         await updateRun(run, { status: 'researching', currentStep: 'research' });
+        onEvent?.({ type: 'step.started', runId: run.id, step: 'research' });
         const researchStep = await createStep(run, { stepKey: 'research', type: 'research' });
         await startStep(researchStep);
         const researched = await research({ userId, intent: analyzed.intent, context });
@@ -517,6 +531,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
             return { handled: true, replyObj: reply, totalTokenUsage: totalUsage };
         }
         await completeStep(researchStep, { result: researched.resources.map(item => item.resource) });
+        onEvent?.({ type: 'step.completed', runId: run.id, step: 'research' });
 
         const planned = approvedPlan
             ? { plan: approvedPlan, tokenUsage: {} }
@@ -529,6 +544,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         const planUsage = planned.tokenUsage;
         totalUsage = addUsage(totalUsage, planUsage);
         await updateRun(run, { status: 'planning', plan, tokenUsage: totalUsage });
+        onEvent?.({ type: 'plan.ready', runId: run.id, plan });
         const planStep = await createStep(run, { stepKey: 'plan', type: 'plan' });
         await startStep(planStep);
         await completeStep(planStep, { result: plan, tokenUsage: planUsage });
@@ -550,6 +566,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         }
 
         await updateRun(run, { status: 'designing', currentStep: 'design' });
+        onEvent?.({ type: 'step.started', runId: run.id, step: 'design' });
         const form = resourceByType(researched.resources, 'form');
         const workflow = resourceByType(researched.resources, 'workflow');
         const capabilityRegistry = createSolutionCapabilityRegistry({
@@ -637,6 +654,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         });
 
         await updateRun(run, { status: 'awaiting_approval', currentStep: null, tokenUsage: totalUsage });
+        onEvent?.({ type: 'approval.required', runId: run.id, artifactIds });
         await session.update({ agentState: { status: 'awaiting_agent_approval', runId: run.id } });
         const firstArtifact = artifacts.find(artifact => artifact.type === 'form_proposal') || artifacts[0];
         const kind = firstArtifact.type === 'form_proposal' ? 'form_proposal' : 'workflow_proposal';
@@ -663,6 +681,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
             proposalStatus: 'pending'
         });
         await updateRun(run, { metadata: { ...(run.metadata || {}), proposalMessageId: reply.id } });
+        onEvent?.({ type: 'run.completed', runId: run.id, status: 'awaiting_approval' });
         return { handled: true, replyObj: reply, totalTokenUsage: totalUsage };
     } catch (error) {
         const failure = makeError(error);

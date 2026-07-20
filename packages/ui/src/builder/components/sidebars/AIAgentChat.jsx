@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useApproveAgentRun, useRejectAgentRun, useSendChatMessage } from '../../../api/hooks/useChat.js';
+import { useApproveAgentRun, useDecideChatProposal, useRejectAgentRun, useSendChatMessage } from '../../../api/hooks/useChat.js';
 import GenericChatWidget from '../../../components/chat/GenericChatWidget.jsx';
 import ClarificationModeSelect from '../../../components/chat/ClarificationModeSelect.jsx';
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../../shared/agentContract.js';
@@ -24,6 +24,7 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
     const sendChatMessageMutation = useSendChatMessage();
     const approveAgentRunMutation = useApproveAgentRun();
     const rejectAgentRunMutation = useRejectAgentRun();
+    const decideChatProposalMutation = useDecideChatProposal();
 
     const appendReply = (response) => {
         if (response?.reply) {
@@ -86,6 +87,13 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
                 ]);
                 return;
             }
+            if (['form_duplicate_proposal', 'form_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
+                const result = await decideChatProposalMutation.mutateAsync({ sessionId, messageId: message.id, action: 'approve' });
+                setMessages(previous => previous.map(item => item.id === message.id
+                    ? { ...item, proposalStatus: 'applied', payload: result?.message?.payload || item.payload }
+                    : item));
+                return;
+            }
             const result = await onApplyProposal?.(message);
             setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied' } : item));
             if (message.kind === 'form_proposal') {
@@ -102,6 +110,10 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
         setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'ignored' } : item));
         if (message.payload?.runId) {
             rejectAgentRunMutation.mutate(message.payload.runId);
+            return;
+        }
+        if (['form_duplicate_proposal', 'form_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
+            decideChatProposalMutation.mutate({ sessionId, messageId: message.id, action: 'reject' });
             return;
         }
         send(null, { type: 'proposal_ignored', messageId: message.id });

@@ -1,4 +1,6 @@
-import { ChatSession, ChatMessage, Workflow, Form, AgentRun } from '../../models/index.js';
+import { ChatSession, ChatMessage, Workflow, Form, AgentRun, WorkflowVersion } from '../../models/index.js';
+import sequelize from '../../db/index.js';
+import { FormAIState, FormChatMessage, FormResponse } from '../../models/index.js';
 import { runFormTurn } from '../ai/formAIService.js';
 import { ai } from '../ai/index.js';
 import { AI_TASKS } from '../ai/core/aiTasks.js';
@@ -11,6 +13,9 @@ import { createChatCapabilityRegistry } from './chatCapabilityRegistry.js';
 import { hasFallbackToolMarkup, parseFallbackToolCall } from './fallbackToolCall.js';
 import { getClarificationModeInstruction, normalizeClarificationMode } from '../../../shared/agentContract.js';
 import { supersedePendingChatFormProposals } from '../proposalLifecycle.js';
+import { applyFormPatches } from '../ai/form/domain/formPatchEngine.js';
+import { validateFormSchema } from '../ai/form/domain/formSchemaValidator.js';
+import { validateWorkflow } from '../engine/workflowValidator.js';
 
 const tokenPayload = (...usages) => {
     const stage1 = usages[0] || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -57,6 +62,188 @@ export const saveUserMessage = async (session, message) => {
     if (!message || !message.trim()) return null;
     const saved = await ChatMessage.create({ sessionId: session.id, sender: 'user', text: message.trim(), kind: 'text' });
     return messagePayload(saved);
+};
+
+const formUses = (workflow, formId) => (workflow.nodes || [])
+    .some(node => node.subType === 'form-submission' && node.config?.formId === formId);
+
+const ensureFormRevision = (form, expected) => {
+    if (expected && new Date(form.updatedAt).getTime() !== new Date(expected).getTime()) {
+        const error = new Error('This form changed while the proposal was waiting for approval. Generate a new proposal.');
+        error.code = 'FORM_PROPOSAL_STALE';
+        error.status = 409;
+        throw error;
+    }
+};
+
+/**
+ * Apply non-AI form lifecycle proposals through one server-owned seam.
+ * The browser submits a decision; it never performs the destructive write.
+ */
+export const decideChatProposal = async ({ session, userId, messageId, action = 'approve', overrides = null } = {}) => {
+    if (!session?.id || !messageId) throw new Error('A session and proposal message are required.');
+    let result;
+    await sequelize.transaction(async transaction => {
+        const message = await ChatMessage.findOne({
+            where: { id: messageId, sessionId: session.id },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        if (!message) {
+            const error = new Error('Proposal not found.');
+            error.code = 'CHAT_PROPOSAL_NOT_FOUND';
+            error.status = 404;
+            throw error;
+        }
+        if (message.proposalStatus === 'applied') {
+            result = { status: 'applied', message: messagePayload(message), resource: message.payload?.result || null };
+            return;
+        }
+        if (message.proposalStatus !== 'pending') {
+            const error = new Error('This proposal is no longer pending.');
+            error.code = 'CHAT_PROPOSAL_NOT_PENDING';
+            error.status = 409;
+            throw error;
+        }
+
+        const proposal = { ...(message.payload || {}), ...(overrides || {}) };
+        if (action === 'reject' || action === 'ignore') {
+            await message.update({ proposalStatus: 'ignored' }, { transaction });
+            await session.update({ agentState: {} }, { transaction });
+            result = { status: 'ignored', message: messagePayload({ toJSON: () => ({ ...message.toJSON(), proposalStatus: 'ignored' }) }) };
+            return;
+        }
+
+        const formKinds = ['form_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_response_clear_proposal'];
+        if (formKinds.includes(message.kind)) {
+            const form = proposal.formId
+                ? await Form.findOne({ where: { id: proposal.formId, userId }, transaction, lock: transaction.LOCK.UPDATE })
+                : null;
+            if (proposal.formId && !form) {
+                const error = new Error('The form no longer exists.');
+                error.code = 'FORM_NOT_FOUND';
+                error.status = 404;
+                throw error;
+            }
+            ensureFormRevision(form, proposal.baseFormUpdatedAt);
+
+            if (message.kind === 'form_proposal') {
+                const schema = proposal.schema || (form && Array.isArray(proposal.patches)
+                    ? applyFormPatches({ currentSchema: form.toJSON(), patches: proposal.patches }).schema
+                    : proposal.schema);
+                const issues = validateFormSchema(schema || {});
+                if (issues.length > 0) {
+                    const error = new Error('The form proposal failed validation.');
+                    error.code = 'FORM_PROPOSAL_INVALID';
+                    error.status = 422;
+                    error.issues = issues;
+                    throw error;
+                }
+                const saved = form || await Form.create({
+                    title: schema.title,
+                    description: schema.description || '',
+                    settings: schema.settings || {},
+                    fields: schema.fields || [],
+                    userId
+                }, { transaction });
+                if (form) await saved.update({
+                    title: schema.title,
+                    description: schema.description || '',
+                    settings: schema.settings || {},
+                    fields: schema.fields || []
+                }, { transaction });
+                result = { formId: saved.id, action: form ? 'edit_form' : 'create_form' };
+            } else if (message.kind === 'form_delete_proposal') {
+            const workflows = await Workflow.findAll({ where: { userId }, transaction, attributes: ['id', 'name', 'nodes'] });
+            const dependencies = workflows.filter(workflow => formUses(workflow, form.id));
+            if (dependencies.length > 0) {
+                const error = new Error('The form is still used by one or more workflows.');
+                error.code = 'FORM_DELETE_DEPENDENCIES';
+                error.status = 409;
+                error.issues = dependencies.map(workflow => ({ id: workflow.id, name: workflow.name }));
+                throw error;
+            }
+            await FormChatMessage.destroy({ where: { formId: form.id }, transaction });
+            await FormAIState.destroy({ where: { formId: form.id }, transaction });
+            await FormResponse.destroy({ where: { formId: form.id }, transaction });
+            await form.destroy({ transaction });
+            result = { formId: form.id, action: 'delete_form' };
+            } else if (message.kind === 'form_duplicate_proposal') {
+            const copy = await Form.create({
+                title: proposal.schema?.title || `${form.title} copy`,
+                description: proposal.schema?.description || form.description || '',
+                settings: proposal.schema?.settings || form.settings || {},
+                fields: proposal.schema?.fields || form.fields || [],
+                userId
+            }, { transaction });
+            result = { formId: copy.id, action: 'duplicate_form' };
+            } else if (message.kind === 'form_response_clear_proposal') {
+            await FormResponse.destroy({ where: { formId: form.id }, transaction });
+            await form.update({ responseCount: 0 }, { transaction });
+            result = { formId: form.id, action: 'clear_form_responses' };
+            }
+        } else if (message.kind === 'workflow_diff' || message.kind === 'workflow_proposal') {
+            const workflow = proposal.workflowId
+                ? await Workflow.findOne({ where: { id: proposal.workflowId, userId }, transaction, lock: transaction.LOCK.UPDATE })
+                : null;
+            if (proposal.workflowId && !workflow) {
+                const error = new Error('The workflow no longer exists.');
+                error.code = 'WORKFLOW_NOT_FOUND';
+                error.status = 404;
+                throw error;
+            }
+            if (workflow && proposal.baseWorkflowUpdatedAt) {
+                ensureFormRevision(workflow, proposal.baseWorkflowUpdatedAt);
+            }
+            const nodes = Array.isArray(proposal.nodes) ? proposal.nodes : [];
+            const edges = Array.isArray(proposal.edges) ? proposal.edges : [];
+            const validation = validateWorkflow({ nodes, edges, isActive: false, registry: NodeRegistry });
+            if (!validation.valid) {
+                const error = new Error('The workflow proposal failed validation.');
+                error.code = 'WORKFLOW_PROPOSAL_INVALID';
+                error.status = 422;
+                error.issues = validation.issues;
+                throw error;
+            }
+            const saved = workflow || await Workflow.create({
+                name: proposal.name || 'New Automation',
+                status: 'Draft',
+                isActive: false,
+                iconColor: 'text-indigo-600',
+                iconBg: 'bg-indigo-100',
+                nodes,
+                edges,
+                revision: 1,
+                userId
+            }, { transaction });
+            const nextRevision = Number(saved.revision || 0) + (workflow ? 1 : 0);
+            const version = await WorkflowVersion.create({
+                workflowId: saved.id,
+                versionNumber: workflow ? nextRevision : 1,
+                baseRevisionId: workflow ? String(saved.revision || 1) : null,
+                nodes,
+                edges,
+                source: 'ai',
+                summary: proposal.summary || 'Applied AI automation proposal'
+            }, { transaction });
+            await saved.update({
+                draftRevisionId: version.id,
+                ...(workflow ? { nodes, edges, revision: nextRevision } : {})
+            }, { transaction });
+            result = { workflowId: saved.id, action: workflow ? 'edit_workflow' : 'create_workflow' };
+        } else {
+            const error = new Error('Unsupported chat proposal.');
+            error.code = 'CHAT_PROPOSAL_UNSUPPORTED';
+            error.status = 400;
+            throw error;
+        }
+
+        const nextPayload = { ...proposal, result, appliedAt: new Date().toISOString() };
+        await message.update({ proposalStatus: 'applied', payload: nextPayload }, { transaction });
+        await session.update({ agentState: {} }, { transaction });
+        result = { status: 'applied', message: messagePayload({ toJSON: () => ({ ...message.toJSON(), proposalStatus: 'applied', payload: nextPayload }) }), resource: result };
+    });
+    return result;
 };
 
 const workflowForRequest = async (userId, workflowId) => {
@@ -327,7 +514,7 @@ Never invent resource IDs. Resolve named resources before editing them. Never ap
 If native function calling is unavailable, output a tool request exactly as <TOOL>{"name":"tool_name","args":{...}}</TOOL> and wait for <TOOL_RESPONSE>...</TOOL_RESPONSE> before continuing.`;
 
 // Tool definitions are generated by chatCapabilityRegistry.js.
-export const processChatMessage = async ({ session, userId, context = {} }) => {
+export const processChatMessage = async ({ session, userId, context = {}, onEvent = null }) => {
     const effectiveContext = mergeAgentContext(session.agentContext || {}, context);
     const latestUserMessage = await ChatMessage.findOne({
         where: { sessionId: session.id, sender: 'user' },
@@ -371,7 +558,7 @@ export const processChatMessage = async ({ session, userId, context = {} }) => {
         return { replyObj: resumed.replyObj, totalTokenUsage: resumed.totalTokenUsage };
     }
 
-    const agenticResult = await processAgenticTurn({ session, userId, message: latestUserMessage?.text || '', context: effectiveContext });
+    const agenticResult = await processAgenticTurn({ session, userId, message: latestUserMessage?.text || '', context: effectiveContext, onEvent });
     if (agenticResult.handled) return { replyObj: agenticResult.replyObj, totalTokenUsage: agenticResult.totalTokenUsage };
 
     const history = await ChatMessage.findAll({
@@ -426,6 +613,7 @@ export const processChatMessage = async ({ session, userId, context = {} }) => {
 
     while (loopCount < maxLoops) {
         loopCount++;
+        onEvent?.({ type: 'assistant_step_started', step: 'respond', attempt: loopCount });
         const response = await ai.run({
             task: AI_TASKS.CHAT_RESPOND,
             messages: aiMessages,
@@ -471,6 +659,7 @@ Clarification for form requirements: ${normalizeClarificationMode(effectiveConte
             // the chat loop only serializes the observation for the model.
             let capabilityResult;
             try {
+                onEvent?.({ type: 'tool_started', name });
                 capabilityResult = await capabilityRegistry.execute(name, args, {
                     session,
                     userId,
@@ -482,6 +671,7 @@ Clarification for form requirements: ${normalizeClarificationMode(effectiveConte
                     output: { error: error.message, code: error.code || 'AGENT_CAPABILITY_FAILED' }
                 };
             }
+            onEvent?.({ type: 'tool_completed', name, status: capabilityResult.status || 'completed' });
 
             if (capabilityResult.reply) {
                 replyObj = capabilityResult.reply;
@@ -517,6 +707,7 @@ Clarification for form requirements: ${normalizeClarificationMode(effectiveConte
 
         } else {
             replyObj = await saveReply(session, { text: replyText, kind: 'text' });
+            onEvent?.({ type: 'assistant_step_completed', step: 'respond' });
             break;
         }
     }

@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useToast } from '../../context/ToastContext.jsx';
-import { useApproveAgentRun, useChatSession, useChatSessions, useDeleteChatSession, useRejectAgentRun, useSendChatMessage } from '../../api/hooks/useChat.js';
-import { useCreateForm, useForm, useUpdateForm } from '../../api/hooks/useForms.js';
-import { useCreateWorkflow, useUpdateWorkflow, useWorkflow } from '../../api/hooks/useWorkflows.js';
+import { useApproveAgentRun, useChatSession, useChatSessions, useDecideChatProposal, useDeleteChatSession, useRejectAgentRun, useSendAssistantTurnStream } from '../../api/hooks/useChat.js';
+import { useForm } from '../../api/hooks/useForms.js';
+import { useWorkflow } from '../../api/hooks/useWorkflows.js';
 import Button from '../../components/ui/Button.jsx';
 import GenericChatWidget from '../../components/chat/GenericChatWidget.jsx';
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
@@ -39,14 +39,11 @@ export default function ChatTab({ conversationId = null, automationId = null, st
     const { data: session, isPending: isSessionPending } = useChatSession(sessionId);
     const { data: targetWorkflow } = useWorkflow(targetWorkflowId);
     const { data: previewForm } = useForm(previewFormId);
-    const sendChatMessageMutation = useSendChatMessage();
+    const sendAssistantTurnMutation = useSendAssistantTurnStream();
     const approveAgentRunMutation = useApproveAgentRun();
     const rejectAgentRunMutation = useRejectAgentRun();
+    const decideChatProposalMutation = useDecideChatProposal();
     const deleteChatSessionMutation = useDeleteChatSession();
-    const createFormMutation = useCreateForm();
-    const updateFormMutation = useUpdateForm();
-    const updateWorkflowMutation = useUpdateWorkflow();
-    const createWorkflowMutation = useCreateWorkflow();
 
     useGSAP(() => {
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
@@ -82,11 +79,6 @@ export default function ChatTab({ conversationId = null, automationId = null, st
             ? sessions.filter(s => s.title?.toLowerCase().includes(sidebarSearch.toLowerCase()))
             : sessions;
     }, [sessions, sidebarSearch]);
-
-    const targetSnapshot = useMemo(() => targetWorkflow ? {
-        nodes: (targetWorkflow.nodes || []).map(node => ({ id: node.id, title: node.title, type: node.type, subType: node.subType })),
-        edges: (targetWorkflow.edges || []).map(edge => ({ id: edge.id, source: edge.source, target: edge.target, sourceHandle: edge.sourceHandle || null, targetHandle: edge.targetHandle || null }))
-    } : null, [targetWorkflow]);
 
     const appendResponse = (response) => {
         if (response?.sessionId) {
@@ -126,17 +118,22 @@ export default function ChatTab({ conversationId = null, automationId = null, st
         else setProgressLabel(targetWorkflow ? 'Analysing current workflow' : 'Scanning node library');
         setIsTyping(true);
         try {
-            const response = await sendChatMessageMutation.mutateAsync({
+            const response = await sendAssistantTurnMutation.mutateAsync({
                 sessionId,
                 message: text,
                 context: {
                     surface: 'chat',
                     automationId: targetWorkflow?.id || targetWorkflowId || null,
                     workflowId: targetWorkflow?.id || null,
-                    workflowSnapshot: targetSnapshot,
                     clarificationMode
                 },
-                event
+                event,
+                onEvent: data => {
+                    if (data.type === 'step.started') setProgressLabel(`Working on ${String(data.step || 'request').replaceAll('_', ' ')}`);
+                    if (data.type === 'tool_started') setProgressLabel(`Checking ${String(data.name || 'workspace').replaceAll('_', ' ')}`);
+                    if (data.type === 'plan.ready') setProgressLabel('Preparing a reviewable proposal');
+                    if (data.type === 'approval.required') setProgressLabel('Waiting for your approval');
+                }
             });
             appendResponse(response);
         } catch (error) {
@@ -146,7 +143,7 @@ export default function ChatTab({ conversationId = null, automationId = null, st
         }
     };
 
-    const handleApply = async (message) => {
+    const handleApply = async (message, filteredSchema = null) => {
         try {
             const payload = message.payload || {};
             if (payload.runId) {
@@ -162,30 +159,19 @@ export default function ChatTab({ conversationId = null, automationId = null, st
                 return;
             }
             let result;
-            if (message.kind === 'form_proposal') {
-                const schema = payload.schema || {};
-                const data = {
-                    title: schema.title || 'New Promptly Form',
-                    description: schema.description || '',
-                    settings: schema.settings || {},
-                    fields: schema.fields || [],
-                    ...(payload.baseFormUpdatedAt ? { baseFormUpdatedAt: payload.baseFormUpdatedAt } : {})
-                };
-                const saved = payload.formId ? await updateFormMutation.mutateAsync({id: payload.formId, data}) : await createFormMutation.mutateAsync(data);
-                result = { formId: saved.id };
-            } else if (message.kind === 'workflow_diff') {
-                const workflowId = payload.workflowId || targetWorkflow?.id || targetWorkflowId;
-                if (!workflowId) throw new Error('Choose a workflow target before applying these changes.');
-                if (payload.baseWorkflowUpdatedAt && targetWorkflow?.updatedAt && payload.baseWorkflowUpdatedAt !== targetWorkflow.updatedAt) throw new Error('This workflow changed while the proposal was open. Generate the changes again.');
-                await updateWorkflowMutation.mutateAsync({id: workflowId, data: { nodes: payload.nodes, edges: payload.edges, source: 'ai', expectedRevision: targetWorkflow?.revision, summary: 'Applied AI automation proposal' }});
-                result = { workflowId };
-            } else if (message.kind === 'workflow_proposal') {
-                const saved = await createWorkflowMutation.mutateAsync({ name: payload.name || 'New Automation', status: 'Draft', iconColor: 'text-indigo-600', iconBg: 'bg-indigo-100', nodes: payload.nodes || [], edges: payload.edges || [], source: 'ai', summary: 'Created from an AI proposal' });
-                result = { workflowId: saved.id };
+            if (['form_duplicate_proposal', 'form_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
+                result = await decideChatProposalMutation.mutateAsync({ sessionId, messageId: message.id, action: 'approve' });
+                setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied', payload: result?.message?.payload || item.payload } : item));
+                toast.success(message.kind === 'form_delete_proposal' ? 'Form deleted.' : message.kind === 'form_response_clear_proposal' ? 'Form responses cleared.' : 'Form duplicated.');
+                return;
+            } else if (['form_proposal', 'workflow_diff', 'workflow_proposal'].includes(message.kind)) {
+                const overrides = message.kind === 'form_proposal' && filteredSchema ? { schema: filteredSchema } : null;
+                const decision = await decideChatProposalMutation.mutateAsync({ sessionId, messageId: message.id, action: 'approve', overrides });
+                result = decision.resource;
+                setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied', payload: decision?.message?.payload || item.payload } : item));
             }
             setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied' } : item));
             if (message.kind === 'form_proposal') await send(null, { type: 'form_saved', messageId: message.id, formId: result.formId });
-            else await send(null, { type: 'proposal_applied', messageId: message.id });
             if (message.kind === 'workflow_proposal' && result.workflowId) {
                 navigateTo({ page: 'automation-build', automationId: result.workflowId, editor: 'ai' });
             }
@@ -209,6 +195,10 @@ export default function ChatTab({ conversationId = null, automationId = null, st
         setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'ignored' } : item));
         if (message.payload?.runId) {
             rejectAgentRunMutation.mutate(message.payload.runId);
+            return;
+        }
+        if (['form_proposal', 'workflow_diff', 'workflow_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
+            decideChatProposalMutation.mutate({ sessionId, messageId: message.id, action: 'reject' });
             return;
         }
         send(null, { type: 'proposal_ignored', messageId: message.id });
