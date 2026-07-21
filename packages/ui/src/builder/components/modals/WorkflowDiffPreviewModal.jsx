@@ -74,7 +74,7 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
 
     // Handle exit animation on success
     useEffect(() => {
-        if (isRestoringSuccess) {
+        if (isRestoringSuccess && overlayRef.current && modalRef.current) {
             gsap.to(overlayRef.current, { opacity: 0, duration: 0.25, ease: 'power2.in' });
             gsap.to(modalRef.current, {
                 scale: 0.95,

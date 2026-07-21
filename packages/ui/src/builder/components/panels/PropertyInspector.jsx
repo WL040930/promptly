@@ -249,9 +249,7 @@ const PropertyInspector = ({ activeNode, onUpdateNode, nodes = [], edges = [] })
                                                 <label className={labelClassName}>{input.label || input.name}</label>
                                                 <ResourceSelectInput
                                                     value={value}
-                                                    onChange={(val) => onUpdateNode?.(activeNode.id, {
-                                                        config: { ...(activeNode.config || {}), [input.name]: val }
-                                                    })}
+                                                    onChange={handleChange}
                                                     resource={input.resource}
                                                     placeholder={input.placeholder}
                                                 />
@@ -266,9 +264,7 @@ const PropertyInspector = ({ activeNode, onUpdateNode, nodes = [], edges = [] })
                                                 <label className={labelClassName}>{input.label || input.name}</label>
                                                 <CronInput
                                                     value={value}
-                                                    onChange={(val) => onUpdateNode?.(activeNode.id, {
-                                                        config: { ...(activeNode.config || {}), [input.name]: val }
-                                                    })}
+                                                    onChange={handleChange}
                                                 />
                                             </div>
                                         );
@@ -298,9 +294,18 @@ const PropertyInspector = ({ activeNode, onUpdateNode, nodes = [], edges = [] })
                                                         onChange={handleChange}
                                                         className={`${inputClassName} appearance-none cursor-pointer pr-8`}
                                                     >
-                                                        {input.options?.map(opt => (
-                                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                                        ))}
+                                                        {input.options?.map((opt, optionIndex) => {
+                                                            const optionValue = typeof opt === 'string' ? opt : opt?.value;
+                                                            const optionLabel = typeof opt === 'string'
+                                                                ? opt
+                                                                : opt?.label ?? opt?.name ?? opt?.title ?? optionValue;
+                                                            const optionKey = `${input.name}-${optionValue ?? optionIndex}`;
+                                                            return (
+                                                                <option key={optionKey} value={optionValue}>
+                                                                    {optionLabel}
+                                                                </option>
+                                                            );
+                                                        })}
                                                     </select>
                                                     <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
                                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">

@@ -129,7 +129,7 @@ const DashboardTab = () => {
     useGSAP(() => {
         if (!container.current) return;
         gsap.from(container.current, { autoAlpha: 0, y: 15, duration: 0.3, ease: 'power2.out' });
-    }, { scope: container });
+    });
 
     const go = page => {
         if (page === 'workflows') return navigateTo({ page: 'automations' });

@@ -102,8 +102,9 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
     }, [activeFormId, activeSubTab, isPreviewMode]);
 
     useGSAP(() => {
+        if (!container.current) return;
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
-    }, { scope: container });
+    });
 
     const activeForm = forms.find(f => f.id === activeFormId) || forms[0];
     const accentColor = activeForm?.settings?.accentColor || '#5b4ee8';
