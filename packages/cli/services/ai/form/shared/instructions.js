@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { FORM_FIELD_TYPES } from '../../../../../shared/formContract.js';
+import { FORM_FIELD_TYPES, FORM_SETTINGS_KEYS } from '../../../../../shared/formContract.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const instructionDir = path.resolve(__dirname, '../instruction');
@@ -27,6 +27,6 @@ const readInstruction = (fileName, suffix = '') => {
 export const plannerInstruction = readInstruction('planner.md', `\n\n${FORM_FIELD_SEMANTICS}`);
 export const workerInstruction = readInstruction(
     'worker.md',
-    `\n\nAuthoritative supported field types: ${FORM_FIELD_TYPES.join(', ')}.\n\n${FORM_FIELD_SEMANTICS}`
+    `\n\nAuthoritative supported field types: ${FORM_FIELD_TYPES.join(', ')}.\nAuthoritative form-level setting keys: ${FORM_SETTINGS_KEYS.join(', ')}.\nNever invent a setting key; omit unsupported optional settings.\n\n${FORM_FIELD_SEMANTICS}`
 );
 export const verifierInstruction = readInstruction('verifier.md', `\n\n${FORM_FIELD_SEMANTICS}`);

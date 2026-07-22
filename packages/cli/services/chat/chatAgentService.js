@@ -5,7 +5,6 @@ import { runFormTurn } from '../ai/formAIService.js';
 import { ai } from '../ai/index.js';
 import { AI_TASKS } from '../ai/core/aiTasks.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
-import { assembleWorkflow, loadWorkflowResourceContext, requiredCapabilitiesForRequest, tokenTotal } from '../ai/workflow/workflowAgentService.js';
 import env from '../../config/env.js';
 import { mergeAgentContext } from './resourceResolver.js';
 import { processAgenticTurn, resumeAgentAfterClarification, resumeAgentAfterForm, resumeAgentAfterPlanReview } from '../agent/agentOrchestrator.js';
@@ -16,20 +15,6 @@ import { supersedePendingChatFormProposals } from '../proposalLifecycle.js';
 import { applyFormPatches } from '../ai/form/domain/formPatchEngine.js';
 import { validateFormSchema } from '../ai/form/domain/formSchemaValidator.js';
 import { validateWorkflow } from '../engine/workflowValidator.js';
-
-const tokenPayload = (...usages) => {
-    const stage1 = usages[0] || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-    const stage2 = usages[1] || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-    return {
-        stage1,
-        stage2,
-        total: {
-            promptTokens: stage1.promptTokens + stage2.promptTokens,
-            completionTokens: stage1.completionTokens + stage2.completionTokens,
-            totalTokens: tokenTotal(stage1, stage2)
-        }
-    };
-};
 
 const messagePayload = (message) => {
     const json = message.toJSON();
@@ -423,6 +408,7 @@ const formResult = async ({ session, userId, request, formId, continuation = nul
         patches: result.patches || [],
         requirements: result.requirements || [],
         verification: result.verification || null,
+        warnings: result.warnings || [],
         cardinality: result.cardinality || null,
         ...(form ? { baseFormUpdatedAt: form.updatedAt } : {}),
         ...(supersededMessageIds.length > 0 ? { supersededMessageIds } : {})
@@ -519,57 +505,10 @@ export const applyEvent = async (session, userId, event, onEvent = null) => {
         return { reply: await saveReply(session, { text: 'Applied.', kind: 'status', payload: { status: 'applied' } }) };
     }
     if (event.type === 'form_saved') {
-        if (!state.continuation?.workflow) {
-            const msgIdToUpdate = event.messageId || state.proposalMessageId;
-            if (msgIdToUpdate) await ChatMessage.update({ proposalStatus: 'applied' }, { where: { id: msgIdToUpdate, sessionId: session.id } });
-            await session.update({ agentState: {} });
-            return { reply: await saveReply(session, { text: 'Form saved.', kind: 'status', payload: { status: 'applied', formId: event.formId } }) };
-        }
-        const workflow = await workflowForRequest(userId, state.continuation.workflowId);
-        if (!workflow) throw new Error('Workflow not found while resuming agent');
-        const specs = NodeRegistry.getSchemasFor(state.continuation.specNodeKeys || state.continuation.specSubTypes);
-        const resourceContext = await loadWorkflowResourceContext({ userId, specs });
-        const approvedForm = event.formId
-            ? await Form.findOne({ where: { id: event.formId, userId } })
-            : null;
-        if (event.formId) {
-            resourceContext.forms = {
-                ...(resourceContext.forms || {}),
-                options: [...(resourceContext.forms?.options || []), { value: event.formId, label: 'Approved form' }]
-            };
-        }
-        const assembled = await assembleWorkflow({
-            message: state.continuation.request,
-            specs,
-            workflowName: state.continuation.workflowName,
-            formId: event.formId,
-            formSchema: approvedForm?.toJSON?.() || approvedForm || null,
-            requiredCapabilities: requiredCapabilitiesForRequest(state.continuation.request),
-            resourceContext
-        });
+        const msgIdToUpdate = event.messageId || state.proposalMessageId;
+        if (msgIdToUpdate) await ChatMessage.update({ proposalStatus: 'applied' }, { where: { id: msgIdToUpdate, sessionId: session.id } });
         await session.update({ agentState: {} });
-        const tokenUsage = tokenPayload(state.continuation.stage1Usage, assembled.tokenUsage);
-        return {
-            reply: await saveReply(session, {
-                text: 'The workflow is ready for your review.',
-                kind: 'workflow_proposal',
-                payload: {
-                    action: 'create_workflow',
-                    name: assembled.name,
-                    intent: state.continuation.intent,
-                    needsForm: true,
-                    formId: event.formId,
-                    nodes: assembled.nodes,
-                    edges: assembled.edges,
-                    readiness: assembled.readiness,
-                    plan: assembled.nodes.map(node => ({ subType: node.subType, title: node.title, reason: node.description })),
-                    baseWorkflowUpdatedAt: workflow.updatedAt
-                },
-                tokenUsage,
-                proposalStatus: 'pending'
-            }),
-            tokenUsage
-        };
+        return { reply: await saveReply(session, { text: 'Form saved.', kind: 'status', payload: { status: 'applied', formId: event.formId } }) };
     }
     return null;
 };

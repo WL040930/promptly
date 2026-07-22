@@ -842,3 +842,60 @@ test('planner retries a response truncated by the completion limit', async () =>
     assert.equal(result.schema.fields[0].label, 'Email');
     assert.deepEqual(requestOptions.map(options => options.maxCompletionTokens), [1800, 2200, 3072, 768]);
 });
+
+test('job application generation keeps useful fields when the worker invents an optional setting', async () => {
+    const { generateFormFromPrompt } = await import('./pipeline.js');
+    const request = 'Create a job application form and then send a confirmation / thank you email to the user once the user has submit the form';
+    const planner = {
+        type: 'plan_complete',
+        summary: 'Prepare the job application form for a submission confirmation workflow.',
+        requirements: [
+            { id: 'req_form', description: 'Create a practical job application form.' },
+            { id: 'req_email', description: 'Collect a required applicant email address for the confirmation email.' }
+        ],
+        memoryUpdate: { action: 'none' }
+    };
+    const worker = {
+        patches: [
+            { op: 'update_meta', updates: { title: 'Job Application', description: 'Submit your application.' } },
+            { op: 'add', field: { id: 'full_name', type: 'text', label: 'Full name', required: true } },
+            { op: 'add', field: { id: 'email', type: 'email', label: 'Email address', required: true } },
+            { op: 'add', field: { id: 'phone', type: 'phone', label: 'Phone number' } },
+            { op: 'add', field: { id: 'role', type: 'text', label: 'Role applied for', required: true } },
+            { op: 'add', field: { id: 'resume', type: 'file', label: 'Resume' } },
+            { op: 'add', field: { id: 'cover_letter', type: 'textarea', label: 'Cover letter' } },
+            { op: 'update_settings', updates: { acceptingResponses: true, accentColor: '#6d5dfc' } }
+        ]
+    };
+    const operations = [];
+    const provider = {
+        async generateContent(contents, options) {
+            operations.push(options.operation);
+            if (options.operation === 'form:planner') return { text: JSON.stringify(planner) };
+            if (options.operation === 'form:worker') return { text: JSON.stringify(worker) };
+            if (options.operation === 'form:worker repair') {
+                const repairContext = contents?.[0]?.parts?.[0]?.text || '';
+                assert.match(repairContext, /Supported form-level setting keys/);
+                return { text: JSON.stringify(worker) };
+            }
+            if (options.operation === 'form:verifier') return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+            throw new Error(`Unexpected operation ${options.operation}`);
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        request,
+        { id: 'form_job', title: 'Untitled Form', description: '', settings: {}, fields: [] },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.verification.status, 'pass');
+    assert.deepEqual(result.schema.fields.map(field => field.id), ['full_name', 'email', 'phone', 'role', 'resume', 'cover_letter']);
+    assert.equal(result.schema.settings.acceptingResponses, true);
+    assert.equal(result.schema.settings.accentColor, undefined);
+    assert.ok(result.warnings.some(warning => warning.code === 'UNSUPPORTED_SETTINGS_IGNORED'));
+    assert.deepEqual(operations, ['form:planner', 'form:worker', 'form:verifier']);
+});

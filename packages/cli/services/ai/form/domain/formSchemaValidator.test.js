@@ -74,6 +74,15 @@ test('validateFormPatches accepts safe form settings updates and rejects unknown
     assert.ok(invalidIssues.some(issue => issue.code === 'INVALID_SETTINGS_KEY'));
 });
 
+test('worker output validation lets recovery isolate unknown optional settings', () => {
+    assert.deepEqual(validateWorkerResult({
+        patches: [{ op: 'update_settings', updates: { accentColor: '#fff' } }]
+    }), []);
+    assert.ok(validateFormPatches({ id: 'form_1', fields: [], settings: {} }, [
+        { op: 'update_settings', updates: { accentColor: '#fff' } }
+    ]).some(issue => issue.code === 'INVALID_SETTINGS_KEY'));
+});
+
 test('validatePlannerResult and validateWorkerResult reject malformed model contracts', () => {
     assert.ok(validatePlannerResult({ type: 'plan_complete' }).length > 0);
     assert.ok(validateWorkerResult({ patches: [{ op: 'add', field: { type: 'text' } }] }).length > 0);

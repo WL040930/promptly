@@ -6,6 +6,8 @@ import {
     buildVerifierContext,
     buildVerifierRepairContext,
     buildPlannerContext,
+    buildWorkerContext,
+    buildWorkerRepairContext,
     compactFormSchema,
     createMemoryPatch,
     getActiveQuestionCount,
@@ -64,6 +66,22 @@ test('buildPlannerContext keeps recent conversation bounded and separates memory
     assert.equal(compact.fields[0].internalNotes, undefined);
     assert.equal(compact.fields[0].description.length, 300);
     assert.deepEqual(compact.fields[0].choices, ['One']);
+});
+
+test('worker contexts expose the shared form settings contract', () => {
+    const args = {
+        schema: { title: 'Application', settings: {}, fields: [] },
+        requirements: [{ id: 'req_1', description: 'Collect the applicant email.' }]
+    };
+    const worker = buildWorkerContext(args);
+    const repair = buildWorkerRepairContext({
+        ...args,
+        response: '{"patches":[]}',
+        issues: 'INVALID_SETTINGS_KEY at patches[0].updates'
+    });
+
+    assert.match(worker, /Supported form-level setting keys: acceptingResponses, limitOnePerBrowser, hasResponseLimit, responseLimit, confirmationMessage/);
+    assert.match(repair, /Only use these keys in update_settings/);
 });
 
 test('buildPlannerContext exposes a compact pending proposal for conversational refinement', () => {

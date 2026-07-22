@@ -10,6 +10,12 @@ const compoundIntent = {
     requirements: ['Create a form and follow up after submission.']
 };
 
+const genericIntent = {
+    domains: [],
+    resourceReferences: [],
+    requirements: ['Prepare the requested steps.']
+};
+
 test('adaptive plans preserve model step IDs, order, and dependencies', () => {
     const registry = createAgentCapabilityRegistry([
         { name: 'prepare_data', inputSchema: { type: 'object', additionalProperties: false }, execute: async () => ({}) },
@@ -23,7 +29,7 @@ test('adaptive plans preserve model step IDs, order, and dependencies', () => {
             { id: 'email_step', type: 'send_email', args: { source: '$step.form_step' } },
             { id: 'form_step', type: 'create_form' }
         ]
-    }, compoundIntent);
+    }, genericIntent);
     const result = compileExecutionPlan({ plan, registry });
     assert.equal(result.valid, true);
     assert.deepEqual(result.graph.order, ['form_step', 'email_step']);
@@ -31,11 +37,24 @@ test('adaptive plans preserve model step IDs, order, and dependencies', () => {
     assert.deepEqual(result.graph.steps[0].dependsOn, ['form_step']);
 });
 
-test('compound requests require a plan review even without plan wording', () => {
+test('compound requests proceed without plan review unless explicitly requested', () => {
     assert.equal(
         shouldPauseForPlanReview('Create a registration form and email the respondent after submission.', compoundIntent),
-        true
+        false
     );
+    assert.equal(shouldPauseForPlanReview('Create it, but show me the plan first.'), true);
+});
+
+test('adaptive plans restore omitted form and workflow outcomes and steps', () => {
+    const plan = makeAdaptivePlan({
+        summary: 'Create the application form.',
+        outcomes: [{ id: 'form_solution', title: 'Create the form', artifactTypes: ['form_proposal'] }],
+        steps: [{ id: 'design_form', type: 'design_form' }]
+    }, compoundIntent);
+
+    assert.deepEqual(plan.outcomes.map(outcome => outcome.artifactTypes[0]), ['form_proposal', 'workflow_proposal']);
+    assert.deepEqual(plan.steps.map(step => step.type), ['design_form', 'design_workflow']);
+    assert.deepEqual(plan.steps[1].dependsOn, ['design_form']);
 });
 
 test('respondent confirmation forms have one required email field without replacing valid form content', () => {

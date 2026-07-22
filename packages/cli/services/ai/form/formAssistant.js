@@ -34,6 +34,7 @@ const messageFromResult = result => {
                 patches: result.patches,
                 requirements: result.requirements,
                 verification: result.verification,
+                warnings: result.warnings || [],
                 cardinality: result.cardinality,
                 baseFormUpdatedAt: result.baseFormUpdatedAt,
                 status: 'pending'

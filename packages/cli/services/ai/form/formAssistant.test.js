@@ -57,6 +57,26 @@ test('form assistant persists a clarification and opens explicit decision state'
     assert.equal(memory.messages.length, 2);
 });
 
+test('form assistant preserves non-fatal form AI warnings in the reviewable proposal', async () => {
+    const memory = createMemoryModels();
+    const assistant = createFormAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async () => ({
+            kind: 'proposal',
+            type: 'proposal',
+            message: 'Prepared the application form.',
+            schema: { title: 'Application', description: '', settings: {}, fields: [] },
+            patches: [],
+            warnings: [{ code: 'UNSUPPORTED_SETTINGS_IGNORED', message: 'Ignored an unsupported optional setting.' }]
+        })
+    });
+
+    const result = await assistant.submitTurn({ userId: 'user_1', formId: 'form_1', text: 'Create an application form' });
+
+    assert.deepEqual(result.botMsg.proposal.warnings, [{ code: 'UNSUPPORTED_SETTINGS_IGNORED', message: 'Ignored an unsupported optional setting.' }]);
+});
+
 test('form assistant accepts a proposal through the same state boundary', async () => {
     const memory = createMemoryModels();
     const state = (await memory.models.FormAIState.findOrCreate({

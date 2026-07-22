@@ -179,6 +179,7 @@ export const generateFormFromPrompt = async (
                 tokenUsage: { ...tokenUsage, requestCalls: budget.calls },
                 requirements: plannerResult.requirements,
                 verification,
+                warnings: workerResult.warnings || [],
                 cardinality
             };
         }

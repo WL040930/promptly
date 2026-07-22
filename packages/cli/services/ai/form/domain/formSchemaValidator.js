@@ -148,7 +148,7 @@ export const validateFormSchema = (schema = {}) => {
     return issues;
 };
 
-const validatePatchShape = (patch, path) => {
+const validatePatchShape = (patch, path, { allowUnknownSettings = false } = {}) => {
     const issues = [];
     if (!isPlainObject(patch)) return [issue('INVALID_PATCH', path, 'Expected a patch object.')];
     if (!isFormPatchOperation(patch.op)) {
@@ -181,7 +181,7 @@ const validatePatchShape = (patch, path) => {
         else {
             const keys = Object.keys(patch.updates);
             if (keys.length === 0) issues.push(issue('EMPTY_SETTINGS_UPDATE', `${path}.updates`, 'Settings updates must change at least one setting.'));
-            if (keys.some(key => !FORM_SETTINGS_KEYS.includes(key))) {
+            if (!allowUnknownSettings && keys.some(key => !FORM_SETTINGS_KEYS.includes(key))) {
                 issues.push(issue('INVALID_SETTINGS_KEY', `${path}.updates`, `Only these settings may be changed: ${FORM_SETTINGS_KEYS.join(', ')}.`));
             }
             for (const key of keys) {
@@ -305,7 +305,7 @@ export const validateWorkerResult = (result = {}) => {
     const issues = [];
     if (!isPlainObject(result)) return [issue('INVALID_WORKER_RESPONSE', '', 'Worker response must be an object.')];
     if (!Array.isArray(result.patches)) issues.push(issue('INVALID_PATCHES', 'patches', 'Worker patches must be an array.'));
-    else result.patches.forEach((patch, index) => issues.push(...validatePatchShape(patch, `patches[${index}]`)));
+    else result.patches.forEach((patch, index) => issues.push(...validatePatchShape(patch, `patches[${index}]`, { allowUnknownSettings: true })));
     return issues;
 };
 

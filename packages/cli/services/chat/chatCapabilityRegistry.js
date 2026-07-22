@@ -503,9 +503,11 @@ export const createChatCapabilityRegistry = ({
             async ({ args }) => {
                 const workflowId = args.workflowId || effectiveContext.workflowId || null;
                 const workflow = await workflowForRequest(userId, workflowId);
+                const requiredCapabilities = requiredCapabilitiesForRequest(args.prompt);
                 const classification = await classifyRequest({
                     message: args.prompt,
-                    snapshot: compactWorkflowSnapshot(workflow)
+                    snapshot: compactWorkflowSnapshot(workflow),
+                    requiredCapabilities
                 });
                 if (classification.action === 'edit_workflow' && workflowId && workflow) {
                     const selected = [...(classification.selectedNodeKeys || [])];
@@ -520,7 +522,7 @@ export const createChatCapabilityRegistry = ({
                         classification,
                         specs,
                         formSchema: selectedForm?.toJSON?.() || selectedForm || null,
-                        requiredCapabilities: requiredCapabilitiesForRequest(args.prompt)
+                        requiredCapabilities
                     });
                     const reply = await saveReply(session, {
                         text: 'I prepared the requested workflow changes for your review.',
@@ -543,7 +545,7 @@ export const createChatCapabilityRegistry = ({
                     return approval(reply);
                 }
 
-                const specs = NodeRegistry.getSchemasFor(classification.selectedNodeKeys || classification.selectedSubTypes);
+                const specs = NodeRegistry.getSchemasFor(classification.selectedNodeKeys);
                 const selectedForm = effectiveContext.formId ? await formForRequest(userId, effectiveContext.formId) : null;
                 const assembled = await assembleWorkflow({
                     message: args.prompt,
@@ -551,7 +553,7 @@ export const createChatCapabilityRegistry = ({
                     workflowName: classification.workflowName,
                     formId: selectedForm?.id || null,
                     formSchema: selectedForm?.toJSON?.() || selectedForm || null,
-                    requiredCapabilities: requiredCapabilitiesForRequest(args.prompt)
+                    requiredCapabilities
                 });
                 const reply = await saveReply(session, {
                     text: 'The workflow is ready for your review.',

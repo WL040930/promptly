@@ -7,6 +7,7 @@ import AppLoadingSkeleton from './components/ui/AppLoadingSkeleton.jsx';
 import WorkspaceShell from './workspace/WorkspaceShell.jsx';
 import WorkspacePageRouter from './workspace/WorkspacePageRouter.jsx';
 import ApprovalsPage from './workspace/ApprovalsPage.jsx';
+import { getAuthRedirect } from './utils/authNavigation.js';
 
 const LandingPage = React.lazy(() => import('./landing/LandingPage.jsx'));
 const LoginPage = React.lazy(() => import('./auth/LoginPage.jsx'));
@@ -39,14 +40,9 @@ function App() {
     const route = useMemo(() => parsePath(window.location.href), [locationKey]);
 
     useEffect(() => {
-        if (user && !routeState.isDashboard && !routeState.isOnboarding && !routeState.isResetPassword && !routeState.isPublicForm && !routeState.isApprovalAction) {
-            navigate(getDashboardPath());
-        } else if (!user && (routeState.isDashboard || routeState.isOnboarding) && !routeState.isApprovalAction) {
-            navigate('/login');
-        } else if (user && routeState.isOnboarding && user.onboardingCompletedAt) {
-            navigate(getDashboardPath());
-        }
-    }, [user, routeState, locationKey]);
+        const redirect = getAuthRedirect({ user, isLoading, routeState });
+        if (redirect) navigate(redirect);
+    }, [user, isLoading, routeState, locationKey]);
 
     const handleUserUpdate = (updatedUser) => {
         setAuthUser(updatedUser);

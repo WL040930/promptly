@@ -3,6 +3,7 @@ import {
     getActiveQuestionCount,
     getMemoryUpdate
 } from '../context/formContext.js';
+import { FORM_SETTINGS_KEYS } from '../../../../../shared/formContract.js';
 import { applyFormPatches } from '../domain/formPatchEngine.js';
 import { validateWorkerResult } from '../domain/formSchemaValidator.js';
 import { validateFormProposalScope } from '../domain/formProposalScope.js';
@@ -111,6 +112,40 @@ const getQuestionCardinalityIssues = ({ schema, cardinality }) => {
     }];
 };
 
+const normalizeOptionalSettings = patches => {
+    const warnings = [];
+    const normalized = [];
+
+    for (const [index, patch] of (Array.isArray(patches) ? patches : []).entries()) {
+        if (patch?.op !== 'update_settings' || !patch.updates || typeof patch.updates !== 'object') {
+            normalized.push(patch);
+            continue;
+        }
+
+        const supportedKeys = Object.keys(patch.updates).filter(key => FORM_SETTINGS_KEYS.includes(key));
+        const unsupportedKeys = Object.keys(patch.updates).filter(key => !FORM_SETTINGS_KEYS.includes(key));
+        if (unsupportedKeys.length === 0) {
+            normalized.push(patch);
+            continue;
+        }
+
+        warnings.push({
+            code: 'UNSUPPORTED_SETTINGS_IGNORED',
+            path: `patches[${index}].updates`,
+            message: `Ignored unsupported optional form settings: ${unsupportedKeys.join(', ')}.`
+        });
+
+        if (supportedKeys.length > 0) {
+            normalized.push({
+                ...patch,
+                updates: Object.fromEntries(supportedKeys.map(key => [key, patch.updates[key]]))
+            });
+        }
+    }
+
+    return { patches: normalized, warnings };
+};
+
 export const recoverWorkerProposal = async ({
     provider,
     schema,
@@ -128,6 +163,7 @@ export const recoverWorkerProposal = async ({
     let failure = null;
     let result = null;
     let appliedProposal = null;
+    const warnings = [];
 
     for (let attempt = 0; attempt < MAX_FORM_REPAIR_LOOPS; attempt += 1) {
         let workerCall;
@@ -181,9 +217,11 @@ export const recoverWorkerProposal = async ({
 
         if (onProgress) onProgress({ status: 'checking', message: 'Checking generated form...' });
         const memoryPatch = createMemoryPatch(schema, plannerResult);
-        const patches = memoryPatch ? [memoryPatch, ...(result.patches || [])] : (result.patches || []);
+        const rawPatches = memoryPatch ? [memoryPatch, ...(result.patches || [])] : (result.patches || []);
+        const normalizedSettings = normalizeOptionalSettings(rawPatches);
+        warnings.push(...normalizedSettings.warnings);
         try {
-            appliedProposal = applyFormPatches({ currentSchema: schema, patches });
+            appliedProposal = applyFormPatches({ currentSchema: schema, patches: normalizedSettings.patches });
         } catch (error) {
             failure = {
                 stage: 'patch',
@@ -249,6 +287,7 @@ export const recoverWorkerProposal = async ({
                     budget,
                     error.code === 'FORM_AI_VERIFICATION_FAILED' ? 'VERIFIER_RESPONSE_INVALID' : 'AI_CALL_BUDGET_EXCEEDED'
                 ),
+                warnings,
                 tokenUsage: totalTokenUsage
             };
         }
@@ -256,7 +295,7 @@ export const recoverWorkerProposal = async ({
 
         const verification = verificationCall.value;
         if (verification.status === 'pass') {
-            return { result, appliedProposal, verification, tokenUsage: totalTokenUsage };
+            return { result, appliedProposal, verification, warnings, tokenUsage: totalTokenUsage };
         }
 
         failure = {
@@ -272,6 +311,7 @@ export const recoverWorkerProposal = async ({
             result,
             appliedProposal,
             verification: createUnverifiedVerification(budget, 'VERIFICATION_REJECTED', failure.issues),
+            warnings,
             tokenUsage: totalTokenUsage
         };
     }

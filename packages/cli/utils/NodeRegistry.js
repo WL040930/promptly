@@ -49,14 +49,12 @@ const implementationStatusFor = (NodeClass, metadata = {}) => {
 class NodeRegistry {
     constructor() {
         this.nodesByNodeKey = new Map();
-        this.nodesBySubTypeName = new Map();
         this.uiLibrary = []; // Array of categories for the UI
     }
 
     async init({ nodesDir = path.resolve(process.cwd(), '..', 'nodes') } = {}) {
 
         this.nodesByNodeKey.clear();
-        this.nodesBySubTypeName.clear();
 
         // Helper to recursively find all NODE.md files
         const findNodeDirs = async (dir) => {
@@ -142,9 +140,6 @@ class NodeRegistry {
                     throw error;
                 }
                 this.nodesByNodeKey.set(nodeKey, entry);
-                const subtypeEntries = this.nodesBySubTypeName.get(metadata.subType) || [];
-                subtypeEntries.push(entry);
-                this.nodesBySubTypeName.set(metadata.subType, subtypeEntries);
 
                 // 5. Build UI Library hierarchy
                 if (!categoryMap.has(category)) {
@@ -207,10 +202,6 @@ class NodeRegistry {
         return this.nodesByNodeKey.get(nodeKey) || null;
     }
 
-    getDefinitionsForSubType(subType) {
-        return this.nodesBySubTypeName.get(subType) || [];
-    }
-
     getUiLibrary() {
         return this.uiLibrary;
     }
@@ -236,17 +227,12 @@ class NodeRegistry {
     }
 
     /**
-     * Resolve full node contracts by canonical node key. A legacy subtype is
-     * accepted only when it maps to one unambiguous definition.
+     * Resolve full node contracts by canonical node key.
      */
     getSchemasFor(nodeKeys = []) {
         return [...new Set(nodeKeys)]
-            .flatMap(reference => {
-                const exact = this.nodesByNodeKey.get(reference);
-                if (exact) return [exact];
-                const matches = this.getDefinitionsForSubType(reference);
-                return matches.length === 1 ? matches : [];
-            })
+            .map(reference => this.nodesByNodeKey.get(reference))
+            .filter(Boolean)
             .map(entry => {
                 return {
                     nodeKey: entry.nodeKey,

@@ -37,10 +37,7 @@ import {
 
 const planReviewPattern = /(?:\b(show|give|provide|present|review|explain|outline|draft)\b.{0,50}\b(plan|steps|approach)\b|\b(plan|steps|approach)\b.{0,50}\b(before|first|review|approve|proceed)\b|\bplan first\b)/i;
 
-export const shouldPauseForPlanReview = (message, intent = null) => (
-    (intent?.domains || []).includes('form')
-    && (intent?.domains || []).includes('workflow')
-) || planReviewPattern.test(String(message || ''));
+export const shouldPauseForPlanReview = message => planReviewPattern.test(String(message || ''));
 
 export const ensureRespondentEmailField = (schema = {}) => {
     const fields = Array.isArray(schema.fields) ? schema.fields : [];
@@ -110,7 +107,11 @@ const deterministicIntent = ({ message, context = {} }) => {
     const text = String(message || '');
     const domains = [];
     if (/\b(form|survey|field|question|response)\b/i.test(text)) domains.push('form');
-    if (/\b(workflow|automation|trigger|node|email|sheet|webhook|database)\b/i.test(text)) domains.push('workflow');
+    const explicitWorkflow = /\b(workflow|automation|trigger|node|sheet|spreadsheet|webhook|database)\b/i.test(text);
+    const respondentAction = requiredCapabilitiesForRequest(text).length > 0;
+    const emailAction = /\b(send|notify|email|confirmation|thank[- ]?you)\b/i.test(text)
+        && !/\bemail\s+field\b/i.test(text);
+    if (explicitWorkflow || respondentAction || emailAction) domains.push('workflow');
     if (/\b(execution|run|failed|failure|error|diagnos)\b/i.test(text)) domains.push('execution');
     if (/\b(connect|integration|google|gmail|sheets|webhook)\b/i.test(text)) domains.push('integration');
     if (context.formId && !domains.includes('form')) domains.push('form');
@@ -149,7 +150,14 @@ const analyzeIntent = async ({ message, context }) => {
         });
         const intent = makeIntent(result.value);
         if (intent.domains.length === 0) return { intent: fallback, tokenUsage: result.tokenUsage };
-        return { intent, tokenUsage: result.tokenUsage };
+        const requiredDomains = fallback.domains.filter(domain => domain === 'form' || domain === 'workflow');
+        return {
+            intent: makeIntent({
+                ...intent,
+                domains: [...new Set([...intent.domains, ...requiredDomains])]
+            }),
+            tokenUsage: result.tokenUsage
+        };
     } catch {
         return { intent: fallback, tokenUsage: {} };
     }
@@ -260,6 +268,7 @@ const designForm = async ({ run, session, message, form, clarificationMode = DEF
             patches: result.patches || [],
             requirements: result.requirements || [],
             verification: result.verification || null,
+            warnings: result.warnings || [],
             cardinality: result.cardinality || null,
             ...(form ? { baseFormUpdatedAt: form.updatedAt } : {})
         };
@@ -284,7 +293,11 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
     try {
         const requiredCapabilities = requiredCapabilitiesForRequest(message);
         onEvent?.({ type: 'workflow.design.started', runId: run.id, stage: 'classify' });
-        const classification = await classifyRequest({ message, snapshot: compactWorkflowSnapshot(workflow) });
+        const classification = await classifyRequest({
+            message,
+            snapshot: compactWorkflowSnapshot(workflow),
+            requiredCapabilities
+        });
         onEvent?.({ type: 'workflow.design.progress', runId: run.id, stage: 'classify', selectedNodeKeys: classification.selectedNodeKeys });
         if (classification.action === 'edit_workflow' && workflow) {
             const selected = [...(classification.selectedNodeKeys || [])];
@@ -326,7 +339,7 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
             return { artifact, tokenUsage };
         }
 
-        const specs = NodeRegistry.getSchemasFor(classification.selectedNodeKeys || classification.selectedSubTypes);
+        const specs = NodeRegistry.getSchemasFor(classification.selectedNodeKeys);
         const resourceContext = await loadWorkflowResourceContext({ userId, specs });
         onEvent?.({ type: 'workflow.design.progress', runId: run.id, stage: 'assemble', resourceCount: Object.keys(resourceContext).length });
         const assembled = await assembleWorkflow({
@@ -433,7 +446,7 @@ const createSolutionCapabilityRegistry = ({
     }
 ]);
 
-const verifySolutionArtifacts = run => {
+const verifySolutionArtifacts = (run, intent = null) => {
     const artifacts = getRunArtifacts(run);
     const issues = artifacts.flatMap(artifact => {
         if (artifact.type === 'form_proposal' && !artifact.content?.schema) {
@@ -444,6 +457,20 @@ const verifySolutionArtifacts = run => {
         }
         return [];
     });
+    const artifactTypes = new Set(artifacts.map(artifact => artifact.type));
+    const expectedArtifacts = [
+        ...(intent?.domains?.includes('form') ? ['form_proposal'] : []),
+        ...(intent?.domains?.includes('workflow') ? ['workflow_proposal'] : [])
+    ];
+    for (const artifactType of expectedArtifacts) {
+        if (!artifactTypes.has(artifactType)) {
+            issues.push({
+                code: 'EXPECTED_ARTIFACT_MISSING',
+                path: 'artifacts',
+                message: `The requested ${artifactType === 'form_proposal' ? 'form' : 'workflow'} outcome was not produced.`
+            });
+        }
+    }
     if (issues.length > 0) return { status: 'blocked', issues };
     const readinessIssues = artifacts.flatMap(artifact => artifact.type === 'workflow_proposal'
         ? (artifact.content?.readiness?.issues || [])
@@ -641,7 +668,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         await startStep(planStep);
         await completeStep(planStep, { result: plan, tokenUsage: planUsage });
 
-        if (!skipPlanReview && shouldPauseForPlanReview(message, analyzed.intent)) {
+        if (!skipPlanReview && shouldPauseForPlanReview(message)) {
             await updateRun(run, {
                 status: 'awaiting_clarification',
                 currentStep: 'plan_review',
@@ -801,7 +828,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         await updateRun(run, { status: 'verifying', currentStep: 'solution_verify', tokenUsage: totalUsage });
         const verifyStep = await createStep(run, { stepKey: 'solution_verify', type: 'solution_verify', inputArtifactIds: artifactIds });
         await startStep(verifyStep);
-        const verification = verifySolutionArtifacts(run);
+        const verification = verifySolutionArtifacts(run, analyzed.intent);
         if (verification.status === 'blocked') {
             const error = new Error('The generated solution failed verification.');
             error.code = 'AGENT_VERIFICATION_FAILED';

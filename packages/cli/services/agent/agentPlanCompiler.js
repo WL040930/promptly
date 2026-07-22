@@ -17,6 +17,16 @@ const boundedArgs = value => isPlainObject(value)
     ? Object.fromEntries(Object.entries(value).slice(0, 24).map(([key, item]) => [String(key).slice(0, 120), clone(item)]))
     : {};
 
+const outcomeMatchesArtifact = (outcome, artifactType) => {
+    if ((outcome.artifactTypes || []).includes(artifactType)) return true;
+    const text = `${outcome.id} ${outcome.title} ${outcome.description}`.toLowerCase();
+    return artifactType === 'form_proposal'
+        ? /\b(form|survey)\b/.test(text)
+        : artifactType === 'workflow_proposal'
+            ? /\b(workflow|automation)\b/.test(text)
+            : false;
+};
+
 const normalizeOutcome = (outcome, index) => ({
     id: String(outcome?.id || `outcome_${index + 1}`).trim(),
     title: String(outcome?.title || outcome?.type || `Outcome ${index + 1}`).trim(),
@@ -40,6 +50,105 @@ const outcomesFrom = (value = {}) => {
     return [];
 };
 
+const requiredOutcomeDefinitions = (intent = {}) => {
+    const outcomes = [];
+    if (intent.domains?.includes('form')) outcomes.push({
+        id: 'form_solution',
+        title: intent.goal === 'modify' ? 'Update the form' : 'Create the form',
+        description: 'Prepare a reviewable form proposal.',
+        artifactTypes: ['form_proposal'],
+        risk: intent.risk || 'medium'
+    });
+    if (intent.domains?.includes('workflow')) outcomes.push({
+        id: 'workflow_solution',
+        title: intent.goal === 'modify' ? 'Update the workflow' : 'Create the workflow',
+        description: 'Prepare a reviewable workflow proposal using supported nodes and account resources.',
+        artifactTypes: ['workflow_proposal'],
+        dependsOn: intent.domains?.includes('form') ? ['form_solution'] : [],
+        risk: intent.risk || 'medium'
+    });
+    return outcomes;
+};
+
+const ensureOutcomeCoverage = (outcomes, intent = {}) => {
+    const next = outcomes.map(outcome => ({ ...outcome, dependsOn: [...(outcome.dependsOn || [])] }));
+    const required = requiredOutcomeDefinitions(intent);
+    const idsByArtifact = new Map();
+
+    for (const artifactType of ['form_proposal', 'workflow_proposal']) {
+        const match = next.find(outcome => outcomeMatchesArtifact(outcome, artifactType));
+        if (match) idsByArtifact.set(artifactType, match.id);
+    }
+
+    for (const definition of required) {
+        const artifactType = definition.artifactTypes[0];
+        if (!idsByArtifact.has(artifactType)) {
+            next.push(normalizeOutcome(definition, next.length));
+            idsByArtifact.set(artifactType, definition.id);
+        }
+    }
+
+    const formId = idsByArtifact.get('form_proposal');
+    const workflowId = idsByArtifact.get('workflow_proposal');
+    if (formId && workflowId) {
+        const workflow = next.find(outcome => outcome.id === workflowId);
+        if (workflow && !workflow.dependsOn.includes(formId)) workflow.dependsOn.push(formId);
+    }
+    const requiredIds = new Set([formId, workflowId].filter(Boolean));
+    return [
+        ...next.filter(outcome => requiredIds.has(outcome.id)),
+        ...next.filter(outcome => !requiredIds.has(outcome.id))
+    ].slice(0, 12);
+};
+
+const uniqueStepId = (steps, preferred) => {
+    const used = new Set(steps.map(step => String(step?.id || '').trim()).filter(Boolean));
+    if (!used.has(preferred)) return preferred;
+    let suffix = 2;
+    while (used.has(`${preferred}_${suffix}`)) suffix += 1;
+    return `${preferred}_${suffix}`;
+};
+
+const ensureExecutionCoverage = (steps, intent = {}) => {
+    const next = steps.map(step => ({
+        ...step,
+        dependsOn: Array.isArray(step?.dependsOn) ? [...new Set(step.dependsOn.map(String))] : []
+    }));
+    const ensureStep = (capability, title, description) => {
+        let step = next.find(candidate => stepCapability(candidate) === capability);
+        if (!step) {
+            step = {
+                id: uniqueStepId(next, capability),
+                type: capability,
+                title,
+                description,
+                args: {},
+                dependsOn: []
+            };
+            next.push(step);
+        }
+        return step;
+    };
+
+    const formStep = intent.domains?.includes('form')
+        ? ensureStep('design_form', 'Prepare the form proposal', 'Prepare a reviewable form proposal.')
+        : null;
+    const workflowStep = intent.domains?.includes('workflow')
+        ? ensureStep('design_workflow', 'Prepare the workflow proposal', 'Prepare a reviewable workflow proposal.')
+        : null;
+    if (formStep && workflowStep && !workflowStep.dependsOn.includes(formStep.id)) {
+        workflowStep.dependsOn.push(formStep.id);
+    }
+
+    const requiredCapabilities = new Set(
+        ['design_form', 'design_workflow'].filter(capability => intent.domains?.includes(capability === 'design_form' ? 'form' : 'workflow'))
+    );
+    return [
+        ...next.filter(step => requiredCapabilities.has(stepCapability(step))),
+        ...next.filter(step => !requiredCapabilities.has(stepCapability(step)))
+    ].slice(0, MAX_STEPS);
+};
+
 export const makeOutcomePlan = (value = {}, intent = {}) => ({
     schemaVersion: 2,
     id: String(value.id || `plan_${crypto.randomUUID().replace(/-/g, '')}`).slice(0, 100),
@@ -47,7 +156,7 @@ export const makeOutcomePlan = (value = {}, intent = {}) => ({
     assumptions: Array.isArray(value.assumptions) ? value.assumptions.slice(0, 10).map(item => String(item).trim().slice(0, 500)).filter(Boolean) : [],
     missingInformation: Array.isArray(value.missingInformation) ? value.missingInformation.slice(0, 8).map(item => String(item).trim().slice(0, 500)).filter(Boolean) : [],
     affectedResources: Array.isArray(value.affectedResources) ? clone(value.affectedResources).slice(0, 10) : [],
-    outcomes: outcomesFrom(value),
+    outcomes: ensureOutcomeCoverage(outcomesFrom(value), intent),
     approvalRequired: true,
     intent: {
         goal: intent.goal || null,
@@ -58,10 +167,10 @@ export const makeOutcomePlan = (value = {}, intent = {}) => ({
 export const makeAdaptivePlan = (value = {}, intent = {}) => {
     const outcomePlan = makeOutcomePlan(value, intent);
     const candidateSteps = Array.isArray(value.steps) ? value.steps : value.execution?.steps;
-    const steps = Array.isArray(candidateSteps) && candidateSteps.length > 0
+    const rawSteps = Array.isArray(candidateSteps) && candidateSteps.length > 0
         ? candidateSteps.slice(0, MAX_STEPS)
         : makeFallbackExecutionSteps(intent);
-    return { ...outcomePlan, steps: clone(steps) };
+    return { ...outcomePlan, steps: clone(ensureExecutionCoverage(rawSteps, intent)) };
 };
 
 const makeFallbackExecutionSteps = (intent = {}) => {
@@ -81,22 +190,7 @@ const makeFallbackExecutionSteps = (intent = {}) => {
 };
 
 export const makeFallbackOutcomePlan = (intent = {}) => {
-    const outcomes = [];
-    if (intent.domains?.includes('form')) outcomes.push({
-        id: 'form_solution',
-        title: intent.goal === 'modify' ? 'Update the form' : 'Create the form',
-        description: 'Prepare a reviewable form proposal.',
-        artifactTypes: ['form_proposal'],
-        risk: intent.risk || 'medium'
-    });
-    if (intent.domains?.includes('workflow')) outcomes.push({
-        id: 'workflow_solution',
-        title: intent.goal === 'modify' ? 'Update the workflow' : 'Create the workflow',
-        description: 'Prepare a reviewable workflow proposal using supported nodes and account resources.',
-        artifactTypes: ['workflow_proposal'],
-        dependsOn: intent.domains?.includes('form') ? ['form_solution'] : [],
-        risk: intent.risk || 'medium'
-    });
+    const outcomes = requiredOutcomeDefinitions(intent);
     if (outcomes.length === 0) outcomes.push({
         id: 'solution',
         title: 'Prepare the requested solution',

@@ -11,7 +11,11 @@ import { normalizeNodeInputOptions, resolveNodeResourceParams } from '../../../.
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const instructionDir = path.join(__dirname, 'instruction');
-const validActions = new Set(['create_workflow', 'edit_workflow', 'create_form', 'edit_form']);
+const validActions = new Set(['create_workflow', 'edit_workflow']);
+
+const requiredNodeKeysByCapability = Object.freeze({
+    respondent_confirmation: ['trigger:form-submission', 'action:email']
+});
 
 const readInstruction = async (name) => fs.readFile(path.join(instructionDir, name), 'utf8');
 export const readWorkflowInstruction = readInstruction;
@@ -52,7 +56,7 @@ export const compactWorkflowSnapshot = (workflow) => {
     };
 };
 
-export const classifyRequest = async ({ message, snapshot, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
+export const classifyRequest = async ({ message, snapshot, requiredCapabilities = [], provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
     const catalogueEntries = registry.getCompactCatalogue()
         .filter(node => node.implementationStatus !== 'disabled');
     const catalogue = catalogueEntries
@@ -63,31 +67,29 @@ export const classifyRequest = async ({ message, snapshot, provider = providerJs
         : 'Current workflow: empty';
     const prompt = `Node catalogue:\n${catalogue}\n\n${current}\n\nUser request:\n${message}`;
     const { value, tokenUsage } = await provider(prompt, await instructionReader('classifier.md'), 'classifier');
-    if (!validActions.has(value.action)) throw new Error('Classifier returned an unknown action');
+    const action = value.action === 'create_form' || value.action === 'edit_form'
+        ? (snapshot?.nodes?.length ? 'edit_workflow' : 'create_workflow')
+        : value.action;
+    if (!validActions.has(action)) throw new Error('Classifier returned an unknown workflow action');
 
     const knownNodeKeys = new Set(catalogueEntries.map(node => node.nodeKey));
-    const references = Array.isArray(value.selectedNodeKeys)
-        ? value.selectedNodeKeys
-        : (value.selectedSubTypes || []);
-    const selectedNodeKeys = [...new Set(references.flatMap(reference => {
-        if (knownNodeKeys.has(reference)) return [reference];
-        const matches = catalogueEntries.filter(node => node.subType === reference);
-        return matches.length === 1 ? [matches[0].nodeKey] : [];
-    }))];
-    if (value.action === 'create_workflow' && selectedNodeKeys.length === 0) {
+    const modelNodeKeys = Array.isArray(value.selectedNodeKeys) ? value.selectedNodeKeys : [];
+    const requiredNodeKeys = [...new Set(requiredCapabilities.flatMap(capability => requiredNodeKeysByCapability[capability] || []))];
+    const references = [...modelNodeKeys, ...requiredNodeKeys];
+    const selectedNodeKeys = [...new Set(references.filter(reference => knownNodeKeys.has(reference)))];
+    if (action === 'create_workflow' && selectedNodeKeys.length === 0) {
         const error = new Error('The workflow request did not identify any supported nodes.');
         error.code = 'WORKFLOW_NODE_SELECTION_REQUIRED';
         throw error;
     }
 
     return {
-        action: value.action,
+        action,
         selectedNodeKeys,
-        selectedSubTypes: selectedNodeKeys.map(nodeKey => registry.getDefinitionByNodeKey(nodeKey)?.metadata.subType).filter(Boolean),
-        workflowName: value.action === 'create_workflow' && typeof value.workflowName === 'string'
+        workflowName: action === 'create_workflow' && typeof value.workflowName === 'string'
             ? value.workflowName.trim().slice(0, 255) || 'New Workflow'
             : null,
-        needsForm: value.action === 'create_workflow' && value.needsForm === true,
+        needsForm: action === 'create_workflow' && value.needsForm === true,
         affectedNodeIds: Array.isArray(value.affectedNodeIds) ? value.affectedNodeIds : [],
         intent: ['replace', 'append', 'unknown'].includes(value.intent) ? value.intent : 'unknown',
         tokenUsage

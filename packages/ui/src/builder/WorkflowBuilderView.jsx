@@ -18,6 +18,7 @@ import ExecutionPanel from './components/panels/ExecutionPanel';
 import BuilderLoadingSkeleton from './components/layout/BuilderLoadingSkeleton.jsx';
 import { useUndoRedo } from '../hooks/useUndoRedo';
 import { useToast } from '../context/ToastContext.jsx';
+import { cloneWorkflowNodeForPaste } from './utils/nodeClipboard.js';
 
 const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed }) => {
     // ── Server data ──────────────────────────────────────────────────────────
@@ -315,6 +316,38 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
         setActiveNodeId(newNodeId);
     }, [activeWorkflowId, nodes, handleWorkflowUpdate, generateUniqueTitle]);
 
+    const handlePasteNode = useCallback((sourceNode, offset = 40) => {
+        if (!sourceNode) return;
+
+        const basePosition = sourceNode.position || { x: 0, y: 0 };
+        let nextOffset = Math.max(40, Number(offset) || 40);
+        let position = {
+            x: basePosition.x + nextOffset,
+            y: basePosition.y + nextOffset
+        };
+        while (nodes.some(node => node.position?.x === position.x && node.position?.y === position.y)) {
+            nextOffset += 40;
+            position = {
+                x: basePosition.x + nextOffset,
+                y: basePosition.y + nextOffset
+            };
+        }
+
+        const baseTitle = sourceNode.title || sourceNode.subType || sourceNode.type || 'Node';
+        const pastedTitle = generateUniqueTitle(baseTitle);
+        const newNodeId = `${activeWorkflowId}-paste-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const pastedNode = cloneWorkflowNodeForPaste(sourceNode, {
+            id: newNodeId,
+            title: pastedTitle,
+            position
+        });
+        if (!pastedNode) return;
+
+        handleWorkflowUpdate({ nodes: [...nodes, pastedNode] });
+        setActiveNodeId(newNodeId);
+        toast.success(`Pasted ${pastedTitle}.`);
+    }, [activeWorkflowId, nodes, handleWorkflowUpdate, generateUniqueTitle, toast]);
+
     const handleNodesChange = useCallback((changes) => {
         const positionChanges = changes.filter(c => c.type === 'position' && c.position && !c.dragging);
         const removeChanges = changes.filter(c => c.type === 'remove');
@@ -473,6 +506,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                         activeNodeId={activeNodeId}
                         onNodeClick={handleNodeClick}
                         onAddNode={handleAddNode}
+                        onPasteNode={handlePasteNode}
                         onNodesChangeCallback={handleNodesChange}
                         onEdgesChangeCallback={handleEdgesChange}
                         draggedNode={draggedNode}

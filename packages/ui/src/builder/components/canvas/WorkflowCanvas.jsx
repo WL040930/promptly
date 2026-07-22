@@ -26,7 +26,7 @@ const nodeTypes = {
   logic: DynamicNode,
 };
 
-const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, onNodeClick, onNodesChangeCallback, onEdgesChangeCallback, onAddNode, draggedNode }) => {
+const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, onNodeClick, onNodesChangeCallback, onEdgesChangeCallback, onAddNode, onPasteNode, draggedNode }) => {
   const reactFlowWrapper = useRef(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [dragPosition, setDragPosition] = useState(null);
@@ -40,6 +40,29 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
   // Translate simple internal nodes array into React Flow nodes and edges
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const copiedNodeRef = useRef(null);
+  const pasteOffsetRef = useRef(40);
+  const [hasCopiedNode, setHasCopiedNode] = useState(false);
+
+  const selectedSourceNode = useCallback(() => {
+    const selectedNode = nodes.find(node => node.selected) || nodes.find(node => node.id === activeNodeId);
+    if (!selectedNode) return null;
+    return initialNodes.find(node => node.id === selectedNode.id) || selectedNode;
+  }, [nodes, initialNodes, activeNodeId]);
+
+  const copySelectedNode = useCallback(() => {
+    const sourceNode = selectedSourceNode();
+    if (!sourceNode) return;
+    copiedNodeRef.current = sourceNode;
+    pasteOffsetRef.current = 40;
+    setHasCopiedNode(true);
+  }, [selectedSourceNode]);
+
+  const pasteCopiedNode = useCallback(() => {
+    if (!copiedNodeRef.current || typeof onPasteNode !== 'function') return;
+    onPasteNode(copiedNodeRef.current, pasteOffsetRef.current);
+    pasteOffsetRef.current += 40;
+  }, [onPasteNode]);
 
   // Initialize nodes and edges from props only on mount or when workflow completely changes
   useEffect(() => {
@@ -173,14 +196,32 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
 
   useEffect(() => {
     const onKeyDown = (e) => {
+      const target = e.target;
+      const isEditable = target?.tagName === 'INPUT'
+        || target?.tagName === 'TEXTAREA'
+        || target?.tagName === 'SELECT'
+        || target?.isContentEditable;
+      if (isEditable) return;
+
       if (e.key === 'Escape') {
         pendingConnectionRef.current = null;
         setPendingConnection(null);
+        return;
+      }
+
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === 'c' && selectedSourceNode()) {
+        e.preventDefault();
+        copySelectedNode();
+      } else if (key === 'v' && hasCopiedNode) {
+        e.preventDefault();
+        pasteCopiedNode();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [copySelectedNode, hasCopiedNode, pasteCopiedNode, pasteOffsetRef, selectedSourceNode]);
 
   // Track cursor position for the ghost line
   useEffect(() => {
@@ -313,17 +354,39 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
 
       {/* Floating Auto Layout Button Overlay */}
       <div className="absolute top-4 right-4 z-10">
-        <button
-          onClick={triggerAutoLayout}
-          className="bg-white/90 backdrop-blur border border-slate-200 shadow-md hover:shadow-lg rounded-xl px-3 py-1.5 text-xs font-black text-slate-700 hover:text-indigo-600 hover:bg-indigo-50/20 flex items-center gap-1.5 transition-all select-none hover:-translate-y-0.5 duration-200"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="stroke-current">
-            <path d="M21 16V8a2 2 0 0 0-2-2h-5M3 8v8a2 2 0 0 0 2 2h5"></path>
-            <polyline points="10 12 14 12 14 6"></polyline>
-            <polyline points="14 12 10 12 10 18"></polyline>
-          </svg>
-          Auto Layout
-        </button>
+        <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white/90 p-1 shadow-md backdrop-blur">
+          <button
+            type="button"
+            onClick={copySelectedNode}
+            disabled={!selectedSourceNode()}
+            className="rounded-lg px-2.5 py-1.5 text-xs font-black text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Copy selected node (Ctrl/Cmd+C)"
+          >
+            Copy node
+          </button>
+          <button
+            type="button"
+            onClick={pasteCopiedNode}
+            disabled={!hasCopiedNode}
+            className="rounded-lg px-2.5 py-1.5 text-xs font-black text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Paste copied node (Ctrl/Cmd+V)"
+          >
+            Paste node
+          </button>
+          <button
+            type="button"
+            onClick={triggerAutoLayout}
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-black text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600"
+            title="Auto layout workflow"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="stroke-current">
+              <path d="M21 16V8a2 2 0 0 0-2-2h-5M3 8v8a2 2 0 0 0 2 2h5"></path>
+              <polyline points="10 12 14 12 14 6"></polyline>
+              <polyline points="14 12 10 12 10 18"></polyline>
+            </svg>
+            Auto Layout
+          </button>
+        </div>
       </div>
       <ReactFlow
         nodes={displayNodes}

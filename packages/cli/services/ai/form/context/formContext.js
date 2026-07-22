@@ -248,6 +248,7 @@ export const buildWorkerContext = ({ schema, requirements = [], cardinality = nu
     'The form ID is not a field ID. Never use it as a patch id.',
     'Every add patch must include a complete field object with non-empty id, type, and label.',
     'For layout headings, use type "heading" and store the visible heading text in label. Headings are not questions.',
+    `Supported form-level setting keys: ${FORM_SETTINGS_KEYS.join(', ')}. Only use these keys in update_settings; do not invent visual, branding, or delivery settings.`,
     turnContext ? `Resolved Turn Intent: ${JSON.stringify(turnContext)}` : 'Resolved Turn Intent: (none)',
     turnContext?.scope === 'heading_only'
         ? 'Hard rule: only add heading fields for this request. Do not add or modify normal question fields.'
@@ -391,6 +392,7 @@ export const buildWorkerRepairContext = ({ schema, requirements = [], response, 
     JSON.stringify((Array.isArray(schema.fields) ? schema.fields : []).map(field => field.id).filter(Boolean)),
     'The form ID is not a field ID. Never use it as a patch id. If a requested field is not listed, use an add patch instead of update/remove.',
     'Repair every listed issue. Every add patch must include a complete field object with non-empty id, type, and label. Do not repeat an omitted label.',
+    `Supported form-level setting keys: ${FORM_SETTINGS_KEYS.join(', ')}. Only use these keys in update_settings; remove unsupported optional settings instead of inventing replacements.`,
     'Question Cardinality:',
     cardinality
         ? JSON.stringify(cardinality)

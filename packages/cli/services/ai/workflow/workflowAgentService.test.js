@@ -152,7 +152,8 @@ test('request capability detection recognises equivalent confirmation language',
     for (const message of [
         'Email the applicant after the submission.',
         'Send a thank-you message to the respondent.',
-        'Confirm the user received the registration.'
+        'Confirm the user received the registration.',
+        'Create a job application form and then send a confirmation / thank you email to the user once the user has submit the form.'
     ]) {
         assert.deepEqual(requiredCapabilitiesForRequest(message), ['respondent_confirmation']);
     }
@@ -202,7 +203,7 @@ test('workflow assembly enforces requested capabilities against supplied form da
     };
 
     const result = await assembleWorkflow({
-        message: 'After the form is submitted, send a confirmation to the respondent.',
+        message: 'Create a job application form and then send a confirmation / thank you email to the user once the user has submit the form.',
         specs,
         formId: 'form_approved',
         formSchema: { fields: [{ id: 'candidate_contact', type: 'email', required: true, label: 'Contact address' }] },
@@ -324,6 +325,59 @@ test('classifier resolves a natural-language request to canonical node contracts
     assert.deepEqual(result.selectedNodeKeys, ['trigger:form-submission', 'action:google-sheets']);
     assert.equal(result.needsForm, true);
     assert.equal(result.workflowName, 'Form to Sheets');
+});
+
+test('classifier restores required confirmation nodes when the model omits node selection', async () => {
+    const registry = {
+        getCompactCatalogue: () => [
+            { nodeKey: 'trigger:form-submission', subType: 'form-submission', type: 'trigger', title: 'Form submitted', description: 'Starts when a form is submitted', implementationStatus: 'experimental', inputs: [], outputs: [] },
+            { nodeKey: 'action:email', subType: 'email', type: 'action', title: 'Send email', description: 'Sends an email', implementationStatus: 'experimental', inputs: [], outputs: [] }
+        ],
+        getDefinitionByNodeKey: nodeKey => ({ metadata: { subType: nodeKey.split(':')[1] } })
+    };
+    const result = await classifyRequest({
+        message: 'Create a job application form and send a confirmation email after submission.',
+        snapshot: null,
+        requiredCapabilities: ['respondent_confirmation'],
+        registry,
+        instructionReader: async () => 'Return JSON only',
+        provider: async () => ({ value: {
+            action: 'create_workflow',
+            selectedNodeKeys: [],
+            workflowName: 'Application Confirmation',
+            needsForm: true,
+            affectedNodeIds: [],
+            intent: 'unknown'
+        }, tokenUsage: {} })
+    });
+
+    assert.deepEqual(result.selectedNodeKeys, ['trigger:form-submission', 'action:email']);
+});
+
+test('workflow classifier normalizes legacy form actions without exposing them downstream', async () => {
+    const registry = {
+        getCompactCatalogue: () => [
+            { nodeKey: 'trigger:form-submission', subType: 'form-submission', type: 'trigger', title: 'Form submitted', description: 'Starts when a form is submitted', implementationStatus: 'experimental', inputs: [], outputs: [] }
+        ],
+        getDefinitionByNodeKey: nodeKey => ({ metadata: { subType: nodeKey.split(':')[1] } })
+    };
+    const result = await classifyRequest({
+        message: 'Create a workflow that starts from a form.',
+        snapshot: null,
+        registry,
+        instructionReader: async () => 'Return JSON only',
+        provider: async () => ({ value: {
+            action: 'create_form',
+            selectedNodeKeys: ['trigger:form-submission'],
+            workflowName: 'Form Intake',
+            needsForm: true,
+            affectedNodeIds: [],
+            intent: 'unknown'
+        }, tokenUsage: {} })
+    });
+
+    assert.equal(result.action, 'create_workflow');
+    assert.equal(result.workflowName, 'Form Intake');
 });
 
 test('assembler returns a setup-needed proposal when required account input is missing', async () => {
