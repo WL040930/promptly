@@ -7,10 +7,31 @@
       "isConnection": true
     },
     {
+      "name": "waitMode",
+      "type": "select",
+      "label": "Wait mode",
+      "defaultValue": "duration",
+      "options": [
+        { "label": "For a duration", "value": "duration" },
+        { "label": "Until a date and time", "value": "until" }
+      ]
+    },
+    {
       "name": "delayAmount",
       "type": "number",
       "label": "Delay Amount",
-      "defaultValue": "1"
+      "defaultValue": 1,
+      "min": 0,
+      "max": 8760,
+      "showWhen": { "field": "waitMode", "equals": "duration" }
+    },
+    {
+      "name": "resumeAt",
+      "type": "text",
+      "label": "Resume at",
+      "placeholder": "2026-12-31T09:00:00+08:00",
+      "showWhen": { "field": "waitMode", "equals": "until" },
+      "requiredWhen": { "field": "waitMode", "equals": "until" }
     },
     {
       "name": "delayUnit",

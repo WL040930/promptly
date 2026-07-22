@@ -21,27 +21,35 @@
       "type": "textarea",
       "label": "Template (Text mode)",
       "placeholder": "Hello {{nodeId.name}}, your AI response is:\n\n{{aiNode.response}}",
-      "defaultValue": ""
+      "defaultValue": "",
+      "showWhen": { "field": "mode", "equals": "template" },
+      "requiredWhen": { "field": "mode", "equals": "template" }
     },
     {
       "name": "jsonTemplate",
-      "type": "textarea",
+      "type": "json",
       "label": "JSON Template (JSON mode)",
       "placeholder": "{\n  \"userId\": \"{{trigger.userId}}\",\n  \"reply\": \"{{aiNode.response}}\",\n  \"status\": \"success\"\n}",
-      "defaultValue": ""
+      "defaultValue": {},
+      "showWhen": { "field": "mode", "equals": "json" },
+      "requiredWhen": { "field": "mode", "equals": "json" }
     },
     {
       "name": "statusCode",
       "type": "number",
       "label": "HTTP Status Code (if used as webhook response)",
-      "defaultValue": 200
+      "defaultValue": 200,
+      "min": 100,
+      "max": 599
     },
     {
       "name": "headers",
-      "type": "textarea",
-      "label": "Response Headers (JSON)",
+      "type": "key-value",
+      "label": "Response headers",
+      "keyPlaceholder": "Header name",
+      "valuePlaceholder": "Header value",
       "placeholder": "{\"Cache-Control\":\"no-store\"}",
-      "defaultValue": ""
+      "defaultValue": {}
     }
   ],
   "outputs": [

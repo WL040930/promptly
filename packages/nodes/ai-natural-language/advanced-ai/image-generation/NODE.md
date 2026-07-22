@@ -2,6 +2,7 @@
 title: "Image Generation"
 type: ai
 subType: image
+implementationStatus: retired
 description: "Generate images from prompts"
 ui:
   icon: image

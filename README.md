@@ -70,8 +70,16 @@ GOOGLE_PUBSUB_AUDIENCE=https://your-public-api.example.com/api/provider-events/g
 # Security
 JWT_SECRET=your_super_secret_jwt_key
 
+# Storage
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_supabase_anon_key
+# Required for private workflow assets, Drive transfers, and knowledge-base files.
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+
 # AI Integration
 GEMINI_API_KEY=your_gemini_api_key
+# Required for managed transcription and knowledge-base embeddings.
+OPENAI_API_KEY=your_openai_api_key
 ```
 
 ### 3. Running the Application

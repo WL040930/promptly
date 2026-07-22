@@ -8,17 +8,26 @@
     },
     {
       "name": "spreadsheetId",
-      "type": "text",
-      "label": "Spreadsheet ID",
+      "type": "resource-select",
+      "resource": "google-spreadsheets",
+      "label": "Spreadsheet",
       "required": true,
-      "placeholder": "ID from the Google Sheets URL"
+      "placeholder": "Select a spreadsheet…",
+      "allowCustom": true,
+      "customLabel": "Paste spreadsheet URL or ID",
+      "valueFormat": "google-spreadsheet-id"
     },
     {
       "name": "range",
-      "type": "text",
-      "label": "Sheet Range",
+      "type": "resource-select",
+      "resource": "google-sheet-ranges",
+      "label": "Sheet and range",
       "required": true,
-      "placeholder": "Sheet1!A1:D20"
+      "placeholder": "Select a sheet…",
+      "requiredResourceParams": ["spreadsheetId"],
+      "resourceParams": { "spreadsheetId": "$spreadsheetId" },
+      "allowCustom": true,
+      "customLabel": "Enter a custom range"
     },
     {
       "name": "operation",
@@ -31,35 +40,43 @@
         { "label": "Update Range", "value": "update" },
         { "label": "Clear Range", "value": "clear" }
       ],
-      "defaultValue": "read"
+      "defaultValue": "read",
+      "group": "Operation"
     },
     {
       "name": "values",
-      "type": "object",
-      "label": "Values (JSON rows)",
-      "placeholder": "[[\"Name\", \"Status\"], [\"Ada\", \"Active\"]]",
-      "defaultValue": []
+      "type": "data-grid",
+      "label": "Rows to write",
+      "placeholder": "Add values row by row",
+      "defaultValue": [],
+      "showWhen": { "field": "operation", "in": ["append", "update"] },
+      "requiredWhen": { "field": "operation", "in": ["append", "update"] }
     },
     {
       "name": "valueInputOption",
       "type": "select",
       "label": "Input Mode",
       "options": ["RAW", "USER_ENTERED"],
-      "defaultValue": "USER_ENTERED"
+      "defaultValue": "USER_ENTERED",
+      "showWhen": { "field": "operation", "in": ["append", "update"] },
+      "group": "Operation"
     },
     {
       "name": "valueRenderOption",
       "type": "select",
       "label": "Read Value Mode",
       "options": ["FORMATTED_VALUE", "UNFORMATTED_VALUE", "FORMULA"],
-      "defaultValue": "UNFORMATTED_VALUE"
+      "defaultValue": "UNFORMATTED_VALUE",
+      "showWhen": { "field": "operation", "equals": "read" },
+      "group": "Operation"
     },
     {
       "name": "includeValuesInResponse",
-      "type": "select",
+      "type": "boolean",
       "label": "Include Written Values",
-      "options": ["false", "true"],
-      "defaultValue": "false"
+      "defaultValue": false,
+      "showWhen": { "field": "operation", "in": ["append", "update"] },
+      "group": "Operation"
     }
   ],
   "outputs": [

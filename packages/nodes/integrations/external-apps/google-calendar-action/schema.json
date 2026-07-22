@@ -1,0 +1,18 @@
+{
+  "inputs": [
+    { "name": "operation", "type": "select", "label": "Operation", "defaultValue": "list", "options": [
+      { "label": "List upcoming events", "value": "list" },
+      { "label": "Find event", "value": "find" },
+      { "label": "Create event", "value": "create" },
+      { "label": "Update event", "value": "update" },
+      { "label": "Cancel event", "value": "cancel" }
+    ]},
+    { "name": "calendarId", "type": "resource-select", "resource": "google-calendars", "label": "Calendar", "required": true },
+    { "name": "eventId", "type": "resource-select", "resource": "google-calendar-events", "resourceParams": { "calendarId": "$calendarId" }, "requiredResourceParams": ["calendarId"], "label": "Event", "showWhen": { "field": "operation", "in": ["find", "update", "cancel"] }, "requiredWhen": { "field": "operation", "in": ["find", "update", "cancel"] } },
+    { "name": "summary", "type": "text", "label": "Event title", "showWhen": { "field": "operation", "in": ["create", "update"] }, "requiredWhen": { "field": "operation", "in": ["create", "update"] } },
+    { "name": "start", "type": "text", "label": "Start (ISO date/time)", "placeholder": "2026-08-01T09:00:00+08:00", "showWhen": { "field": "operation", "in": ["create", "update"] }, "requiredWhen": { "field": "operation", "in": ["create", "update"] } },
+    { "name": "end", "type": "text", "label": "End (ISO date/time)", "placeholder": "2026-08-01T10:00:00+08:00", "showWhen": { "field": "operation", "in": ["create", "update"] }, "requiredWhen": { "field": "operation", "in": ["create", "update"] } },
+    { "name": "description", "type": "textarea", "label": "Description", "showWhen": { "field": "operation", "in": ["create", "update"] } }
+  ],
+  "outputs": [{ "name": "outputData", "type": "object", "label": "Calendar result", "isConnection": true }, { "name": "event", "type": "object", "label": "Event" }, { "name": "events", "type": "object", "label": "Events" }, { "name": "eventId", "type": "string", "label": "Event ID" }]
+}

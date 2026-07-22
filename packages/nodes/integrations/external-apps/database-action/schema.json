@@ -32,24 +32,43 @@
       "defaultValue": "select"
     },
     {
+      "name": "recordId",
+      "type": "resource-select",
+      "resource": "promptly-records",
+      "label": "Record",
+      "placeholder": "Select a record…",
+      "resourceParams": { "resource": "$resource" },
+      "requiredResourceParams": ["resource"],
+      "showWhen": { "field": "operation", "in": ["update", "delete"] },
+      "requiredWhen": { "field": "operation", "in": ["update", "delete"] }
+    },
+    {
       "name": "filters",
-      "type": "object",
-      "label": "Filters (JSON)",
-      "placeholder": "{ \"id\": \"form_...\" }",
+      "type": "key-value",
+      "label": "Find records where",
+      "keyPlaceholder": "Field",
+      "valuePlaceholder": "Value",
+      "placeholder": "Add a field to match",
       "defaultValue": {}
     },
     {
       "name": "data",
-      "type": "object",
-      "label": "Data (JSON)",
-      "placeholder": "{ \"title\": \"Updated title\" }",
-      "defaultValue": {}
+      "type": "key-value",
+      "label": "Fields to write",
+      "keyPlaceholder": "Field",
+      "valuePlaceholder": "New value",
+      "placeholder": "Add fields to write",
+      "defaultValue": {},
+      "showWhen": { "field": "operation", "in": ["insert", "update"] },
+      "requiredWhen": { "field": "operation", "in": ["insert", "update"] }
     },
     {
       "name": "limit",
       "type": "number",
       "label": "Read Limit",
-      "defaultValue": 50
+      "defaultValue": 50,
+      "min": 1,
+      "max": 100
     },
     {
       "name": "orderBy",

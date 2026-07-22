@@ -1,110 +1,117 @@
 {
   "inputs": [
-    {
-      "name": "input1",
-      "type": "object",
-      "label": "Input Data",
-      "isConnection": true
-    },
+    { "name": "input1", "type": "object", "label": "Input Data", "isConnection": true },
     {
       "name": "dataType",
       "type": "select",
-      "label": "Data Type",
+      "label": "Data type",
+      "group": "Transform",
       "defaultValue": "text",
       "options": [
-        { "label": "Text (String)", "value": "text" },
+        { "label": "Text", "value": "text" },
         { "label": "Number", "value": "number" },
         { "label": "Date", "value": "date" },
-        { "label": "JSON / Object", "value": "json" }
+        { "label": "JSON or object", "value": "json" }
       ]
     },
     {
       "name": "operation",
       "type": "select",
       "label": "Operation",
+      "group": "Transform",
       "defaultValue": "uppercase",
-      "options": [
-        { "label": "— Text —", "value": "text_header", "disabled": true },
-        { "label": "Uppercase", "value": "uppercase" },
-        { "label": "Lowercase", "value": "lowercase" },
-        { "label": "Title Case", "value": "titlecase" },
-        { "label": "Trim Whitespace", "value": "trim" },
-        { "label": "Replace", "value": "replace" },
-        { "label": "Split into Array", "value": "split" },
-        { "label": "Slice (substring)", "value": "slice" },
-        { "label": "— Number —", "value": "number_header", "disabled": true },
-        { "label": "Add", "value": "add" },
-        { "label": "Subtract", "value": "subtract" },
-        { "label": "Multiply", "value": "multiply" },
-        { "label": "Divide", "value": "divide" },
-        { "label": "Round", "value": "round" },
-        { "label": "Absolute Value", "value": "abs" },
-        { "label": "To Fixed Decimals", "value": "toFixed" },
-        { "label": "— Date —", "value": "date_header", "disabled": true },
-        { "label": "Format Date", "value": "formatDate" },
-        { "label": "Add Days", "value": "addDays" },
-        { "label": "Subtract Days", "value": "subtractDays" },
-        { "label": "Current Timestamp", "value": "now" },
-        { "label": "— JSON —", "value": "json_header", "disabled": true },
-        { "label": "Parse JSON String", "value": "parse" },
-        { "label": "Stringify to JSON", "value": "stringify" },
-        { "label": "Get Nested Value", "value": "get" },
-        { "label": "Set Nested Value", "value": "set" },
-        { "label": "Get Object Keys", "value": "keys" }
-      ]
+      "optionsBy": {
+        "field": "dataType",
+        "values": {
+          "text": [
+            { "label": "Uppercase", "value": "uppercase" },
+            { "label": "Lowercase", "value": "lowercase" },
+            { "label": "Title case", "value": "titlecase" },
+            { "label": "Trim whitespace", "value": "trim" },
+            { "label": "Find and replace", "value": "replace" },
+            { "label": "Split into a list", "value": "split" },
+            { "label": "Extract part of text", "value": "slice" }
+          ],
+          "number": [
+            { "label": "Add", "value": "add" },
+            { "label": "Subtract", "value": "subtract" },
+            { "label": "Multiply", "value": "multiply" },
+            { "label": "Divide", "value": "divide" },
+            { "label": "Round", "value": "round" },
+            { "label": "Round down", "value": "floor" },
+            { "label": "Round up", "value": "ceil" },
+            { "label": "Absolute value", "value": "abs" },
+            { "label": "Fixed decimal places", "value": "toFixed" }
+          ],
+          "date": [
+            { "label": "Format date", "value": "formatDate" },
+            { "label": "Add days", "value": "addDays" },
+            { "label": "Subtract days", "value": "subtractDays" },
+            { "label": "Current timestamp", "value": "now" }
+          ],
+          "json": [
+            { "label": "Parse JSON text", "value": "parse" },
+            { "label": "Convert to JSON text", "value": "stringify" },
+            { "label": "Get a nested value", "value": "get" },
+            { "label": "Set a nested value", "value": "set" },
+            { "label": "Get object keys", "value": "keys" }
+          ]
+        }
+      }
     },
     {
       "name": "value",
       "type": "text",
-      "label": "Input Value",
-      "placeholder": "Enter a value or use {{nodeId.field}} to reference upstream data",
-      "defaultValue": ""
+      "label": "Input value",
+      "group": "Input",
+      "placeholder": "Enter a value or insert data from a previous step",
+      "defaultValue": "",
+      "showWhen": { "field": "operation", "notIn": ["now"] },
+      "requiredWhen": { "field": "operation", "notIn": ["now"] }
     },
     {
       "name": "operand",
       "type": "text",
-      "label": "Operand / Second Value",
-      "placeholder": "e.g. 10 for Add, or ',' for Split, or 'YYYY-MM-DD' for Format Date",
-      "defaultValue": ""
+      "label": "Second value",
+      "group": "Input",
+      "placeholder": "The number, separator, path, or replacement to use",
+      "defaultValue": "",
+      "showWhen": { "field": "operation", "in": ["replace", "split", "slice", "add", "subtract", "multiply", "divide", "formatDate", "addDays", "subtractDays", "get", "set"] },
+      "requiredWhen": { "field": "operation", "in": ["replace", "slice", "divide", "formatDate", "get", "set"] },
+      "helpText": "For find and replace, use find|replacement. For slicing, use start:end."
     },
     {
       "name": "decimals",
       "type": "number",
-      "label": "Decimal Places (for toFixed)",
-      "defaultValue": 2
+      "label": "Decimal places",
+      "group": "Input",
+      "defaultValue": 2,
+      "min": 0,
+      "max": 20,
+      "showWhen": { "field": "operation", "equals": "toFixed" }
     },
     {
       "name": "timezone",
-      "type": "text",
-      "label": "Timezone (for date formatting)",
-      "placeholder": "UTC or Asia/Kuala_Lumpur",
-      "defaultValue": "UTC"
+      "type": "select",
+      "label": "Timezone",
+      "group": "Input",
+      "defaultValue": "UTC",
+      "options": [
+        { "label": "UTC", "value": "UTC" },
+        { "label": "Kuala Lumpur (UTC+8)", "value": "Asia/Kuala_Lumpur" },
+        { "label": "Singapore (UTC+8)", "value": "Asia/Singapore" },
+        { "label": "Tokyo (UTC+9)", "value": "Asia/Tokyo" },
+        { "label": "London", "value": "Europe/London" },
+        { "label": "New York", "value": "America/New_York" },
+        { "label": "Los Angeles", "value": "America/Los_Angeles" }
+      ],
+      "showWhen": { "field": "operation", "equals": "formatDate" }
     }
   ],
   "outputs": [
-    {
-      "name": "outputData",
-      "type": "object",
-      "label": "Output",
-      "isConnection": true
-    },
-    {
-      "name": "result",
-      "type": "any",
-      "label": "Transformed Result",
-      "description": "The output of the transformation — type depends on the operation."
-    },
-    {
-      "name": "outputType",
-      "type": "string",
-      "label": "Output Type",
-      "description": "The JavaScript typeof of the result (string, number, object, boolean)."
-    },
-    {
-      "name": "inputValue",
-      "type": "string",
-      "label": "Original Input Value",
-      "description": "The original value before transformation."
-    }
+    { "name": "outputData", "type": "object", "label": "Output", "isConnection": true },
+    { "name": "result", "type": "any", "label": "Transformed Result", "description": "The transformed value." },
+    { "name": "outputType", "type": "string", "label": "Output Type" },
+    { "name": "inputValue", "type": "string", "label": "Original Input Value" }
   ]
 }

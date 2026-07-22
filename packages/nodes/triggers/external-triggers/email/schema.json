@@ -2,8 +2,9 @@
   "inputs": [
     {
       "name": "labels",
-      "type": "object",
-      "label": "Gmail Labels (JSON array)",
+      "type": "string-list",
+      "label": "Gmail labels",
+      "suggestions": ["INBOX", "STARRED", "IMPORTANT"],
       "defaultValue": ["INBOX"]
     },
     {
@@ -22,15 +23,18 @@
       "name": "hasAttachment",
       "type": "select",
       "label": "Attachment Filter",
-      "options": ["any", "true", "false"],
+      "options": [
+        { "label": "Any", "value": "any" },
+        { "label": "Has an attachment", "value": "true" },
+        { "label": "No attachment", "value": "false" }
+      ],
       "defaultValue": "any"
     },
     {
       "name": "includeBody",
-      "type": "select",
+      "type": "boolean",
       "label": "Include Message Body",
-      "options": ["false", "true"],
-      "defaultValue": "false"
+      "defaultValue": false
     }
   ],
   "outputs": [

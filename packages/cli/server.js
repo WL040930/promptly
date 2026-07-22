@@ -8,6 +8,7 @@ import SchedulerService from './services/scheduler/schedulerService.js';
 import { ensureDatabaseChangeTriggers, startDatabaseChangePublisher } from './services/triggers/databaseTriggerService.js';
 import { reconcileActiveWorkflows, startTriggerRuntime } from './services/triggers/triggerRuntime.js';
 import { assertAIConfig } from './services/ai/core/configValidator.js';
+import { startContinuationRuntime } from './services/engine/continuationService.js';
 
 const startServer = async () => {
   try {
@@ -24,9 +25,15 @@ const startServer = async () => {
     await reconcileActiveWorkflows();
     startDatabaseChangePublisher();
     await startTriggerRuntime();
+    await startContinuationRuntime();
     
-    // Auto-initialize the 'form-uploads' bucket if it doesn't exist
+    // Auto-initialize private workflow assets and the legacy form bucket.
     try {
+      await sequelize.query(`
+        INSERT INTO storage.buckets (id, name, public)
+        VALUES ('workflow-assets', 'workflow-assets', false)
+        ON CONFLICT (id) DO NOTHING;
+      `);
       await sequelize.query(`
         INSERT INTO storage.buckets (id, name, public) 
         VALUES ('form-uploads', 'form-uploads', true) 

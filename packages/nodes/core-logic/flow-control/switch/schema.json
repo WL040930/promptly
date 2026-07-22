@@ -26,10 +26,11 @@
     },
     {
       "name": "cases",
-      "type": "textarea",
-      "label": "Cases (JSON)",
+      "type": "json",
+      "label": "Routes",
       "placeholder": "[{\"value\":\"support\",\"handle\":\"support\"}]",
-      "defaultValue": ""
+      "defaultValue": [],
+      "helpText": "Add one route for each value you want to match."
     },
     {
       "name": "defaultHandle",

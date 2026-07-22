@@ -74,3 +74,8 @@ export const buildOrder = ({ definition, orderBy, orderDirection }) => {
 export const requireRecordFilter = filters => {
     if (!filters.id) throw new Error('Update and delete actions require an exact "id" filter.');
 };
+
+export const mergeRecordIdFilter = ({ filters = {}, recordId = '' } = {}) => {
+    const normalized = String(recordId || '').trim();
+    return normalized ? { ...filters, id: normalized } : filters;
+};

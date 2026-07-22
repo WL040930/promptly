@@ -4,6 +4,7 @@ import {
     buildOrder,
     buildScopedWhere,
     getResourceDefinition,
+    mergeRecordIdFilter,
     parseLimit,
     parseObject,
     requireRecordFilter,
@@ -28,4 +29,5 @@ test('database connector validates bounded reads and exact mutations', () => {
     assert.throws(() => parseLimit(101), /between 1 and 100/);
     assert.throws(() => requireRecordFilter({ name: 'workflow' }), /exact "id" filter/);
     assert.throws(() => buildOrder({ definition, orderBy: 'nodes', orderDirection: 'DESC' }), /Unsupported order field/);
+    assert.deepEqual(mergeRecordIdFilter({ filters: { title: 'Draft' }, recordId: 'form-1' }), { title: 'Draft', id: 'form-1' });
 });

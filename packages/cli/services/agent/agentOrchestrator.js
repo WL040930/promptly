@@ -4,6 +4,7 @@ import {
     assembleWorkflow,
     classifyRequest,
     compactWorkflowSnapshot,
+    loadWorkflowResourceContext,
     patchWorkflow
 } from '../ai/workflow/workflowAgentService.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
@@ -290,18 +291,22 @@ const designForm = async ({ run, session, message, form, clarificationMode = DEF
     }
 };
 
-const designWorkflow = async ({ run, message, workflow, form, formArtifactId = null }) => {
+const designWorkflow = async ({ run, userId, message, workflow, form, formArtifactId = null, onEvent = null }) => {
     const step = await createStep(run, { stepKey: 'design_workflow', type: 'design_workflow' });
     await startStep(step);
     try {
+        onEvent?.({ type: 'workflow.design.started', runId: run.id, stage: 'classify' });
         const classification = await classifyRequest({ message, snapshot: compactWorkflowSnapshot(workflow) });
+        onEvent?.({ type: 'workflow.design.progress', runId: run.id, stage: 'classify', selectedNodeKeys: classification.selectedNodeKeys });
         if (classification.action === 'edit_workflow' && workflow) {
             const selected = [...(classification.selectedNodeKeys || [])];
             const affected = (workflow.nodes || [])
                 .filter(node => classification.affectedNodeIds.includes(node.id))
                 .map(node => `${node.type}:${node.subType}`);
             const specs = NodeRegistry.getSchemasFor([...selected, ...affected]);
-            const patched = await patchWorkflow({ message, currentWorkflow: workflow.toJSON(), classification, specs });
+            const resourceContext = await loadWorkflowResourceContext({ userId, specs });
+            onEvent?.({ type: 'workflow.design.progress', runId: run.id, stage: 'patch', resourceCount: Object.keys(resourceContext).length });
+            const patched = await patchWorkflow({ message, currentWorkflow: workflow.toJSON(), classification, specs, resourceContext });
             const content = {
                 action: 'edit_workflow',
                 workflowId: workflow.id,
@@ -309,7 +314,8 @@ const designWorkflow = async ({ run, message, workflow, form, formArtifactId = n
                 edges: patched.edges,
                 diff: patched.diff,
                 baseWorkflowUpdatedAt: workflow.updatedAt,
-                formArtifactId
+                formArtifactId,
+                readiness: patched.readiness
             };
             const artifact = await createArtifact({
                 run,
@@ -324,11 +330,14 @@ const designWorkflow = async ({ run, message, workflow, form, formArtifactId = n
         }
 
         const specs = NodeRegistry.getSchemasFor(classification.selectedNodeKeys || classification.selectedSubTypes);
+        const resourceContext = await loadWorkflowResourceContext({ userId, specs });
+        onEvent?.({ type: 'workflow.design.progress', runId: run.id, stage: 'assemble', resourceCount: Object.keys(resourceContext).length });
         const assembled = await assembleWorkflow({
             message,
             specs,
             workflowName: classification.workflowName,
-            formId: form?.id || null
+            formId: form?.id || null,
+            resourceContext
         });
         const content = {
             action: 'create_workflow',
@@ -339,6 +348,7 @@ const designWorkflow = async ({ run, message, workflow, form, formArtifactId = n
             formArtifactId,
             nodes: assembled.nodes,
             edges: assembled.edges,
+            readiness: assembled.readiness,
             plan: assembled.nodes.map(node => ({ subType: node.subType, title: node.title, reason: node.description }))
         };
         const artifact = await createArtifact({
@@ -364,7 +374,9 @@ const createSolutionCapabilityRegistry = ({
     form,
     workflow,
     resources,
-    clarificationMode
+    clarificationMode,
+    userId,
+    onEvent
 }) => createAgentCapabilityRegistry([
     {
         name: 'research',
@@ -410,10 +422,12 @@ const createSolutionCapabilityRegistry = ({
             }
             const result = await designWorkflow({
                 run,
+                userId,
                 message,
                 workflow,
                 form,
-                formArtifactId: formProposal?.id || null
+                formArtifactId: formProposal?.id || null,
+                onEvent
             });
             return {
                 output: { artifact: result.artifact },
@@ -443,7 +457,18 @@ const createSolutionCapabilityRegistry = ({
                     issues
                 };
             }
-            return { output: { artifactIds: artifacts.map(artifact => artifact.id), verification: { status: 'pass', issues: [] } } };
+            const readinessIssues = artifacts.flatMap(artifact => artifact.type === 'workflow_proposal'
+                ? (artifact.content?.readiness?.issues || [])
+                : []);
+            return {
+                output: {
+                    artifactIds: artifacts.map(artifact => artifact.id),
+                    verification: {
+                        status: readinessIssues.length > 0 ? 'needs_setup' : 'pass',
+                        issues: readinessIssues
+                    }
+                }
+            };
         }
     }
 ]);
@@ -576,12 +601,22 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
             form,
             workflow,
             resources: researched.resources,
-            clarificationMode: persistedContext.clarificationMode
+            clarificationMode: persistedContext.clarificationMode,
+            userId,
+            onEvent
         });
         const runtime = createAgentRuntime({
             registry: capabilityRegistry,
             planner: { plan: async () => plan },
-            limits: { maxActions: env.aiAgentMaxActions, maxReplans: env.aiAgentMaxReplans }
+            limits: { maxActions: env.aiAgentMaxActions, maxReplans: env.aiAgentMaxReplans },
+            onEvent: event => {
+                const typeMap = {
+                    step_started: 'step.started',
+                    step_observed: 'step.completed',
+                    plan_revised: 'plan.revised'
+                };
+                onEvent?.({ ...event, type: typeMap[event.type] || event.type, runId: run.id });
+            }
         });
         const runtimeResult = await runtime.run({
             input: { message, intent: analyzed.intent, context: persistedContext },
@@ -691,14 +726,14 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
     }
 };
 
-export const resumeAgentAfterForm = async ({ run, session, userId, formId }) => {
+export const resumeAgentAfterForm = async ({ run, session, userId, formId, onEvent = null }) => {
     const metadata = run.metadata || {};
     const request = metadata.request;
     const context = metadata.context || {};
     const form = await Form.findOne({ where: { id: formId, userId } });
     if (!form) throw new Error('The approved form could not be found.');
     const existingWorkflow = context.workflowId ? await Workflow.findOne({ where: { id: context.workflowId, userId } }) : null;
-    const result = await designWorkflow({ run, message: request, workflow: existingWorkflow, form, formArtifactId: null });
+    const result = await designWorkflow({ run, userId, message: request, workflow: existingWorkflow, form, formArtifactId: null, onEvent });
     await updateRun(run, { status: 'awaiting_approval', currentStep: null, metadata: { ...metadata, formId } });
     const artifact = result.artifact;
     const reply = await saveReply(session, {
@@ -712,7 +747,7 @@ export const resumeAgentAfterForm = async ({ run, session, userId, formId }) => 
     return { reply, tokenUsage: result.tokenUsage };
 };
 
-export const resumeAgentAfterClarification = async ({ run, session, userId, context = null }) => {
+export const resumeAgentAfterClarification = async ({ run, session, userId, context = null, onEvent = null }) => {
     const metadata = run.metadata || {};
     const request = metadata.request;
     if (!request) throw new Error('The pending agent request is no longer available.');
@@ -723,11 +758,12 @@ export const resumeAgentAfterClarification = async ({ run, session, userId, cont
         userId,
         message: request,
         context: context || metadata.context || {},
-        force: true
+        force: true,
+        onEvent
     });
 };
 
-export const resumeAgentAfterPlanReview = async ({ run, session, userId }) => {
+export const resumeAgentAfterPlanReview = async ({ run, session, userId, onEvent = null }) => {
     const metadata = run.metadata || {};
     const request = metadata.request;
     if (!request) throw new Error('The pending plan request is no longer available.');
@@ -740,7 +776,8 @@ export const resumeAgentAfterPlanReview = async ({ run, session, userId }) => {
         context: metadata.context || {},
         force: true,
         skipPlanReview: true,
-        approvedPlan: run.plan
+        approvedPlan: run.plan,
+        onEvent
     });
 };
 

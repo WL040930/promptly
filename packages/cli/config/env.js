@@ -121,6 +121,9 @@ const env = {
     cerebras: {
         apiKey: process.env.CEREBRAS_API_KEY
     },
+    openai: {
+        apiKey: process.env.OPENAI_API_KEY
+    },
     ai: {
         tiers: aiTiers,
         fallbackProviders: getAiFallbackProviders()
@@ -133,7 +136,8 @@ const env = {
     aiAgentMaxReplans: getOptionalPositiveInteger('AI_AGENT_MAX_REPLANS') || 1,
     supabase: {
         url: requireEnv('SUPABASE_URL'),
-        anonKey: requireEnv('SUPABASE_ANON_KEY')
+        anonKey: requireEnv('SUPABASE_ANON_KEY'),
+        serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || null
     }
 };
 

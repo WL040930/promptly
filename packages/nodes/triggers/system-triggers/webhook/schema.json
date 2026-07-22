@@ -9,9 +9,20 @@
     },
     {
       "name": "secret",
-      "type": "text",
+      "type": "secret",
       "label": "Secret Token (optional)",
       "placeholder": "Used to verify incoming requests"
+    },
+    {
+      "name": "deliveryMode",
+      "type": "select",
+      "label": "Delivery mode",
+      "defaultValue": "async",
+      "options": [
+        { "label": "Async (recommended)", "value": "async" },
+        { "label": "Synchronous response", "value": "sync" }
+      ],
+      "helpText": "Sync mode waits up to 10 seconds for a Respond to Webhook step."
     }
   ],
   "outputs": [

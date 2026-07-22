@@ -68,3 +68,31 @@ test('rejects an active workflow without exactly one trigger', () => {
     assert.equal(result.valid, false);
     assert.ok(result.issues.some(item => item.code === 'TRIGGER_COUNT'));
 });
+
+test('rejects unknown and ambiguous connection handles', () => {
+    const handleRegistry = {
+        getDefinition: (type, subType) => type === 'trigger'
+            ? { implementationStatus: 'experimental', configSchema: { inputs: [], outputs: [{ name: 'yes', isConnection: true }, { name: 'no', isConnection: true }] } }
+            : { implementationStatus: 'experimental', configSchema: { inputs: [{ name: 'input', isConnection: true }], outputs: [] } }
+    };
+    const result = validateWorkflow({
+        registry: handleRegistry,
+        isActive: false,
+        nodes: [node('trigger_1', 'trigger', 'switch'), node('action_1', 'action', 'http')],
+        edges: [{ id: 'edge_1', source: 'trigger_1', target: 'action_1', sourceHandle: 'missing' }]
+    });
+    assert.equal(result.valid, false);
+    assert.ok(result.issues.some(item => item.code === 'UNKNOWN_SOURCE_HANDLE'));
+});
+
+test('proposal validation rejects generated graphs with disconnected nodes', () => {
+    const result = validateWorkflow({
+        nodes: [node('trigger_1', 'trigger', 'webhook'), node('action_1', 'action', 'http')],
+        edges: [],
+        isActive: false,
+        requireConnected: true,
+        registry
+    });
+    assert.equal(result.valid, false);
+    assert.ok(result.issues.some(item => item.code === 'UNREACHABLE_NODE'));
+});

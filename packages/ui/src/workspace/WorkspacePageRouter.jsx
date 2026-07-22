@@ -8,6 +8,7 @@ import { navigateTo } from '../utils/router.js';
 import { useCreateWorkflow } from '../api/hooks/useWorkflows.js';
 import AutomationVersionsPage from './AutomationVersionsPage.jsx';
 import AutomationSettingsPage from './AutomationSettingsPage.jsx';
+import ApprovalsPage from './ApprovalsPage.jsx';
 
 const LogsTab = React.lazy(() => import('../chat/components/LogsTab.jsx'));
 
@@ -75,6 +76,8 @@ export default function WorkspacePageRouter({ route, isSidebarCollapsed, setSide
         case 'runs':
         case 'run-detail':
             return <PageFrame><Suspense fallback={<div className="p-8 text-sm text-slate-500">Loading runs…</div>}><LogsTab runId={route.runId} /></Suspense></PageFrame>;
+        case 'approvals':
+            return <PageFrame><ApprovalsPage /></PageFrame>;
         case 'assistant':
             return <PageFrame><ChatTab conversationId={route.conversationId} /></PageFrame>;
         default:

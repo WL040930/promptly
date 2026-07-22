@@ -1,16 +1,31 @@
 {
   "inputs": [
     {
-      "name": "input1",
+      "name": "inputData",
       "type": "object",
       "label": "Input Data",
       "isConnection": true
     },
     {
-      "name": "setting",
-      "type": "text",
-      "label": "Configuration Setting",
-      "defaultValue": ""
+      "name": "code",
+      "type": "textarea",
+      "label": "JavaScript",
+      "required": true,
+      "placeholder": "return { total: input.amount * 1.08 };",
+      "defaultValue": "return input;"
+    },
+    {
+      "name": "timeoutMs",
+      "type": "number",
+      "label": "Timeout (milliseconds)",
+      "defaultValue": 1000,
+      "description": "Hard limit for this transformation. Maximum 3000 milliseconds."
+    },
+    {
+      "name": "sampleInput",
+      "type": "json",
+      "label": "Test Input",
+      "defaultValue": "{}"
     }
   ],
   "outputs": [
@@ -19,6 +34,12 @@
       "type": "object",
       "label": "Output Data",
       "isConnection": true
+    },
+    {
+      "name": "logs",
+      "type": "object",
+      "label": "Execution Logs",
+      "description": "Capped console output from the sandbox."
     }
   ]
 }

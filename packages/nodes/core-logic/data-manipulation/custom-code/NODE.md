@@ -2,6 +2,7 @@
 title: "Custom Node (JS)"
 type: logic
 subType: customCode
+implementationStatus: beta
 description: "Write custom JavaScript"
 ui:
   icon: code
@@ -11,11 +12,10 @@ ui:
   shadow: shadow-blue-100
 ---
 
-# Custom Node (JS) Node
+# Custom JavaScript Node
 
 ## When to use this node
-Write custom JavaScript
+Transform JSON data with a sandboxed JavaScript function. The code can read `input`, `variables`, and `metadata`, and must return a JSON-serializable value.
 
 ## Configuration Schema
-The LLM must configure this node with the following JSON schema:
-- (Define schema here)
+The code runs in a separate restricted worker. Filesystem, network, imports, secrets, and child processes are unavailable.

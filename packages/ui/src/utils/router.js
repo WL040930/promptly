@@ -45,6 +45,7 @@ export function getRouteState(path = window.location.pathname) {
         isForgotPassword: pathname === '/forgot-password',
         isResetPassword: pathname.startsWith('/reset-password/'),
         isPublicForm: pathname.startsWith('/f/'),
+        isApprovalAction: pathname === '/app/approvals' && Boolean(getQuery(path).get('token')),
         isDashboard: isAppRoute(pathname),
         isOnboarding: pathname === '/onboarding',
         isSecurity: pathname === '/landing/security' || pathname === '/security'
@@ -85,6 +86,8 @@ export function parsePath(path = window.location.pathname) {
             return makeRoute('forms');
         case 'runs':
             return makeRoute(parts[2] ? 'run-detail' : 'runs', { runId: parts[2] || null });
+        case 'approvals':
+            return makeRoute('approvals');
         case 'settings':
             return makeRoute('settings', { section: parts[2] || 'general' });
         default:
@@ -109,6 +112,7 @@ export function buildPath(route = {}) {
         case 'forms': return '/app/forms';
         case 'form-detail': return `/app/forms/${route.formId}/${route.section || 'build'}`;
         case 'runs': return '/app/runs';
+        case 'approvals': return '/app/approvals';
         case 'run-detail': return `/app/runs/${route.runId}`;
         case 'settings': return `/app/settings/${route.section || 'general'}`;
         case 'onboarding': return '/onboarding';

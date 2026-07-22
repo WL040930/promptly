@@ -1,8 +1,10 @@
+import { validateNodeConfig } from '../../../shared/nodeConfigContract.js';
+
 const isObject = value => value && typeof value === 'object' && !Array.isArray(value);
 
-const issue = (code, path, message) => ({ code, path, message });
+const issue = (code, path, message, severity = 'error') => ({ code, path, message, severity });
 
-const validateGraph = (nodes, edges) => {
+const validateGraph = (nodes, edges, registry) => {
     const issues = [];
     const nodeIds = new Set(nodes.map(node => node.id));
     const edgeIds = new Set();
@@ -24,6 +26,24 @@ const validateGraph = (nodes, edges) => {
         if (!nodeIds.has(edge.source)) issues.push(issue('UNKNOWN_EDGE_SOURCE', `edges[${index}].source`, `Node "${edge.source}" does not exist.`));
         if (!nodeIds.has(edge.target)) issues.push(issue('UNKNOWN_EDGE_TARGET', `edges[${index}].target`, `Node "${edge.target}" does not exist.`));
         if (nodeIds.has(edge.source) && nodeIds.has(edge.target)) {
+            const sourceNode = nodes.find(node => node.id === edge.source);
+            const targetNode = nodes.find(node => node.id === edge.target);
+            const sourceDefinition = registry?.getDefinition(sourceNode.type, sourceNode.subType);
+            const targetDefinition = registry?.getDefinition(targetNode.type, targetNode.subType);
+            const sourceHandles = (sourceDefinition?.configSchema?.outputs || []).filter(item => item?.isConnection).map(item => item.name).filter(Boolean);
+            const targetHandles = (targetDefinition?.configSchema?.inputs || []).filter(item => item?.isConnection).map(item => item.name).filter(Boolean);
+            if (edge.sourceHandle && sourceHandles.length > 0 && !sourceHandles.includes(edge.sourceHandle)) {
+                issues.push(issue('UNKNOWN_SOURCE_HANDLE', `edges[${index}].sourceHandle`, `Output handle "${edge.sourceHandle}" does not exist on node "${edge.source}".`));
+            }
+            if (edge.targetHandle && targetHandles.length > 0 && !targetHandles.includes(edge.targetHandle)) {
+                issues.push(issue('UNKNOWN_TARGET_HANDLE', `edges[${index}].targetHandle`, `Input handle "${edge.targetHandle}" does not exist on node "${edge.target}".`));
+            }
+            if (!edge.sourceHandle && sourceHandles.length > 1) {
+                issues.push(issue('AMBIGUOUS_SOURCE_HANDLE', `edges[${index}].sourceHandle`, `Choose an output route for node "${edge.source}".`));
+            }
+            if (!edge.targetHandle && targetHandles.length > 1) {
+                issues.push(issue('AMBIGUOUS_TARGET_HANDLE', `edges[${index}].targetHandle`, `Choose an input route for node "${edge.target}".`));
+            }
             adjacency.get(edge.source).push(edge.target);
             indegree.set(edge.target, indegree.get(edge.target) + 1);
         }
@@ -44,8 +64,9 @@ const validateGraph = (nodes, edges) => {
     return { issues, adjacency };
 };
 
-export const validateWorkflow = ({ nodes = [], edges = [], isActive = false, registry }) => {
+export const validateWorkflow = ({ nodes = [], edges = [], isActive = false, requireConnected = false, registry }) => {
     const issues = [];
+    const warnings = [];
     if (!Array.isArray(nodes)) return { valid: false, issues: [issue('INVALID_NODES', 'nodes', 'Nodes must be an array.')] };
     if (!Array.isArray(edges)) return { valid: false, issues: [issue('INVALID_EDGES', 'edges', 'Edges must be an array.')] };
 
@@ -72,25 +93,47 @@ export const validateWorkflow = ({ nodes = [], edges = [], isActive = false, reg
         if (!definition) {
             issues.push(issue('UNKNOWN_NODE', `nodes[${index}]`, `Unknown node "${node.type}:${node.subType}".`));
         } else {
-            if (isActive && definition.implementationStatus === 'disabled') {
+            if (isActive && ['disabled', 'coming_soon', 'retired'].includes(definition.implementationStatus)) {
                 issues.push(issue('UNSUPPORTED_NODE', `nodes[${index}]`, `Node "${node.type}:${node.subType}" is not implemented.`));
             }
-            for (const input of definition.configSchema.inputs || []) {
-                if (isActive && input.required === true && (node.config?.[input.name] === undefined || node.config?.[input.name] === '')) {
-                    issues.push(issue('MISSING_NODE_CONFIG', `nodes[${index}].config.${input.name}`, `Required configuration "${input.name}" is missing.`));
-                }
-            }
+            const configValidation = validateNodeConfig({
+                schema: definition.configSchema || {},
+                config: node.config || {},
+                mode: isActive ? 'active' : 'draft'
+            });
+            configValidation.issues.forEach(configIssue => {
+                const target = issue(
+                    configIssue.code === 'MISSING_REQUIRED_CONFIG' ? 'MISSING_NODE_CONFIG' : `INVALID_NODE_CONFIG_${configIssue.code}`,
+                    `nodes[${index}].${configIssue.path}`,
+                    configIssue.message,
+                    configIssue.severity
+                );
+                if (target.severity === 'warning') warnings.push(target);
+                else issues.push(target);
+            });
         }
         if (node.type === 'trigger') triggerNodes.push(node);
     }
 
-    if (isActive && nodes.length === 0) issues.push(issue('EMPTY_WORKFLOW', 'nodes', 'An active workflow must contain nodes.'));
-    if (isActive && triggerNodes.length !== 1) issues.push(issue('TRIGGER_COUNT', 'nodes', 'An active workflow must contain exactly one trigger node.'));
+    if ((isActive || requireConnected) && nodes.length === 0) issues.push(issue('EMPTY_WORKFLOW', 'nodes', 'An executable workflow must contain nodes.'));
+    if ((isActive || requireConnected) && triggerNodes.length !== 1) issues.push(issue('TRIGGER_COUNT', 'nodes', 'An executable workflow must contain exactly one trigger node.'));
 
-    const graph = validateGraph(nodes, edges);
+    const graph = validateGraph(nodes, edges, registry);
     issues.push(...graph.issues);
 
-    if (isActive && nodes.length > 0 && triggerNodes.length > 0) {
+    const webhookTrigger = triggerNodes.find(node => node.subType === 'webhook');
+    if (isActive && webhookTrigger?.config?.deliveryMode === 'sync') {
+        const responseNodes = nodes.filter(node => ['formatResponse', 'respondWebhook'].includes(node.subType));
+        const terminalNodes = nodes.filter(node => (graph.adjacency.get(node.id) || []).length === 0);
+        if (responseNodes.length === 0 || terminalNodes.some(node => !['formatResponse', 'respondWebhook'].includes(node.subType))) {
+            issues.push(issue('SYNC_WEBHOOK_RESPONSE_REQUIRED', 'nodes', 'Every synchronous webhook path must end with a response step.'));
+        }
+        if (nodes.some(node => ['approval', 'delay', 'waitUntil'].includes(node.subType))) {
+            issues.push(issue('SYNC_WEBHOOK_CANNOT_SUSPEND', 'nodes', 'Synchronous webhooks cannot contain approval or durable wait steps.'));
+        }
+    }
+
+    if ((isActive || requireConnected) && nodes.length > 0 && triggerNodes.length === 1) {
         const reachable = new Set([triggerNodes[0].id]);
         const queue = [triggerNodes[0].id];
         while (queue.length > 0) {
@@ -107,5 +150,5 @@ export const validateWorkflow = ({ nodes = [], edges = [], isActive = false, reg
         });
     }
 
-    return { valid: issues.length === 0, issues };
+    return { valid: issues.length === 0, ready: issues.length === 0 && warnings.length === 0, issues, warnings };
 };

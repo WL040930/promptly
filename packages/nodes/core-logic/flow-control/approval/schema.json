@@ -1,0 +1,13 @@
+{
+  "inputs": [
+    { "name": "inputData", "type": "object", "label": "Input Data", "isConnection": true },
+    { "name": "assigneeEmail", "type": "text", "label": "Approver email", "required": true, "placeholder": "approver@example.com" },
+    { "name": "title", "type": "text", "label": "Approval title", "required": true, "defaultValue": "Review required" },
+    { "name": "instructions", "type": "textarea", "label": "Instructions", "defaultValue": "Please review the information and choose an outcome.", "rows": 4 },
+    { "name": "expiresAfterHours", "type": "number", "label": "Expires after (hours)", "defaultValue": 72, "min": 1, "max": 720 }
+  ],
+  "outputs": [
+    { "name": "approved", "type": "object", "label": "Approved", "isConnection": true },
+    { "name": "rejected", "type": "object", "label": "Rejected", "isConnection": true }
+  ]
+}

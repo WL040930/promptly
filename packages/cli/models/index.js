@@ -3,8 +3,9 @@ import { ChatSession, ChatMessage } from './chat/index.js';
 import { AgentRun } from './agent/index.js';
 import { Form, FormResponse, FormChatMessage, FormAIState } from './forms/index.js';
 import { Workflow, WorkflowVersion } from './workflows/index.js';
-import { ExecutionLog, EmailDelivery } from './execution/index.js';
+import { ExecutionLog, EmailDelivery, WorkflowRun, WorkflowContinuation, Asset } from './execution/index.js';
 import { TriggerSubscription, TriggerEvent, DatabaseChangeEvent } from './triggers/index.js';
+import { KnowledgeBase, KnowledgeDocument, KnowledgeChunk } from './knowledge/index.js';
 
 Connection.belongsTo(User, { foreignKey: 'userId', as: 'user', onDelete: 'CASCADE' });
 User.hasMany(Connection, { foreignKey: 'userId', as: 'connections', onDelete: 'CASCADE' });
@@ -39,6 +40,19 @@ User.hasMany(ExecutionLog, { foreignKey: 'userId', as: 'logs', onDelete: 'CASCAD
 
 ExecutionLog.belongsTo(Workflow, { foreignKey: 'workflowId', as: 'workflow' });
 Workflow.hasMany(ExecutionLog, { foreignKey: 'workflowId', as: 'logs', onDelete: 'CASCADE' });
+WorkflowRun.belongsTo(Workflow, { foreignKey: 'workflowId', as: 'workflow' });
+Workflow.hasMany(WorkflowRun, { foreignKey: 'workflowId', as: 'runs', onDelete: 'CASCADE' });
+WorkflowRun.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+WorkflowRun.hasMany(WorkflowContinuation, { foreignKey: 'runId', as: 'continuations', onDelete: 'CASCADE' });
+WorkflowContinuation.belongsTo(WorkflowRun, { foreignKey: 'runId', as: 'run', onDelete: 'CASCADE' });
+Asset.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+User.hasMany(Asset, { foreignKey: 'userId', as: 'assets', onDelete: 'CASCADE' });
+KnowledgeBase.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+User.hasMany(KnowledgeBase, { foreignKey: 'userId', as: 'knowledgeBases', onDelete: 'CASCADE' });
+KnowledgeDocument.belongsTo(KnowledgeBase, { foreignKey: 'knowledgeBaseId', as: 'knowledgeBase', onDelete: 'CASCADE' });
+KnowledgeBase.hasMany(KnowledgeDocument, { foreignKey: 'knowledgeBaseId', as: 'documents', onDelete: 'CASCADE' });
+KnowledgeChunk.belongsTo(KnowledgeDocument, { foreignKey: 'documentId', as: 'document', onDelete: 'CASCADE' });
+KnowledgeDocument.hasMany(KnowledgeChunk, { foreignKey: 'documentId', as: 'chunks', onDelete: 'CASCADE' });
 
 // --- ChatSession Associations ---
 ChatSession.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -88,6 +102,12 @@ export {
     Form,
     FormResponse,
     ExecutionLog,
+    WorkflowRun,
+    WorkflowContinuation,
+    Asset,
+    KnowledgeBase,
+    KnowledgeDocument,
+    KnowledgeChunk,
     ChatSession,
     ChatMessage,
     FormChatMessage,

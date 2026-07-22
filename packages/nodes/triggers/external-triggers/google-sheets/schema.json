@@ -2,17 +2,26 @@
   "inputs": [
     {
       "name": "spreadsheetId",
-      "type": "text",
-      "label": "Spreadsheet ID",
+      "type": "resource-select",
+      "resource": "google-spreadsheets",
+      "label": "Spreadsheet",
       "required": true,
-      "placeholder": "ID from the Google Sheets URL"
+      "placeholder": "Select a spreadsheet…",
+      "allowCustom": true,
+      "customLabel": "Paste spreadsheet URL or ID",
+      "valueFormat": "google-spreadsheet-id"
     },
     {
       "name": "range",
-      "type": "text",
-      "label": "Watched Range",
+      "type": "resource-select",
+      "resource": "google-sheet-ranges",
+      "label": "Watched sheet and range",
       "required": true,
-      "placeholder": "Sheet1!A:Z"
+      "placeholder": "Select a sheet…",
+      "requiredResourceParams": ["spreadsheetId"],
+      "resourceParams": { "spreadsheetId": "$spreadsheetId" },
+      "allowCustom": true,
+      "customLabel": "Enter a custom range"
     },
     {
       "name": "baselineMode",

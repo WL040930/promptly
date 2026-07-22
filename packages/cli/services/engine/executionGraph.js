@@ -31,6 +31,8 @@ export const mergeExecutionResult = (context, node, result) => {
     if (node.title) context[node.title] = result;
     context[`${node.type}:${node.subType}`] = result;
     if (result?.success !== false && result?.variables && typeof result.variables === 'object') {
+        context.metadata ||= {};
+        context.metadata.variables = { ...(context.metadata.variables || {}), ...result.variables };
         for (const [name, value] of Object.entries(result.variables)) {
             if (/^(?:__proto__|prototype|constructor|metadata|initialPayload)$/.test(name)) continue;
             context[name] = value;

@@ -5,7 +5,7 @@ import { runFormTurn } from '../ai/formAIService.js';
 import { ai } from '../ai/index.js';
 import { AI_TASKS } from '../ai/core/aiTasks.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
-import { assembleWorkflow, tokenTotal } from '../ai/workflow/workflowAgentService.js';
+import { assembleWorkflow, loadWorkflowResourceContext, tokenTotal } from '../ai/workflow/workflowAgentService.js';
 import env from '../../config/env.js';
 import { mergeAgentContext } from './resourceResolver.js';
 import { processAgenticTurn, resumeAgentAfterClarification, resumeAgentAfterForm, resumeAgentAfterPlanReview } from '../agent/agentOrchestrator.js';
@@ -437,7 +437,7 @@ const formResult = async ({ session, userId, request, formId, continuation = nul
     return { reply, tokenUsage };
 };
 
-export const applyEvent = async (session, userId, event) => {
+export const applyEvent = async (session, userId, event, onEvent = null) => {
     if (!event?.type) return null;
     const state = session.agentState || {};
     if (event.type === 'agent_plan_approved' && event.runId) {
@@ -445,7 +445,7 @@ export const applyEvent = async (session, userId, event) => {
         if (!run || state.status !== 'awaiting_agent_plan_review' || state.runId !== run.id) {
             return { reply: await saveReply(session, { text: 'That plan is no longer waiting for approval. Please send the request again.', kind: 'error' }) };
         }
-        const resumed = await resumeAgentAfterPlanReview({ run, session, userId });
+        const resumed = await resumeAgentAfterPlanReview({ run, session, userId, onEvent });
         return { reply: resumed.replyObj, tokenUsage: resumed.totalTokenUsage };
     }
     if (event.type === 'agent_plan_rejected' && event.runId) {
@@ -461,7 +461,7 @@ export const applyEvent = async (session, userId, event) => {
         const run = await AgentRun.findOne({ where: { id: event.runId, sessionId: session.id, userId } });
         if (!run) return { reply: await saveReply(session, { text: 'That agent run is no longer available.', kind: 'error' }) };
         if (event.messageId) await ChatMessage.update({ proposalStatus: 'applied' }, { where: { id: event.messageId, sessionId: session.id } });
-        const resumed = await resumeAgentAfterForm({ run, session, userId, formId: event.formId });
+        const resumed = await resumeAgentAfterForm({ run, session, userId, formId: event.formId, onEvent });
         await session.update({ agentState: { status: 'awaiting_agent_approval', runId: run.id } });
         return { reply: resumed.reply, tokenUsage: resumed.tokenUsage };
     }
@@ -528,11 +528,19 @@ export const applyEvent = async (session, userId, event) => {
         const workflow = await workflowForRequest(userId, state.continuation.workflowId);
         if (!workflow) throw new Error('Workflow not found while resuming agent');
         const specs = NodeRegistry.getSchemasFor(state.continuation.specNodeKeys || state.continuation.specSubTypes);
+        const resourceContext = await loadWorkflowResourceContext({ userId, specs });
+        if (event.formId) {
+            resourceContext.forms = {
+                ...(resourceContext.forms || {}),
+                options: [...(resourceContext.forms?.options || []), { value: event.formId, label: 'Approved form' }]
+            };
+        }
         const assembled = await assembleWorkflow({
             message: state.continuation.request,
             specs,
             workflowName: state.continuation.workflowName,
-            formId: event.formId
+            formId: event.formId,
+            resourceContext
         });
         await session.update({ agentState: {} });
         const tokenUsage = tokenPayload(state.continuation.stage1Usage, assembled.tokenUsage);
@@ -548,6 +556,7 @@ export const applyEvent = async (session, userId, event) => {
                     formId: event.formId,
                     nodes: assembled.nodes,
                     edges: assembled.edges,
+                    readiness: assembled.readiness,
                     plan: assembled.nodes.map(node => ({ subType: node.subType, title: node.title, reason: node.description })),
                     baseWorkflowUpdatedAt: workflow.updatedAt
                 },
@@ -577,7 +586,7 @@ export const processChatMessage = async ({ session, userId, context = {}, onEven
         const run = await AgentRun.findOne({ where: { id: pendingAgentState.runId, sessionId: session.id, userId } });
         const answer = String(latestUserMessage?.text || '');
         if (run && /\b(proceed|approve|continue|yes|go ahead)\b/i.test(answer)) {
-            const resumed = await resumeAgentAfterPlanReview({ run, session, userId });
+            const resumed = await resumeAgentAfterPlanReview({ run, session, userId, onEvent });
             return { replyObj: resumed.replyObj, totalTokenUsage: resumed.totalTokenUsage };
         }
         if (run && /\b(cancel|reject|stop|no)\b/i.test(answer)) {
@@ -606,7 +615,7 @@ export const processChatMessage = async ({ session, userId, context = {}, onEven
             return { replyObj: reply, totalTokenUsage: null };
         }
 
-        const resumed = await resumeAgentAfterClarification({ run, session, userId, context: effectiveContext });
+        const resumed = await resumeAgentAfterClarification({ run, session, userId, context: effectiveContext, onEvent });
         return { replyObj: resumed.replyObj, totalTokenUsage: resumed.totalTokenUsage };
     }
 

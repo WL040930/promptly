@@ -6,12 +6,15 @@ import NodeRegistry from '../../../utils/NodeRegistry.js';
 import { ai } from '../index.js';
 import { AI_TASKS } from '../core/aiTasks.js';
 import { validateWorkflow } from '../../engine/workflowValidator.js';
+import nodeResourceService from '../../nodes/nodeResourceService.js';
+import { normalizeNodeInputOptions, resolveNodeResourceParams } from '../../../../shared/nodeConfigContract.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const instructionDir = path.join(__dirname, 'instruction');
 const validActions = new Set(['create_workflow', 'edit_workflow', 'create_form', 'edit_form']);
 
 const readInstruction = async (name) => fs.readFile(path.join(instructionDir, name), 'utf8');
+export const readWorkflowInstruction = readInstruction;
 
 const getWorkflowTask = operation => operation === 'classifier'
     ? AI_TASKS.WORKFLOW_CLASSIFY
@@ -49,17 +52,17 @@ export const compactWorkflowSnapshot = (workflow) => {
     };
 };
 
-export const classifyRequest = async ({ message, snapshot }) => {
-    const catalogueEntries = NodeRegistry.getCompactCatalogue()
+export const classifyRequest = async ({ message, snapshot, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
+    const catalogueEntries = registry.getCompactCatalogue()
         .filter(node => node.implementationStatus !== 'disabled');
     const catalogue = catalogueEntries
-        .map(node => `${node.nodeKey} | ${node.title} | ${node.description}`)
+        .map(node => JSON.stringify(node))
         .join('\n');
     const current = snapshot?.nodes?.length
         ? `Current workflow nodes:\n${snapshot.nodes.map(n => `${n.id} | ${n.title} | ${n.type} | ${n.subType}`).join('\n')}\nEdges:\n${(snapshot.edges || []).map(e => `${e.id}: ${e.source} -> ${e.target}`).join('\n')}`
         : 'Current workflow: empty';
     const prompt = `Node catalogue:\n${catalogue}\n\n${current}\n\nUser request:\n${message}`;
-    const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow/classifier.md'), 'classifier');
+    const { value, tokenUsage } = await provider(prompt, await instructionReader('classifier.md'), 'classifier');
     if (!validActions.has(value.action)) throw new Error('Classifier returned an unknown action');
 
     const knownNodeKeys = new Set(catalogueEntries.map(node => node.nodeKey));
@@ -80,7 +83,7 @@ export const classifyRequest = async ({ message, snapshot }) => {
     return {
         action: value.action,
         selectedNodeKeys,
-        selectedSubTypes: selectedNodeKeys.map(nodeKey => NodeRegistry.getDefinitionByNodeKey(nodeKey)?.metadata.subType).filter(Boolean),
+        selectedSubTypes: selectedNodeKeys.map(nodeKey => registry.getDefinitionByNodeKey(nodeKey)?.metadata.subType).filter(Boolean),
         workflowName: value.action === 'create_workflow' && typeof value.workflowName === 'string'
             ? value.workflowName.trim().slice(0, 255) || 'New Workflow'
             : null,
@@ -101,6 +104,132 @@ const schemaBlock = (spec) => JSON.stringify({
     schema: spec.schema
 });
 
+const resourceVariantKey = params => JSON.stringify(Object.fromEntries(Object.entries(params || {}).sort(([left], [right]) => left.localeCompare(right))));
+
+const resourceRequestsFor = specs => {
+    const requests = new Map();
+    for (const spec of specs || []) {
+        const inputs = spec.schema?.inputs || [];
+        const inputsByName = new Map(inputs.map(input => [input.name, input]));
+        for (const input of inputs.filter(item => item.type === 'resource-select' && item.resource)) {
+            let variants = [{}];
+            for (const [paramName, binding] of Object.entries(input.resourceParams || {})) {
+                if (typeof binding !== 'string' || !binding.startsWith('$')) {
+                    variants = variants.map(params => ({ ...params, [paramName]: binding }));
+                    continue;
+                }
+                const dependency = inputsByName.get(binding.slice(1));
+                const options = normalizeNodeInputOptions(dependency, {}).filter(option => !option.disabled && option.value !== '').map(option => String(option.value));
+                if (options.length === 0) {
+                    variants = [];
+                    break;
+                }
+                variants = variants.flatMap(params => options.map(value => ({ ...params, [paramName]: value })));
+            }
+            if (variants.length === 0) continue;
+            for (const params of variants.slice(0, 100)) {
+                const key = `${input.resource}:${resourceVariantKey(params)}`;
+                requests.set(key, { resource: input.resource, params });
+            }
+        }
+    }
+    return [...requests.values()];
+};
+
+const resourceContextEntry = ({ resource, params, result }) => ({
+    ...result,
+    resource,
+    ...(Object.keys(params).length > 0 ? { params } : {})
+});
+
+export const loadWorkflowResourceContext = async ({ userId, specs = [], resourceService = nodeResourceService } = {}) => {
+    if (!userId) return {};
+    const context = {};
+    for (const { resource, params } of resourceRequestsFor(specs)) {
+        const key = resourceVariantKey(params);
+        try {
+            const result = await resourceService.list({ userId, resource, params });
+            if (Object.keys(params).length === 0) {
+                context[resource] = resourceContextEntry({ resource, params, result });
+            } else {
+                context[resource] ||= { resource, options: [], variants: {} };
+                context[resource].variants[key] = resourceContextEntry({ resource, params, result });
+            }
+        } catch (error) {
+            const entry = {
+                resource,
+                options: [],
+                error: {
+                    code: error.code || 'NODE_RESOURCE_FAILED',
+                    message: error.message || 'Resource could not be loaded.',
+                    action: error.action || null
+                }
+            };
+            if (Object.keys(params).length === 0) context[resource] = entry;
+            else {
+                context[resource] ||= { resource, options: [], variants: {} };
+                context[resource].variants[key] = { ...entry, params };
+            }
+        }
+    }
+    return context;
+};
+
+const compactResource = value => ({
+    account: value?.account || null,
+    options: (value?.options || []).map(option => ({ value: option.value, label: option.label, description: option.description || null })),
+    emptyMessage: value?.emptyMessage || null,
+    error: value?.error || null
+});
+
+const resourceContextBlock = resourceContext => {
+    const entries = Object.entries(resourceContext || {});
+    if (entries.length === 0) return 'No account resources were loaded. Leave resource-select values empty rather than inventing IDs.';
+    return entries.map(([resource, value]) => JSON.stringify({
+        resource,
+        ...compactResource(value),
+        variants: Object.values(value.variants || {}).map(variant => ({ params: variant.params || {}, ...compactResource(variant) }))
+    })).join('\n');
+};
+
+const resourceContextForInput = (input, node, resourceContext) => {
+    const entry = resourceContext[input.resource];
+    if (!entry) return null;
+    const params = resolveNodeResourceParams(input, node.config || {});
+    if (Object.keys(params).length === 0 || !entry.variants) return entry;
+    return entry.variants[resourceVariantKey(params)] || null;
+};
+
+export const validateGeneratedResourceValues = ({ nodes = [], specs = [], resourceContext = {} } = {}) => {
+    const specsByKey = new Map(specs.map(spec => [spec.nodeKey || `${spec.type}:${spec.subType}`, spec]));
+    const issues = [];
+    nodes.forEach((node, nodeIndex) => {
+        const spec = specsByKey.get(node.nodeKey || `${node.type}:${node.subType}`);
+        (spec?.schema?.inputs || []).filter(input => input.type === 'resource-select' && input.resource).forEach(input => {
+            const value = node.config?.[input.name];
+            if (value === undefined || value === null || value === '') return;
+            const resource = resourceContextForInput(input, node, resourceContext);
+            if (!resource || resource.error) {
+                issues.push({
+                    code: 'WORKFLOW_RESOURCE_UNAVAILABLE',
+                    path: `nodes[${nodeIndex}].config.${input.name}`,
+                    message: `${input.label || input.name} could not be verified against an available account resource.`
+                });
+                return;
+            }
+            const options = Array.isArray(resource.options) ? resource.options : [];
+            if (!options.some(option => String(option.value) === String(value))) {
+                issues.push({
+                    code: 'WORKFLOW_RESOURCE_NOT_FOUND',
+                    path: `nodes[${nodeIndex}].config.${input.name}`,
+                    message: `${input.label || input.name} must use one of the resources available in this account.`
+                });
+            }
+        });
+    });
+    return issues;
+};
+
 const normalizeConfig = (config, schema) => {
     const inputNames = new Set((schema?.inputs || []).map(input => input.name));
     const next = {};
@@ -118,11 +247,15 @@ const nodeUiFields = (spec) => ({
     iconColor: spec.ui?.iconColor || spec.ui?.color
 });
 
-const assertWorkflowDefinition = (nodes, edges, isActive = false) => {
-    const validation = validateWorkflow({ nodes, edges, isActive, registry: NodeRegistry });
+const assertWorkflowDefinition = (nodes, edges, isActive = false, registry = NodeRegistry, requireConnected = false) => {
+    const validation = validateWorkflow({ nodes, edges, isActive, requireConnected, registry });
     if (!validation.valid) {
-        throw new Error(`AI workflow proposal failed validation: ${validation.issues.map(item => item.message).join('; ')}`);
+        const error = new Error(`AI workflow proposal failed validation: ${validation.issues.map(item => item.message).join('; ')}`);
+        error.code = 'WORKFLOW_PROPOSAL_INVALID';
+        error.issues = validation.issues;
+        throw error;
     }
+    return validation;
 };
 
 export const layoutWorkflowNodes = (nodes = [], edges = []) => {
@@ -162,9 +295,9 @@ export const layoutWorkflowNodes = (nodes = [], edges = []) => {
     });
 };
 
-export const assembleWorkflow = async ({ message, specs, workflowName, formId }) => {
-    const prompt = `Node specifications:\n${specs.map(schemaBlock).join('\n---\n')}\n\n${formId ? `Use this approved form ID for the form trigger: ${formId}\n\n` : ''}Workflow request:\n${message}`;
-    const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow/assembler.md'), 'assembler');
+export const assembleWorkflow = async ({ message, specs, workflowName, formId, resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
+    const prompt = `Node specifications:\n${specs.map(schemaBlock).join('\n---\n')}\n\nAccount resources (use only exact values shown here):\n${resourceContextBlock(resourceContext)}\n\n${formId ? `Use this approved form ID for the form trigger: ${formId}\n\n` : ''}Workflow request:\n${message}`;
+    const { value, tokenUsage } = await provider(prompt, await instructionReader('assembler.md'), 'assembler');
     if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) throw new Error('Assembler returned an invalid workflow');
 
     const specsByNodeKey = new Map(specs.map(spec => [spec.nodeKey || `${spec.type}:${spec.subType}`, spec]));
@@ -209,9 +342,22 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId })
     if (!nodes.length) throw new Error('Assembler returned no valid nodes');
     if (nodes[0].type !== 'trigger') throw new Error('Assembler must place a trigger first');
     const positionedNodes = layoutWorkflowNodes(nodes, edges);
-    assertWorkflowDefinition(positionedNodes, edges);
+    const resourceIssues = validateGeneratedResourceValues({ nodes: positionedNodes, specs, resourceContext });
+    if (resourceIssues.length > 0) {
+        const error = new Error(resourceIssues.map(item => item.message).join('; '));
+        error.code = 'WORKFLOW_RESOURCE_INVALID';
+        error.issues = resourceIssues;
+        throw error;
+    }
+    const validation = assertWorkflowDefinition(positionedNodes, edges, false, registry, true);
 
-    return { name: workflowName || 'New Workflow', nodes: positionedNodes, edges, tokenUsage };
+    return {
+        name: workflowName || 'New Workflow',
+        nodes: positionedNodes,
+        edges,
+        readiness: { ready: validation.ready !== false, issues: validation.warnings || [] },
+        tokenUsage
+    };
 };
 
 const newId = (prefix) => `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`;
@@ -316,12 +462,19 @@ export const applyWorkflowPatches = ({ currentNodes = [], currentEdges = [], pat
     return { nodes, edges, placeholders };
 };
 
-export const patchWorkflow = async ({ message, currentWorkflow, classification, specs }) => {
-    const prompt = `Current workflow:\n${JSON.stringify({ nodes: compactWorkflowSnapshot(currentWorkflow).nodes, edges: compactWorkflowSnapshot(currentWorkflow).edges })}\n\nNode specifications:\n${specs.map(schemaBlock).join('\n---\n')}\n\nEdit request:\n${message}`;
-    const { value, tokenUsage } = await providerJson(prompt, await readInstruction('workflow/patcher.md'), 'patcher');
+export const patchWorkflow = async ({ message, currentWorkflow, classification, specs, resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
+    const prompt = `Current workflow:\n${JSON.stringify({ nodes: compactWorkflowSnapshot(currentWorkflow).nodes, edges: compactWorkflowSnapshot(currentWorkflow).edges })}\n\nNode specifications:\n${specs.map(schemaBlock).join('\n---\n')}\n\nAccount resources (use only exact values shown here):\n${resourceContextBlock(resourceContext)}\n\nEdit request:\n${message}`;
+    const { value, tokenUsage } = await provider(prompt, await instructionReader('patcher.md'), 'patcher');
     if (!Array.isArray(value.patches)) throw new Error('Patcher returned an invalid patch list');
     const applied = applyWorkflowPatches({ currentNodes: currentWorkflow.nodes || [], currentEdges: currentWorkflow.edges || [], patches: value.patches, specs });
-    assertWorkflowDefinition(applied.nodes, applied.edges, Boolean(currentWorkflow.isActive));
+    const resourceIssues = validateGeneratedResourceValues({ nodes: applied.nodes, specs, resourceContext });
+    if (resourceIssues.length > 0) {
+        const error = new Error(resourceIssues.map(item => item.message).join('; '));
+        error.code = 'WORKFLOW_RESOURCE_INVALID';
+        error.issues = resourceIssues;
+        throw error;
+    }
+    const validation = assertWorkflowDefinition(applied.nodes, applied.edges, Boolean(currentWorkflow.isActive), registry);
     const originalNodeIds = new Set((currentWorkflow.nodes || []).map(node => node.id));
     const nextNodeIds = new Set(applied.nodes.map(node => node.id));
     const diff = {
@@ -333,7 +486,14 @@ export const patchWorkflow = async ({ message, currentWorkflow, classification, 
         }).map(node => ({ id: node.id, title: applied.nodes.find(candidate => candidate.id === node.id)?.title || node.title })),
         edges: value.patches.filter(patch => patch.op === 'add_edge' || patch.op === 'remove_edge')
     };
-    return { ...applied, patches: value.patches, diff, tokenUsage, classification };
+    return {
+        ...applied,
+        patches: value.patches,
+        diff,
+        readiness: { ready: validation.ready !== false, issues: validation.warnings || [] },
+        tokenUsage,
+        classification
+    };
 };
 
 export const tokenTotal = (...usages) => usages.reduce((total, current) => total + (current?.totalTokens || 0), 0);

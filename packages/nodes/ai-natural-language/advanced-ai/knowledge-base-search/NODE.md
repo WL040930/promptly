@@ -2,6 +2,7 @@
 title: "Knowledge Base Search"
 type: ai
 subType: rag
+implementationStatus: beta
 description: "RAG over documents"
 ui:
   icon: rag
@@ -14,7 +15,7 @@ ui:
 # Knowledge Base Search Node
 
 ## When to use this node
-RAG over documents
+Search a selected knowledge base and return relevant excerpts with citations.
 
 ## Configuration Schema
 The LLM must configure this node with the following JSON schema:

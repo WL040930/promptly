@@ -1,11 +1,12 @@
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { getAuthUser, setAuthUser, getAuthToken, clearAuthUser, clearAuthToken } from './utils/storage.js';
+import { setAuthUser, getAuthToken, clearAuthUser, clearAuthToken } from './utils/storage.js';
 import { useMe } from './api/hooks/useMe.js';
 import { getDashboardPath, getRouteState, navigate, parsePath } from './utils/router.js';
 import AppLoadingSkeleton from './components/ui/AppLoadingSkeleton.jsx';
 import WorkspaceShell from './workspace/WorkspaceShell.jsx';
 import WorkspacePageRouter from './workspace/WorkspacePageRouter.jsx';
+import ApprovalsPage from './workspace/ApprovalsPage.jsx';
 
 const LandingPage = React.lazy(() => import('./landing/LandingPage.jsx'));
 const LoginPage = React.lazy(() => import('./auth/LoginPage.jsx'));
@@ -24,10 +25,9 @@ function App() {
     const [locationKey, setLocationKey] = useState(() => window.location.href);
     const queryClient = useQueryClient();
     const hasAuthToken = Boolean(getAuthToken());
-    const cachedUser = getAuthUser();
     const { data: remoteUser, isPending: isUserLoading } = useMe({ enabled: hasAuthToken });
-    const user = hasAuthToken ? (remoteUser ?? cachedUser) : null;
-    const isLoading = hasAuthToken && isUserLoading && !cachedUser;
+    const user = hasAuthToken ? remoteUser : null;
+    const isLoading = hasAuthToken && isUserLoading;
 
     useEffect(() => {
         const handler = () => setLocationKey(window.location.href);
@@ -39,9 +39,9 @@ function App() {
     const route = useMemo(() => parsePath(window.location.href), [locationKey]);
 
     useEffect(() => {
-        if (user && !routeState.isDashboard && !routeState.isOnboarding && !routeState.isResetPassword && !routeState.isPublicForm) {
+        if (user && !routeState.isDashboard && !routeState.isOnboarding && !routeState.isResetPassword && !routeState.isPublicForm && !routeState.isApprovalAction) {
             navigate(getDashboardPath());
-        } else if (!user && (routeState.isDashboard || routeState.isOnboarding)) {
+        } else if (!user && (routeState.isDashboard || routeState.isOnboarding) && !routeState.isApprovalAction) {
             navigate('/login');
         } else if (user && routeState.isOnboarding && user.onboardingCompletedAt) {
             navigate(getDashboardPath());
@@ -68,6 +68,7 @@ function App() {
     };
 
     if (routeState.isPublicForm) return <PublicFormView />;
+    if (routeState.isApprovalAction) return <ApprovalsPage />;
     if (isLoading) return <AppLoadingFallback />;
 
     if (routeState.isOnboarding && user) {

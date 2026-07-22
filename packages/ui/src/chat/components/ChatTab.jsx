@@ -15,6 +15,7 @@ import ChatSessionsSkeleton from '../../components/chat/ChatSessionsSkeleton.jsx
 import ClarificationModeSelect from '../../components/chat/ClarificationModeSelect.jsx';
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
 import { getClarificationModePreference, setClarificationModePreference } from '../../utils/storage.js';
+import { getAgentProgressLabel } from '../../../../shared/agentProgress.js';
 
 const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I can build automations and forms from a description. What would you like to automate?' };
 
@@ -131,10 +132,8 @@ export default function ChatTab({ conversationId = null, automationId = null, st
                 },
                 event,
                 onEvent: data => {
-                    if (data.type === 'step.started') setProgressLabel(`Working on ${String(data.step || 'request').replaceAll('_', ' ')}`);
-                    if (data.type === 'tool_started') setProgressLabel(`Checking ${String(data.name || 'workspace').replaceAll('_', ' ')}`);
-                    if (data.type === 'plan.ready') setProgressLabel('Preparing a reviewable proposal');
-                    if (data.type === 'approval.required') setProgressLabel('Waiting for your approval');
+                    const label = getAgentProgressLabel(data);
+                    if (label) setProgressLabel(label);
                 }
             });
             appendResponse(response);

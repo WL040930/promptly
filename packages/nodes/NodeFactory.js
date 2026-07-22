@@ -7,7 +7,7 @@ export class NodeFactory {
         const NodeClass = NodeRegistry.getClass(type, subType);
         const definition = NodeRegistry.getDefinition?.(type, subType);
 
-        if (definition?.implementationStatus === 'disabled') {
+        if (['disabled', 'coming_soon', 'retired'].includes(definition?.implementationStatus)) {
             throw new Error(`Node type/subType is not implemented: ${type}:${subType}`);
         }
         

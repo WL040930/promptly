@@ -1,49 +1,58 @@
 {
   "inputs": [
-    {
-      "name": "inputData",
-      "type": "object",
-      "label": "Input Data",
-      "isConnection": true
-    },
+    { "name": "inputData", "type": "object", "label": "Input Data", "isConnection": true },
     {
       "name": "taskType",
       "type": "select",
-      "label": "Task Type",
+      "label": "Task type",
+      "group": "Task",
+      "helpText": "Choose the result you want this step to produce.",
       "defaultValue": "custom",
       "options": [
-        { "label": "Custom Prompt", "value": "custom" },
+        { "label": "Custom prompt", "value": "custom" },
         { "label": "Summarize", "value": "summarize" },
-        { "label": "Extract Data (JSON)", "value": "extract" },
-        { "label": "Sentiment Analysis", "value": "sentiment" },
-        { "label": "Categorize / Classify", "value": "categorize" }
+        { "label": "Extract structured data", "value": "extract" },
+        { "label": "Analyze sentiment", "value": "sentiment" },
+        { "label": "Categorize", "value": "categorize" }
       ]
     },
     {
       "name": "prompt",
       "type": "textarea",
-      "label": "Prompt Template",
-      "placeholder": "Write your prompt here. Use {{nodeId.field}} to reference data from previous nodes.",
-      "defaultValue": ""
+      "label": "Instructions",
+      "group": "Instructions",
+      "placeholder": "Describe what the AI should do. Insert data from a previous step with the {} button.",
+      "defaultValue": "",
+      "helpText": "If left blank, the connected input data is used directly."
     },
     {
       "name": "extractionSchema",
-      "type": "textarea",
-      "label": "Extraction Schema (JSON) — for Extract Data only",
+      "type": "json",
+      "label": "Fields to extract",
+      "group": "Instructions",
       "placeholder": "{ \"name\": \"string\", \"email\": \"string\", \"amount\": \"number\" }",
-      "defaultValue": ""
+      "defaultValue": {},
+      "showWhen": { "field": "taskType", "equals": "extract" },
+      "requiredWhen": { "field": "taskType", "equals": "extract" },
+      "helpText": "Describe the JSON fields the AI must return."
     },
     {
       "name": "categories",
-      "type": "text",
-      "label": "Categories (comma-separated) — for Categorize only",
-      "placeholder": "billing, support, sales, other",
-      "defaultValue": ""
+      "type": "string-list",
+      "label": "Categories",
+      "group": "Instructions",
+      "placeholder": "Type a category and press Enter",
+      "defaultValue": [],
+      "showWhen": { "field": "taskType", "equals": "categorize" },
+      "requiredWhen": { "field": "taskType", "equals": "categorize" },
+      "suggestions": ["sales", "support", "billing", "other"]
     },
     {
       "name": "mode",
       "type": "select",
-      "label": "Response Mode",
+      "label": "Response mode",
+      "group": "Model",
+      "advanced": true,
       "defaultValue": "best",
       "options": [
         { "label": "Fast", "value": "fast" },
@@ -53,41 +62,18 @@
     {
       "name": "systemPrompt",
       "type": "textarea",
-      "label": "System Prompt (optional)",
-      "placeholder": "You are a helpful assistant...",
+      "label": "System instructions",
+      "group": "Model",
+      "advanced": true,
+      "placeholder": "Optional role, tone, or rules for the AI.",
       "defaultValue": ""
     }
   ],
   "outputs": [
-    {
-      "name": "outputData",
-      "type": "object",
-      "label": "Output",
-      "isConnection": true
-    },
-    {
-      "name": "response",
-      "type": "string",
-      "label": "AI Response",
-      "description": "The text or JSON output from the AI model."
-    },
-    {
-      "name": "taskType",
-      "type": "string",
-      "label": "Task Type Used",
-      "description": "The task type that was executed."
-    },
-    {
-      "name": "tokensUsed",
-      "type": "number",
-      "label": "Tokens Used",
-      "description": "Total tokens consumed by this AI call."
-    },
-    {
-      "name": "model",
-      "type": "string",
-      "label": "Model Used",
-      "description": "The AI model that processed this request."
-    }
+    { "name": "outputData", "type": "object", "label": "Output", "isConnection": true },
+    { "name": "response", "type": "string", "label": "AI Response", "description": "The text or JSON output from the AI model." },
+    { "name": "taskType", "type": "string", "label": "Task Type Used" },
+    { "name": "tokensUsed", "type": "number", "label": "Tokens Used" },
+    { "name": "model", "type": "string", "label": "Model Used" }
   ]
 }

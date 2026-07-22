@@ -8,9 +8,10 @@
     },
     {
       "name": "errorSource",
-      "type": "text",
-      "label": "Error Source Node ID (optional)",
-      "placeholder": "Leave blank to catch errors from any upstream node",
+      "type": "node-select",
+      "scope": "upstream",
+      "label": "Only catch errors from",
+      "placeholder": "Any upstream step",
       "defaultValue": ""
     },
     {

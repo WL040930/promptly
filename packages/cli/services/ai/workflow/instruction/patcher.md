@@ -14,3 +14,8 @@ For every `add_node`, use the exact canonical `nodeKey` from the supplied specif
 For every edge, use exact source and target handle names from the node schemas. Use `null` only for a default handle. Never invent handles. Preserve existing node configuration and change only requested config keys. Do not create cycles, disconnected nodes, or edges to missing nodes.
 
 Order removals before additions when rerouting. Inserting between two connected nodes is remove old edge, add node, add both new edges. Change only what the user requested.
+
+Resource rules:
+- For resource-select inputs, use only an exact `value` from the account resources block. Never invent an ID, URL, spreadsheet, range, connection, or record.
+- When a resource entry contains `variants`, match the variant's `params` to the node's current config before selecting a resource value.
+- Preserve existing resource values unless the user explicitly asks to change them. If a new required resource is unavailable, leave it empty so the review UI can explain the setup needed.

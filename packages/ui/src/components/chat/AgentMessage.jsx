@@ -220,6 +220,12 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                             <div className="flex flex-col gap-1">
                                 {planSteps.map((item, index) => <div key={`${item.subType || item.id || item.type}-${index}`} className="text-xs text-slate-600"><span className="font-bold text-slate-800">{item.title || item.type}</span>{item.reason || item.description ? ` — ${item.reason || item.description}` : ''}</div>)}
                                 {payload.needsForm && <div className="text-xs font-semibold text-orange-700">A form will be created before this workflow can run.</div>}
+                                {payload.readiness && (
+                                    <div className={`mt-2 rounded-xl border px-3 py-2.5 text-xs ${payload.readiness.ready ? 'border-emerald-200 bg-emerald-50/70 text-emerald-800' : 'border-amber-200 bg-amber-50/70 text-amber-900'}`}>
+                                        <div className="font-bold">{payload.readiness.ready ? 'Ready to test' : 'Setup needed before testing'}</div>
+                                        {!payload.readiness.ready && (payload.readiness.issues || []).slice(0, 3).map((item, index) => <div key={`${item.code || 'issue'}-${index}`} className="mt-1 leading-4">• {item.message}</div>)}
+                                    </div>
+                                )}
                             </div>
                         )}
                         {message.kind === 'workflow_diff' && (

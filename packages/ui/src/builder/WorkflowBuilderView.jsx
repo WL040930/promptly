@@ -543,7 +543,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                         rightTab === 'chat' ? (
                             <AIAgentChat workflow={activeWorkflow} formId={attachedFormId} onApplyProposal={handleApplyAction} />
                         ) : (
-                            <PropertyInspector activeNode={activeNode} onUpdateNode={handleUpdateNode} nodes={nodes} edges={edges} />
+                            <PropertyInspector activeNode={activeNode} onUpdateNode={handleUpdateNode} onTestWorkflow={handleTestRunClick} nodes={nodes} edges={edges} />
                         )
                     )}
                 </div>

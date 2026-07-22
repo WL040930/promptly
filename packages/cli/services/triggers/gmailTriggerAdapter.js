@@ -109,7 +109,7 @@ const processHistory = async ({ subscription, client, historyId, eventId }) => {
 
 const watch = async ({ subscription, userId, config }) => {
     if (!env.google.gmailPubSubTopic) throw new Error('GOOGLE_GMAIL_PUBSUB_TOPIC must be configured for email triggers.');
-    const { client, user } = await getGoogleClientForUser(userId);
+    const { client, user, connection } = await getGoogleClientForUser(userId);
     const response = await client.request({
         url: `${GMAIL_API}/watch`,
         method: 'POST',

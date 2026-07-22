@@ -23,17 +23,22 @@
     },
     {
       "name": "headers",
-      "type": "textarea",
-      "label": "Headers (JSON)",
+      "type": "key-value",
+      "label": "Request headers",
+      "keyPlaceholder": "Header name",
+      "valuePlaceholder": "Header value",
       "placeholder": "{ \"Content-Type\": \"application/json\", \"Authorization\": \"Bearer {{nodeId.token}}\" }",
-      "defaultValue": ""
+      "defaultValue": {},
+      "group": "Request"
     },
     {
       "name": "body",
-      "type": "textarea",
-      "label": "Request Body (JSON)",
+      "type": "json",
+      "label": "Request body",
       "placeholder": "{ \"key\": \"{{nodeId.value}}\" }",
-      "defaultValue": ""
+      "defaultValue": {},
+      "group": "Request",
+      "showWhen": { "field": "method", "notIn": ["GET", "HEAD"] }
     },
     {
       "name": "authentication",
@@ -50,21 +55,30 @@
     {
       "name": "authToken",
       "type": "text",
-      "label": "Auth Token / API Key",
+      "type": "secret",
+      "label": "Auth token or API key",
       "placeholder": "Paste token or use {{nodeId.token}}",
-      "defaultValue": ""
+      "defaultValue": "",
+      "showWhen": { "field": "authentication", "notEquals": "none" },
+      "requiredWhen": { "field": "authentication", "notEquals": "none" }
     },
     {
       "name": "timeout",
       "type": "number",
       "label": "Timeout (ms)",
-      "defaultValue": 10000
+      "defaultValue": 10000,
+      "min": 100,
+      "max": 60000,
+      "advanced": true
     },
     {
       "name": "maxRetries",
       "type": "number",
       "label": "Maximum Retries",
-      "defaultValue": 2
+      "defaultValue": 2,
+      "min": 0,
+      "max": 3,
+      "advanced": true
     }
   ],
   "outputs": [

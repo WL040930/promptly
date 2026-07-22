@@ -30,7 +30,7 @@ export const sendMessage = asyncHandler(async (req, res) => {
 
     try {
     if (event) {
-        const eventResult = await applyEvent(session, userId, event);
+        const eventResult = await applyEvent(session, userId, event, emit);
         if (eventResult?.reply) {
             const payload = { sessionId: session.id, reply: eventResult.reply, tokenUsage: eventResult.tokenUsage || null };
             if (useSSE) {

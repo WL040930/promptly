@@ -15,6 +15,7 @@ const icons = {
     automations: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /><path d="M10 6.5h2a2 2 0 0 1 2 2v5" /><path d="M14 17.5h-2a2 2 0 0 1-2-2v-5" /></svg>,
     forms: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="9" y1="21" x2="9" y2="9" /></svg>,
     runs: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></svg>,
+    approvals: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 4 4L19 6" /><path d="M4 4h16v16H4z" /></svg>,
     assistant: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M8 8h8M8 12h5" /></svg>,
     settings: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1.51 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 3.6 15H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9.18l-.06-.06A2 2 0 1 1 7.37 6.3l.06.06A1.65 1.65 0 0 0 9.25 6.7H9.5A1.65 1.65 0 0 0 11 5.18V5a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 20.4 11H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" /></svg>
 };
@@ -23,7 +24,8 @@ const navigation = [
     { page: 'home', label: 'Home', icon: icons.home },
     { page: 'automations', label: 'Automations', icon: icons.automations },
     { page: 'forms', label: 'Forms', icon: icons.forms },
-    { page: 'runs', label: 'Runs', icon: icons.runs }
+    { page: 'runs', label: 'Runs', icon: icons.runs },
+    { page: 'approvals', label: 'Approvals', icon: icons.approvals }
 ];
 
 const pageForRoute = route => {
@@ -52,6 +54,7 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
         else if (page === 'automations') navigateTo({ page: 'automations' });
         else if (page === 'forms') navigateTo({ page: 'forms' });
         else if (page === 'runs') navigateTo({ page: 'runs' });
+        else if (page === 'approvals') navigateTo({ page: 'approvals' });
         else if (page === 'assistant') navigateTo({ page: 'assistant' });
     };
 

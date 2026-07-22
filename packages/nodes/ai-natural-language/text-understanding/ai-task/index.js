@@ -14,9 +14,9 @@ const buildPrompt = (taskType, userPrompt, extractionSchema, categories, inputDa
     const source = userPrompt || '{{inputData}}';
     const resolvedSource = source.replaceAll('{{inputData}}', typeof inputData === 'string' ? inputData : JSON.stringify(inputData ?? ''));
     switch (taskType) {
-        case 'extract': return `Extract the following fields from the text below.\n\nSchema: ${extractionSchema || '{}'}\n\nText:\n${resolvedSource}`;
+        case 'extract': return `Extract the following fields from the text below.\n\nSchema: ${typeof extractionSchema === 'string' ? extractionSchema : JSON.stringify(extractionSchema || {})}\n\nText:\n${resolvedSource}`;
         case 'sentiment': return `Analyze the sentiment of the following text:\n\n${resolvedSource}`;
-        case 'categorize': return `Categorize the following text into one of these categories: ${categories || 'general'}.\n\nText:\n${resolvedSource}`;
+        case 'categorize': return `Categorize the following text into one of these categories: ${Array.isArray(categories) ? categories.join(', ') : (categories || 'general')}.\n\nText:\n${resolvedSource}`;
         case 'summarize': return resolvedSource;
         case 'custom':
         default: return resolvedSource;

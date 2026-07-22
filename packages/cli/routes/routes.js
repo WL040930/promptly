@@ -13,6 +13,8 @@ import storageRoutes from './storage/storageRoutes.js';
 import nodeRoutes from './builder/nodeRoutes.js';
 import webhookRoutes from './system/webhookRoutes.js';
 import providerEventRoutes from './system/providerEventRoutes.js';
+import continuationRoutes from './system/continuationRoutes.js';
+import knowledgeRoutes from './knowledge/knowledgeRoutes.js';
 import rateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -40,5 +42,7 @@ router.use('/assistant', chatRoutes);
 router.use('/nodes', nodeRoutes);
 router.use('/webhooks', webhookRoutes);
 router.use('/provider-events', providerEventRoutes);
+router.use('/continuations', continuationRoutes);
+router.use('/knowledge-bases', knowledgeRoutes);
 
 export default router;

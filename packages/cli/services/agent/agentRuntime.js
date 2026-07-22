@@ -151,7 +151,7 @@ export const createAgentRuntime = ({ registry, planner, limits = {}, onEvent = n
             }
 
             step.status = 'running';
-            emit({ type: 'step_started', step: clone(step), actionCount: actionCount + 1 });
+            emit({ type: 'step.started', step: clone(step), actionCount: actionCount + 1 });
             let observation;
             try {
                 observation = normalizeObservation(await capability.execute({
@@ -167,7 +167,7 @@ export const createAgentRuntime = ({ registry, planner, limits = {}, onEvent = n
             actionCount += 1;
             tokenUsage = mergeUsage(tokenUsage, observation.tokenUsage);
             runtimeState.observations.push({ stepId: step.id, type: step.type, ...clone(observation) });
-            emit({ type: 'step_observed', step: clone(step), observation: clone(observation), actionCount });
+            emit({ type: 'step.completed', step: clone(step), observation: clone(observation), actionCount });
 
             if (observation.status === 'replan') {
                 if (replanCount >= normalizedLimits.maxReplans || typeof planner.replan !== 'function') {
@@ -180,7 +180,7 @@ export const createAgentRuntime = ({ registry, planner, limits = {}, onEvent = n
                 replanCount += 1;
                 const nextPlan = await planner.replan({ input, state: runtimeState, plan, step, observation });
                 plan = normalizePlan(nextPlan);
-                emit({ type: 'plan_revised', plan: clone(plan), replanCount });
+                emit({ type: 'plan.revised', plan: clone(plan), replanCount });
                 continue;
             }
 

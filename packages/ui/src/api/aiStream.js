@@ -18,9 +18,15 @@ export const submitAssistantTurnStream = async ({ sessionId = null, message = ''
     if (token) headers.Authorization = `Bearer ${token}`;
 
     const controller = new AbortController();
+    let timeoutId;
+    const armInactivityTimeout = () => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => controller.abort(), STREAM_INACTIVITY_TIMEOUT_MS);
+    };
     const abortExternal = () => controller.abort();
     externalSignal?.addEventListener('abort', abortExternal, { once: true });
     try {
+        armInactivityTimeout();
         const response = await fetch(`${apiBase}/api/assistant/turns`, {
             method: 'POST',
             headers,
@@ -35,6 +41,7 @@ export const submitAssistantTurnStream = async ({ sessionId = null, message = ''
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+            armInactivityTimeout();
             buffer += decoder.decode(value, { stream: true });
             const events = buffer.split('\n\n');
             buffer = events.pop() || '';
@@ -57,9 +64,10 @@ export const submitAssistantTurnStream = async ({ sessionId = null, message = ''
         }
         throw createStreamError('Assistant turn ended before a result was received.', 'ASSISTANT_STREAM_INCOMPLETE');
     } catch (error) {
-        if (error.name === 'AbortError') throw createStreamError('Assistant turn cancelled.', 'ASSISTANT_TURN_CANCELLED');
+        if (error.name === 'AbortError') throw createStreamError('Assistant turn timed out. Please try again.', 'ASSISTANT_STREAM_TIMEOUT');
         throw error;
     } finally {
+        clearTimeout(timeoutId);
         externalSignal?.removeEventListener('abort', abortExternal);
     }
 };

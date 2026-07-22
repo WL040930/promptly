@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { Fragment, useMemo, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import {
@@ -209,13 +209,13 @@ function WorkflowDetailDrawer({ workflowId, onClose, onClosed, isClosing = false
                             <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Workflow map</p>
                             <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1">
                                 {(workflow.nodes || []).slice(0, 6).map((node, index) => (
-                                    <React.Fragment key={node.id || index}>
+                                    <Fragment key={node.id || index}>
                                         {index > 0 && <ChevronRight size={15} className="shrink-0 text-slate-300" />}
                                         <div className="min-w-[112px] rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
                                             <p className="truncate text-[10px] font-bold uppercase tracking-wider text-indigo-500">{node.type || 'step'}</p>
                                             <p className="mt-1 truncate text-xs font-semibold text-slate-700">{node.title || node.subType || 'Untitled step'}</p>
                                         </div>
-                                    </React.Fragment>
+                                    </Fragment>
                                 ))}
                                 {nodeCount === 0 && <p className="text-sm text-slate-500">This workflow has no steps yet.</p>}
                                 {nodeCount > 6 && <span className="shrink-0 text-xs font-semibold text-slate-400">+{nodeCount - 6} more</span>}

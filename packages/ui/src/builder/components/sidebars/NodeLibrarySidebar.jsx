@@ -41,15 +41,17 @@ const NodeLibrarySidebar = ({ isOpen, onDragStart, onDragEnd }) => {
                 ) : (
                     nodeLibrary.map((section) => {
                         const filteredGroups = section.groups.map(group => {
-                            const filteredItems = group.items.filter(item =>
-                                item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                group.name.toLowerCase().includes(searchQuery.toLowerCase())
-                            );
+                            const filteredItems = group.items.filter(item => (
+                                !['retired', 'coming_soon'].includes(item.implementationStatus) && (
+                                    item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    group.name.toLowerCase().includes(searchQuery.toLowerCase())
+                                )
+                            ));
                             return { ...group, items: filteredItems };
                         }).filter(group => group.items.length > 0);
 
-                        if (filteredGroups.length === 0 && searchQuery) return null;
+                        if (filteredGroups.length === 0) return null;
 
                         return (
                             <div key={section.category} className="flex flex-col gap-3">
@@ -72,7 +74,7 @@ const NodeLibrarySidebar = ({ isOpen, onDragStart, onDragEnd }) => {
                                                 {group.items.map(node => {
                                                     const nodeUi = resolveNodeUi(node);
                                                     const nodeIcon = getIconByName(nodeUi.icon, { size: 14, strokeWidth: 2.8 });
-                                                    const isDisabled = node.implementationStatus === 'disabled';
+                                                    const isDisabled = ['disabled', 'coming_soon', 'retired'].includes(node.implementationStatus);
 
                                                     return (
                                                         <div
@@ -99,7 +101,7 @@ const NodeLibrarySidebar = ({ isOpen, onDragStart, onDragEnd }) => {
                                                                 <div className="flex items-center justify-between gap-2 mb-1">
                                                                     <span className="text-[13px] font-bold text-slate-800 truncate group-hover:text-slate-900 transition-colors">{node.title}</span>
                                                                     <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-slate-50 text-slate-400 border border-slate-200 select-none">
-                                                                        {isDisabled ? 'Unavailable' : node.type}
+                                                                        {isDisabled ? 'Unavailable' : node.implementationStatus === 'beta' ? 'Beta' : node.type}
                                                                     </span>
                                                                 </div>
                                                                 <p className="text-[11px] font-medium text-slate-500 leading-snug line-clamp-2">{node.description}</p>

@@ -10,22 +10,24 @@
     },
     {
       "name": "events",
-      "type": "object",
-      "label": "Events (JSON array)",
+      "type": "string-list",
+      "label": "Events to watch",
+      "suggestions": ["created", "updated", "deleted"],
       "defaultValue": ["created", "updated", "deleted"]
     },
     {
       "name": "filters",
-      "type": "object",
-      "label": "Filters (JSON)",
+      "type": "key-value",
+      "label": "Only when fields match",
+      "keyPlaceholder": "Field",
+      "valuePlaceholder": "Value",
       "defaultValue": {}
     },
     {
       "name": "ignoreOwnWorkflowChanges",
-      "type": "select",
+      "type": "boolean",
       "label": "Ignore Own Execution Changes",
-      "options": ["true", "false"],
-      "defaultValue": "true"
+      "defaultValue": true
     }
   ],
   "outputs": [

@@ -2,6 +2,7 @@
 title: "Audio Transcription"
 type: ai
 subType: transcribe
+implementationStatus: beta
 description: "Convert audio to text"
 ui:
   icon: transcribe
@@ -14,7 +15,7 @@ ui:
 # Audio Transcription Node
 
 ## When to use this node
-Convert audio to text
+Convert a Promptly file asset to text through the configured managed transcription provider.
 
 ## Configuration Schema
 The LLM must configure this node with the following JSON schema:

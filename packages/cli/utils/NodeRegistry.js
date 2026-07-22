@@ -5,7 +5,37 @@ import { validateNodeDefinition } from './nodeDefinitionValidator.js';
 
 const nodeKeyFor = (type, subType) => `${type}:${subType}`;
 
-const implementationStatusFor = (NodeClass) => {
+const compactInput = input => {
+    if (!input || input.isConnection) return null;
+    return {
+        name: input.name,
+        label: input.label || input.name,
+        type: input.type,
+        required: input.required === true,
+        ...(input.defaultValue !== undefined ? { defaultValue: input.defaultValue } : {}),
+        ...(input.resource ? { resource: input.resource } : {}),
+        ...(input.resourceParams ? { resourceParams: input.resourceParams } : {}),
+        ...(input.requiredResourceParams ? { requiredResourceParams: input.requiredResourceParams } : {}),
+        ...(input.showWhen ? { showWhen: input.showWhen } : {}),
+        ...(input.requiredWhen ? { requiredWhen: input.requiredWhen } : {}),
+        ...(Array.isArray(input.options) ? { options: input.options.slice(0, 20) } : {}),
+        ...(input.optionsBy ? { optionsBy: input.optionsBy } : {})
+    };
+};
+
+const compactConnections = (items = []) => items
+    .filter(item => item?.isConnection)
+    .map(item => ({
+        name: item.name,
+        label: item.label || item.name,
+        type: item.type || 'object',
+        description: item.description || ''
+    }));
+
+const implementationStatusFor = (NodeClass, metadata = {}) => {
+    if (typeof metadata.implementationStatus === 'string' && metadata.implementationStatus.trim()) {
+        return metadata.implementationStatus.trim().toLowerCase();
+    }
     const source = NodeClass?.prototype?.execute?.toString?.() || '';
     const isPlaceholder = [
         'Core execution logic goes here',
@@ -13,7 +43,7 @@ const implementationStatusFor = (NodeClass) => {
         'return { ...context, success: true }'
     ].some(marker => source.includes(marker));
 
-    return isPlaceholder ? 'disabled' : 'experimental';
+    return isPlaceholder ? 'coming_soon' : 'experimental';
 };
 
 class NodeRegistry {
@@ -23,14 +53,11 @@ class NodeRegistry {
         this.uiLibrary = []; // Array of categories for the UI
     }
 
-    async init() {
+    async init({ nodesDir = path.resolve(process.cwd(), '..', 'nodes') } = {}) {
 
         this.nodesByNodeKey.clear();
         this.nodesBySubTypeName.clear();
 
-        // The cli process runs in packages/cli, so go up one level to packages/nodes
-        const nodesDir = path.resolve(process.cwd(), '..', 'nodes');
-        
         // Helper to recursively find all NODE.md files
         const findNodeDirs = async (dir) => {
             let results = [];
@@ -106,7 +133,7 @@ class NodeRegistry {
                     metadata,
                     configSchema,
                     instructionBody: instructionBody.trim(),
-                    implementationStatus: implementationStatusFor(NodeClass)
+                    implementationStatus: implementationStatusFor(NodeClass, metadata)
                 };
                 const definitionIssues = validateNodeDefinition(entry);
                 if (definitionIssues.length > 0) {
@@ -190,18 +217,22 @@ class NodeRegistry {
 
     /**
      * Return the small amount of information needed to classify an agent
-     * request. Keeping schemas and instruction bodies out of this catalogue
-     * is what makes the first model call inexpensive.
+     * request. It includes compact field and connection summaries, while
+     * keeping full schemas and instruction bodies out of the first model call.
      */
     getCompactCatalogue() {
-        return Array.from(this.nodesByNodeKey.values()).map(entry => ({
+        return Array.from(this.nodesByNodeKey.values())
+            .filter(entry => !['disabled', 'coming_soon', 'retired'].includes(entry.implementationStatus))
+            .map(entry => ({
             nodeKey: entry.nodeKey,
             subType: entry.metadata.subType,
             type: entry.metadata.type,
             title: entry.metadata.title,
             description: entry.metadata.description || '',
-            implementationStatus: entry.implementationStatus
-        }));
+            implementationStatus: entry.implementationStatus,
+            inputs: (entry.configSchema?.inputs || []).map(compactInput).filter(Boolean),
+            outputs: compactConnections(entry.configSchema?.outputs || [])
+            }));
     }
 
     /**
@@ -229,7 +260,7 @@ class NodeRegistry {
                     implementationStatus: entry.implementationStatus
                 };
             })
-            .filter(spec => spec.implementationStatus !== 'disabled')
+            .filter(spec => !['disabled', 'coming_soon', 'retired'].includes(spec.implementationStatus))
             .filter(Boolean);
     }
 }

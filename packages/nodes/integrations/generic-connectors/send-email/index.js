@@ -1,10 +1,8 @@
 import crypto from 'node:crypto';
 import { BaseNode } from '../../../BaseNode.js';
-import User from '../../../../cli/models/core/User.js';
 import EmailDelivery from '../../../../cli/models/execution/EmailDelivery.js';
 import { sendEmail } from '../../../../cli/utils/email.js';
-import { OAuth2Client } from 'google-auth-library';
-import env from '../../../../cli/config/env.js';
+import { getGoogleClientForUser } from '../../../../cli/services/triggers/googleTriggerClient.js';
 import {
     buildRawMimeMessage,
     isRetryableEmailError,
@@ -76,19 +74,10 @@ const getDelivery = async (context, message, provider) => {
 
 const thisNodeId = context => context.__runtime?.currentNodeId || context.metadata?.currentNodeId;
 
-const sendViaGmail = async ({ user, message }) => {
-    if (!user?.googleAccessToken) throw new Error('User has not connected their Google account or is missing an access token.');
-    const oauth2Client = new OAuth2Client(env.google.clientId, env.google.clientSecret);
-    oauth2Client.setCredentials({ access_token: user.googleAccessToken, refresh_token: user.googleRefreshToken });
-    oauth2Client.on('tokens', tokens => {
-        if (!tokens.access_token && !tokens.refresh_token) return;
-        user.update({
-            ...(tokens.access_token ? { googleAccessToken: tokens.access_token } : {}),
-            ...(tokens.refresh_token ? { googleRefreshToken: tokens.refresh_token } : {})
-        }).catch(error => console.error('[Email] Failed to persist refreshed Google token:', error.message));
-    });
+const sendViaGmail = async ({ userId, message }) => {
+    const { client } = await getGoogleClientForUser(userId);
     const raw = Buffer.from(buildRawMimeMessage(message)).toString('base64url');
-    const response = await oauth2Client.request({
+    const response = await client.request({
         url: 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
         method: 'POST',
         data: { raw }
@@ -150,9 +139,8 @@ export default class SendEmailNode extends BaseNode {
         }
 
         try {
-            const user = provider === 'user-gmail' ? await User.findByPk(context.metadata?.userId) : null;
             const { result: messageId, attempts } = await withRetries(async () => {
-                if (provider === 'user-gmail') return sendViaGmail({ user, message });
+                if (provider === 'user-gmail') return sendViaGmail({ userId: context.metadata?.userId, message });
                 const mailInfo = await sendEmail({
                     to: message.to.join(', '),
                     cc: message.cc.join(', ') || undefined,

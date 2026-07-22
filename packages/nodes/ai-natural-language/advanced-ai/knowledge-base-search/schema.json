@@ -1,45 +1,16 @@
 {
   "inputs": [
-    {
-      "name": "inputData",
-      "type": "object",
-      "label": "Input Data",
-      "isConnection": true
-    },
-    {
-      "name": "prompt",
-      "type": "textarea",
-      "label": "Prompt Template",
-      "defaultValue": "Process this data: {{variables}}"
-    },
-    {
-      "name": "model",
-      "type": "select",
-      "label": "AI Model",
-      "defaultValue": "gpt-4o",
-      "options": [
-        {
-          "label": "GPT-4o",
-          "value": "gpt-4o"
-        },
-        {
-          "label": "Claude 3.5 Sonnet",
-          "value": "claude-3-5"
-        },
-        {
-          "label": "Gemini 1.5 Pro",
-          "value": "gemini-1-5"
-        }
-      ]
-    }
+    { "name": "knowledgeBaseId", "type": "resource-select", "resource": "knowledge-bases", "label": "Knowledge base", "required": true },
+    { "name": "query", "type": "textarea", "label": "Search query", "required": true, "placeholder": "What does the policy say about refunds?" },
+    { "name": "topK", "type": "number", "label": "Results", "defaultValue": 5, "min": 1, "max": 20 }
   ],
   "outputs": [
     {
-      "name": "result",
-      "type": "string",
-      "label": "Output Result",
+      "name": "results",
+      "type": "object",
+      "label": "Search results",
       "isConnection": true,
-      "description": "The AI generated text/data."
+      "description": "Relevant excerpts with similarity and source metadata."
     }
   ]
 }

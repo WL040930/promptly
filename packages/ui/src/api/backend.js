@@ -11,6 +11,10 @@ export const triggerWorkflow = (id, payload, revisionId = null) => apiRequest(`/
 export const getWorkflowVersions = (id) => apiRequest(`/api/automations/${id}/versions`);
 export const saveWorkflowVersion = (id) => apiRequest(`/api/automations/${id}/versions`, { method: 'POST' });
 export const restoreWorkflowVersion = (id, versionId) => apiRequest(`/api/automations/${id}/versions/${versionId}/restore`, { method: 'POST' });
+export const getNodeResourceOptions = (resource, params = {}) => {
+    const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ''));
+    return apiRequest(`/api/nodes/resources/${encodeURIComponent(resource)}${query.size ? `?${query.toString()}` : ''}`);
+};
 
 // --- Forms ---
 export const getForms = () => apiRequest('/api/forms');

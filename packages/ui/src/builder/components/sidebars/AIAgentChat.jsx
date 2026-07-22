@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { useApproveAgentRun, useDecideChatProposal, useRejectAgentRun, useSendChatMessage } from '../../../api/hooks/useChat.js';
+import { useApproveAgentRun, useDecideChatProposal, useRejectAgentRun, useSendAssistantTurnStream } from '../../../api/hooks/useChat.js';
 import GenericChatWidget from '../../../components/chat/GenericChatWidget.jsx';
 import ClarificationModeSelect from '../../../components/chat/ClarificationModeSelect.jsx';
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../../shared/agentContract.js';
 import { getClarificationModePreference, setClarificationModePreference } from '../../../utils/storage.js';
+import { getAgentProgressLabel } from '../../../../../shared/agentProgress.js';
 
 const SUGGESTIONS = ['Add a Slack notification step', 'Filter for high urgency tickets', 'Add GPT response step to emails', 'Store results in database'];
 
@@ -23,7 +24,7 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
     const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
-    const sendChatMessageMutation = useSendChatMessage();
+    const sendAssistantTurnMutation = useSendAssistantTurnStream();
     const approveAgentRunMutation = useApproveAgentRun();
     const rejectAgentRunMutation = useRejectAgentRun();
     const decideChatProposalMutation = useDecideChatProposal();
@@ -56,7 +57,7 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
                 nodes: (workflow.nodes || []).map(node => ({ id: node.id, title: node.title, type: node.type, subType: node.subType })),
                 edges: (workflow.edges || []).map(edge => ({ id: edge.id, source: edge.source, target: edge.target, sourceHandle: edge.sourceHandle || null, targetHandle: edge.targetHandle || null }))
             } : null;
-            const response = await sendChatMessageMutation.mutateAsync({
+            const response = await sendAssistantTurnMutation.mutateAsync({
                 sessionId,
                 message: text,
                 context: {
@@ -66,7 +67,11 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
                     formId: formId || null,
                     clarificationMode
                 },
-                event
+                event,
+                onEvent: data => {
+                    const label = getAgentProgressLabel(data);
+                    if (label) setProgressLabel(label);
+                }
             });
             appendReply(response);
         } catch (error) {

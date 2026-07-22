@@ -102,3 +102,15 @@ test('runtime rejects deadlocked plans instead of spinning', async () => {
 
     await assert.rejects(() => runtime.run(), error => error.code === 'AGENT_PLAN_DEADLOCK');
 });
+
+test('runtime emits the shared dotted progress event contract', async () => {
+    const events = [];
+    const registry = createAgentCapabilityRegistry([{ name: 'step', execute: async () => ({}) }]);
+    const runtime = createAgentRuntime({
+        registry,
+        planner: { plan: async () => ({ steps: [{ id: 'step', type: 'step' }] }) },
+        onEvent: event => events.push(event.type)
+    });
+    await runtime.run();
+    assert.deepEqual(events, ['step.started', 'step.completed']);
+});

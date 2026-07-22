@@ -3,6 +3,7 @@ import {
     buildOrder,
     buildScopedWhere,
     getResourceDefinition,
+    mergeRecordIdFilter,
     parseLimit,
     parseObject,
     requireRecordFilter,
@@ -23,7 +24,8 @@ export default class DatabaseActionNode extends BaseNode {
 
             const definition = getResourceDefinition(config.resource || config.table);
             const filters = parseObject(config.filters, 'Database filters');
-            const where = buildScopedWhere({ definition, userId: context.metadata?.userId, filters });
+            const filtersWithRecord = mergeRecordIdFilter({ filters, recordId: config.recordId });
+            const where = buildScopedWhere({ definition, userId: context.metadata?.userId, filters: filtersWithRecord });
 
             if (operation === 'select') {
                 const records = await definition.model.findAll({
@@ -53,7 +55,7 @@ export default class DatabaseActionNode extends BaseNode {
                 };
             }
 
-            requireRecordFilter(filters);
+            requireRecordFilter(filtersWithRecord);
             const data = operation === 'update'
                 ? sanitizeWritableData({ definition, data: parseObject(config.data, 'Database data') })
                 : null;
