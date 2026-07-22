@@ -6,10 +6,8 @@ import {
     createProviderTimeoutError,
     createProviderUnavailableError
 } from '../shared/errors.js';
-import {
-    getFormTask,
-    MAX_INVALID_OUTPUT_PREVIEW_LENGTH
-} from '../shared/constants.js';
+import { getFormTask } from '../shared/constants.js';
+import { rawOutputPreview, recordAiDiagnostic } from '../../core/diagnosticsLogger.js';
 
 const operationName = label => `form:${label}`;
 
@@ -17,7 +15,7 @@ export const getOutputIssues = ({ value, parseError, validate }) => parseError
     ? parseError.issues
     : validate(value);
 
-const createInvalidJsonResult = ({ label, error }) => {
+const createInvalidJsonResult = async ({ label, error }) => {
     const response = error.response || null;
     const rawText = typeof error.rawText === 'string' ? error.rawText : '';
     const finishReason = response?.finishReason || null;
@@ -28,18 +26,16 @@ const createInvalidJsonResult = ({ label, error }) => {
             path: '',
             message: 'The AI provider returned no JSON content.'
         }]);
-        console.warn('[AI Output Shape]', JSON.stringify({
-            operation: operationName(label),
+        await recordAiDiagnostic({
+            event: 'output_invalid_json',
+            stage: label,
             responseType: 'empty',
             rawTextLength: 0,
             finishReason
-        }));
+        });
         return { response, rawText, parseError };
     }
 
-    const outputPreview = rawText.length > MAX_INVALID_OUTPUT_PREVIEW_LENGTH
-        ? `${rawText.slice(0, MAX_INVALID_OUTPUT_PREVIEW_LENGTH)}...[truncated]`
-        : rawText;
     const truncated = ['LENGTH', 'MAX_TOKENS', 'MAX_OUTPUT_TOKENS']
         .includes(String(finishReason || '').toUpperCase());
     const outputIssue = truncated
@@ -53,15 +49,14 @@ const createInvalidJsonResult = ({ label, error }) => {
             path: '',
             message: error.parserError || error.message
         };
-    const outputLog = {
-        operation: operationName(label),
-        responseType: 'invalid_json',
+    await recordAiDiagnostic({
+        event: 'output_invalid_json',
+        stage: label,
         rawTextLength: rawText.length,
         finishReason,
-        parserError: error.parserError || error.message
-    };
-    if (process.env.NODE_ENV !== 'production') outputLog.rawText = outputPreview;
-    console.warn('[AI Output Invalid JSON]', JSON.stringify(outputLog));
+        parserError: error.parserError || error.message,
+        ...(rawOutputPreview(rawText) ? { rawTextPreview: rawOutputPreview(rawText) } : {})
+    });
 
     return {
         response,

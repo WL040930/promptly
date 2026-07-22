@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import NodeRegistry from '../../../utils/NodeRegistry.js';
 import { ai } from '../index.js';
 import { AI_TASKS } from '../core/aiTasks.js';
+import { describeAiOutput, recordAiDiagnostic } from '../core/diagnosticsLogger.js';
 import { validateWorkflow } from '../../engine/workflowValidator.js';
 import nodeResourceService from '../../nodes/nodeResourceService.js';
 import { normalizeNodeInputOptions, resolveNodeResourceParams } from '../../../../shared/nodeConfigContract.js';
@@ -47,7 +48,6 @@ export const compactWorkflowSnapshot = (workflow) => {
             subType: node.subType
         })),
         edges: (workflow.edges || []).map(edge => ({
-            id: edge.id,
             source: edge.source,
             target: edge.target,
             sourceHandle: edge.sourceHandle || null,
@@ -63,7 +63,7 @@ export const classifyRequest = async ({ message, snapshot, requiredCapabilities 
         .map(node => JSON.stringify(node))
         .join('\n');
     const current = snapshot?.nodes?.length
-        ? `Current workflow nodes:\n${snapshot.nodes.map(n => `${n.id} | ${n.title} | ${n.type} | ${n.subType}`).join('\n')}\nEdges:\n${(snapshot.edges || []).map(e => `${e.id}: ${e.source} -> ${e.target}`).join('\n')}`
+        ? `Current workflow nodes:\n${snapshot.nodes.map(n => `${n.id} | ${n.title} | ${n.type} | ${n.subType}`).join('\n')}\nConnections:\n${(snapshot.edges || []).map(e => `${e.source} -> ${e.target}${e.sourceHandle || e.targetHandle ? ` (${e.sourceHandle || 'default'} -> ${e.targetHandle || 'default'})` : ''}`).join('\n')}`
         : 'Current workflow: empty';
     const prompt = `Node catalogue:\n${catalogue}\n\n${current}\n\nUser request:\n${message}`;
     const { value, tokenUsage } = await provider(prompt, await instructionReader('classifier.md'), 'classifier');
@@ -243,9 +243,113 @@ export const requiredCapabilitiesForRequest = message => respondentConfirmationP
 const emailFieldsFor = formSchema => (Array.isArray(formSchema?.fields) ? formSchema.fields : [])
     .filter(field => field?.type === 'email' && field?.required === true && typeof field.id === 'string' && field.id.trim());
 
+const normalizeFieldText = value => String(value || '').trim().toLowerCase();
+
+const isExplicitRespondentEmail = field => field?.isRespondentEmail === true
+    || field?.role === 'respondent_email'
+    || field?.semanticRole === 'respondent_email';
+
+const respondentEmailScore = field => {
+    const label = normalizeFieldText(`${field?.label || ''} ${field?.name || ''}`);
+    const id = normalizeFieldText(field?.id);
+    let score = 0;
+    if (label === 'email' || label === 'e-mail') score += 100;
+    if (/(?:applicant|candidate|respondent|contact|primary)\s+.*email|email\s+.*(?:applicant|candidate|respondent|contact|primary)/.test(label)) score += 45;
+    if (/\bemail(?:\s+address)?\b|\be-mail\b/.test(label)) score += 25;
+    if (/(?:^|[_-])email(?:$|[_-])/.test(id)) score += 5;
+    if (/\b(?:confirm(?:ation)?|retype|repeat|cc|bcc|owner|internal|recruiter|secondary|alternate)\b/.test(label)) score -= 60;
+    if (/\b(?:confirm|retype|repeat|cc|bcc|owner|internal|recruiter|secondary|alternate)\b/.test(id)) score -= 40;
+    return score;
+};
+
+/**
+ * Resolve the form field that represents the respondent's delivery address.
+ * Multiple email fields are allowed; only genuinely tied candidates remain
+ * ambiguous. This keeps the workflow flexible without making the model guess
+ * runtime bindings.
+ */
+export const resolveRespondentEmailField = ({ formSchema = null, preferredFieldId = null } = {}) => {
+    const candidates = emailFieldsFor(formSchema);
+    if (candidates.length === 0) return { field: null, candidates: [], ambiguous: false, reason: 'missing' };
+
+    const explicitId = preferredFieldId
+        || formSchema?.respondentEmailFieldId
+        || formSchema?.settings?.respondentEmailFieldId;
+    const explicit = candidates.find(field => field.id === explicitId);
+    if (explicit) return { field: explicit, candidates: [explicit], ambiguous: false, reason: 'explicit' };
+
+    const marked = candidates.filter(isExplicitRespondentEmail);
+    if (marked.length === 1) return { field: marked[0], candidates: marked, ambiguous: false, reason: 'marked' };
+
+    const scored = candidates
+        .map(field => ({ field, score: respondentEmailScore(field) }))
+        .sort((left, right) => right.score - left.score);
+    const [best, second] = scored;
+    const hasClearWinner = scored.length === 1
+        || (best.score > second.score && (best.score >= 20 || best.score - second.score >= 15));
+    if (hasClearWinner) return { field: best.field, candidates: scored, ambiguous: false, reason: 'label' };
+
+    return { field: null, candidates: scored, ambiguous: true, reason: 'ambiguous' };
+};
+
 const dynamicPathsIn = value => typeof value === 'string'
     ? [...value.matchAll(/\{\{([^{}]+)\}\}/g)].map(match => match[1].trim())
     : [];
+
+const reachableFrom = (sources, edges) => {
+    const adjacency = new Map();
+    for (const edge of edges || []) {
+        if (!adjacency.has(edge?.source)) adjacency.set(edge.source, []);
+        if (edge?.target) adjacency.get(edge.source).push(edge.target);
+    }
+    const reachable = new Set(sources.map(node => node.id));
+    const queue = [...reachable];
+    while (queue.length > 0) {
+        const current = queue.shift();
+        for (const target of adjacency.get(current) || []) {
+            if (reachable.has(target)) continue;
+            reachable.add(target);
+            queue.push(target);
+        }
+    }
+    return reachable;
+};
+
+const recipientPathFor = (trigger, field) => `{{${trigger.id}.fields.${field.id}}}`;
+
+/**
+ * Compile only machine-level capability bindings. The model remains free to
+ * choose workflow topology, extra nodes, providers, and message content.
+ */
+export const compileWorkflowDraft = ({
+    requiredCapabilities = [],
+    formSchema = null,
+    respondentEmailFieldId = null,
+    nodes = [],
+    edges = []
+} = {}) => {
+    const nextNodes = nodes.map(node => ({ ...node, config: { ...(node.config || {}) } }));
+    const nextEdges = edges.map(edge => ({ ...edge }));
+    const repairs = [];
+    if (!requiredCapabilities.includes('respondent_confirmation')) return { nodes: nextNodes, edges: nextEdges, repairs };
+
+    const formTriggers = nextNodes.filter(node => node?.subType === 'form-submission');
+    const emailActions = nextNodes.filter(isEmailAction);
+    const respondentEmail = resolveRespondentEmailField({ formSchema, preferredFieldId: respondentEmailFieldId });
+
+    // Correct only the runtime binding when the workflow has one clear
+    // confirmation action. Leave all other model-authored decisions untouched.
+    if (formTriggers.length === 1 && emailActions.length === 1 && respondentEmail.field) {
+        const emailAction = emailActions[0];
+        const expected = recipientPathFor(formTriggers[0], respondentEmail.field);
+        if (emailAction.config.to !== expected) {
+            emailAction.config.to = expected;
+            repairs.push({ code: 'RESPONDENT_RECIPIENT_BOUND', nodeId: emailAction.id, fieldId: respondentEmail.field.id });
+        }
+    }
+
+    return { nodes: nextNodes, edges: nextEdges, repairs };
+};
 
 /**
  * Validate the data-flow contract for capabilities that address a form
@@ -256,6 +360,7 @@ const dynamicPathsIn = value => typeof value === 'string'
 export const validateGeneratedWorkflowCapabilities = ({
     requiredCapabilities = [],
     formSchema = null,
+    respondentEmailFieldId = null,
     nodes = [],
     edges = []
 } = {}) => {
@@ -265,6 +370,7 @@ export const validateGeneratedWorkflowCapabilities = ({
     const formTriggers = nodes.filter(node => node?.subType === 'form-submission');
     const emailActions = nodes.filter(isEmailAction);
     const contactFields = emailFieldsFor(formSchema);
+    const respondentEmail = resolveRespondentEmailField({ formSchema, preferredFieldId: respondentEmailFieldId });
 
     if (formTriggers.length === 0) {
         issues.push({ code: 'FORM_SUBMISSION_TRIGGER_MISSING', path: 'nodes', message: 'A form-submission trigger is required for respondent confirmation.' });
@@ -277,28 +383,39 @@ export const validateGeneratedWorkflowCapabilities = ({
     }
 
     const contactFieldIds = new Set(contactFields.map(field => field.id));
-    for (const emailAction of emailActions) {
-        const incoming = edges.some(edge => edge?.target === emailAction.id && formTriggers.some(trigger => edge.source === trigger.id));
-        if (!incoming) {
-            issues.push({ code: 'RESPONDENT_CONFIRMATION_DISCONNECTED', path: `nodes.${emailAction.id}`, message: 'The confirmation email must receive data from the form-submission trigger.' });
-        }
+    const reachable = reachableFrom(formTriggers, edges);
+    const reachableEmailActions = emailActions.filter(action => reachable.has(action.id));
+    if (reachableEmailActions.length === 0) {
+        issues.push({ code: 'RESPONDENT_CONFIRMATION_DISCONNECTED', path: 'nodes', message: 'At least one confirmation email must be reachable from the form-submission trigger.' });
+    }
 
-        const paths = dynamicPathsIn(emailAction.config?.to);
-        const hasValidRecipient = paths.some(path => {
-            const parts = path.split('.');
-            return formTriggers.some(trigger => (
-                parts[0] === trigger.id
-                && parts[1] === 'fields'
-                && contactFieldIds.has(parts[2])
-            ));
+    const hasValidRecipient = reachableEmailActions.some(emailAction => dynamicPathsIn(emailAction.config?.to).some(path => {
+        const parts = path.split('.');
+        return formTriggers.some(trigger => (
+            parts[0] === trigger.id
+            && parts[1] === 'fields'
+            && contactFieldIds.has(parts[2])
+        ));
+    }));
+    if (!hasValidRecipient) {
+        const paths = emailActions.flatMap(emailAction => dynamicPathsIn(emailAction.config?.to));
+        issues.push({
+            code: paths.length > 0
+                ? 'RESPONDENT_RECIPIENT_FIELD_INVALID'
+                : respondentEmail.ambiguous
+                    ? 'RESPONDENT_RECIPIENT_FIELD_AMBIGUOUS'
+                    : 'RESPONDENT_RECIPIENT_NOT_DYNAMIC',
+            path: `nodes.${emailActions[0]?.id || 'email'}.config.to`,
+            message: respondentEmail.ambiguous
+                ? 'Multiple required email fields could receive the confirmation email. Choose the respondent email field.'
+                : 'At least one confirmation email recipient must come from a required email field submitted by the form.',
+            ...(respondentEmail.ambiguous ? {
+                candidates: respondentEmail.candidates.map(candidate => ({
+                    id: candidate.field.id,
+                    label: candidate.field.label || candidate.field.name || candidate.field.id
+                }))
+            } : {})
         });
-        if (!hasValidRecipient) {
-            issues.push({
-                code: paths.length > 0 ? 'RESPONDENT_RECIPIENT_FIELD_INVALID' : 'RESPONDENT_RECIPIENT_NOT_DYNAMIC',
-                path: `nodes.${emailAction.id}.config.to`,
-                message: 'The confirmation email recipient must come from a required email field submitted by the form.'
-            });
-        }
     }
 
     return issues;
@@ -369,7 +486,7 @@ export const layoutWorkflowNodes = (nodes = [], edges = []) => {
     });
 };
 
-export const assembleWorkflow = async ({ message, specs, workflowName, formId, formSchema = null, formBinding = null, requiredCapabilities = [], resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
+export const assembleWorkflow = async ({ message, specs, workflowName, formId, formSchema = null, formBinding = null, respondentEmailFieldId = null, requiredCapabilities = [], resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
     const formFields = Array.isArray(formSchema?.fields)
         ? formSchema.fields.map(field => ({ id: field.id, label: field.label || field.name || '', type: field.type, required: field.required === true }))
         : [];
@@ -381,7 +498,18 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId, f
         : '';
     const prompt = `Node specifications:\n${specs.map(schemaBlock).join('\n---\n')}\n\nAccount resources (use only exact values shown here):\n${resourceContextBlock(resourceContext)}${capabilityContext}${bindingContext}\n${formId ? `Use this approved form ID for the form trigger: ${formId}\n\n` : ''}Workflow request:\n${message}`;
     const { value, tokenUsage } = await provider(prompt, await instructionReader('assembler.md'), 'assembler');
-    if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) throw new Error('Assembler returned an invalid workflow');
+    await recordAiDiagnostic({
+        event: 'workflow_draft_received',
+        operation: 'workflow:assembler',
+        output: describeAiOutput(value),
+        tokenUsage
+    });
+    if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) {
+        const error = new Error('Assembler returned an invalid workflow');
+        error.code = 'WORKFLOW_ASSEMBLY_INVALID_OUTPUT';
+        error.tokenUsage = tokenUsage;
+        throw error;
+    }
 
     const specsByNodeKey = new Map(specs.map(spec => [spec.nodeKey || `${spec.type}:${spec.subType}`, spec]));
     const usedIds = new Set();
@@ -416,8 +544,8 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId, f
 
     const ids = new Set(nodes.map(node => node.id));
     const usedEdgeIds = new Set();
-    const edges = value.edges.filter(edge => ids.has(edge.source) && ids.has(edge.target)).map((edge, index) => {
-        let id = typeof edge.id === 'string' && edge.id.trim() ? edge.id : `edge_${index + 1}`;
+    const edges = value.edges.filter(edge => ids.has(edge.source) && ids.has(edge.target)).map(edge => {
+        let id = newId('edge');
         while (usedEdgeIds.has(id)) id = newId('edge');
         usedEdgeIds.add(id);
         return {
@@ -431,32 +559,57 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId, f
     });
     if (!nodes.length) throw new Error('Assembler returned no valid nodes');
     if (nodes[0].type !== 'trigger') throw new Error('Assembler must place a trigger first');
-    const positionedNodes = layoutWorkflowNodes(nodes, edges);
+    const compiled = compileWorkflowDraft({ requiredCapabilities, formSchema, respondentEmailFieldId, nodes, edges });
+    if (compiled.repairs.length > 0) {
+        await recordAiDiagnostic({
+            event: 'workflow_draft_repaired',
+            operation: 'workflow:assembler',
+            repairs: compiled.repairs,
+            tokenUsage
+        });
+    }
+    const positionedNodes = layoutWorkflowNodes(compiled.nodes, compiled.edges);
     const resourceIssues = validateGeneratedResourceValues({ nodes: positionedNodes, specs, resourceContext });
     if (resourceIssues.length > 0) {
+        await recordAiDiagnostic({
+            event: 'workflow_validation_failed',
+            stage: 'resource',
+            issues: resourceIssues.slice(0, 20).map(issue => ({ code: issue.code, path: issue.path })),
+            tokenUsage
+        });
         const error = new Error(resourceIssues.map(item => item.message).join('; '));
         error.code = 'WORKFLOW_RESOURCE_INVALID';
         error.issues = resourceIssues;
+        error.tokenUsage = tokenUsage;
         throw error;
     }
     const capabilityIssues = validateGeneratedWorkflowCapabilities({
         requiredCapabilities,
         formSchema,
+        respondentEmailFieldId,
         nodes: positionedNodes,
-        edges
+        edges: compiled.edges
     });
     if (capabilityIssues.length > 0) {
+        await recordAiDiagnostic({
+            event: 'workflow_validation_failed',
+            stage: 'capability',
+            issues: capabilityIssues.slice(0, 20).map(issue => ({ code: issue.code, path: issue.path })),
+            tokenUsage
+        });
         const error = new Error(capabilityIssues.map(item => item.message).join('; '));
         error.code = 'WORKFLOW_CAPABILITY_INVALID';
         error.issues = capabilityIssues;
+        error.tokenUsage = tokenUsage;
         throw error;
     }
-    const validation = assertWorkflowDefinition(positionedNodes, edges, false, registry, true);
+    const validation = assertWorkflowDefinition(positionedNodes, compiled.edges, false, registry, true);
 
     return {
         name: workflowName || 'New Workflow',
         nodes: positionedNodes,
-        edges,
+        edges: compiled.edges,
+        repairs: compiled.repairs,
         resourceBindings,
         readiness: { ready: validation.ready !== false, issues: validation.warnings || [] },
         tokenUsage
@@ -465,119 +618,265 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId, f
 
 const newId = (prefix) => `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`;
 
-const resolveId = (id, placeholders) => placeholders.get(id) || id;
+const mergeUsage = (...usages) => usages.reduce((total, usage) => ({
+    promptTokens: total.promptTokens + (usage?.promptTokens || 0),
+    completionTokens: total.completionTokens + (usage?.completionTokens || 0),
+    totalTokens: total.totalTokens + (usage?.totalTokens || 0)
+}), { promptTokens: 0, completionTokens: 0, totalTokens: 0 });
 
-const throwPatchError = (patch, message) => {
+const throwEditError = (operation, message, details = {}) => {
     const error = new Error(message);
-    error.code = 'WORKFLOW_PATCH_INVALID';
-    error.patch = patch;
+    error.code = details.code || 'WORKFLOW_EDIT_INVALID';
+    error.operation = operation;
+    error.issues = [{
+        code: error.code,
+        operation,
+        message,
+        ...(details.path ? { path: details.path } : {})
+    }];
     throw error;
 };
 
-const assertConnectionHandle = (node, handle, direction, patch) => {
+const assertConnectionHandle = (node, handle, direction, operation) => {
     if (handle === null || handle === undefined || !Array.isArray(node?.schema?.[direction])) return;
     const validHandles = node.schema[direction]
         .filter(item => item?.isConnection)
         .map(item => item.name)
         .filter(Boolean);
     if (!validHandles.includes(handle)) {
-        throwPatchError(patch, `Unknown ${direction === 'outputs' ? 'source' : 'target'} handle '${handle}' for node '${node.id}'.`);
+        throwEditError(operation, `Unknown ${direction === 'outputs' ? 'source' : 'target'} handle '${handle}'.`, {
+            code: 'WORKFLOW_HANDLE_INVALID'
+        });
     }
 };
 
-export const applyWorkflowPatches = ({ currentNodes = [], currentEdges = [], patches = [], specs = [] }) => {
-    const nodes = JSON.parse(JSON.stringify(currentNodes));
-    const edges = JSON.parse(JSON.stringify(currentEdges));
-    const placeholders = new Map();
-    const specsByNodeKey = new Map(specs.map(spec => [spec.nodeKey || `${spec.type}:${spec.subType}`, spec]));
-    const resolveSpec = (patch) => {
-        if (!patch.nodeKey) throwPatchError(patch, 'Every add_node patch requires a canonical nodeKey.');
-        const spec = specsByNodeKey.get(patch.nodeKey);
-        if (!spec) throwPatchError(patch, `Unknown nodeKey '${patch.nodeKey}'.`);
-        return spec;
+const nodeKeyFor = node => node.nodeKey || `${node.type}:${node.subType}`;
+
+const connectionKey = ({ source, sourceHandle = null, target, targetHandle = null }) => JSON.stringify({
+    source,
+    sourceHandle: sourceHandle || null,
+    target,
+    targetHandle: targetHandle || null
+});
+
+const connectionFor = ({ source, sourceHandle = null, target, targetHandle = null, id = null, type = 'deletable' }) => ({
+    id: id || newId('edge'),
+    source,
+    target,
+    sourceHandle: sourceHandle || null,
+    targetHandle: targetHandle || null,
+    type
+});
+
+const createEditView = workflow => {
+    const nodes = workflow?.nodes || [];
+    const refsById = new Map(nodes.map((node, index) => [node.id, `n${index + 1}`]));
+    return {
+        revision: workflow?.revision ?? null,
+        nodes: nodes.map(node => ({
+            ref: refsById.get(node.id),
+            title: node.title,
+            type: node.type,
+            subType: node.subType,
+            nodeKey: nodeKeyFor(node),
+            config: node.config || {},
+            position: node.position || null
+        })),
+        connections: (workflow?.edges || []).map(edge => ({
+            from: { nodeRef: refsById.get(edge.source), handle: edge.sourceHandle || null },
+            to: { nodeRef: refsById.get(edge.target), handle: edge.targetHandle || null }
+        })).filter(connection => connection.from.nodeRef && connection.to.nodeRef)
     };
-
-    for (const patch of patches) {
-        if (!patch || typeof patch.op !== 'string') throwPatchError(patch, 'Every workflow patch requires an operation.');
-        if (patch.op === 'add_node') {
-            const spec = resolveSpec(patch);
-            if (!patch.id || typeof patch.id !== 'string') throwPatchError(patch, 'Every add_node patch requires a placeholder id.');
-            const id = newId('node');
-            placeholders.set(patch.id, id);
-            const afterNodeId = patch.afterNodeId ? resolveId(patch.afterNodeId, placeholders) : null;
-            const after = afterNodeId ? nodes.find(node => node.id === afterNodeId) : null;
-            if (patch.afterNodeId && !after) throwPatchError(patch, `afterNodeId '${patch.afterNodeId}' does not reference an existing node or earlier placeholder.`);
-            const x = after ? (after.position?.x || 100) + 350 : Math.max(0, ...nodes.map(node => node.position?.x || 0)) + 350;
-            if (after) {
-                nodes.forEach(node => {
-                    if ((node.position?.x || 0) >= x) node.position = { ...(node.position || {}), x: (node.position?.x || 0) + 350 };
-                });
-            }
-            nodes.push({
-                id,
-                type: spec.type,
-                subType: spec.subType,
-                nodeKey: spec.nodeKey || `${spec.type}:${spec.subType}`,
-                title: patch.title || spec.title,
-                description: patch.description || spec.description,
-                config: normalizeConfig(patch.config, spec.schema),
-                position: { x, y: after?.position?.y || 150 },
-                ...nodeUiFields(spec)
-            });
-        } else if (patch.op === 'remove_node') {
-            if (!patch.id) throwPatchError(patch, 'Every remove_node patch requires a node id.');
-            const id = resolveId(patch.id, placeholders);
-            if (!nodes.some(node => node.id === id)) throwPatchError(patch, `Node '${patch.id}' does not exist.`);
-            nodes.splice(0, nodes.length, ...nodes.filter(node => node.id !== id));
-            edges.splice(0, edges.length, ...edges.filter(edge => edge.source !== id && edge.target !== id));
-        } else if (patch.op === 'update_node') {
-            if (!patch.id) throwPatchError(patch, 'Every update_node patch requires a node id.');
-            const id = resolveId(patch.id, placeholders);
-            const index = nodes.findIndex(node => node.id === id);
-            if (index === -1) throwPatchError(patch, `Node '${patch.id}' does not exist.`);
-            const current = nodes[index];
-            const updates = patch.updates || {};
-            nodes[index] = {
-                ...current,
-                ...Object.fromEntries(Object.entries(updates).filter(([key]) => key !== 'schema' && key !== 'type' && key !== 'subType')),
-                config: updates.config ? { ...(current.config || {}), ...updates.config } : current.config
-            };
-        } else if (patch.op === 'add_edge') {
-            if (!patch.source || !patch.target) throwPatchError(patch, 'Every add_edge patch requires source and target ids.');
-            const source = resolveId(patch.source, placeholders);
-            const target = resolveId(patch.target, placeholders);
-            const sourceNode = nodes.find(node => node.id === source);
-            const targetNode = nodes.find(node => node.id === target);
-            if (!sourceNode || !targetNode) throwPatchError(patch, `Edge references a missing node: ${patch.source} -> ${patch.target}.`);
-            assertConnectionHandle(sourceNode, patch.sourceHandle, 'outputs', patch);
-            assertConnectionHandle(targetNode, patch.targetHandle, 'inputs', patch);
-            const id = patch.id && !edges.some(edge => edge.id === patch.id) ? patch.id : newId('edge');
-            if (!edges.some(edge => edge.source === source && edge.target === target && (edge.sourceHandle || null) === (patch.sourceHandle || null))) {
-                edges.push({ id, source, target, sourceHandle: patch.sourceHandle || null, targetHandle: patch.targetHandle || null, type: patch.type || 'deletable' });
-            }
-        } else if (patch.op === 'remove_edge') {
-            if (!patch.id) throwPatchError(patch, 'Every remove_edge patch requires an edge id.');
-            const id = resolveId(patch.id, placeholders);
-            if (!edges.some(edge => edge.id === id)) throwPatchError(patch, `Edge '${patch.id}' does not exist.`);
-            edges.splice(0, edges.length, ...edges.filter(edge => edge.id !== id));
-        } else throwPatchError(patch, `Unsupported workflow patch operation '${patch.op}'.`);
-    }
-    return { nodes, edges, placeholders };
 };
 
-export const patchWorkflow = async ({ message, currentWorkflow, classification, specs, formSchema = null, requiredCapabilities = [], resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
+export const buildWorkflowEditView = createEditView;
+
+const normalizeEndpoint = (endpoint, refs, operation, label) => {
+    if (!endpoint || typeof endpoint !== 'object' || typeof endpoint.nodeRef !== 'string') {
+        throwEditError(operation, `${label} must identify a nodeRef and optional handle.`, { code: 'WORKFLOW_ENDPOINT_INVALID' });
+    }
+    const nodeId = refs.get(endpoint.nodeRef);
+    if (!nodeId) throwEditError(operation, `${label} references an unknown nodeRef '${endpoint.nodeRef}'.`, { code: 'WORKFLOW_NODE_REF_INVALID' });
+    return { nodeId, handle: endpoint.handle || null };
+};
+
+const addNodeFromEdit = ({ operation, nodeDefinition, nodes, refs, specsByNodeKey }) => {
+    if (!nodeDefinition || typeof nodeDefinition !== 'object' || typeof nodeDefinition.ref !== 'string') {
+        throwEditError(operation, 'create_node requires a new node ref.', { code: 'WORKFLOW_NODE_REF_INVALID' });
+    }
+    if (refs.has(nodeDefinition.ref)) {
+        throwEditError(operation, `Node ref '${nodeDefinition.ref}' is already in use.`, { code: 'WORKFLOW_NODE_REF_DUPLICATE' });
+    }
+    const spec = specsByNodeKey.get(nodeDefinition.nodeKey);
+    if (!spec) throwEditError(operation, `Unknown nodeKey '${nodeDefinition.nodeKey}'.`, { code: 'WORKFLOW_NODE_KEY_INVALID' });
+    const after = nodeDefinition.afterNodeRef ? refs.get(nodeDefinition.afterNodeRef) : null;
+    if (nodeDefinition.afterNodeRef && !after) {
+        throwEditError(operation, `afterNodeRef '${nodeDefinition.afterNodeRef}' does not exist.`, { code: 'WORKFLOW_NODE_REF_INVALID' });
+    }
+    const afterNode = after ? nodes.find(node => node.id === after) : null;
+    const x = afterNode
+        ? (afterNode.position?.x || 100) + 350
+        : Math.max(0, ...nodes.map(node => node.position?.x || 0)) + 350;
+    if (afterNode) {
+        nodes.forEach(node => {
+            if ((node.position?.x || 0) >= x) node.position = { ...(node.position || {}), x: (node.position?.x || 0) + 350 };
+        });
+    }
+    const id = newId('node');
+    refs.set(nodeDefinition.ref, id);
+    const node = {
+        id,
+        type: spec.type,
+        subType: spec.subType,
+        nodeKey: spec.nodeKey || `${spec.type}:${spec.subType}`,
+        title: nodeDefinition.title || spec.title,
+        description: nodeDefinition.description || spec.description,
+        config: normalizeConfig(nodeDefinition.config, spec.schema),
+        position: { x, y: afterNode?.position?.y || 150 },
+        ...nodeUiFields(spec)
+    };
+    nodes.push(node);
+    return node;
+};
+
+const findConnection = (edges, from, to) => edges.find(edge => connectionKey({
+    source: edge.source,
+    sourceHandle: edge.sourceHandle,
+    target: edge.target,
+    targetHandle: edge.targetHandle
+}) === connectionKey({
+    source: from.nodeId,
+    sourceHandle: from.handle,
+    target: to.nodeId,
+    targetHandle: to.handle
+}));
+
+const connectNodes = ({ operation, edges, from, to, sourceNode, targetNode }) => {
+    assertConnectionHandle(sourceNode, from.handle, 'outputs', operation);
+    assertConnectionHandle(targetNode, to.handle, 'inputs', operation);
+    if (findConnection(edges, from, to)) return;
+    edges.push(connectionFor({ source: from.nodeId, sourceHandle: from.handle, target: to.nodeId, targetHandle: to.handle }));
+};
+
+export const compileWorkflowEdits = ({ currentWorkflow = {}, operations = [], specs = [], registry = NodeRegistry }) => {
+    if (!Array.isArray(operations)) throwEditError('plan', 'Workflow edit plan must contain an operations array.', { code: 'WORKFLOW_EDIT_PLAN_INVALID' });
+    if (operations.length > 50) throwEditError('plan', 'A workflow edit plan may contain at most 50 operations.', { code: 'WORKFLOW_EDIT_PLAN_TOO_LARGE' });
+    const nodes = JSON.parse(JSON.stringify(currentWorkflow.nodes || []));
+    const edges = JSON.parse(JSON.stringify(currentWorkflow.edges || []));
+    const originalNodes = JSON.parse(JSON.stringify(nodes));
+    const originalEdges = JSON.parse(JSON.stringify(edges));
+    const specsByNodeKey = new Map(specs.map(spec => [spec.nodeKey || `${spec.type}:${spec.subType}`, spec]));
+    const refs = new Map(currentWorkflow.nodes?.map((node, index) => [`n${index + 1}`, node.id]) || []);
+    for (const operation of operations) {
+        if (!operation || typeof operation.op !== 'string') throwEditError('plan', 'Every workflow edit requires an operation.', { code: 'WORKFLOW_EDIT_OPERATION_INVALID' });
+        if (operation.op === 'create_node') {
+            addNodeFromEdit({ operation: operation.op, nodeDefinition: operation.node, nodes, refs, specsByNodeKey });
+        } else if (operation.op === 'remove_node') {
+            const nodeId = refs.get(operation.nodeRef);
+            if (!nodeId) throwEditError(operation.op, `Unknown nodeRef '${operation.nodeRef}'.`, { code: 'WORKFLOW_NODE_REF_INVALID' });
+            nodes.splice(0, nodes.length, ...nodes.filter(node => node.id !== nodeId));
+            edges.splice(0, edges.length, ...edges.filter(edge => edge.source !== nodeId && edge.target !== nodeId));
+            refs.delete(operation.nodeRef);
+        } else if (operation.op === 'update_node') {
+            const nodeId = refs.get(operation.nodeRef);
+            const index = nodes.findIndex(node => node.id === nodeId);
+            if (index === -1) throwEditError(operation.op, `Unknown nodeRef '${operation.nodeRef}'.`, { code: 'WORKFLOW_NODE_REF_INVALID' });
+            const updates = operation.updates || {};
+            if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+                throwEditError(operation.op, 'update_node requires an updates object.', { code: 'WORKFLOW_EDIT_UPDATES_INVALID' });
+            }
+            nodes[index] = {
+                ...nodes[index],
+                ...Object.fromEntries(Object.entries(updates).filter(([key]) => !['id', 'type', 'subType', 'nodeKey', 'schema'].includes(key))),
+                config: updates.config ? { ...(nodes[index].config || {}), ...updates.config } : nodes[index].config
+            };
+        } else if (operation.op === 'connect' || operation.op === 'disconnect') {
+            const from = normalizeEndpoint(operation.from, refs, operation.op, 'from');
+            const to = normalizeEndpoint(operation.to, refs, operation.op, 'to');
+            const sourceNode = nodes.find(node => node.id === from.nodeId);
+            const targetNode = nodes.find(node => node.id === to.nodeId);
+            if (!sourceNode || !targetNode) throwEditError(operation.op, 'Connection references a missing node.', { code: 'WORKFLOW_NODE_REF_INVALID' });
+            if (operation.op === 'connect') {
+                connectNodes({ operation: operation.op, edges, from, to, sourceNode, targetNode });
+            } else {
+                const match = findConnection(edges, from, to);
+                if (!match) throwEditError(operation.op, 'The requested connection does not exist.', { code: 'WORKFLOW_CONNECTION_NOT_FOUND' });
+                edges.splice(0, edges.length, ...edges.filter(edge => edge !== match));
+            }
+        } else if (operation.op === 'insert_between') {
+            const from = normalizeEndpoint(operation.connection?.from, refs, operation.op, 'connection.from');
+            const to = normalizeEndpoint(operation.connection?.to, refs, operation.op, 'connection.to');
+            const match = findConnection(edges, from, to);
+            if (!match) throwEditError(operation.op, 'The requested connection does not exist.', { code: 'WORKFLOW_CONNECTION_NOT_FOUND' });
+            const inserted = addNodeFromEdit({ operation: operation.op, nodeDefinition: operation.node, nodes, refs, specsByNodeKey });
+            const insertedSpec = specsByNodeKey.get(nodeKeyFor(inserted));
+            const inputHandles = (insertedSpec?.schema?.inputs || []).filter(input => input.isConnection);
+            const outputHandles = (insertedSpec?.schema?.outputs || []).filter(output => output.isConnection);
+            const inputHandle = operation.inputHandle || (inputHandles.length === 1 ? inputHandles[0].name : null);
+            const outputHandle = operation.outputHandle || (outputHandles.length === 1 ? outputHandles[0].name : null);
+            if (!inputHandle && inputHandles.length > 1) {
+                throwEditError(operation.op, 'insert_between requires an inputHandle when the node has multiple inputs.', { code: 'WORKFLOW_HANDLE_REQUIRED' });
+            }
+            if (!outputHandle && outputHandles.length > 1) {
+                throwEditError(operation.op, 'insert_between requires an outputHandle when the node has multiple outputs.', { code: 'WORKFLOW_HANDLE_REQUIRED' });
+            }
+            edges.splice(0, edges.length, ...edges.filter(edge => edge !== match));
+            const insertedRef = operation.node.ref;
+            const insertedEndpoint = { nodeId: refs.get(insertedRef), handle: inputHandle };
+            connectNodes({ operation: operation.op, edges, from, to: insertedEndpoint, sourceNode: nodes.find(node => node.id === from.nodeId), targetNode: inserted });
+            connectNodes({ operation: operation.op, edges, from: { nodeId: refs.get(insertedRef), handle: outputHandle }, to, sourceNode: inserted, targetNode: nodes.find(node => node.id === to.nodeId) });
+        } else {
+            throwEditError(operation.op, `Unsupported workflow edit operation '${operation.op}'.`, { code: 'WORKFLOW_EDIT_OPERATION_INVALID' });
+        }
+    }
+    const validation = assertWorkflowDefinition(nodes, edges, Boolean(currentWorkflow.isActive), registry, true);
+    if (!validation.valid && validation.issues?.length) {
+        throwEditError('validate', 'The edit plan produced an invalid workflow graph. Review the node refs and connection handles.', { code: 'WORKFLOW_EDIT_GRAPH_INVALID' });
+    }
+    return { nodes, edges, originalNodes, originalEdges, refs };
+};
+
+export const patchWorkflow = async ({ message, currentWorkflow, classification, specs, formSchema = null, respondentEmailFieldId = null, requiredCapabilities = [], resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
     const formFields = Array.isArray(formSchema?.fields)
         ? formSchema.fields.map(field => ({ id: field.id, label: field.label || field.name || '', type: field.type, required: field.required === true }))
         : [];
     const capabilityContext = requiredCapabilities.length > 0
         ? `\nRequired capabilities:\n${JSON.stringify(requiredCapabilities)}\nApproved form fields for data mapping:\n${JSON.stringify(formFields)}\n`
         : '';
-    const prompt = `Current workflow:\n${JSON.stringify({ nodes: compactWorkflowSnapshot(currentWorkflow).nodes, edges: compactWorkflowSnapshot(currentWorkflow).edges })}\n\nNode specifications:\n${specs.map(schemaBlock).join('\n---\n')}\n\nAccount resources (use only exact values shown here):\n${resourceContextBlock(resourceContext)}${capabilityContext}\nEdit request:\n${message}`;
-    const { value, tokenUsage } = await provider(prompt, await instructionReader('patcher.md'), 'patcher');
-    if (!Array.isArray(value.patches)) throw new Error('Patcher returned an invalid patch list');
-    const applied = applyWorkflowPatches({ currentNodes: currentWorkflow.nodes || [], currentEdges: currentWorkflow.edges || [], patches: value.patches, specs });
-    const resourceIssues = validateGeneratedResourceValues({ nodes: applied.nodes, specs, resourceContext });
+    const editView = createEditView(currentWorkflow);
+    const basePrompt = `Current workflow edit view:\n${JSON.stringify(editView)}\n\nNode specifications:\n${specs.map(schemaBlock).join('\n---\n')}\n\nAccount resources (use only exact values shown here):\n${resourceContextBlock(resourceContext)}${capabilityContext}\nEdit request:\n${message}`;
+    let prompt = basePrompt;
+    let value = null;
+    let tokenUsage = {};
+    let applied = null;
+    let lastError = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        const result = await provider(prompt, await instructionReader('patcher.md'), 'patcher');
+        value = result.value;
+        tokenUsage = mergeUsage(tokenUsage, result.tokenUsage);
+        try {
+            if (!value || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.operations)) {
+                throwEditError('plan', 'Patcher returned an invalid operations array.', { code: 'WORKFLOW_EDIT_PLAN_INVALID' });
+            }
+            applied = compileWorkflowEdits({ currentWorkflow, operations: value.operations, specs, registry });
+            lastError = null;
+            break;
+        } catch (error) {
+            lastError = error;
+            if (attempt === 1) throw error;
+            prompt = `${basePrompt}\n\nThe previous edit plan failed validation. Return a corrected operations array only.\nFailure code: ${error.code || 'WORKFLOW_EDIT_INVALID'}\nFailure: ${error.message}`;
+        }
+    }
+    if (!applied) throw lastError || new Error('Workflow edit could not be compiled.');
+    const compiled = compileWorkflowDraft({ requiredCapabilities, formSchema, respondentEmailFieldId, nodes: applied.nodes, edges: applied.edges });
+    const resourceIssues = validateGeneratedResourceValues({ nodes: compiled.nodes, specs, resourceContext });
     if (resourceIssues.length > 0) {
+        await recordAiDiagnostic({
+            event: 'workflow_validation_failed',
+            stage: 'resource',
+            issues: resourceIssues.slice(0, 20).map(issue => ({ code: issue.code, path: issue.path })),
+            tokenUsage
+        });
         const error = new Error(resourceIssues.map(item => item.message).join('; '));
         error.code = 'WORKFLOW_RESOURCE_INVALID';
         error.issues = resourceIssues;
@@ -586,35 +885,43 @@ export const patchWorkflow = async ({ message, currentWorkflow, classification, 
     const capabilityIssues = validateGeneratedWorkflowCapabilities({
         requiredCapabilities,
         formSchema,
-        nodes: applied.nodes,
-        edges: applied.edges
+        respondentEmailFieldId,
+        nodes: compiled.nodes,
+        edges: compiled.edges
     });
     if (capabilityIssues.length > 0) {
+        await recordAiDiagnostic({
+            event: 'workflow_validation_failed',
+            stage: 'capability',
+            issues: capabilityIssues.slice(0, 20).map(issue => ({ code: issue.code, path: issue.path })),
+            tokenUsage
+        });
         const error = new Error(capabilityIssues.map(item => item.message).join('; '));
         error.code = 'WORKFLOW_CAPABILITY_INVALID';
         error.issues = capabilityIssues;
         throw error;
     }
-    const validation = assertWorkflowDefinition(applied.nodes, applied.edges, Boolean(currentWorkflow.isActive), registry);
+    const validation = assertWorkflowDefinition(compiled.nodes, compiled.edges, Boolean(currentWorkflow.isActive), registry);
     const originalNodeIds = new Set((currentWorkflow.nodes || []).map(node => node.id));
-    const nextNodeIds = new Set(applied.nodes.map(node => node.id));
+    const nextNodeIds = new Set(compiled.nodes.map(node => node.id));
     const diff = {
-        addedNodes: applied.nodes.filter(node => !originalNodeIds.has(node.id)).map(node => ({ id: node.id, title: node.title, subType: node.subType })),
+        addedNodes: compiled.nodes.filter(node => !originalNodeIds.has(node.id)).map(node => ({ id: node.id, title: node.title, subType: node.subType })),
         removedNodes: (currentWorkflow.nodes || []).filter(node => !nextNodeIds.has(node.id)).map(node => ({ id: node.id, title: node.title, subType: node.subType })),
         updatedNodes: (currentWorkflow.nodes || []).filter(node => {
-            const next = applied.nodes.find(candidate => candidate.id === node.id);
+            const next = compiled.nodes.find(candidate => candidate.id === node.id);
             return next && JSON.stringify(next) !== JSON.stringify(node);
         }).map(node => ({ id: node.id, title: applied.nodes.find(candidate => candidate.id === node.id)?.title || node.title })),
-        edges: value.patches.filter(patch => patch.op === 'add_edge' || patch.op === 'remove_edge')
+        edges: value.operations.filter(operation => ['connect', 'disconnect', 'insert_between'].includes(operation.op))
     };
     return {
         ...applied,
-        patches: value.patches,
+        nodes: compiled.nodes,
+        edges: compiled.edges,
+        repairs: compiled.repairs,
+        operations: value.operations,
         diff,
         readiness: { ready: validation.ready !== false, issues: validation.warnings || [] },
         tokenUsage,
         classification
     };
 };
-
-export const tokenTotal = (...usages) => usages.reduce((total, current) => total + (current?.totalTokens || 0), 0);

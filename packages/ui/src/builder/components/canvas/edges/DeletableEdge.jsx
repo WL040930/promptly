@@ -11,6 +11,7 @@ export default function DeletableEdge({
   targetPosition,
   style = {},
   markerEnd,
+  data,
 }) {
   const { setEdges } = useReactFlow();
   const [isLineHovered, setIsLineHovered] = useState(false);
@@ -25,6 +26,11 @@ export default function DeletableEdge({
 
   const onEdgeClick = (evt, id) => {
     evt.stopPropagation();
+    if (typeof data?.onDelete === 'function') {
+      data.onDelete(id);
+      return;
+    }
+    // Diff previews are intentionally isolated from the persisted workflow.
     setEdges((edges) => edges.filter((e) => e.id !== id));
   };
 

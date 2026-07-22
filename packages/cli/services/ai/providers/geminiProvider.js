@@ -2,16 +2,8 @@ import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { BaseAIProvider } from './baseProvider.js';
 import env from '../../../config/env.js';
 
-const supportsThinkingLevel = model => /^(?:gemma-4|gemini-3)/i.test(String(model || ''));
-
 const getThinkingLevel = (model, configuredLevel) => {
-    if (!supportsThinkingLevel(model)) return null;
-
-    // Gemma 4 supports thinking as an on/off switch. Keep interactive work off
-    // by default while still allowing an explicit high setting for complex work.
-    if (/^gemma-4/i.test(String(model))) {
-        return configuredLevel === 'minimal' ? ThinkingLevel.MINIMAL : ThinkingLevel.HIGH;
-    }
+    if (!/^gemini-3/i.test(String(model || ''))) return null;
 
     const key = String(configuredLevel || 'minimal').toUpperCase();
     return ThinkingLevel[key] || ThinkingLevel.MINIMAL;

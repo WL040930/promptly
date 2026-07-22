@@ -118,6 +118,17 @@ const profilesForMode = (profiles, mode) => {
     return profiles;
 };
 
+/**
+ * Resolves the completion budget without changing the task's retry or routing
+ * policy. `null` deliberately means "do not send a provider-side cap".
+ */
+export const resolveMaxCompletionTokens = (task, policy, config = env) => {
+    if (config.aiUnlimitedCompletionTokens) return null;
+    if (config.aiMaxCompletionTokens) return config.aiMaxCompletionTokens;
+    if (config.aiFormUnlimitedCompletionTokens && task.startsWith('form.')) return null;
+    return policy.maxCompletionTokens;
+};
+
 export const getTaskPolicy = (task, { mode = null } = {}) => {
     const policy = TASK_POLICIES[task];
     if (!policy) {
@@ -132,9 +143,7 @@ export const getTaskPolicy = (task, { mode = null } = {}) => {
     return {
         ...policy,
         profiles: profilesForMode(policy.profiles, mode),
-        maxCompletionTokens: env.aiFormUnlimitedCompletionTokens && task.startsWith('form.')
-            ? null
-            : policy.maxCompletionTokens
+        maxCompletionTokens: resolveMaxCompletionTokens(task, policy)
     };
 };
 

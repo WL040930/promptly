@@ -57,6 +57,28 @@ const chatAIErrorMessage = error => {
     }
 };
 
+const capabilityErrorMessage = error => {
+    const code = error?.code;
+    if (code === 'AUTOMATION_REVISION_CONFLICT') {
+        return 'The automation changed while this proposal was waiting for approval. No changes were made; ask the user to generate a new proposal.';
+    }
+    if (typeof code === 'string' && [
+        'WORKFLOW_CONNECTION_NOT_FOUND',
+        'WORKFLOW_NODE_REF_INVALID',
+        'WORKFLOW_NODE_REF_DUPLICATE',
+        'WORKFLOW_HANDLE_INVALID',
+        'WORKFLOW_HANDLE_REQUIRED',
+        'WORKFLOW_EDIT_GRAPH_INVALID',
+        'WORKFLOW_EDIT_PLAN_INVALID',
+        'WORKFLOW_EDIT_PLAN_TOO_LARGE',
+        'WORKFLOW_EDIT_OPERATION_INVALID',
+        'WORKFLOW_NODE_KEY_INVALID'
+    ].includes(code)) {
+        return 'I could not safely match that edit to the current workflow. No changes were made; use the current nodes and connections and try again.';
+    }
+    return error?.message || 'The capability could not complete the request.';
+};
+
 export const saveUserMessage = async (session, message) => {
     if (!message || !message.trim()) return null;
     const saved = await ChatMessage.create({ sessionId: session.id, sender: 'user', text: message.trim(), kind: 'text' });
@@ -71,6 +93,18 @@ const ensureFormRevision = (form, expected) => {
         const error = new Error('This form changed while the proposal was waiting for approval. Generate a new proposal.');
         error.code = 'FORM_PROPOSAL_STALE';
         error.status = 409;
+        throw error;
+    }
+};
+
+const ensureWorkflowRevision = (workflow, expected) => {
+    if (expected === undefined || expected === null || !workflow) return;
+    if (Number(workflow.revision) !== Number(expected)) {
+        const error = new Error('This automation changed while the proposal was waiting for approval. Generate a new proposal.');
+        error.code = 'AUTOMATION_REVISION_CONFLICT';
+        error.status = 409;
+        error.expectedRevision = expected;
+        error.currentRevision = workflow.revision;
         throw error;
     }
 };
@@ -229,7 +263,8 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
                 error.status = 404;
                 throw error;
             }
-            if (workflow && proposal.baseWorkflowUpdatedAt) {
+            ensureWorkflowRevision(workflow, proposal.baseWorkflowRevision);
+            if (workflow && proposal.baseWorkflowRevision === undefined && proposal.baseWorkflowUpdatedAt) {
                 ensureFormRevision(workflow, proposal.baseWorkflowUpdatedAt);
             }
             const nodes = Array.isArray(proposal.nodes) ? proposal.nodes : [];
@@ -301,6 +336,7 @@ const compactWorkflowContext = (workflow) => {
         name: value.name,
         status: value.status,
         isActive: value.isActive,
+        revision: value.revision,
         updatedAt: value.updatedAt,
         nodes: (value.nodes || []).map(node => ({
             id: node.id,
@@ -309,7 +345,6 @@ const compactWorkflowContext = (workflow) => {
             subType: node.subType
         })),
         edges: (value.edges || []).map(edge => ({
-            id: edge.id,
             source: edge.source,
             target: edge.target,
             sourceHandle: edge.sourceHandle || null,
@@ -692,7 +727,7 @@ Clarification for form requirements: ${normalizeClarificationMode(effectiveConte
             } catch (error) {
                 capabilityResult = {
                     status: 'completed',
-                    output: { error: error.message, code: error.code || 'AGENT_CAPABILITY_FAILED' }
+                    output: { error: capabilityErrorMessage(error), code: error.code || 'AGENT_CAPABILITY_FAILED' }
                 };
             }
             onEvent?.({ type: 'tool_completed', name, status: capabilityResult.status || 'completed' });

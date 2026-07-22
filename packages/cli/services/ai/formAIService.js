@@ -1,4 +1,4 @@
-import { generateFormFromPrompt } from './aiFormsService.js';
+import { generateFormFromPrompt } from './form/pipeline/pipeline.js';
 
 /**
  * Shared Form AI interface.

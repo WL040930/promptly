@@ -77,6 +77,7 @@ export const completeStep = (step, { result = null, outputArtifactIds = [], toke
 export const failStep = (step, error) => step.update({
     status: 'failed',
     error: { code: error?.code || 'AGENT_STEP_FAILED', message: error?.message || 'Agent step failed.' },
+    tokenUsage: error?.tokenUsage || {},
     completedAt: new Date()
 });
 

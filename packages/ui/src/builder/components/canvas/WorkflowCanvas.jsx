@@ -26,7 +26,7 @@ const nodeTypes = {
   logic: DynamicNode,
 };
 
-const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, onNodeClick, onNodesChangeCallback, onEdgesChangeCallback, onAddNode, onPasteNode, draggedNode }) => {
+const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, onNodeClick, onNodesChangeCallback, onEdgesChangeCallback, onAddNode, onPasteNode, onEdgeDelete, draggedNode }) => {
   const reactFlowWrapper = useRef(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [dragPosition, setDragPosition] = useState(null);
@@ -95,12 +95,20 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
       ...e,
       type: 'deletable',
       animated: true,
-      style: { stroke: '#818cf8', strokeWidth: 2, filter: 'drop-shadow(0px 4px 6px rgba(99, 102, 241, 0.3))' }
+      style: { stroke: '#818cf8', strokeWidth: 2, filter: 'drop-shadow(0px 4px 6px rgba(99, 102, 241, 0.3))' },
+      data: {
+        ...e.data,
+        onDelete: onEdgeDelete ? () => onEdgeDelete(e.id) : undefined
+      }
     }));
 
     setNodes(rfNodes);
     setEdges(rfEdges);
-  }, [initialNodes.map(n => n.id).join(','), initialEdges.map(e => e.id).join(',')]);
+  }, [
+    initialNodes.map(n => `${n.id}:${n.position?.x || 0}:${n.position?.y || 0}`).join(','),
+    initialEdges.map(e => `${e.id}:${e.source}:${e.target}:${e.sourceHandle || ''}:${e.targetHandle || ''}`).join(','),
+    onEdgeDelete
+  ]);
 
   // Sync active node visual state, title, and description from props
   useEffect(() => {
@@ -132,7 +140,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
     // 5. Update React Flow state
     setNodes(laidOutNodes);
 
-    // 6. Notify parent component to persist layout updates in localStorage
+    // 6. Notify the parent so the layout is persisted with the workflow draft.
     const changes = laidOutNodes.map(node => ({
       id: node.id,
       type: 'position',
@@ -142,7 +150,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
   }, [nodes, edges, setNodes, onNodesChangeCallback]);
 
   const makeEdge = useCallback((params) => {
-    const newEdge = { ...params, id: `e-${params.source}-${params.target}`, type: 'deletable', animated: true, style: { stroke: '#818cf8', strokeWidth: 2, filter: 'drop-shadow(0px 4px 6px rgba(99, 102, 241, 0.3))' } };
+    const newEdge = { ...params, id: `e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type: 'deletable', animated: true, style: { stroke: '#818cf8', strokeWidth: 2, filter: 'drop-shadow(0px 4px 6px rgba(99, 102, 241, 0.3))' } };
     setEdges((eds) => {
       const updatedEdges = addEdge(newEdge, eds);
       onEdgesChangeCallback?.(updatedEdges);

@@ -40,17 +40,25 @@ export const useUpdateWorkflow = () => {
             
             const previousWorkflows = queryClient.getQueryData(['workflows']);
             const previousSingle = queryClient.getQueryData(['workflows', id]);
+            const optimisticData = Object.fromEntries(Object.entries(data || {}).filter(([key]) => key !== 'expectedRevision'));
             
             if (previousWorkflows) {
                 queryClient.setQueryData(['workflows'], old =>
-                    old.map(w => w.id === id ? { ...w, ...data } : w)
+                    old.map(w => w.id === id ? { ...w, ...optimisticData } : w)
                 );
             }
             if (previousSingle) {
-                queryClient.setQueryData(['workflows', id], old => ({ ...old, ...data }));
+                queryClient.setQueryData(['workflows', id], old => ({ ...old, ...optimisticData }));
             }
             
             return { previousWorkflows, previousSingle, id };
+        },
+        onSuccess: workflow => {
+            if (!workflow?.id) return;
+            queryClient.setQueryData(['workflows', workflow.id], workflow);
+            queryClient.setQueryData(['workflows'], old => old
+                ? old.map(item => item.id === workflow.id ? { ...item, ...workflow } : item)
+                : old);
         },
         onError: (err, variables, context) => {
             if (context?.previousWorkflows) {

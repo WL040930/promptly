@@ -9,6 +9,7 @@ import { createApproval, getRunArtifacts, getRunForUser, serializeRun } from './
 import { makeError } from './agentContracts.js';
 
 const revisionMatches = (current, expected) => !expected || new Date(current).getTime() === new Date(expected).getTime();
+const workflowRevisionMatches = (current, expected) => expected === undefined || expected === null || Number(current) === Number(expected);
 
 const applyFormArtifact = async ({ artifact, userId, transaction }) => {
     const content = artifact.content || {};
@@ -48,7 +49,10 @@ const applyWorkflowArtifact = async ({ artifact, userId, form, transaction }) =>
         ? await Workflow.findOne({ where: { id: content.workflowId, userId }, transaction, lock: transaction.LOCK.UPDATE })
         : null;
     if (content.workflowId && !source) throw Object.assign(new Error('The target workflow no longer exists.'), { code: 'AGENT_RESOURCE_NOT_FOUND' });
-    if (source && !revisionMatches(source.updatedAt, content.baseWorkflowUpdatedAt)) {
+    if (source && !workflowRevisionMatches(source.revision, content.baseWorkflowRevision)) {
+        throw Object.assign(new Error('The workflow changed after this proposal was created.'), { code: 'AGENT_STALE_RESOURCE' });
+    }
+    if (source && content.baseWorkflowRevision === undefined && !revisionMatches(source.updatedAt, content.baseWorkflowUpdatedAt)) {
         throw Object.assign(new Error('The workflow changed after this proposal was created.'), { code: 'AGENT_STALE_RESOURCE' });
     }
 

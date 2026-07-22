@@ -17,6 +17,7 @@ import { repairWorker } from './repairs.js';
 import { verifyProposalWithRecovery } from './verifier.js';
 import { addTokenUsage } from '../shared/usage.js';
 import { MAX_FORM_REPAIR_LOOPS } from '../shared/constants.js';
+import { describeAiOutput, rawOutputPreview, recordAiDiagnostic } from '../../core/diagnosticsLogger.js';
 
 const humanizeFieldId = (field = {}) => {
     const source = [field.label, field.name, field.title, field.id]
@@ -146,6 +147,28 @@ const normalizeOptionalSettings = patches => {
     return { patches: normalized, warnings };
 };
 
+const hasUsableTitle = value => typeof value === 'string' && value.trim().length > 0;
+
+const ensureTitlePatch = (patches, schema, needsTitlePatch) => {
+    if (!needsTitlePatch) return patches;
+
+    let hasTitlePatch = false;
+    const normalized = (Array.isArray(patches) ? patches : []).map(patch => {
+        if (patch?.op !== 'update_meta') return patch;
+        if (hasUsableTitle(patch.updates?.title)) {
+            hasTitlePatch = true;
+            return patch;
+        }
+        return {
+            ...patch,
+            updates: { ...(patch.updates || {}), title: schema.title }
+        };
+    });
+
+    if (hasTitlePatch) return normalized;
+    return [{ op: 'update_meta', updates: { title: schema.title } }, ...normalized];
+};
+
 export const recoverWorkerProposal = async ({
     provider,
     schema,
@@ -156,6 +179,7 @@ export const recoverWorkerProposal = async ({
     onProgress,
     budget,
     cardinality,
+    needsTitlePatch = false,
     turnContext = null
 }) => {
     const memoryUpdate = getMemoryUpdate(plannerResult);
@@ -206,6 +230,18 @@ export const recoverWorkerProposal = async ({
         const workerOutput = readWorkerResult(workerCall);
         result = workerOutput.result;
         if (workerOutput.issues.length > 0) {
+            await recordAiDiagnostic({
+                event: 'worker_output_rejected',
+                attempt: attempt + 1,
+                kind: workerOutput.kind,
+                provider: workerCall.response?.provider || null,
+                model: workerCall.response?.model || null,
+                finishReason: workerCall.response?.finishReason || null,
+                output: describeAiOutput(result),
+                rawTextLength: typeof workerCall.rawText === 'string' ? workerCall.rawText.length : 0,
+                issues: workerOutput.issues.slice(0, 10).map(issue => ({ code: issue.code, path: issue.path })),
+                ...(rawOutputPreview(workerCall.rawText) ? { rawTextPreview: rawOutputPreview(workerCall.rawText) } : {})
+            });
             failure = {
                 stage: 'worker',
                 kind: workerOutput.kind,
@@ -218,7 +254,8 @@ export const recoverWorkerProposal = async ({
         if (onProgress) onProgress({ status: 'checking', message: 'Checking generated form...' });
         const memoryPatch = createMemoryPatch(schema, plannerResult);
         const rawPatches = memoryPatch ? [memoryPatch, ...(result.patches || [])] : (result.patches || []);
-        const normalizedSettings = normalizeOptionalSettings(rawPatches);
+        const metadataSafePatches = ensureTitlePatch(rawPatches, schema, needsTitlePatch);
+        const normalizedSettings = normalizeOptionalSettings(metadataSafePatches);
         warnings.push(...normalizedSettings.warnings);
         try {
             appliedProposal = applyFormPatches({ currentSchema: schema, patches: normalizedSettings.patches });
@@ -316,5 +353,12 @@ export const recoverWorkerProposal = async ({
         };
     }
 
+    await recordAiDiagnostic({
+        event: 'worker_recovery_exhausted',
+        attempts: MAX_FORM_REPAIR_LOOPS,
+        stage: failure?.stage || null,
+        kind: failure?.kind || null,
+        issues: (failure?.issues || []).slice(0, 10).map(issue => ({ code: issue.code, path: issue.path }))
+    });
     throw createWorkerRecoveryError(failure);
 };

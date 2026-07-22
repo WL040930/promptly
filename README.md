@@ -1,10 +1,10 @@
 # Promptly
 
-Promptly is an AI-powered automation and workspace builder. It allows users to automate their workflows, build interactive forms, and manage data without writing a single line of code—leveraging the power of Google's Gemini AI to do the heavy lifting.
+Promptly is an AI-powered automation and workspace builder. It allows users to automate their workflows, build interactive forms, and manage data without writing a single line of code—using a configurable AI provider (OpenRouter with NVIDIA Nemotron is the default).
 
 ## 🌟 Features
 
-- **Promptly Agent (AI Chat)**: A conversational assistant powered by Google Gemini that helps you construct automations, extract intents, and manage your workspace interactively.
+- **Promptly Agent (AI Chat)**: A conversational assistant that helps you construct automations, extract intents, and manage your workspace interactively.
 - **Workflow Builder**: A visual, drag-and-drop node-based editor (`@xyflow/react`) for creating advanced automation sequences with triggers, AI nodes, and integrations.
 - **Form Builder**: Create, edit, and deploy beautiful, highly customizable data-collection forms with real-time previews and response tracking.
 - **Interactive Dashboards**: Visual analytics and statistics powered by Recharts, enabling users to track workflow runs, form submissions, and active automations.
@@ -24,7 +24,7 @@ This project is structured as a monorepo containing a full-stack Javascript appl
 ### Backend (`packages/cli`)
 - **Node.js** + **Express**: Robust RESTful API server.
 - **PostgreSQL** + **Sequelize (ORM)**: Relational database for structured storage.
-- **Google GenAI API**: Integration with Google's Gemini models for intelligent workspace assistance.
+- **AI providers**: OpenRouter, Google Gemini, Groq, and Cerebras adapters with tiered routing and fallback support.
 - **JSON Web Tokens (JWT)** + **Bcrypt**: Secure user authentication.
 
 ## 🚀 Getting Started
@@ -32,7 +32,7 @@ This project is structured as a monorepo containing a full-stack Javascript appl
 ### Prerequisites
 - Node.js (v18+)
 - PostgreSQL Database
-- Google Gemini API Key
+- OpenRouter API Key (or another configured AI provider)
 
 ### 1. Installation
 
@@ -77,7 +77,21 @@ SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 
 # AI Integration
-GEMINI_API_KEY=your_gemini_api_key
+OPENROUTER_API_KEY=your_openrouter_api_key
+AI_DEFAULT_PROVIDER=openrouter
+AI_DEFAULT_MODEL=nvidia/nemotron-3-super-120b-a12b:free
+# Optional tier overrides and failover providers:
+# AI_FAST_PROVIDER=openrouter
+# AI_FAST_MODEL=nvidia/nemotron-3-super-120b-a12b:free
+# AI_QUALITY_PROVIDER=openrouter
+# AI_QUALITY_MODEL=nvidia/nemotron-3-super-120b-a12b:free
+# AI_FALLBACK_PROVIDERS=cerebras,openrouter,groq
+# Optional completion policy. Unlimited omits the app-level output cap;
+# providers still enforce their own context-window and model limits.
+# AI_UNLIMITED_COMPLETION_TOKENS=true
+# Or use one finite cap for every task (overrides per-task defaults):
+# AI_MAX_COMPLETION_TOKENS=4096
+# GEMINI_API_KEY=your_gemini_api_key
 # Required for managed transcription and knowledge-base embeddings.
 OPENAI_API_KEY=your_openai_api_key
 ```
@@ -103,7 +117,7 @@ promptly/
 │   │   ├── controllers/      # Route logic (chat, dashboard, builder, forms)
 │   │   ├── models/           # Sequelize DB models
 │   │   ├── routes/           # Express API endpoints
-│   │   ├── services/         # Integrations (e.g., geminiService.js)
+│   │   ├── services/         # AI, workflow, and integration services
 │   │   └── server.js         # Backend entry point
 │   │
 │   └── ui/                   # Frontend React Application

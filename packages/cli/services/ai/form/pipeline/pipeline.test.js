@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 // Keep these contract tests focused on explicit stage limits; the local .env
 // enables provider-managed completion for interactive development.
 process.env.AI_FORM_UNLIMITED_COMPLETION_TOKENS = 'false';
+process.env.AI_UNLIMITED_COMPLETION_TOKENS = 'false';
 process.env.AI_TIMEOUT_MS = '50';
 
 test('generateFormFromPrompt returns a non-mutating conversational reply', async () => {
@@ -33,6 +34,43 @@ test('generateFormFromPrompt returns a non-mutating conversational reply', async
     assert.match(result.message, /dropdown/);
     assert.equal(calls, 1);
     assert.equal(result.tokenUsage.requestCalls, 1);
+});
+
+test('new forms remain valid when the worker returns field-only patches', async () => {
+    const { generateFormFromPrompt } = await import('./pipeline.js');
+    const provider = {
+        async generateContent(contents, options) {
+            if (options.operation === 'form:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Create a contact form.',
+                    requirements: [{ id: 'req_1', description: 'Collect an email address.' }],
+                    memoryUpdate: { action: 'none' }
+                }) };
+            }
+            if (options.operation === 'form:worker' || options.operation === 'form:worker repair') {
+                return { text: JSON.stringify({
+                    patches: [{ op: 'add', field: { id: 'email', type: 'email', label: 'Email' } }]
+                }) };
+            }
+            assert.equal(options.operation, 'form:verifier');
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Create a contact form with an email field.',
+        { fields: [], settings: {} },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.schema.title, 'Untitled Form');
+    assert.equal(result.schema.fields[0].label, 'Email');
+    assert.ok(result.patches.some(patch => patch.op === 'update_meta' && patch.updates.title === 'Untitled Form'));
+    assert.equal(result.verification.status, 'pass');
 });
 
 test('decide_everything resolves a section-heading clarification and rejects unrelated field scope', async () => {
@@ -371,54 +409,33 @@ test('generateFormFromPrompt treats an explicit total question count as the fina
 
 test('recovers user-facing labels when the worker and its repair omit them', async () => {
     const { generateFormFromPrompt } = await import('./pipeline.js');
-    const outputs = [
-        {
-            type: 'plan_complete',
-            summary: 'Building the registration form.',
-            requirements: [{ id: 'req_1', description: 'Add first name, email, and attendance type fields.' }],
-            memoryUpdate: { action: 'none' }
-        },
-        {
-            type: 'proposal',
-            message: 'Built the registration form.',
-            patches: [
-                { op: 'add', field: { id: 'f_first_name', type: 'text', required: true } },
-                { op: 'add', field: { id: 'f_email', type: 'email', required: true } },
-                { op: 'add', field: { id: 'f_attendance_type', type: 'select', choices: ['In-person', 'Virtual'] } }
-            ]
-        },
-        {
-            type: 'proposal',
-            message: 'Built the registration form.',
-            patches: [
-                { op: 'add', field: { id: 'f_first_name', type: 'text', required: true } },
-                { op: 'add', field: { id: 'f_email', type: 'email', required: true } },
-                { op: 'add', field: { id: 'f_attendance_type', type: 'select', choices: ['In-person', 'Virtual'] } }
-            ]
-        },
-        {
-            type: 'proposal',
-            message: 'Built the registration form.',
-            patches: [
-                { op: 'update_meta', updates: { title: 'Event Registration', description: '' } },
-                { op: 'add', field: { id: 'f_first_name', type: 'text', label: 'First Name', required: true } },
-                { op: 'add', field: { id: 'f_email', type: 'email', label: 'Email', required: true } },
-                { op: 'add', field: { id: 'f_attendance_type', type: 'select', label: 'Attendance Type', choices: ['In-person', 'Virtual'] } }
-            ]
-        },
-        { status: 'pass', issues: [] }
-    ];
     const provider = {
-        async generateContent() {
-            const output = outputs.shift();
-            assert.ok(output, 'The fake provider received an unexpected request.');
-            return { text: JSON.stringify(output) };
+        async generateContent(contents, options) {
+            if (options.operation === 'form:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Building the registration form.',
+                    requirements: [{ id: 'req_1', description: 'Add first name, email, and attendance type fields.' }],
+                    memoryUpdate: { action: 'none' }
+                }) };
+            }
+            if (options.operation === 'form:worker') {
+                return { text: JSON.stringify({
+                    patches: [
+                        { op: 'add', field: { id: 'f_first_name', type: 'text', required: true } },
+                        { op: 'add', field: { id: 'f_email', type: 'email', required: true } },
+                        { op: 'add', field: { id: 'f_attendance_type', type: 'select', choices: ['In-person', 'Virtual'] } }
+                    ]
+                }) };
+            }
+            assert.equal(options.operation, 'form:verifier');
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
         }
     };
 
     const result = await generateFormFromPrompt(
         'Create an event registration form.',
-        { id: 'form_1', title: '', description: '', settings: {}, fields: [] },
+        { id: 'form_1', title: 'Untitled Form', description: '', settings: {}, fields: [] },
         [],
         null,
         { provider }

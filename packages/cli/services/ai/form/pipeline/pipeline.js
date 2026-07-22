@@ -16,6 +16,10 @@ import { repairPlanner } from '../recovery/repairs.js';
 import { recoverWorkerProposal } from '../recovery/workerRecovery.js';
 import { addTokenUsage } from '../shared/usage.js';
 
+const DEFAULT_FORM_TITLE = 'Untitled Form';
+
+const hasUsableFormTitle = schema => typeof schema?.title === 'string' && schema.title.trim().length > 0;
+
 const canRebuildDirectProposal = (plannerResult, issues = []) => {
     if (plannerResult?.type !== 'direct_proposal' || !Array.isArray(plannerResult.requirements) || plannerResult.requirements.length === 0) {
         return false;
@@ -145,10 +149,18 @@ export const generateFormFromPrompt = async (
 
         if (plannerResult.type === 'direct_proposal' || plannerResult.type === 'plan_complete') {
             if (onProgress) onProgress({ status: 'building', message: 'Generating form schema...' });
+            const sourceSchema = currentSchema || {};
+            const needsTitlePatch = !hasUsableFormTitle(sourceSchema);
+            // New-form turns start with an empty schema. Give the patch engine a
+            // valid base so field-only worker output can still be reviewed, and
+            // ask recovery to include the metadata patch in the persisted draft.
+            const workerSchema = needsTitlePatch
+                ? { ...sourceSchema, title: DEFAULT_FORM_TITLE }
+                : sourceSchema;
             const workerContents = [{
                 role: 'user',
                 parts: [{ text: buildWorkerContext({
-                schema: currentSchema || {},
+                schema: workerSchema,
                 requirements: plannerResult.requirements,
                     cardinality,
                     turnContext: options.turnContext || null
@@ -156,7 +168,7 @@ export const generateFormFromPrompt = async (
             }];
             const workerResult = await recoverWorkerProposal({
                 provider,
-                schema: currentSchema || {},
+                schema: workerSchema,
                 plannerResult,
                 workerContents,
                 ...(plannerResult.type === 'direct_proposal' ? { initialWorkerResult: plannerResult } : {}),
@@ -164,6 +176,7 @@ export const generateFormFromPrompt = async (
                 onProgress,
                 budget,
                 cardinality,
+                needsTitlePatch,
                 turnContext: options.turnContext || null
             });
             const result = workerResult.result;

@@ -246,7 +246,13 @@ const designForm = async ({ run, session, message, form, clarificationMode = DEF
     try {
         const requiredCapabilities = requiredCapabilitiesForRequest(message);
         const request = requiredCapabilities.includes('respondent_confirmation')
-            ? `${message}\n\nImplementation requirement: include at least one required email field so the respondent can receive the requested confirmation.`
+            ? [
+                'Form design scope: create or update only the form requested by the user.',
+                'The workflow agent will handle all post-submission actions and email delivery separately.',
+                'Do not model email delivery as a form setting or field; collect at least one required email field for the workflow to use.',
+                '',
+                `Original request: ${message}`
+            ].join('\n')
             : message;
         const result = await runFormTurn({
             request,
@@ -287,7 +293,7 @@ const designForm = async ({ run, session, message, form, clarificationMode = DEF
     }
 };
 
-const designWorkflow = async ({ run, userId, message, workflow, form, formSchema = null, formArtifactId = null, formBinding = null, onEvent = null }) => {
+const designWorkflow = async ({ run, userId, message, workflow, form, formSchema = null, formArtifactId = null, formBinding = null, respondentEmailFieldId = null, onEvent = null }) => {
     const step = await createStep(run, { stepKey: 'design_workflow', type: 'design_workflow' });
     await startStep(step);
     try {
@@ -314,6 +320,7 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
                 specs,
                 resourceContext,
                 formSchema: form?.toJSON?.() || form || formSchema || null,
+                respondentEmailFieldId,
                 requiredCapabilities
             });
             const content = {
@@ -322,7 +329,8 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
                 nodes: patched.nodes,
                 edges: patched.edges,
                 diff: patched.diff,
-                baseWorkflowUpdatedAt: workflow.updatedAt,
+                repairs: patched.repairs || [],
+                baseWorkflowRevision: workflow.revision,
                 formArtifactId,
                 ...(formBinding ? { resourceBindings: [formBinding] } : {}),
                 readiness: patched.readiness
@@ -349,6 +357,7 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
             formId: form?.id || null,
             formSchema: form?.toJSON?.() || form || formSchema || null,
             formBinding,
+            respondentEmailFieldId,
             requiredCapabilities,
             resourceContext
         });
@@ -362,6 +371,7 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
             ...(formBinding ? { resourceBindings: assembled.resourceBindings || [formBinding] } : {}),
             nodes: assembled.nodes,
             edges: assembled.edges,
+            repairs: assembled.repairs || [],
             readiness: assembled.readiness,
             plan: assembled.nodes.map(node => ({ subType: node.subType, title: node.title, reason: node.description }))
         };
@@ -376,6 +386,35 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
         await completeStep(step, { result: { artifactId: artifact.id }, outputArtifactIds: [artifact.id], tokenUsage });
         return { artifact, tokenUsage };
     } catch (error) {
+        const ambiguousRecipient = (error.issues || []).find(issue => issue.code === 'RESPONDENT_RECIPIENT_FIELD_AMBIGUOUS');
+        if (ambiguousRecipient) {
+            const inputs = (ambiguousRecipient.candidates || []).length > 0
+                ? [{
+                    id: 'respondent_email_field',
+                    type: 'multiple_choice',
+                    label: 'Which email field should receive the confirmation email?',
+                    options: ambiguousRecipient.candidates.map(candidate => candidate.label)
+                }]
+                : [];
+            const result = {
+                status: 'clarification',
+                message: 'I found more than one required email field. Which one should receive the confirmation email?',
+                inputs
+            };
+            await completeStep(step, { result, tokenUsage: error.tokenUsage || {} });
+            await updateRun(run, {
+                status: 'awaiting_clarification',
+                currentStep: 'design_workflow',
+                metadata: {
+                    ...(run.metadata || {}),
+                    workflowClarification: {
+                        kind: 'respondent_email_field',
+                        candidates: ambiguousRecipient.candidates || []
+                    }
+                }
+            });
+            return { status: 'clarification', result, tokenUsage: error.tokenUsage || {} };
+        }
         await failStep(step, error);
         throw error;
     }
@@ -436,8 +475,17 @@ const createSolutionCapabilityRegistry = ({
                     target: { path: 'nodes.form_submission.config.formId' },
                     source: { artifactKey: 'form_proposal', appliedResource: 'id' }
                 } : null,
+                respondentEmailFieldId: context.input?.context?.respondentEmailFieldId || null,
                 onEvent
             });
+            if (result.status === 'clarification') {
+                return {
+                    status: 'awaiting_clarification',
+                    message: result.result.message,
+                    output: { result: result.result },
+                    tokenUsage: result.tokenUsage
+                };
+            }
             return {
                 output: { artifact: result.artifact },
                 tokenUsage: result.tokenUsage
@@ -588,6 +636,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         workflowId: context.workflowId || null,
         executionId: context.executionId || null,
         activeResource: context.activeResource || null,
+        respondentEmailFieldId: context.respondentEmailFieldId || null,
         clarificationMode: normalizeClarificationMode(context.clarificationMode)
     };
     const run = existingRun || await createRun({ sessionId: session.id, userId, metadata: { request: message, context: persistedContext } });
@@ -888,6 +937,17 @@ export const resumeAgentAfterForm = async ({ run, session, userId, formId, onEve
     if (!form) throw new Error('The approved form could not be found.');
     const existingWorkflow = context.workflowId ? await Workflow.findOne({ where: { id: context.workflowId, userId } }) : null;
     const result = await designWorkflow({ run, userId, message: request, workflow: existingWorkflow, form, formArtifactId: null, onEvent });
+    if (result.status === 'clarification') {
+        await updateRun(run, { status: 'awaiting_clarification', currentStep: 'design_workflow', tokenUsage: result.tokenUsage || {} });
+        await session.update({ agentState: { status: 'awaiting_agent_clarification', runId: run.id } });
+        const reply = await saveReply(session, {
+            text: result.result.message,
+            kind: 'clarification',
+            payload: { runId: run.id, options: result.result.inputs || [] },
+            tokenUsage: result.tokenUsage || {}
+        });
+        return { reply, tokenUsage: result.tokenUsage || {} };
+    }
     await updateRun(run, { status: 'awaiting_approval', currentStep: null, metadata: { ...metadata, formId } });
     const artifact = result.artifact;
     const reply = await saveReply(session, {
@@ -906,12 +966,33 @@ export const resumeAgentAfterClarification = async ({ run, session, userId, answ
     const request = metadata.request;
     if (!request) throw new Error('The pending agent request is no longer available.');
 
+    const nextContext = { ...(context || metadata.context || {}) };
+    const workflowClarification = metadata.workflowClarification;
+    if (workflowClarification?.kind === 'respondent_email_field') {
+        const normalizedAnswer = String(answer || '').trim().toLowerCase();
+        const selected = (workflowClarification.candidates || []).find((candidate, index) => (
+            normalizedAnswer === String(index + 1)
+            || normalizedAnswer === String(candidate.id || '').toLowerCase()
+            || normalizedAnswer === String(candidate.label || '').trim().toLowerCase()
+        ));
+        if (selected?.id) {
+            nextContext.respondentEmailFieldId = selected.id;
+            await updateRun(run, {
+                metadata: {
+                    ...metadata,
+                    workflowClarification: null,
+                    context: nextContext
+                }
+            });
+        }
+    }
+
     return processAgenticTurn({
         run,
         session,
         userId,
         message: answer ? `${request}\n\nUser clarification: ${answer}` : request,
-        context: context || metadata.context || {},
+        context: nextContext,
         force: true,
         onEvent
     });

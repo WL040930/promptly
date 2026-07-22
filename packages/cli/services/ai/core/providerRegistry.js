@@ -3,6 +3,8 @@ import { GeminiProvider } from '../providers/geminiProvider.js';
 import { OpenRouterProvider } from '../providers/openRouterProvider.js';
 import { GroqProvider } from '../providers/groqProvider.js';
 import { CerebrasProvider } from '../providers/cerebrasProvider.js';
+import { AI_PROVIDER_NAMES, DEFAULT_AI_MODELS } from '../../../config/aiConfig.js';
+import { AIError } from './aiErrors.js';
 
 const providerFactories = Object.freeze({
     gemini: options => new GeminiProvider(options),
@@ -11,19 +13,20 @@ const providerFactories = Object.freeze({
     cerebras: options => new CerebrasProvider(options)
 });
 
-const DEFAULT_PROVIDER_MODELS = Object.freeze({
-    gemini: 'gemini-3.5-flash',
-    openrouter: 'openai/gpt-4o-mini',
-    groq: 'llama3-8b-8192',
-    cerebras: 'llama3.1-8b'
-});
-
 export const createProviderRegistry = ({ config = env } = {}) => {
     const instances = new Map();
     const get = (providerName = config.ai.tiers.default.provider) => {
         if (instances.has(providerName)) return instances.get(providerName);
 
-        const factory = providerFactories[providerName] || providerFactories.gemini;
+        const factory = providerFactories[providerName];
+        if (!factory) {
+            throw new AIError(`Unsupported AI provider '${providerName}'.`, {
+                code: 'AI_PROVIDER_UNSUPPORTED',
+                category: 'configuration',
+                retryable: false,
+                provider: providerName
+            });
+        }
         const provider = factory({
             apiKey: config[providerName]?.apiKey,
             timeoutMs: config.aiTimeoutMs,
@@ -36,7 +39,8 @@ export const createProviderRegistry = ({ config = env } = {}) => {
     return Object.freeze({
         get,
         hasCredentials: providerName => Boolean(config[providerName]?.apiKey),
-        getDefaultModel: providerName => DEFAULT_PROVIDER_MODELS[providerName],
+        getDefaultModel: providerName => DEFAULT_AI_MODELS[providerName],
+        supportedProviders: AI_PROVIDER_NAMES,
         timeoutMs: config.aiTimeoutMs
     });
 };

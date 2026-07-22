@@ -57,6 +57,7 @@ const compactWorkflowContext = workflow => {
         name: value.name,
         status: value.status,
         isActive: value.isActive,
+        revision: value.revision,
         updatedAt: value.updatedAt,
         nodes: (value.nodes || []).map(node => ({
             id: node.id,
@@ -65,7 +66,6 @@ const compactWorkflowContext = workflow => {
             subType: node.subType
         })),
         edges: (value.edges || []).map(edge => ({
-            id: edge.id,
             source: edge.source,
             target: edge.target,
             sourceHandle: edge.sourceHandle || null,
@@ -533,7 +533,7 @@ export const createChatCapabilityRegistry = ({
                             nodes: patched.nodes,
                             edges: patched.edges,
                             diff: patched.diff,
-                            baseWorkflowUpdatedAt: workflow.updatedAt
+                            baseWorkflowRevision: workflow.revision
                         },
                         proposalStatus: 'pending'
                     });
@@ -560,6 +560,7 @@ export const createChatCapabilityRegistry = ({
                     kind: 'workflow_proposal',
                     payload: {
                         action: 'create_workflow',
+                        ...(workflow ? { workflowId: workflow.id, baseWorkflowRevision: workflow.revision } : {}),
                         name: assembled.name,
                         intent: classification.intent,
                         needsForm: false,

@@ -1,4 +1,5 @@
 import env from '../../../config/env.js';
+import { DEFAULT_AI_MODELS } from '../../../config/aiConfig.js';
 import { OpenAICompatibleProvider } from './openAICompatibleProvider.js';
 
 export class GroqProvider extends OpenAICompatibleProvider {
@@ -7,7 +8,7 @@ export class GroqProvider extends OpenAICompatibleProvider {
             apiKey,
             baseUrl: 'https://api.groq.com/openai/v1',
             displayName: 'Groq',
-            defaultModel: 'llama3-8b-8192',
+            defaultModel: DEFAULT_AI_MODELS.groq,
             timeoutMs
         });
     }

@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { createAIConfig } from './aiConfig.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -23,60 +24,7 @@ const getJwtSecret = () => {
     return secret;
 };
 
-const getAiTimeoutMs = () => {
-    const timeoutMs = Number(process.env.AI_TIMEOUT_MS || 30000);
-    return Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 30000;
-};
-
-const getOptionalPositiveInteger = (key) => {
-    if (!process.env[key]) return null;
-    const value = Number(process.env[key]);
-    return Number.isInteger(value) && value > 0 ? value : null;
-};
-
-const getBoolean = (key, fallback = false) => {
-    if (process.env[key] === undefined) return fallback;
-    return ['1', 'true', 'yes', 'on'].includes(String(process.env[key]).trim().toLowerCase());
-};
-
-const getAiThinkingLevel = () => {
-    const value = String(process.env.AI_THINKING_LEVEL || 'minimal').trim().toLowerCase();
-    return ['minimal', 'low', 'medium', 'high'].includes(value) ? value : 'minimal';
-};
-
-const readAiProvider = (value, fallback = 'gemini') => {
-    const normalized = String(value || '').trim().toLowerCase();
-    return normalized || fallback;
-};
-
-const getAiFallbackProviders = () => [...new Set(
-    String(process.env.AI_FALLBACK_PROVIDERS || '')
-        .split(',')
-        .map(value => value.trim().toLowerCase())
-        .filter(Boolean)
-)];
-
-const getDefaultAiModel = provider => {
-    if (provider === 'openrouter') return 'openai/gpt-4o-mini';
-    if (provider === 'groq') return 'llama3-8b-8192';
-    if (provider === 'cerebras') return 'llama3.1-8b';
-    return 'gemini-3.5-flash';
-};
-
-const configuredProvider = readAiProvider(process.env.AI_DEFAULT_PROVIDER);
-const defaultAiModel = process.env.AI_DEFAULT_MODEL || getDefaultAiModel(configuredProvider);
-const fastProvider = readAiProvider(process.env.AI_FAST_PROVIDER, configuredProvider);
-const qualityProvider = readAiProvider(process.env.AI_QUALITY_PROVIDER, configuredProvider);
-const fastModel = process.env.AI_FAST_MODEL || getDefaultAiModel(fastProvider);
-const qualityModel = process.env.AI_QUALITY_MODEL || (
-    qualityProvider === configuredProvider ? defaultAiModel : getDefaultAiModel(qualityProvider)
-);
-
-const aiTiers = {
-    default: { provider: configuredProvider, model: defaultAiModel },
-    fast: { provider: fastProvider, model: fastModel },
-    quality: { provider: qualityProvider, model: qualityModel }
-};
+const aiConfig = createAIConfig();
 
 const env = {
     app: {
@@ -124,16 +72,7 @@ const env = {
     openai: {
         apiKey: process.env.OPENAI_API_KEY
     },
-    ai: {
-        tiers: aiTiers,
-        fallbackProviders: getAiFallbackProviders()
-    },
-    aiThinkingLevel: getAiThinkingLevel(),
-    aiTimeoutMs: getAiTimeoutMs(),
-    aiFormUnlimitedCompletionTokens: getBoolean('AI_FORM_UNLIMITED_COMPLETION_TOKENS'),
-    aiChatMaxToolLoops: getOptionalPositiveInteger('AI_CHAT_MAX_TOOL_LOOPS') || 8,
-    aiAgentMaxActions: getOptionalPositiveInteger('AI_AGENT_MAX_ACTIONS') || 8,
-    aiAgentMaxReplans: getOptionalPositiveInteger('AI_AGENT_MAX_REPLANS') || 1,
+    ...aiConfig,
     supabase: {
         url: requireEnv('SUPABASE_URL'),
         anonKey: requireEnv('SUPABASE_ANON_KEY'),

@@ -46,6 +46,28 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     const [isSubmitting, setIsSubmitting] = useState(false);
     const previousGlobalSidebarState = useRef(null);
     const wasBuilderRoute = useRef(false);
+    const workflowRevisionRef = useRef(null);
+    const workflowRevisionIdRef = useRef(null);
+    const pendingWorkflowSaveRef = useRef(Promise.resolve(null));
+
+    useEffect(() => {
+        if (!activeWorkflowId) {
+            workflowRevisionIdRef.current = null;
+            workflowRevisionRef.current = null;
+            pendingWorkflowSaveRef.current = Promise.resolve(null);
+            return;
+        }
+        if (workflowRevisionIdRef.current !== activeWorkflowId) {
+            workflowRevisionIdRef.current = activeWorkflowId;
+            workflowRevisionRef.current = activeWorkflowData?.revision ?? null;
+            return;
+        }
+        const serverRevision = activeWorkflowData?.revision;
+        if (serverRevision !== undefined && serverRevision !== null
+            && (workflowRevisionRef.current === null || Number(serverRevision) > Number(workflowRevisionRef.current))) {
+            workflowRevisionRef.current = serverRevision;
+        }
+    }, [activeWorkflowId, activeWorkflowData?.revision]);
 
     // The builder temporarily collapses the global sidebar, then restores the
     // state the user had before entering it.
@@ -103,14 +125,31 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
 
     // ── Workflow mutation helpers ─────────────────────────────────────────────
     const handleWorkflowUpdate = useCallback((updatedFields, skipSnapshot = false) => {
-        if (!activeWorkflowId) return;
+        if (!activeWorkflowId) return Promise.resolve(null);
 
         if (!skipSnapshot && (updatedFields.nodes || updatedFields.edges)) {
             takeSnapshot({ nodes, edges });
         }
 
-        updateWorkflowMutation.mutate({ id: activeWorkflowId, data: updatedFields });
+        const save = async () => {
+            const data = { ...updatedFields };
+            if ((updatedFields.nodes || updatedFields.edges)
+                && workflowRevisionRef.current !== null
+                && workflowRevisionRef.current !== undefined) {
+                data.expectedRevision = workflowRevisionRef.current;
+            }
+            const result = await updateWorkflowMutation.mutateAsync({ id: activeWorkflowId, data });
+            if (result?.revision !== undefined && result?.revision !== null) {
+                workflowRevisionRef.current = result.revision;
+            }
+            return result;
+        };
+        const request = pendingWorkflowSaveRef.current.catch(() => null).then(save);
+        pendingWorkflowSaveRef.current = request.catch(() => null);
+        return request;
     }, [activeWorkflowId, updateWorkflowMutation, nodes, edges, takeSnapshot]);
+
+    const flushPendingWorkflowSave = useCallback(() => pendingWorkflowSaveRef.current, []);
 
     const handleToggleActive = useCallback(() => {
         if (!activeWorkflow) return;
@@ -258,15 +297,26 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
         }
 
         if (message.kind === 'workflow_diff') {
-            if (payload.baseWorkflowUpdatedAt && activeWorkflow?.updatedAt && payload.baseWorkflowUpdatedAt !== activeWorkflow.updatedAt) {
+            if (payload.baseWorkflowRevision !== undefined && activeWorkflow?.revision !== undefined
+                && Number(payload.baseWorkflowRevision) !== Number(activeWorkflow.revision)) {
                 throw new Error('This workflow changed while the proposal was open. Please generate the changes again.');
             }
-            await updateWorkflowMutation.mutateAsync({ id: activeWorkflowId, data: { nodes: payload.nodes, edges: payload.edges } });
+            await updateWorkflowMutation.mutateAsync({
+                id: activeWorkflowId,
+                data: {
+                    nodes: payload.nodes,
+                    edges: payload.edges,
+                    ...(payload.baseWorkflowRevision !== undefined ? { expectedRevision: payload.baseWorkflowRevision } : {}),
+                    source: 'ai',
+                    summary: 'Applied AI workflow proposal'
+                }
+            });
             return { workflowId: activeWorkflowId };
         }
 
         if (message.kind === 'workflow_proposal') {
-            if (payload.baseWorkflowUpdatedAt && activeWorkflow?.updatedAt && payload.baseWorkflowUpdatedAt !== activeWorkflow.updatedAt) {
+            if (payload.baseWorkflowRevision !== undefined && activeWorkflow?.revision !== undefined
+                && Number(payload.baseWorkflowRevision) !== Number(activeWorkflow.revision)) {
                 throw new Error('This workflow changed while the proposal was open. Please generate the workflow again.');
             }
             const hasCurrentNodes = nodes.length > 0;
@@ -287,7 +337,17 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                     return { workflowId: targetWorkflowId };
                 }
             }
-            await updateWorkflowMutation.mutateAsync({ id: targetWorkflowId, data: { name: payload.name || activeWorkflow?.name || 'New Automation', nodes: payload.nodes || [], edges: payload.edges || [] } });
+            await updateWorkflowMutation.mutateAsync({
+                id: targetWorkflowId,
+                data: {
+                    name: payload.name || activeWorkflow?.name || 'New Automation',
+                    nodes: payload.nodes || [],
+                    edges: payload.edges || [],
+                    ...(payload.baseWorkflowRevision !== undefined ? { expectedRevision: payload.baseWorkflowRevision } : {}),
+                    source: 'ai',
+                    summary: 'Applied AI workflow proposal'
+                }
+            });
             toast.success('Automation proposal applied.');
             return { workflowId: targetWorkflowId };
         }
@@ -377,6 +437,11 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     const handleEdgesChange = useCallback((updatedEdges) => {
         handleWorkflowUpdate({ edges: updatedEdges });
     }, [handleWorkflowUpdate]);
+
+    const handleEdgeDelete = useCallback((edgeId) => {
+        const updatedEdges = edges.filter(edge => edge.id !== edgeId);
+        if (updatedEdges.length !== edges.length) handleEdgesChange(updatedEdges);
+    }, [edges, handleEdgesChange]);
 
     const handleUpdateNode = useCallback((nodeId, updatedFields) => {
         let updatedNodes = [...nodes];
@@ -509,6 +574,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                         onPasteNode={handlePasteNode}
                         onNodesChangeCallback={handleNodesChange}
                         onEdgesChangeCallback={handleEdgesChange}
+                        onEdgeDelete={handleEdgeDelete}
                         draggedNode={draggedNode}
                     />
                 </div>
@@ -575,7 +641,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                         <VersionHistorySidebar workflowId={activeWorkflowId} currentWorkflow={activeWorkflow} />
                     ) : (
                         rightTab === 'chat' ? (
-                            <AIAgentChat workflow={activeWorkflow} formId={attachedFormId} onApplyProposal={handleApplyAction} />
+                            <AIAgentChat workflow={activeWorkflow} formId={attachedFormId} onApplyProposal={handleApplyAction} onBeforeSend={flushPendingWorkflowSave} />
                         ) : (
                             <PropertyInspector activeNode={activeNode} onUpdateNode={handleUpdateNode} onTestWorkflow={handleTestRunClick} nodes={nodes} edges={edges} />
                         )

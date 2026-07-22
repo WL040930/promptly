@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAIClient } from './aiClient.js';
+import env from '../../../config/env.js';
 
 const createRegistry = adapters => ({
     timeoutMs: 50,
@@ -68,7 +69,8 @@ test('AI client fails over retryable provider errors and normalizes the response
     assert.deepEqual(calls[1].contents, [{ role: 'user', parts: [{ text: 'Hello' }] }]);
     assert.equal(calls[1].options.systemInstruction, 'Be concise.');
     assert.equal(calls[1].options.model, 'quality-model');
-    assert.equal(calls[1].options.maxCompletionTokens, 700);
+    assert.equal(calls[1].options.maxCompletionTokens,
+        env.aiUnlimitedCompletionTokens ? null : env.aiMaxCompletionTokens || 700);
     assert.equal(calls[1].options.operation, 'chat.respond');
     assert.equal(calls[1].options.tools, undefined);
     assert.ok(calls[1].options.signal instanceof AbortSignal);

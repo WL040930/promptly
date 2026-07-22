@@ -15,7 +15,7 @@ const initialMessage = {
     text: "Hi! I'm your AI Assistant. I can help you build and configure this automation. What would you like to automate or modify?"
 };
 
-export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
+export default function AIAgentChat({ workflow, formId, onApplyProposal, onBeforeSend }) {
     const [messages, setMessages] = useState([initialMessage]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
@@ -53,17 +53,13 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
         else setProgressLabel(workflow?.nodes?.length ? 'Analysing current automation' : 'Scanning available steps');
         setIsTyping(true);
         try {
-            const snapshot = workflow ? {
-                nodes: (workflow.nodes || []).map(node => ({ id: node.id, title: node.title, type: node.type, subType: node.subType })),
-                edges: (workflow.edges || []).map(edge => ({ id: edge.id, source: edge.source, target: edge.target, sourceHandle: edge.sourceHandle || null, targetHandle: edge.targetHandle || null }))
-            } : null;
+            await onBeforeSend?.();
             const response = await sendAssistantTurnMutation.mutateAsync({
                 sessionId,
                 message: text,
                 context: {
                     surface: 'builder',
                     workflowId: workflow?.id || null,
-                    workflowSnapshot: snapshot,
                     formId: formId || null,
                     clarificationMode
                 },

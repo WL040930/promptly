@@ -1,7 +1,7 @@
 import path from 'path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyWorkflowPatches, assembleWorkflow, classifyRequest, layoutWorkflowNodes, loadWorkflowResourceContext, readWorkflowInstruction, requiredCapabilitiesForRequest, validateGeneratedResourceValues, validateGeneratedWorkflowCapabilities } from './workflowAgentService.js';
+import { assembleWorkflow, buildWorkflowEditView, classifyRequest, compileWorkflowEdits, layoutWorkflowNodes, loadWorkflowResourceContext, patchWorkflow, readWorkflowInstruction, requiredCapabilitiesForRequest, resolveRespondentEmailField, validateGeneratedResourceValues, validateGeneratedWorkflowCapabilities } from './workflowAgentService.js';
 import NodeRegistry from '../../../utils/NodeRegistry.js';
 
 const spec = (nodeKey, type, subType) => ({
@@ -14,15 +14,51 @@ const spec = (nodeKey, type, subType) => ({
     ui: {}
 });
 
-test('workflow patches resolve colliding subtypes by canonical node key', () => {
-    const result = applyWorkflowPatches({
-        specs: [spec('action:email', 'action', 'email'), spec('trigger:email', 'trigger', 'email')],
-        patches: [{ op: 'add_node', nodeKey: 'trigger:email', id: 'new_trigger' }]
+test('workflow edit views expose semantic node refs and never expose edge IDs', () => {
+    const view = buildWorkflowEditView({
+        revision: 4,
+        nodes: [
+            { id: 'opaque-node-1', type: 'trigger', subType: 'webhook', title: 'Receive request', config: {} },
+            { id: 'opaque-node-2', type: 'action', subType: 'email', title: 'Send email', config: {} }
+        ],
+        edges: [{ id: 'opaque-edge-1', source: 'opaque-node-1', target: 'opaque-node-2', sourceHandle: 'event' }]
     });
 
-    assert.equal(result.nodes[0].type, 'trigger');
-    assert.equal(result.nodes[0].subType, 'email');
-    assert.equal(result.nodes[0].nodeKey, 'trigger:email');
+    assert.deepEqual(view.nodes[0].ref, 'n1');
+    assert.equal('id' in view.nodes[0], false);
+    assert.equal('id' in view.connections[0], false);
+    assert.equal(view.connections[0].from.nodeRef, 'n1');
+});
+
+const editRegistry = specs => ({
+    getDefinition: (type, subType) => specs.find(item => item.type === type && item.subType === subType)
+        ? { implementationStatus: 'experimental', configSchema: specs.find(item => item.type === type && item.subType === subType).schema }
+        : null
+});
+
+test('semantic workflow edits resolve node refs and generate internal connection IDs', () => {
+    const specs = [
+        { ...spec('trigger:webhook', 'trigger', 'webhook'), schema: { inputs: [], outputs: [{ name: 'event', isConnection: true }] } },
+        { ...spec('action:email', 'action', 'email'), schema: { inputs: [{ name: 'inputData', isConnection: true }], outputs: [{ name: 'outputData', isConnection: true }] } }
+    ];
+    const result = compileWorkflowEdits({
+        currentWorkflow: {
+            nodes: [{ id: 'trigger_1', type: 'trigger', subType: 'webhook', nodeKey: 'trigger:webhook', title: 'Receive request', config: {}, schema: specs[0].schema, position: { x: 100, y: 150 } }],
+            edges: []
+        },
+        specs,
+        registry: editRegistry(specs),
+        operations: [
+            { op: 'create_node', node: { ref: 'email_step', nodeKey: 'action:email', title: 'Send email', config: {} } },
+            { op: 'connect', from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'email_step', handle: 'inputData' } }
+        ]
+    });
+
+    assert.equal(result.nodes.length, 2);
+    assert.equal(result.edges.length, 1);
+    assert.equal(result.edges[0].source, 'trigger_1');
+    assert.equal(result.edges[0].targetHandle, 'inputData');
+    assert.match(result.edges[0].id, /^edge_/);
 });
 
 test('workflow assembly layout follows graph depth and separates siblings', () => {
@@ -48,34 +84,98 @@ test('workflow assembly layout follows graph depth and separates siblings', () =
     ]);
 });
 
-test('workflow patches require canonical node keys and validate connection handles', () => {
+test('semantic workflow edits reject unknown refs and handles without mutating the source', () => {
     const currentNodes = [
         {
             id: 'trigger_1',
             type: 'trigger',
             subType: 'webhook',
+            nodeKey: 'trigger:webhook',
             schema: { inputs: [], outputs: [{ name: 'event', isConnection: true }] },
             position: { x: 100, y: 150 }
         }
     ];
-    const specs = [spec('action:email', 'action', 'email')];
+    const specs = [{ ...spec('action:email', 'action', 'email'), schema: { inputs: [{ name: 'inputData', isConnection: true }], outputs: [{ name: 'outputData', isConnection: true }] } }, ...[{ ...spec('trigger:webhook', 'trigger', 'webhook'), schema: currentNodes[0].schema }]];
+    const currentWorkflow = { nodes: currentNodes, edges: [] };
 
     assert.throws(
-        () => applyWorkflowPatches({ currentNodes, specs, patches: [{ op: 'add_node', subType: 'email', id: 'new_email' }] }),
-        error => error.code === 'WORKFLOW_PATCH_INVALID'
+        () => compileWorkflowEdits({ currentWorkflow, specs, registry: editRegistry(specs), operations: [{ op: 'create_node', node: { ref: 'new_email', nodeKey: 'action:not-real' } }] }),
+        error => error.code === 'WORKFLOW_NODE_KEY_INVALID'
     );
 
     assert.throws(
-        () => applyWorkflowPatches({
-            currentNodes,
+        () => compileWorkflowEdits({
+            currentWorkflow,
             specs,
-            patches: [
-                { op: 'add_node', nodeKey: 'action:email', id: 'new_email' },
-                { op: 'add_edge', source: 'trigger_1', target: 'new_email', sourceHandle: 'missing' }
+            registry: editRegistry(specs),
+            operations: [
+                { op: 'create_node', node: { ref: 'new_email', nodeKey: 'action:email' } },
+                { op: 'connect', from: { nodeRef: 'n1', handle: 'missing' }, to: { nodeRef: 'new_email', handle: 'inputData' } }
             ]
         }),
-        error => error.code === 'WORKFLOW_PATCH_INVALID'
+        error => error.code === 'WORKFLOW_HANDLE_INVALID'
     );
+
+    assert.deepEqual(currentWorkflow, { nodes: currentNodes, edges: [] });
+});
+
+test('disconnecting a missing semantic connection returns a stable error, not an edge ID', () => {
+    const workflow = {
+        nodes: [{ id: 'trigger_1', type: 'trigger', subType: 'webhook', nodeKey: 'trigger:webhook', schema: { inputs: [], outputs: [{ name: 'event', isConnection: true }] }, config: {} }],
+        edges: []
+    };
+    assert.throws(
+        () => compileWorkflowEdits({
+            currentWorkflow: workflow,
+            specs: [{ ...spec('trigger:webhook', 'trigger', 'webhook'), schema: workflow.nodes[0].schema }],
+            registry: editRegistry([{ ...spec('trigger:webhook', 'trigger', 'webhook'), schema: workflow.nodes[0].schema }]),
+            operations: [{ op: 'disconnect', from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'n1', handle: null } }]
+        }),
+        error => error.code === 'WORKFLOW_CONNECTION_NOT_FOUND' && !/edge/i.test(error.message)
+    );
+});
+
+test('patch workflow performs one bounded semantic repair without exposing edge IDs', async () => {
+    const specs = [
+        { ...spec('trigger:webhook', 'trigger', 'webhook'), schema: { inputs: [], outputs: [{ name: 'event', isConnection: true }] } },
+        { ...spec('action:email', 'action', 'email'), schema: { inputs: [{ name: 'inputData', isConnection: true }], outputs: [{ name: 'outputData', isConnection: true }] } }
+    ];
+    const currentWorkflow = {
+        revision: 7,
+        nodes: [
+            { id: 'trigger_1', type: 'trigger', subType: 'webhook', nodeKey: 'trigger:webhook', title: 'Receive request', config: {}, schema: specs[0].schema, position: { x: 100, y: 150 } },
+            { id: 'email_existing', type: 'action', subType: 'email', nodeKey: 'action:email', title: 'Existing email', config: {}, schema: specs[1].schema, position: { x: 450, y: 150 } }
+        ],
+        edges: [{ id: 'opaque-edge-1', source: 'trigger_1', target: 'email_existing', sourceHandle: 'event', targetHandle: 'inputData' }]
+    };
+    const prompts = [];
+    let attempt = 0;
+    const result = await patchWorkflow({
+        message: 'Add an email step after the trigger.',
+        currentWorkflow,
+        classification: {},
+        specs,
+        registry: editRegistry(specs),
+        provider: async prompt => {
+            prompts.push(prompt);
+            attempt += 1;
+            return attempt === 1
+                ? { value: { operations: [{ op: 'disconnect', from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'n1', handle: null } }] }, tokenUsage: { totalTokens: 2 } }
+                : { value: { operations: [
+                    { op: 'create_node', node: { ref: 'email_step', nodeKey: 'action:email', title: 'Send email', config: {} } },
+                    { op: 'connect', from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'email_step', handle: 'inputData' } }
+                ] }, tokenUsage: { totalTokens: 3 } };
+        },
+        instructionReader: async () => 'Return JSON only'
+    });
+
+    assert.equal(attempt, 2);
+    assert.equal(result.nodes.length, 3);
+    assert.equal(result.edges.length, 2);
+    assert.equal(result.tokenUsage.totalTokens, 5);
+    assert.match(prompts[0], /"ref":"n1"/);
+    assert.doesNotMatch(prompts[0], /opaque-edge|"id":"edge/);
+    assert.match(prompts[1], /WORKFLOW_CONNECTION_NOT_FOUND/);
 });
 
 test('workflow stages load instructions from their actual instruction directory', async () => {
@@ -236,15 +336,14 @@ test('workflow assembly enforces requested capabilities against supplied form da
     assert.equal(result.nodes.find(node => node.subType === 'form-submission').config.formId, 'form_approved');
 });
 
-test('workflow assembly rejects a confirmation that does not use submitted contact data', async () => {
+test('workflow assembly repairs a literal confirmation recipient when the binding is unambiguous', async () => {
     const specs = [
         { nodeKey: 'trigger:form-submission', type: 'trigger', subType: 'form-submission', title: 'Form submitted', description: '', schema: { inputs: [], outputs: [{ name: 'triggerData', isConnection: true }] }, ui: {} },
         { nodeKey: 'action:email', type: 'action', subType: 'email', title: 'Send email', description: '', schema: { inputs: [{ name: 'triggerData', isConnection: true }, { name: 'to', type: 'text', required: true }], outputs: [], }, ui: {} }
     ];
     const registry = { getDefinition: () => ({ implementationStatus: 'experimental', configSchema: {} }) };
 
-    await assert.rejects(
-        () => assembleWorkflow({
+    const result = await assembleWorkflow({
             message: 'Send a thank-you email to the form respondent.',
             specs,
             formId: 'form_approved',
@@ -259,9 +358,172 @@ test('workflow assembly rejects a confirmation that does not use submitted conta
                 edges: [{ source: 'source', target: 'mailer' }]
             }, tokenUsage: {} }),
             instructionReader: async () => 'Return JSON only'
-        }),
-        error => error.code === 'WORKFLOW_CAPABILITY_INVALID'
-    );
+        });
+
+    assert.equal(result.nodes.find(node => node.subType === 'email').config.to, '{{source.fields.contact}}');
+    assert.equal(result.repairs[0].code, 'RESPONDENT_RECIPIENT_BOUND');
+});
+
+test('respondent email resolution prefers the primary email over a confirmation field', () => {
+    const result = resolveRespondentEmailField({ formSchema: {
+        fields: [
+            { id: 'f_email', type: 'email', label: 'Email', required: true },
+            { id: 'f_confirm_email', type: 'email', label: 'Confirmation Email Address', required: true }
+        ]
+    } });
+
+    assert.equal(result.field.id, 'f_email');
+    assert.equal(result.ambiguous, false);
+});
+
+test('respondent email resolution reports genuinely tied email fields as ambiguous', () => {
+    const result = resolveRespondentEmailField({ formSchema: {
+        fields: [
+            { id: 'work_email', type: 'email', label: 'Work Email', required: true },
+            { id: 'personal_email', type: 'email', label: 'Personal Email', required: true }
+        ]
+    } });
+
+    assert.equal(result.field, null);
+    assert.equal(result.ambiguous, true);
+});
+
+test('respondent email resolution honors an explicit field selection', () => {
+    const result = resolveRespondentEmailField({
+        preferredFieldId: 'personal_email',
+        formSchema: {
+            fields: [
+                { id: 'work_email', type: 'email', label: 'Work Email', required: true },
+                { id: 'personal_email', type: 'email', label: 'Personal Email', required: true }
+            ]
+        }
+    });
+
+    assert.equal(result.field.id, 'personal_email');
+    assert.equal(result.reason, 'explicit');
+});
+
+test('ambiguous respondent recipients expose candidate fields for clarification', () => {
+    const issues = validateGeneratedWorkflowCapabilities({
+        requiredCapabilities: ['respondent_confirmation'],
+        formSchema: { fields: [
+            { id: 'work_email', type: 'email', label: 'Work Email', required: true },
+            { id: 'personal_email', type: 'email', label: 'Personal Email', required: true }
+        ] },
+        nodes: [
+            { id: 'source', type: 'trigger', subType: 'form-submission' },
+            { id: 'mailer', type: 'action', subType: 'email', config: { to: 'owner@example.com' } }
+        ],
+        edges: [{ source: 'source', target: 'mailer' }]
+    });
+
+    assert.equal(issues[0].code, 'RESPONDENT_RECIPIENT_FIELD_AMBIGUOUS');
+    assert.deepEqual(issues[0].candidates.map(candidate => candidate.id), ['work_email', 'personal_email']);
+});
+
+test('workflow assembly repairs a literal recipient with a primary and confirmation email field', async () => {
+    const specs = [
+        { nodeKey: 'trigger:form-submission', type: 'trigger', subType: 'form-submission', title: 'Form submitted', description: '', schema: { inputs: [], outputs: [{ name: 'triggerData', isConnection: true }] }, ui: {} },
+        { nodeKey: 'action:email', type: 'action', subType: 'email', title: 'Send email', description: '', schema: { inputs: [{ name: 'triggerData', isConnection: true }, { name: 'to', type: 'text', required: true }], outputs: [] }, ui: {} }
+    ];
+    const registry = { getDefinition: () => ({ implementationStatus: 'experimental', configSchema: {} }) };
+
+    const result = await assembleWorkflow({
+        message: 'Create a job application form and send a confirmation email after submission.',
+        specs,
+        formSchema: { fields: [
+            { id: 'f_email', type: 'email', label: 'Email', required: true },
+            { id: 'f_confirm_email', type: 'email', label: 'Confirmation Email Address', required: true }
+        ] },
+        requiredCapabilities: ['respondent_confirmation'],
+        registry,
+        provider: async () => ({ value: {
+            nodes: [
+                { id: 'source', nodeKey: 'trigger:form-submission', config: {} },
+                { id: 'mailer', nodeKey: 'action:email', config: { to: 'owner@example.com' } }
+            ],
+            edges: [{ source: 'source', target: 'mailer' }]
+        }, tokenUsage: {} }),
+        instructionReader: async () => 'Return JSON only'
+    });
+
+    assert.equal(result.nodes.find(node => node.subType === 'email').config.to, '{{source.fields.f_email}}');
+    assert.equal(result.repairs[0].fieldId, 'f_email');
+});
+
+test('workflow assembly repairs an unambiguous respondent field reference without changing topology', async () => {
+    const triggerSchema = {
+        inputs: [{ name: 'formId', type: 'resource-select', resource: 'forms', required: true }],
+        outputs: [{ name: 'triggerData', isConnection: true }, { name: 'fields', isConnection: true }]
+    };
+    const emailSchema = {
+        inputs: [
+            { name: 'triggerData', isConnection: true },
+            { name: 'emailProvider', type: 'resource-select', resource: 'email-providers' },
+            { name: 'to', type: 'text', required: true },
+            { name: 'subject', type: 'text', required: true },
+            { name: 'body', type: 'textarea', required: true }
+        ],
+        outputs: [{ name: 'outputData', isConnection: true }]
+    };
+    const specs = [
+        { nodeKey: 'trigger:form-submission', type: 'trigger', subType: 'form-submission', title: 'Form submitted', description: 'Start from a form', schema: triggerSchema, ui: {} },
+        { nodeKey: 'action:email', type: 'action', subType: 'email', title: 'Send confirmation', description: 'Send a message', schema: emailSchema, ui: {} }
+    ];
+    const registry = {
+        getDefinition: (type, subType) => ({ implementationStatus: 'experimental', configSchema: type === 'trigger' ? triggerSchema : emailSchema }),
+        getDefinitionByNodeKey: () => null
+    };
+
+    const result = await assembleWorkflow({
+        message: 'Create a job application form and send a confirmation email after submission.',
+        specs,
+        workflowName: 'Application confirmation',
+        formSchema: { fields: [{ id: 'f_email_1', type: 'email', required: true, label: 'Email' }] },
+        requiredCapabilities: ['respondent_confirmation'],
+        resourceContext: { 'email-providers': { options: [{ value: 'system-default', label: 'Promptly email' }] } },
+        registry,
+        provider: async () => ({ value: {
+            nodes: [
+                { id: 'submission', nodeKey: 'trigger:form-submission', config: {} },
+                { id: 'mailer', nodeKey: 'action:email', config: {
+                    emailProvider: 'system-default',
+                    to: '{{submission.fields.email}}',
+                    subject: 'Thanks',
+                    body: 'Received.'
+                } }
+            ],
+            edges: [{ source: 'submission', target: 'mailer', sourceHandle: 'triggerData', targetHandle: 'triggerData' }]
+        }, tokenUsage: { totalTokens: 1 } }),
+        instructionReader: async () => 'Return JSON only'
+    });
+
+    assert.equal(result.nodes.find(node => node.subType === 'email').config.to, '{{submission.fields.f_email_1}}');
+    assert.deepEqual(result.repairs, [{
+        code: 'RESPONDENT_RECIPIENT_BOUND',
+        nodeId: 'mailer',
+        fieldId: 'f_email_1'
+    }]);
+});
+
+test('confirmation validation accepts an intermediate node and a separate non-respondent email', () => {
+    const issues = validateGeneratedWorkflowCapabilities({
+        requiredCapabilities: ['respondent_confirmation'],
+        formSchema: { fields: [{ id: 'contact', type: 'email', required: true }] },
+        nodes: [
+            { id: 'source', type: 'trigger', subType: 'form-submission' },
+            { id: 'approval', type: 'logic', subType: 'approval' },
+            { id: 'respondent_mailer', type: 'action', subType: 'email', config: { to: '{{source.fields.contact}}' } },
+            { id: 'owner_mailer', type: 'action', subType: 'email', config: { to: 'owner@example.com' } }
+        ],
+        edges: [
+            { source: 'source', target: 'approval' },
+            { source: 'approval', target: 'respondent_mailer' },
+            { source: 'source', target: 'owner_mailer' }
+        ]
+    });
+
+    assert.deepEqual(issues, []);
 });
 
 test('resource context loads dependent records for every selectable resource variant', async () => {

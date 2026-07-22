@@ -1,8 +1,9 @@
 import env from '../../../config/env.js';
 import { AIError } from './aiErrors.js';
 import { TASK_POLICIES } from './taskPolicies.js';
+import { AI_PROVIDER_NAMES } from '../../../config/aiConfig.js';
 
-const SUPPORTED_PROVIDERS = new Set(['gemini', 'openrouter', 'groq', 'cerebras']);
+const SUPPORTED_PROVIDERS = new Set(AI_PROVIDER_NAMES);
 
 export const validateAIConfig = ({ config = env, policies = TASK_POLICIES } = {}) => {
     const issues = [];

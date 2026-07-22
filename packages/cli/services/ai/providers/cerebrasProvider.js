@@ -1,5 +1,6 @@
 import { BaseAIProvider } from './baseProvider.js';
 import env from '../../../config/env.js';
+import { DEFAULT_AI_MODELS } from '../../../config/aiConfig.js';
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 import { applyToolOptions, normalizeToolCalls, toChatCompletionMessages } from './chatCompletionMessageMapper.js';
 
@@ -24,7 +25,7 @@ export class CerebrasProvider extends BaseAIProvider {
         const {
             systemInstruction,
             responseMimeType,
-            model = 'llama3.1-8b',
+            model = DEFAULT_AI_MODELS.cerebras,
             maxCompletionTokens
         } = options;
 

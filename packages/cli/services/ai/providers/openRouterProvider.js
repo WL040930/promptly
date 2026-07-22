@@ -1,4 +1,5 @@
 import env from '../../../config/env.js';
+import { DEFAULT_AI_MODELS } from '../../../config/aiConfig.js';
 import { OpenAICompatibleProvider } from './openAICompatibleProvider.js';
 
 export class OpenRouterProvider extends OpenAICompatibleProvider {
@@ -7,7 +8,7 @@ export class OpenRouterProvider extends OpenAICompatibleProvider {
             apiKey,
             baseUrl: 'https://openrouter.ai/api/v1',
             displayName: 'OpenRouter',
-            defaultModel: 'openai/gpt-4o-mini',
+            defaultModel: DEFAULT_AI_MODELS.openrouter,
             timeoutMs
         });
     }
