@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeIntent, makePlan } from './agentContracts.js';
+import { makeIntent } from './agentContracts.js';
+import { makeAdaptivePlan } from './agentPlanCompiler.js';
 import { shouldPauseForPlanReview } from './agentOrchestrator.js';
 
 test('agent contracts normalize model output into bounded values', () => {
@@ -14,8 +15,8 @@ test('agent contracts normalize model output into bounded values', () => {
     assert.equal(intent.requirements.length, 20);
     assert.equal(intent.confidence, 1);
 
-    const plan = makePlan({ summary: 'Review', steps: [{ id: 'one', type: 'design_form' }] }, intent);
-    assert.equal(plan.steps[0].status, 'pending');
+    const plan = makeAdaptivePlan({ summary: 'Review', steps: [{ id: 'one', type: 'design_form' }] }, intent);
+    assert.equal(plan.steps[0].id, 'one');
     assert.equal(plan.approvalRequired, true);
 });
 

@@ -7,7 +7,11 @@
  * future domains.
  */
 
+import Ajv from 'ajv';
+
 const isPlainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const ajv = new Ajv({ allErrors: true, strict: false });
+const outputValidators = new WeakMap();
 
 const normalizeDefinition = definition => {
     if (!isPlainObject(definition)) throw new TypeError('Capability definition must be an object.');
@@ -26,6 +30,8 @@ const normalizeDefinition = definition => {
             properties: {},
             additionalProperties: false
         },
+        outputSchema: definition.outputSchema || null,
+        produces: Array.isArray(definition.produces) ? definition.produces.map(String).slice(0, 12) : [],
         execute: definition.execute
     });
 };
@@ -68,6 +74,26 @@ class AgentCapabilityRegistry {
                 strict: true,
                 parameters: capability.inputSchema
             }
+        }));
+    }
+
+    validateOutput(name, output) {
+        const capability = this.get(name);
+        if (!capability?.outputSchema) return [];
+        let validate = outputValidators.get(capability.outputSchema);
+        try {
+            if (!validate) {
+                validate = ajv.compile(capability.outputSchema);
+                outputValidators.set(capability.outputSchema, validate);
+            }
+        } catch (error) {
+            return [{ code: 'CAPABILITY_OUTPUT_SCHEMA_INVALID', message: error.message }];
+        }
+        if (validate(output)) return [];
+        return (validate.errors || []).map(error => ({
+            code: 'CAPABILITY_OUTPUT_INVALID',
+            path: error.instancePath || '',
+            message: error.message || 'Capability output is invalid.'
         }));
     }
 

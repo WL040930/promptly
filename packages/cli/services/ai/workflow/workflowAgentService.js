@@ -230,6 +230,78 @@ export const validateGeneratedResourceValues = ({ nodes = [], specs = [], resour
     return issues;
 };
 
+const isEmailAction = node => node?.subType === 'email' || node?.nodeKey === 'action:email';
+
+const respondentConfirmationPattern = /(?:\b(?:thank[- ]?you|confirmation|confirm|acknowledg)\b.{0,80}\b(?:email|message|respondent|user|applicant|submitter)\b|\b(?:email|notify|send)\b.{0,80}\b(?:respondent|user|applicant|submitter)\b)/i;
+
+export const requiredCapabilitiesForRequest = message => respondentConfirmationPattern.test(String(message || ''))
+    ? ['respondent_confirmation']
+    : [];
+
+const emailFieldsFor = formSchema => (Array.isArray(formSchema?.fields) ? formSchema.fields : [])
+    .filter(field => field?.type === 'email' && field?.required === true && typeof field.id === 'string' && field.id.trim());
+
+const dynamicPathsIn = value => typeof value === 'string'
+    ? [...value.matchAll(/\{\{([^{}]+)\}\}/g)].map(match => match[1].trim())
+    : [];
+
+/**
+ * Validate the data-flow contract for capabilities that address a form
+ * respondent. The validator intentionally accepts arbitrary IDs, labels,
+ * copy, and supported email providers; it only enforces the user-visible
+ * capability and safe dynamic data flow.
+ */
+export const validateGeneratedWorkflowCapabilities = ({
+    requiredCapabilities = [],
+    formSchema = null,
+    nodes = [],
+    edges = []
+} = {}) => {
+    if (!requiredCapabilities.includes('respondent_confirmation')) return [];
+
+    const issues = [];
+    const formTriggers = nodes.filter(node => node?.subType === 'form-submission');
+    const emailActions = nodes.filter(isEmailAction);
+    const contactFields = emailFieldsFor(formSchema);
+
+    if (formTriggers.length === 0) {
+        issues.push({ code: 'FORM_SUBMISSION_TRIGGER_MISSING', path: 'nodes', message: 'A form-submission trigger is required for respondent confirmation.' });
+    }
+    if (contactFields.length === 0) {
+        issues.push({ code: 'RESPONDENT_CONTACT_FIELD_MISSING', path: 'form.fields', message: 'The form must contain a required email field for respondent confirmation.' });
+    }
+    if (emailActions.length === 0) {
+        issues.push({ code: 'EMAIL_ACTION_MISSING', path: 'nodes', message: 'An email action is required for respondent confirmation.' });
+    }
+
+    const contactFieldIds = new Set(contactFields.map(field => field.id));
+    for (const emailAction of emailActions) {
+        const incoming = edges.some(edge => edge?.target === emailAction.id && formTriggers.some(trigger => edge.source === trigger.id));
+        if (!incoming) {
+            issues.push({ code: 'RESPONDENT_CONFIRMATION_DISCONNECTED', path: `nodes.${emailAction.id}`, message: 'The confirmation email must receive data from the form-submission trigger.' });
+        }
+
+        const paths = dynamicPathsIn(emailAction.config?.to);
+        const hasValidRecipient = paths.some(path => {
+            const parts = path.split('.');
+            return formTriggers.some(trigger => (
+                parts[0] === trigger.id
+                && parts[1] === 'fields'
+                && contactFieldIds.has(parts[2])
+            ));
+        });
+        if (!hasValidRecipient) {
+            issues.push({
+                code: paths.length > 0 ? 'RESPONDENT_RECIPIENT_FIELD_INVALID' : 'RESPONDENT_RECIPIENT_NOT_DYNAMIC',
+                path: `nodes.${emailAction.id}.config.to`,
+                message: 'The confirmation email recipient must come from a required email field submitted by the form.'
+            });
+        }
+    }
+
+    return issues;
+};
+
 const normalizeConfig = (config, schema) => {
     const inputNames = new Set((schema?.inputs || []).map(input => input.name));
     const next = {};
@@ -295,13 +367,23 @@ export const layoutWorkflowNodes = (nodes = [], edges = []) => {
     });
 };
 
-export const assembleWorkflow = async ({ message, specs, workflowName, formId, resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
-    const prompt = `Node specifications:\n${specs.map(schemaBlock).join('\n---\n')}\n\nAccount resources (use only exact values shown here):\n${resourceContextBlock(resourceContext)}\n\n${formId ? `Use this approved form ID for the form trigger: ${formId}\n\n` : ''}Workflow request:\n${message}`;
+export const assembleWorkflow = async ({ message, specs, workflowName, formId, formSchema = null, formBinding = null, requiredCapabilities = [], resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
+    const formFields = Array.isArray(formSchema?.fields)
+        ? formSchema.fields.map(field => ({ id: field.id, label: field.label || field.name || '', type: field.type, required: field.required === true }))
+        : [];
+    const capabilityContext = requiredCapabilities.length > 0
+        ? `\nRequired capabilities (satisfy these outcomes without inventing unavailable resources):\n${JSON.stringify(requiredCapabilities)}\nApproved form fields for data mapping:\n${JSON.stringify(formFields)}\n`
+        : '';
+    const bindingContext = formBinding
+        ? '\nThe form is part of the same proposed solution and is not saved yet. Leave the form trigger resource empty; the application layer will resolve the supplied artifact binding after approval.\n'
+        : '';
+    const prompt = `Node specifications:\n${specs.map(schemaBlock).join('\n---\n')}\n\nAccount resources (use only exact values shown here):\n${resourceContextBlock(resourceContext)}${capabilityContext}${bindingContext}\n${formId ? `Use this approved form ID for the form trigger: ${formId}\n\n` : ''}Workflow request:\n${message}`;
     const { value, tokenUsage } = await provider(prompt, await instructionReader('assembler.md'), 'assembler');
     if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) throw new Error('Assembler returned an invalid workflow');
 
     const specsByNodeKey = new Map(specs.map(spec => [spec.nodeKey || `${spec.type}:${spec.subType}`, spec]));
     const usedIds = new Set();
+    const resourceBindings = [];
     const nodes = value.nodes.map((node, index) => {
         const requestedKey = node.nodeKey || (node.type && node.subType ? `${node.type}:${node.subType}` : node.subType);
         const spec = specsByNodeKey.get(requestedKey);
@@ -311,6 +393,12 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId, r
         usedIds.add(id);
         const config = normalizeConfig(node.config, spec.schema);
         if (formId && spec.subType === 'form-submission') config.formId = formId;
+        if (!formId && formBinding && spec.subType === 'form-submission') {
+            resourceBindings.push({
+                target: { nodeId: id, path: 'config.formId' },
+                source: formBinding.source || formBinding
+            });
+        }
         return {
             id,
             type: spec.type,
@@ -349,12 +437,25 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId, r
         error.issues = resourceIssues;
         throw error;
     }
+    const capabilityIssues = validateGeneratedWorkflowCapabilities({
+        requiredCapabilities,
+        formSchema,
+        nodes: positionedNodes,
+        edges
+    });
+    if (capabilityIssues.length > 0) {
+        const error = new Error(capabilityIssues.map(item => item.message).join('; '));
+        error.code = 'WORKFLOW_CAPABILITY_INVALID';
+        error.issues = capabilityIssues;
+        throw error;
+    }
     const validation = assertWorkflowDefinition(positionedNodes, edges, false, registry, true);
 
     return {
         name: workflowName || 'New Workflow',
         nodes: positionedNodes,
         edges,
+        resourceBindings,
         readiness: { ready: validation.ready !== false, issues: validation.warnings || [] },
         tokenUsage
     };
@@ -462,8 +563,14 @@ export const applyWorkflowPatches = ({ currentNodes = [], currentEdges = [], pat
     return { nodes, edges, placeholders };
 };
 
-export const patchWorkflow = async ({ message, currentWorkflow, classification, specs, resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
-    const prompt = `Current workflow:\n${JSON.stringify({ nodes: compactWorkflowSnapshot(currentWorkflow).nodes, edges: compactWorkflowSnapshot(currentWorkflow).edges })}\n\nNode specifications:\n${specs.map(schemaBlock).join('\n---\n')}\n\nAccount resources (use only exact values shown here):\n${resourceContextBlock(resourceContext)}\n\nEdit request:\n${message}`;
+export const patchWorkflow = async ({ message, currentWorkflow, classification, specs, formSchema = null, requiredCapabilities = [], resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
+    const formFields = Array.isArray(formSchema?.fields)
+        ? formSchema.fields.map(field => ({ id: field.id, label: field.label || field.name || '', type: field.type, required: field.required === true }))
+        : [];
+    const capabilityContext = requiredCapabilities.length > 0
+        ? `\nRequired capabilities:\n${JSON.stringify(requiredCapabilities)}\nApproved form fields for data mapping:\n${JSON.stringify(formFields)}\n`
+        : '';
+    const prompt = `Current workflow:\n${JSON.stringify({ nodes: compactWorkflowSnapshot(currentWorkflow).nodes, edges: compactWorkflowSnapshot(currentWorkflow).edges })}\n\nNode specifications:\n${specs.map(schemaBlock).join('\n---\n')}\n\nAccount resources (use only exact values shown here):\n${resourceContextBlock(resourceContext)}${capabilityContext}\nEdit request:\n${message}`;
     const { value, tokenUsage } = await provider(prompt, await instructionReader('patcher.md'), 'patcher');
     if (!Array.isArray(value.patches)) throw new Error('Patcher returned an invalid patch list');
     const applied = applyWorkflowPatches({ currentNodes: currentWorkflow.nodes || [], currentEdges: currentWorkflow.edges || [], patches: value.patches, specs });
@@ -472,6 +579,18 @@ export const patchWorkflow = async ({ message, currentWorkflow, classification, 
         const error = new Error(resourceIssues.map(item => item.message).join('; '));
         error.code = 'WORKFLOW_RESOURCE_INVALID';
         error.issues = resourceIssues;
+        throw error;
+    }
+    const capabilityIssues = validateGeneratedWorkflowCapabilities({
+        requiredCapabilities,
+        formSchema,
+        nodes: applied.nodes,
+        edges: applied.edges
+    });
+    if (capabilityIssues.length > 0) {
+        const error = new Error(capabilityIssues.map(item => item.message).join('; '));
+        error.code = 'WORKFLOW_CAPABILITY_INVALID';
+        error.issues = capabilityIssues;
         throw error;
     }
     const validation = assertWorkflowDefinition(applied.nodes, applied.edges, Boolean(currentWorkflow.isActive), registry);

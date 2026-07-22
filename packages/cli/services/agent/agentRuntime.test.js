@@ -24,12 +24,23 @@ test('capability registry exposes a stable tool surface and rejects duplicates',
     await assert.rejects(() => registry.execute('missing'), error => error.code === 'AGENT_UNKNOWN_CAPABILITY');
 });
 
+test('capability registry validates declared output contracts', () => {
+    const registry = createAgentCapabilityRegistry([{
+        name: 'read_form',
+        outputSchema: { type: 'object', properties: { formId: { type: 'string' } }, required: ['formId'], additionalProperties: false },
+        execute: async () => ({})
+    }]);
+
+    assert.equal(registry.validateOutput('read_form', { formId: 'form_1' }).length, 0);
+    assert.equal(registry.validateOutput('read_form', {}).some(issue => issue.code === 'CAPABILITY_OUTPUT_INVALID'), true);
+});
+
 test('runtime executes ready steps in dependency order and returns approval state', async () => {
     const order = [];
     const registry = createAgentCapabilityRegistry([
         { name: 'research', execute: async () => { order.push('research'); return { output: { found: true } }; } },
         { name: 'design', execute: async ({ context }) => { order.push(context.state.outputs.research.found ? 'design' : 'bad'); return { output: { proposalId: 'p1' } }; } },
-        { name: 'verify', execute: async () => { order.push('verify'); return { output: { pass: true } }; }
+        { name: 'inspect_result', execute: async () => { order.push('inspect_result'); return { output: { pass: true } }; }
     }]);
     const runtime = createAgentRuntime({
         registry,
@@ -39,7 +50,7 @@ test('runtime executes ready steps in dependency order and returns approval stat
                 steps: [
                     { id: 'research', type: 'research' },
                     { id: 'design', type: 'design', dependsOn: ['research'] },
-                    { id: 'verify', type: 'verify', dependsOn: ['design'] }
+                    { id: 'inspect_result', type: 'inspect_result', dependsOn: ['design'] }
                 ]
             })
         }
@@ -47,7 +58,7 @@ test('runtime executes ready steps in dependency order and returns approval stat
 
     const result = await runtime.run({ input: { request: 'build it' } });
     assert.equal(result.status, 'awaiting_approval');
-    assert.deepEqual(order, ['research', 'design', 'verify']);
+    assert.deepEqual(order, ['research', 'design', 'inspect_result']);
     assert.equal(result.state.outputs.design.proposalId, 'p1');
     assert.equal(result.actionCount, 3);
 });
@@ -91,6 +102,27 @@ test('runtime replans a bounded number of times and fails closed after the limit
         return error.code === 'AGENT_REPLAN_LIMIT_EXCEEDED';
     });
     assert.equal(attempts, 1);
+});
+
+test('runtime preserves completed work when a replan keeps the same step', async () => {
+    let calls = 0;
+    const registry = createAgentCapabilityRegistry([
+        { name: 'stable', execute: async () => ({ output: { calls: ++calls } }) },
+        { name: 'replan', execute: async () => ({ status: 'replan', message: 'Need a different next step.' }) },
+        { name: 'finish', execute: async () => ({ output: { finished: true } }) }
+    ]);
+    const runtime = createAgentRuntime({
+        registry,
+        limits: { maxActions: 4, maxReplans: 1 },
+        planner: {
+            plan: async () => ({ steps: [{ id: 'stable', type: 'stable' }, { id: 'replan', type: 'replan', dependsOn: ['stable'] }] }),
+            replan: async () => ({ steps: [{ id: 'stable', type: 'stable' }, { id: 'finish', type: 'finish', dependsOn: ['stable'] }] })
+        }
+    });
+    const result = await runtime.run();
+    assert.equal(result.status, 'awaiting_approval');
+    assert.equal(calls, 1);
+    assert.equal(result.plan.steps.find(step => step.id === 'stable').status, 'completed');
 });
 
 test('runtime rejects deadlocked plans instead of spinning', async () => {

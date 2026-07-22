@@ -121,7 +121,7 @@ export default function AIAgentChat({ workflow, formId, onApplyProposal }) {
         try {
             if (message.payload?.runId) {
                 await rejectAgentRunMutation.mutateAsync(message.payload.runId);
-            } else if (['form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
+            } else if (['solution_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
                 await decideChatProposalMutation.mutateAsync({ sessionId, messageId: message.id, action: 'reject' });
             } else {
                 await send(null, { type: 'proposal_ignored', messageId: message.id });

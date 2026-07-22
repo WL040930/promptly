@@ -51,7 +51,7 @@ const TokenUsageBreakdown = ({ tokenUsage }) => {
 
 export default function AgentMessage({ message, onApply, onIgnore, onOption, isTyping, isAccepting, isRejecting }) {
     const payload = message.payload || message.proposal || {};
-    const isProposal = message.proposal != null || ['workflow_proposal', 'workflow_diff', 'form_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind);
+    const isProposal = message.proposal != null || ['solution_proposal', 'workflow_proposal', 'workflow_diff', 'form_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind);
     const rawStatus = message.proposalStatus || payload.status;
     const status = proposalStatusLabel(rawStatus);
     const showProposalActions = shouldShowProposalActions(rawStatus);
@@ -60,13 +60,16 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
         ? message.options
         : (clarification?.inputs || payload.options || []);
     const kind = message.kind || (message.proposal ? 'form_proposal' : (options.length > 0 ? 'clarification' : 'text'));
-    const planSteps = Array.isArray(payload.plan) ? payload.plan : (Array.isArray(payload.plan?.steps) ? payload.plan.steps : []);
+    const planSteps = Array.isArray(payload.plan) ? payload.plan : (Array.isArray(payload.plan?.outcomes) ? payload.plan.outcomes : (Array.isArray(payload.plan?.steps) ? payload.plan.steps : []));
     const planSummary = typeof payload.plan?.summary === 'string' ? payload.plan.summary : null;
+    const planAssumptions = Array.isArray(payload.plan?.assumptions) ? payload.plan.assumptions : [];
     const isDeleteProposal = message.kind === 'form_delete_proposal';
     const isBulkDeleteProposal = message.kind === 'form_bulk_delete_proposal';
     const isDuplicateProposal = message.kind === 'form_duplicate_proposal';
     const isResponseClearProposal = message.kind === 'form_response_clear_proposal';
-    const proposalTitle = message.kind === 'workflow_diff'
+    const proposalTitle = message.kind === 'solution_proposal'
+        ? 'Solution proposal'
+        : message.kind === 'workflow_diff'
         ? 'Workflow changes'
         : isBulkDeleteProposal
             ? 'Delete all forms'
@@ -77,7 +80,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                 : isResponseClearProposal
                     ? 'Clear form responses'
                     : 'Workflow proposal';
-    const ProposalIcon = message.kind === 'workflow_diff' || message.kind === 'workflow_proposal'
+    const ProposalIcon = message.kind === 'solution_proposal' || message.kind === 'workflow_diff' || message.kind === 'workflow_proposal'
         ? GitBranch
         : isDeleteProposal || isBulkDeleteProposal
             ? Trash2
@@ -151,6 +154,12 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                                 ))}
                             </div>
                         )}
+                        {planAssumptions.length > 0 && (
+                            <div className="mb-3 rounded-lg border border-amber-100 bg-amber-50/60 px-2.5 py-2 text-amber-800">
+                                <div className="mb-1 font-semibold">Assumptions</div>
+                                {planAssumptions.map((assumption, index) => <div key={`${assumption}-${index}`}>• {assumption}</div>)}
+                            </div>
+                        )}
                         <div className="flex gap-2">
                             <Button
                                 variant="primary"
@@ -216,9 +225,15 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                             </span>
                         </div>
                         <div className="flex flex-col gap-3 p-4">
-                        {message.kind === 'workflow_proposal' && (
+                        {(message.kind === 'workflow_proposal' || message.kind === 'solution_proposal') && (
                             <div className="flex flex-col gap-1">
                                 {planSteps.map((item, index) => <div key={`${item.subType || item.id || item.type}-${index}`} className="text-xs text-slate-600"><span className="font-bold text-slate-800">{item.title || item.type}</span>{item.reason || item.description ? ` — ${item.reason || item.description}` : ''}</div>)}
+                                {message.kind === 'solution_proposal' && (payload.solution || []).map(artifact => (
+                                    <div key={artifact.id || artifact.type} className="text-xs text-slate-600">
+                                        <span className="font-bold text-slate-800">{artifact.type === 'form_proposal' ? 'Form' : artifact.type === 'workflow_proposal' ? 'Workflow' : artifact.type}</span>
+                                        {' '}is included in this bundle.
+                                    </div>
+                                ))}
                                 {payload.needsForm && <div className="text-xs font-semibold text-orange-700">A form will be created before this workflow can run.</div>}
                                 {payload.readiness && (
                                     <div className={`mt-2 rounded-xl border px-3 py-2.5 text-xs ${payload.readiness.ready ? 'border-emerald-200 bg-emerald-50/70 text-emerald-800' : 'border-amber-200 bg-amber-50/70 text-amber-900'}`}>

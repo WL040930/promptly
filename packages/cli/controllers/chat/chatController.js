@@ -4,7 +4,13 @@ import asyncHandler from '../../utils/asyncHandler.js';
 import { processChatMessage, applyEvent, decideChatProposal, saveUserMessage } from '../../services/chat/chatAgentService.js';
 import { mergeAgentContext } from '../../services/chat/resourceResolver.js';
 
-export const sendMessage = asyncHandler(async (req, res) => {
+export const createSendMessageHandler = ({
+    chatSessionModel = ChatSession,
+    applyEventService = applyEvent,
+    processChatMessageService = processChatMessage,
+    saveUserMessageService = saveUserMessage,
+    mergeAgentContextService = mergeAgentContext
+} = {}) => asyncHandler(async (req, res) => {
     let { sessionId, message, context = {}, event } = req.body || {};
     const userId = req.user.id;
     const useSSE = String(req.headers.accept || '').includes('text/event-stream');
@@ -17,20 +23,21 @@ export const sendMessage = asyncHandler(async (req, res) => {
     const emit = data => {
         if (useSSE && !res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
-    let session = sessionId ? await ChatSession.findOne({ where: { id: sessionId, userId } }) : null;
+    let session = sessionId ? await chatSessionModel.findOne({ where: { id: sessionId, userId } }) : null;
     if (!session) {
         const titleSource = message || 'New Agent Session';
-        session = await ChatSession.create({
+        session = await chatSessionModel.create({
             userId,
             automationId: context?.automationId || context?.workflowId || null,
             purpose: context?.automationId || context?.workflowId ? 'automation_edit' : 'general',
             title: `${titleSource.substring(0, 40)}${titleSource.length > 40 ? '...' : ''}`
         });
     }
+    const heartbeat = useSSE ? setInterval(() => emit({ type: 'turn.heartbeat' }), 15_000) : null;
 
     try {
     if (event) {
-        const eventResult = await applyEvent(session, userId, event, emit);
+        const eventResult = await applyEventService(session, userId, event, emit);
         if (eventResult?.reply) {
             const payload = { sessionId: session.id, reply: eventResult.reply, tokenUsage: eventResult.tokenUsage || null };
             if (useSSE) {
@@ -47,13 +54,13 @@ export const sendMessage = asyncHandler(async (req, res) => {
         }
     }
 
-    const userMessage = await saveUserMessage(session, message);
-    const nextAgentContext = mergeAgentContext(session.agentContext || {}, context);
+    const userMessage = await saveUserMessageService(session, message);
+    const nextAgentContext = mergeAgentContextService(session.agentContext || {}, context);
     if (JSON.stringify(nextAgentContext) !== JSON.stringify(session.agentContext || {})) {
         await session.update({ agentContext: nextAgentContext });
     }
 
-    const { replyObj, totalTokenUsage } = await processChatMessage({ session, userId, context, onEvent: emit });
+    const { replyObj, totalTokenUsage } = await processChatMessageService({ session, userId, context, onEvent: emit });
 
     const payload = { sessionId: session.id, userMessage, reply: replyObj, tokenUsage: totalTokenUsage };
     if (useSSE) {
@@ -67,8 +74,12 @@ export const sendMessage = asyncHandler(async (req, res) => {
             return res.end();
         }
         throw error;
+    } finally {
+        if (heartbeat) clearInterval(heartbeat);
     }
 });
+
+export const sendMessage = createSendMessageHandler();
 
 export const getSession = asyncHandler(async (req, res) => {
     const { sessionId } = req.params;

@@ -1,7 +1,7 @@
 import path from 'path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyWorkflowPatches, assembleWorkflow, classifyRequest, layoutWorkflowNodes, loadWorkflowResourceContext, readWorkflowInstruction, validateGeneratedResourceValues } from './workflowAgentService.js';
+import { applyWorkflowPatches, assembleWorkflow, classifyRequest, layoutWorkflowNodes, loadWorkflowResourceContext, readWorkflowInstruction, requiredCapabilitiesForRequest, validateGeneratedResourceValues, validateGeneratedWorkflowCapabilities } from './workflowAgentService.js';
 import NodeRegistry from '../../../utils/NodeRegistry.js';
 
 const spec = (nodeKey, type, subType) => ({
@@ -113,6 +113,154 @@ test('generated workflow resources are rejected when the account has no matching
         resourceContext: { forms: { options: [], emptyMessage: 'Create a form first.' } }
     });
     assert.equal(issues[0].code, 'WORKFLOW_RESOURCE_NOT_FOUND');
+});
+
+test('confirmation capability accepts different contact field and node identifiers', () => {
+    const variants = [
+        { fieldId: 'candidate_contact', nodeId: 'form_entry', provider: 'system-default' },
+        { fieldId: 'respondentEmail', nodeId: 'submission_source', provider: 'user-gmail' }
+    ];
+
+    for (const variant of variants) {
+        const issues = validateGeneratedWorkflowCapabilities({
+            requiredCapabilities: ['respondent_confirmation'],
+            formSchema: {
+                fields: [{ id: variant.fieldId, label: 'Contact address', type: 'email', required: true }]
+            },
+            nodes: [
+                { id: variant.nodeId, type: 'trigger', subType: 'form-submission', config: { formId: 'form_approved' } },
+                {
+                    id: 'email_action',
+                    type: 'action',
+                    subType: 'email',
+                    config: {
+                        emailProvider: variant.provider,
+                        to: `{{${variant.nodeId}.fields.${variant.fieldId}}}`,
+                        subject: 'Thanks for your submission',
+                        body: 'We received your response.'
+                    }
+                }
+            ],
+            edges: [{ source: variant.nodeId, target: 'email_action' }]
+        });
+
+        assert.deepEqual(issues, []);
+    }
+});
+
+test('request capability detection recognises equivalent confirmation language', () => {
+    for (const message of [
+        'Email the applicant after the submission.',
+        'Send a thank-you message to the respondent.',
+        'Confirm the user received the registration.'
+    ]) {
+        assert.deepEqual(requiredCapabilitiesForRequest(message), ['respondent_confirmation']);
+    }
+    assert.deepEqual(requiredCapabilitiesForRequest('Store the response in a spreadsheet.'), []);
+});
+
+test('confirmation capability rejects a literal or unknown respondent recipient', () => {
+    const issues = validateGeneratedWorkflowCapabilities({
+        requiredCapabilities: ['respondent_confirmation'],
+        formSchema: { fields: [{ id: 'contact', label: 'Contact address', type: 'email', required: true }] },
+        nodes: [
+            { id: 'source', type: 'trigger', subType: 'form-submission', config: { formId: 'form_approved' } },
+            {
+                id: 'mailer',
+                type: 'action',
+                subType: 'email',
+                config: { to: 'owner@example.com', subject: 'Thanks', body: 'Received.' }
+            }
+        ],
+        edges: [{ source: 'source', target: 'mailer' }]
+    });
+
+    assert.ok(issues.some(issue => issue.code === 'RESPONDENT_RECIPIENT_NOT_DYNAMIC'));
+});
+
+test('workflow assembly enforces requested capabilities against supplied form data', async () => {
+    const triggerSchema = {
+        inputs: [{ name: 'formId', type: 'resource-select', resource: 'forms', required: true }],
+        outputs: [{ name: 'triggerData', isConnection: true }, { name: 'fields', isConnection: true }]
+    };
+    const emailSchema = {
+        inputs: [
+            { name: 'triggerData', isConnection: true },
+            { name: 'emailProvider', type: 'resource-select', resource: 'email-providers' },
+            { name: 'to', type: 'text', required: true },
+            { name: 'subject', type: 'text', required: true },
+            { name: 'body', type: 'textarea', required: true }
+        ],
+        outputs: [{ name: 'outputData', isConnection: true }]
+    };
+    const specs = [
+        { nodeKey: 'trigger:form-submission', type: 'trigger', subType: 'form-submission', title: 'Form submitted', description: 'Start from a form', schema: triggerSchema, ui: {} },
+        { nodeKey: 'action:email', type: 'action', subType: 'email', title: 'Send confirmation', description: 'Send a message', schema: emailSchema, ui: {} }
+    ];
+    const registry = {
+        getDefinition: (type, subType) => ({ implementationStatus: 'experimental', configSchema: type === 'trigger' ? triggerSchema : emailSchema })
+    };
+
+    const result = await assembleWorkflow({
+        message: 'After the form is submitted, send a confirmation to the respondent.',
+        specs,
+        formId: 'form_approved',
+        formSchema: { fields: [{ id: 'candidate_contact', type: 'email', required: true, label: 'Contact address' }] },
+        requiredCapabilities: ['respondent_confirmation'],
+        resourceContext: {
+            forms: { options: [{ value: 'form_approved', label: 'Application form' }] },
+            'email-providers': { options: [{ value: 'system-default', label: 'Promptly email' }] }
+        },
+        registry,
+        provider: async () => ({ value: {
+            nodes: [
+                { id: 'submission_source', nodeKey: 'trigger:form-submission', config: {} },
+                {
+                    id: 'confirmation_step',
+                    nodeKey: 'action:email',
+                    config: {
+                        emailProvider: 'system-default',
+                        to: '{{submission_source.fields.candidate_contact}}',
+                        subject: 'Thanks for applying',
+                        body: 'We received your application.'
+                    }
+                }
+            ],
+            edges: [{ id: 'connect', source: 'submission_source', target: 'confirmation_step', sourceHandle: 'triggerData', targetHandle: 'triggerData' }]
+        }, tokenUsage: { totalTokens: 1 } }),
+        instructionReader: async () => 'Return JSON only'
+    });
+
+    assert.equal(result.readiness.ready, true);
+    assert.equal(result.nodes.find(node => node.subType === 'form-submission').config.formId, 'form_approved');
+});
+
+test('workflow assembly rejects a confirmation that does not use submitted contact data', async () => {
+    const specs = [
+        { nodeKey: 'trigger:form-submission', type: 'trigger', subType: 'form-submission', title: 'Form submitted', description: '', schema: { inputs: [], outputs: [{ name: 'triggerData', isConnection: true }] }, ui: {} },
+        { nodeKey: 'action:email', type: 'action', subType: 'email', title: 'Send email', description: '', schema: { inputs: [{ name: 'triggerData', isConnection: true }, { name: 'to', type: 'text', required: true }], outputs: [], }, ui: {} }
+    ];
+    const registry = { getDefinition: () => ({ implementationStatus: 'experimental', configSchema: {} }) };
+
+    await assert.rejects(
+        () => assembleWorkflow({
+            message: 'Send a thank-you email to the form respondent.',
+            specs,
+            formId: 'form_approved',
+            formSchema: { fields: [{ id: 'contact', type: 'email', required: true }] },
+            requiredCapabilities: ['respondent_confirmation'],
+            registry,
+            provider: async () => ({ value: {
+                nodes: [
+                    { id: 'source', nodeKey: 'trigger:form-submission', config: {} },
+                    { id: 'mailer', nodeKey: 'action:email', config: { to: 'owner@example.com' } }
+                ],
+                edges: [{ source: 'source', target: 'mailer' }]
+            }, tokenUsage: {} }),
+            instructionReader: async () => 'Return JSON only'
+        }),
+        error => error.code === 'WORKFLOW_CAPABILITY_INVALID'
+    );
 });
 
 test('resource context loads dependent records for every selectable resource variant', async () => {
@@ -241,6 +389,30 @@ test('assembler produces a runnable graph from the supplied node contracts', asy
     assert.deepEqual(result.nodes.map(node => node.nodeKey), ['trigger:form-submission', 'action:logger']);
     assert.deepEqual(result.nodes.map(node => node.position), [{ x: 100, y: 150 }, { x: 450, y: 150 }]);
     assert.equal(result.readiness.ready, true);
+});
+
+test('assembler preserves an unsaved form as a resolvable resource binding', async () => {
+    const triggerSchema = {
+        inputs: [{ name: 'formId', type: 'resource-select', resource: 'forms', required: true }],
+        outputs: [{ name: 'triggerData', isConnection: true }]
+    };
+    const specs = [{ nodeKey: 'trigger:form-submission', type: 'trigger', subType: 'form-submission', title: 'Form submitted', description: 'Start from a form', schema: triggerSchema, ui: {} }];
+    const result = await assembleWorkflow({
+        message: 'Start from the proposed form.',
+        specs,
+        workflowName: 'Proposed Form Workflow',
+        formSchema: { fields: [{ id: 'email', type: 'email', required: true }] },
+        formBinding: { source: { artifactKey: 'form_proposal', appliedResource: 'id' } },
+        resourceContext: { forms: { options: [] } },
+        registry: { getDefinition: () => ({ implementationStatus: 'experimental', configSchema: triggerSchema }) },
+        provider: async () => ({ value: { nodes: [{ id: 'trigger_1', nodeKey: 'trigger:form-submission', config: {} }], edges: [] }, tokenUsage: {} }),
+        instructionReader: async () => 'Return JSON only'
+    });
+    assert.equal(result.nodes[0].config.formId, undefined);
+    assert.deepEqual(result.resourceBindings, [{
+        target: { nodeId: 'trigger_1', path: 'config.formId' },
+        source: { artifactKey: 'form_proposal', appliedResource: 'id' }
+    }]);
 });
 
 test('real node catalogue can assemble a form-to-sheets workflow from user intent', async () => {

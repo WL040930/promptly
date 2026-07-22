@@ -166,7 +166,7 @@ export default function ChatTab({ conversationId = null, automationId = null, st
                 setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied', payload: result?.message?.payload || item.payload } : item));
                 toast.success(message.kind === 'form_bulk_delete_proposal' ? 'Forms deleted.' : message.kind === 'form_delete_proposal' ? 'Form deleted.' : message.kind === 'form_response_clear_proposal' ? 'Form responses cleared.' : 'Form duplicated.');
                 return;
-            } else if (['form_proposal', 'workflow_diff', 'workflow_proposal'].includes(message.kind)) {
+            } else if (['solution_proposal', 'form_proposal', 'workflow_diff', 'workflow_proposal'].includes(message.kind)) {
                 const overrides = message.kind === 'form_proposal' && filteredSchema ? { schema: filteredSchema } : null;
                 const decision = await decideChatProposalMutation.mutateAsync({ sessionId, messageId: message.id, action: 'approve', overrides });
                 result = decision.resource;
@@ -200,7 +200,7 @@ export default function ChatTab({ conversationId = null, automationId = null, st
         try {
             if (message.payload?.runId) {
                 await rejectAgentRunMutation.mutateAsync(message.payload.runId);
-            } else if (['form_proposal', 'workflow_diff', 'workflow_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
+            } else if (['solution_proposal', 'form_proposal', 'workflow_diff', 'workflow_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
                 await decideChatProposalMutation.mutateAsync({ sessionId, messageId: message.id, action: 'reject' });
             } else {
                 await send(null, { type: 'proposal_ignored', messageId: message.id });

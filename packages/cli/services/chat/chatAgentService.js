@@ -5,7 +5,7 @@ import { runFormTurn } from '../ai/formAIService.js';
 import { ai } from '../ai/index.js';
 import { AI_TASKS } from '../ai/core/aiTasks.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
-import { assembleWorkflow, loadWorkflowResourceContext, tokenTotal } from '../ai/workflow/workflowAgentService.js';
+import { assembleWorkflow, loadWorkflowResourceContext, requiredCapabilitiesForRequest, tokenTotal } from '../ai/workflow/workflowAgentService.js';
 import env from '../../config/env.js';
 import { mergeAgentContext } from './resourceResolver.js';
 import { processAgenticTurn, resumeAgentAfterClarification, resumeAgentAfterForm, resumeAgentAfterPlanReview } from '../agent/agentOrchestrator.js';
@@ -529,6 +529,9 @@ export const applyEvent = async (session, userId, event, onEvent = null) => {
         if (!workflow) throw new Error('Workflow not found while resuming agent');
         const specs = NodeRegistry.getSchemasFor(state.continuation.specNodeKeys || state.continuation.specSubTypes);
         const resourceContext = await loadWorkflowResourceContext({ userId, specs });
+        const approvedForm = event.formId
+            ? await Form.findOne({ where: { id: event.formId, userId } })
+            : null;
         if (event.formId) {
             resourceContext.forms = {
                 ...(resourceContext.forms || {}),
@@ -540,6 +543,8 @@ export const applyEvent = async (session, userId, event, onEvent = null) => {
             specs,
             workflowName: state.continuation.workflowName,
             formId: event.formId,
+            formSchema: approvedForm?.toJSON?.() || approvedForm || null,
+            requiredCapabilities: requiredCapabilitiesForRequest(state.continuation.request),
             resourceContext
         });
         await session.update({ agentState: {} });
@@ -615,7 +620,14 @@ export const processChatMessage = async ({ session, userId, context = {}, onEven
             return { replyObj: reply, totalTokenUsage: null };
         }
 
-        const resumed = await resumeAgentAfterClarification({ run, session, userId, context: effectiveContext, onEvent });
+        const resumed = await resumeAgentAfterClarification({
+            run,
+            session,
+            userId,
+            answer: latestUserMessage?.text || '',
+            context: effectiveContext,
+            onEvent
+        });
         return { replyObj: resumed.replyObj, totalTokenUsage: resumed.totalTokenUsage };
     }
 

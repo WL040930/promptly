@@ -5,7 +5,8 @@ import {
     assembleWorkflow,
     classifyRequest,
     compactWorkflowSnapshot,
-    patchWorkflow
+    patchWorkflow,
+    requiredCapabilitiesForRequest
 } from '../ai/workflow/workflowAgentService.js';
 import { createAgentCapabilityRegistry } from '../agent/agentCapabilityRegistry.js';
 
@@ -512,11 +513,14 @@ export const createChatCapabilityRegistry = ({
                         .filter(node => classification.affectedNodeIds.includes(node.id))
                         .map(node => `${node.type}:${node.subType}`);
                     const specs = NodeRegistry.getSchemasFor([...selected, ...affected]);
+                    const selectedForm = effectiveContext.formId ? await formForRequest(userId, effectiveContext.formId) : null;
                     const patched = await patchWorkflow({
                         message: args.prompt,
                         currentWorkflow: workflow.toJSON(),
                         classification,
-                        specs
+                        specs,
+                        formSchema: selectedForm?.toJSON?.() || selectedForm || null,
+                        requiredCapabilities: requiredCapabilitiesForRequest(args.prompt)
                     });
                     const reply = await saveReply(session, {
                         text: 'I prepared the requested workflow changes for your review.',
@@ -540,11 +544,14 @@ export const createChatCapabilityRegistry = ({
                 }
 
                 const specs = NodeRegistry.getSchemasFor(classification.selectedNodeKeys || classification.selectedSubTypes);
+                const selectedForm = effectiveContext.formId ? await formForRequest(userId, effectiveContext.formId) : null;
                 const assembled = await assembleWorkflow({
                     message: args.prompt,
                     specs,
                     workflowName: classification.workflowName,
-                    formId: null
+                    formId: selectedForm?.id || null,
+                    formSchema: selectedForm?.toJSON?.() || selectedForm || null,
+                    requiredCapabilities: requiredCapabilitiesForRequest(args.prompt)
                 });
                 const reply = await saveReply(session, {
                     text: 'The workflow is ready for your review.',

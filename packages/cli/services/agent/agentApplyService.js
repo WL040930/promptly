@@ -52,9 +52,20 @@ const applyWorkflowArtifact = async ({ artifact, userId, form, transaction }) =>
         throw Object.assign(new Error('The workflow changed after this proposal was created.'), { code: 'AGENT_STALE_RESOURCE' });
     }
 
-    const nodes = (content.nodes || []).map(node => node.subType === 'form-submission' && form
-        ? { ...node, config: { ...(node.config || {}), formId: node.config?.formId || form.id } }
-        : node);
+    const nodes = (content.nodes || []).map(node => ({ ...node, config: { ...(node.config || {}) } }));
+    for (const binding of content.resourceBindings || []) {
+        const targetNode = nodes.find(node => node.id === binding.target?.nodeId);
+        if (!targetNode || binding.target?.path !== 'config.formId') {
+            throw Object.assign(new Error('The workflow proposal contains an invalid resource binding.'), { code: 'AGENT_INVALID_PROPOSAL' });
+        }
+        if (binding.source?.artifactKey !== 'form_proposal' || binding.source?.appliedResource !== 'id' || !form) {
+            throw Object.assign(new Error('The workflow proposal references an unresolved form.'), { code: 'AGENT_RESOURCE_NOT_FOUND' });
+        }
+        targetNode.config.formId = form.id;
+    }
+    nodes.forEach(node => {
+        if (node.subType === 'form-submission' && form && !node.config.formId) node.config.formId = form.id;
+    });
     const edges = content.edges || [];
     const validation = validateWorkflow({ nodes, edges, isActive: false, registry: NodeRegistry });
     if (!validation.valid) throw Object.assign(new Error('The workflow proposal failed validation.'), { code: 'AGENT_INVALID_PROPOSAL', issues: validation.issues });
@@ -108,6 +119,7 @@ export const approveAgentRun = async ({ runId, userId, idempotencyKey }) => {
     const workflowArtifact = pendingArtifacts.find(artifact => artifact.type === 'workflow_proposal');
     let form = null;
     let appliedWorkflow = null;
+    let triggerSetupError = null;
 
     try {
         await run.update({ status: 'applying', currentStep: 'apply' });
@@ -138,8 +150,21 @@ export const approveAgentRun = async ({ runId, userId, idempotencyKey }) => {
                 await reconcileWorkflow(appliedWorkflow);
             } catch (error) {
                 await appliedWorkflow.update({ isActive: false, status: 'Trigger setup failed' });
-                throw error;
+                triggerSetupError = error;
             }
+        }
+
+        if (triggerSetupError) {
+            const setupFailure = makeError(triggerSetupError);
+            await run.update({
+                status: 'completed',
+                currentStep: 'setup',
+                error: { code: 'AGENT_TRIGGER_SETUP_FAILED', message: setupFailure.message, issues: setupFailure.issues },
+                metadata: { ...(run.metadata || {}), setupRequired: true }
+            });
+            const session = await ChatSession.findByPk(run.sessionId);
+            if (session) await session.update({ agentState: {} });
+            return serializeRun(await getRunForUser(runId, userId));
         }
 
         if (form && !workflowArtifact && run.intent?.domains?.includes('workflow')) {

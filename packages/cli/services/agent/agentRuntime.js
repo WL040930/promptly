@@ -60,6 +60,22 @@ const normalizePlan = plan => {
     };
 };
 
+const mergeReplannedPlan = (previousPlan, nextPlan) => {
+    const previousById = new Map(previousPlan.steps.map(step => [step.id, step]));
+    return {
+        ...nextPlan,
+        steps: nextPlan.steps.map(step => {
+            const previous = previousById.get(step.id);
+            const sameWork = previous
+                && previous.type === step.type
+                && JSON.stringify(previous.args || {}) === JSON.stringify(step.args || {});
+            return sameWork && previous.status === 'completed'
+                ? { ...step, status: 'completed' }
+                : { ...step, status: 'pending' };
+        })
+    };
+};
+
 const nextReadyStep = steps => steps.find(step => (
     step.status === 'pending'
     && step.dependsOn.every(dependency => steps.find(item => item.id === dependency)?.status === 'completed')
@@ -159,6 +175,16 @@ export const createAgentRuntime = ({ registry, planner, limits = {}, onEvent = n
                     context: { input, state: runtimeState, plan, step, signal },
                     capability
                 }));
+                const outputIssues = typeof registry.validateOutput === 'function'
+                    ? registry.validateOutput(step.type, observation.output)
+                    : [];
+                if (outputIssues.length > 0) {
+                    throw new AgentRuntimeError(
+                        `Capability '${step.type}' returned an invalid output.`,
+                        'AGENT_CAPABILITY_OUTPUT_INVALID',
+                        outputIssues
+                    );
+                }
             } catch (error) {
                 step.status = 'failed';
                 throw error;
@@ -178,8 +204,10 @@ export const createAgentRuntime = ({ registry, planner, limits = {}, onEvent = n
                     );
                 }
                 replanCount += 1;
-                const nextPlan = await planner.replan({ input, state: runtimeState, plan, step, observation });
-                plan = normalizePlan(nextPlan);
+                const replanned = await planner.replan({ input, state: runtimeState, plan, step, observation });
+                const nextPlan = replanned?.plan || replanned;
+                tokenUsage = mergeUsage(tokenUsage, replanned?.tokenUsage);
+                plan = mergeReplannedPlan(plan, normalizePlan(nextPlan));
                 emit({ type: 'plan.revised', plan: clone(plan), replanCount });
                 continue;
             }
