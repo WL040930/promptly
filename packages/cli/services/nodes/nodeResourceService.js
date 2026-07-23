@@ -1,4 +1,4 @@
-import { Asset, Connection, ExecutionLog, Form, KnowledgeBase, Workflow } from '../../models/index.js';
+import { Asset, AutomationRun, Connection, Form, KnowledgeBase, Workflow } from '../../models/index.js';
 import { getGoogleClientForUser } from '../triggers/googleTriggerClient.js';
 
 const GOOGLE_CONNECT_ACTION = Object.freeze({
@@ -74,9 +74,10 @@ const listModel = async (model, query, mapper) => {
 };
 
 export const createNodeResourceService = ({
-    models = { Asset, Connection, ExecutionLog, Form, KnowledgeBase, Workflow },
+    models = { Asset, AutomationRun, Connection, Form, KnowledgeBase, Workflow },
     getGoogleClient = getGoogleClientForUser
 } = {}) => {
+    const executionModel = models.AutomationRun;
     const providers = {
         forms: async ({ userId }) => ({
             options: await listModel(models.Form, {
@@ -193,7 +194,7 @@ export const createNodeResourceService = ({
             if (resource === 'workflows') return providers.workflows({ userId });
             if (resource === 'executionLogs') {
                 return {
-                    options: await listModel(models.ExecutionLog, {
+                    options: await listModel(executionModel, {
                         where: { userId },
                         attributes: ['id', 'workflowId', 'status', 'createdAt'],
                         order: [['createdAt', 'DESC']],

@@ -1,14 +1,8 @@
 import crypto from 'crypto';
 import { Op } from 'sequelize';
 import sequelize from '../../../db/index.js';
-import {
-    ChatMessage,
-    ChatSession,
-    Form,
-    Workflow,
-    WorkflowAIState,
-    WorkflowChatMessage
-} from '../../../models/index.js';
+import { AssistantMessage, AssistantThread, Form, Workflow } from '../../../models/index.js';
+import { createAssistantStateView, ensureAssistantThread } from '../../assistant/assistantStore.js';
 import { saveAutomationDraft } from '../../automations/automationService.js';
 import NodeRegistry from '../../../utils/NodeRegistry.js';
 import {
@@ -66,65 +60,17 @@ const findWorkflow = async (workflowId, userId, options = {}) => {
     return workflow;
 };
 
-const migrateLegacyConversation = async ({ workflow, state, transaction }) => {
-    if (state.legacyImported) return state;
-
-    const legacySession = await ChatSession.findOne({
-        where: {
-            userId: workflow.userId,
-            automationId: workflow.id,
-            purpose: 'automation_edit'
-        },
-        order: [['updatedAt', 'DESC']],
-        transaction
-    });
-
-    if (legacySession) {
-        const messages = await ChatMessage.findAll({
-            where: { sessionId: legacySession.id },
-            order: [['createdAt', 'ASC']],
-            transaction
-        });
-        for (const message of messages) {
-            await WorkflowChatMessage.findOrCreate({
-                where: { sourceMessageId: message.id },
-                defaults: {
-                    id: messageId(),
-                    workflowId: workflow.id,
-                    sender: message.sender,
-                    text: message.text,
-                    kind: message.kind || 'text',
-                    payload: message.payload || null,
-                    proposalStatus: message.proposalStatus || null,
-                    tokenUsage: message.tokenUsage || null,
-                    createdAt: message.createdAt,
-                    updatedAt: message.updatedAt,
-                    sourceMessageId: message.id
-                },
-                transaction
-            });
-        }
-    }
-
-    await state.update({
-        legacyImported: true,
-        legacySessionId: legacySession?.id || null
-    }, { transaction });
-    return state;
-};
-
-const ensureState = async ({ workflow, transaction, migrate = true }) => {
-    const [created] = await WorkflowAIState.findOrCreate({
-        where: { workflowId: workflow.id },
-        defaults: { workflowId: workflow.id, version: 1, mode: DEFAULT_MODE, phase: 'idle' },
-        transaction
-    });
-    const state = await WorkflowAIState.findOne({
-        where: { workflowId: workflow.id },
+const ensureState = async ({ workflow, transaction }) => {
+    const thread = await ensureAssistantThread({
+        surface: 'workflow',
+        workflowId: workflow.id,
+        userId: workflow.userId,
+        title: workflow.name || 'Workflow AI',
+        models: { AssistantThread },
         transaction,
-        lock: transaction?.LOCK?.UPDATE
-    }) || created;
-    return migrate ? migrateLegacyConversation({ workflow, state, transaction }) : state;
+        lock: Boolean(transaction?.LOCK?.UPDATE)
+    });
+    return createAssistantStateView(thread);
 };
 
 const normalizeInput = (command, text) => {
@@ -235,19 +181,18 @@ export const workflowAssistant = {
     async getHistory({ workflowId, userId, limit = 50, before = null }) {
         const workflow = await findWorkflow(workflowId, userId);
         return sequelize.transaction(async transaction => {
-            await ensureState({ workflow, transaction });
+            const state = await ensureState({ workflow, transaction });
             const where = { workflowId };
             if (before) {
-                const cursor = await WorkflowChatMessage.findOne({ where: { id: before, workflowId }, transaction });
+                const cursor = await AssistantMessage.findOne({ where: { id: before, threadId: state.threadId }, transaction });
                 if (cursor) where.createdAt = { [Op.lt]: cursor.createdAt };
             }
-            const messages = await WorkflowChatMessage.findAll({
-                where,
+            const messages = await AssistantMessage.findAll({
+                where: { threadId: state.threadId, ...(where.createdAt ? { createdAt: where.createdAt } : {}) },
                 order: [['createdAt', 'DESC']],
                 limit: Math.min(Math.max(Number(limit) || 50, 1), MAX_HISTORY),
                 transaction
             });
-            const state = await WorkflowAIState.findOne({ where: { workflowId }, transaction });
             return {
                 messages: messages.reverse().map(publicMessage),
                 nextBefore: messages.length >= Math.min(Math.max(Number(limit) || 50, 1), MAX_HISTORY) ? messages[0]?.id || null : null,
@@ -272,8 +217,8 @@ export const workflowAssistant = {
                 if (state.phase === 'processing' && state.inFlightRequestId !== runId) {
                     throw errorWith('WORKFLOW_AI_TURN_IN_PROGRESS', 'This workflow assistant is already processing a request.', 409, { currentStateVersion: state.version });
                 }
-                const message = await WorkflowChatMessage.create({
-                    id: messageId(), workflowId, sender: 'user', text: input, kind: 'text'
+                const message = await AssistantMessage.create({
+                    id: messageId(), threadId: state.threadId, sender: 'user', text: input, kind: 'text'
                 }, { transaction });
                 await state.update({
                     version: state.version + 1,
@@ -290,19 +235,18 @@ export const workflowAssistant = {
 
             const reply = await runWorkflowTurn({ workflow, userId, userEmail, text: input, clarificationMode, onProgress });
             return sequelize.transaction(async transaction => {
-                const state = await WorkflowAIState.findOne({ where: { workflowId }, transaction, lock: transaction.LOCK.UPDATE });
-                if (!state) throw errorWith('WORKFLOW_AI_STATE_MISSING', 'Workflow assistant state is missing.', 500);
+                const state = await ensureState({ workflow, transaction });
                 let activeProposalMessageId = null;
                 if (reply.kind === 'workflow_proposal') activeProposalMessageId = reply.id;
-                const botMessage = await WorkflowChatMessage.create({
+                const botMessage = await AssistantMessage.create({
                     ...reply,
-                    workflowId,
+                    threadId: state.threadId,
                     proposalStatus: reply.kind === 'workflow_proposal' ? 'pending' : null
                 }, { transaction });
                 if (activeProposalMessageId && state.activeProposalMessageId) {
-                    await WorkflowChatMessage.update(
+                    await AssistantMessage.update(
                         { proposalStatus: 'superseded' },
-                        { where: { id: state.activeProposalMessageId, workflowId }, transaction }
+                        { where: { id: state.activeProposalMessageId, threadId: state.threadId }, transaction }
                     );
                 }
                 await state.update({
@@ -327,11 +271,11 @@ export const workflowAssistant = {
                 retryable: error.status >= 500 || error.code === 'AI_PROVIDER_TIMEOUT'
             }, 'error');
             await sequelize.transaction(async transaction => {
-                const state = await WorkflowAIState.findOne({ where: { workflowId }, transaction, lock: transaction.LOCK.UPDATE });
+                const state = await ensureState({ workflow, transaction });
                 if (!state || state.inFlightRequestId !== runId) return;
-                const botMessage = await WorkflowChatMessage.create({
+                const botMessage = await AssistantMessage.create({
                     ...errorMessage,
-                    workflowId,
+                    threadId: state.threadId,
                     isError: true,
                     errorMetadata: errorMessage.payload
                 }, { transaction });
@@ -351,21 +295,12 @@ export const workflowAssistant = {
     async clearChat({ workflowId, userId }) {
         return sequelize.transaction(async transaction => {
             const workflow = await findWorkflow(workflowId, userId, { transaction, lock: transaction.LOCK.UPDATE });
-            const state = await ensureState({ workflow, transaction, migrate: false });
+            const state = await ensureState({ workflow, transaction });
             if (state.inFlightRequestId) {
                 throw errorWith('WORKFLOW_AI_TURN_IN_PROGRESS', 'The workflow AI is still processing a request. Wait for it to finish before clearing the chat.', 409);
             }
 
-            const deletedMessages = await WorkflowChatMessage.destroy({ where: { workflowId }, transaction });
-            const legacySessions = await ChatSession.findAll({
-                where: { userId, automationId: workflowId, purpose: 'automation_edit' },
-                transaction
-            });
-            let deletedLegacyMessages = 0;
-            for (const session of legacySessions) {
-                deletedLegacyMessages += await ChatMessage.destroy({ where: { sessionId: session.id }, transaction });
-                await session.destroy({ transaction });
-            }
+            const deletedMessages = await AssistantMessage.destroy({ where: { threadId: state.threadId }, transaction });
 
             await state.update({
                 version: state.version + 1,
@@ -375,12 +310,10 @@ export const workflowAssistant = {
                 activeProposalMessageId: null,
                 inFlightRequestId: null,
                 inFlightStartedAt: null,
-                legacyImported: true,
-                legacySessionId: null
             }, { transaction });
             return {
                 cleared: true,
-                deletedMessages: deletedMessages + deletedLegacyMessages,
+                deletedMessages,
                 state: publicState(state)
             };
         });
@@ -388,14 +321,14 @@ export const workflowAssistant = {
 
     async decideProposal({ workflowId, userId, proposalMessageId, action = 'accept', expectedStateVersion }) {
         const workflow = await findWorkflow(workflowId, userId);
-        const message = await WorkflowChatMessage.findOne({ where: { id: proposalMessageId, workflowId, kind: 'workflow_proposal' } });
+        const message = await AssistantMessage.findOne({ where: { id: proposalMessageId, kind: 'workflow_proposal' }, include: [{ model: AssistantThread, as: 'thread', where: { surface: 'workflow', workflowId, userId } }] });
         if (!message) throw errorWith('WORKFLOW_PROPOSAL_NOT_FOUND', 'Workflow proposal not found.', 404);
         if (message.proposalStatus !== 'pending') throw errorWith('WORKFLOW_PROPOSAL_NOT_PENDING', 'This workflow proposal is no longer pending.', 409);
         const payload = message.payload || {};
 
         if (action === 'reject') {
             return sequelize.transaction(async transaction => {
-                const state = await ensureState({ workflow, transaction, migrate: false });
+                const state = await ensureState({ workflow, transaction });
                 if (Number.isInteger(expectedStateVersion) && expectedStateVersion !== state.version) {
                     throw errorWith('WORKFLOW_AI_STATE_CONFLICT', 'The workflow assistant changed in another tab. Refresh and try again.', 409, { currentStateVersion: state.version });
                 }
@@ -409,15 +342,15 @@ export const workflowAssistant = {
         try {
             return await sequelize.transaction(async transaction => {
                 const lockedWorkflow = await findWorkflow(workflowId, userId, { transaction, lock: transaction.LOCK.UPDATE });
-                const lockedMessage = await WorkflowChatMessage.findOne({
-                    where: { id: proposalMessageId, workflowId, kind: 'workflow_proposal' },
+                const lockedMessage = await AssistantMessage.findOne({
+                    where: { id: proposalMessageId, threadId: (await ensureState({ workflow: lockedWorkflow, transaction })).threadId, kind: 'workflow_proposal' },
                     transaction,
                     lock: transaction.LOCK.UPDATE
                 });
                 if (!lockedMessage || lockedMessage.proposalStatus !== 'pending') {
                     throw errorWith('WORKFLOW_PROPOSAL_NOT_PENDING', 'This workflow proposal is no longer pending.', 409);
                 }
-                const state = await ensureState({ workflow: lockedWorkflow, transaction, migrate: false });
+                const state = await ensureState({ workflow: lockedWorkflow, transaction });
                 if (Number.isInteger(expectedStateVersion) && expectedStateVersion !== state.version) {
                     throw errorWith('WORKFLOW_AI_STATE_CONFLICT', 'The workflow assistant changed in another tab. Refresh and try again.', 409, { currentStateVersion: state.version });
                 }

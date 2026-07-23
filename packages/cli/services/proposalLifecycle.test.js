@@ -15,20 +15,20 @@ const fakeMessage = fields => ({
 
 test('supersedePendingFormChatProposals disables every older pending proposal for the form', async () => {
     const messages = [
-        fakeMessage({ id: 'old_1', proposal: { status: 'pending', patches: [] } }),
-        fakeMessage({ id: 'old_2', proposal: { status: 'accepted', patches: [] } }),
-        fakeMessage({ id: 'old_3', proposal: { status: 'pending', patches: [] } })
+        fakeMessage({ id: 'old_1', threadId: 'thread_1', kind: 'form_proposal', proposalStatus: 'pending', payload: { status: 'pending', patches: [] } }),
+        fakeMessage({ id: 'old_2', threadId: 'thread_1', kind: 'form_proposal', proposalStatus: 'accepted', payload: { status: 'accepted', patches: [] } }),
+        fakeMessage({ id: 'old_3', threadId: 'thread_1', kind: 'form_proposal', proposalStatus: 'pending', payload: { status: 'pending', patches: [] } })
     ];
 
     const supersededMessageIds = await supersedePendingFormChatProposals({
-        formId: 'form_1',
+        threadId: 'thread_1',
         messageModel: { findAll: async () => messages }
     });
 
     assert.deepEqual(supersededMessageIds, ['old_1', 'old_3']);
-    assert.equal(messages[0].proposal.status, 'superseded');
-    assert.equal(messages[1].proposal.status, 'accepted');
-    assert.equal(messages[2].proposal.status, 'superseded');
+    assert.equal(messages[0].payload.status, 'superseded');
+    assert.equal(messages[1].payload.status, 'accepted');
+    assert.equal(messages[2].payload.status, 'superseded');
 });
 
 test('supersedePendingChatFormProposals only disables pending proposals for the same form', async () => {
@@ -39,7 +39,7 @@ test('supersedePendingChatFormProposals only disables pending proposals for the 
     ];
 
     const supersededMessageIds = await supersedePendingChatFormProposals({
-        sessionId: 'session_1',
+        threadId: 'thread_1',
         formId: 'form_1',
         messageModel: { findAll: async () => messages }
     });

@@ -16,7 +16,7 @@ const updateJsonCollection = async (run, field, key, updates) => {
     return next[index === -1 ? next.length - 1 : index];
 };
 
-export const createRun = ({ sessionId, userId, metadata = {} }) => AgentRun.create({ sessionId, userId, metadata, steps: [], artifacts: [] });
+export const createRun = ({ threadId, userId, metadata = {} }) => AgentRun.create({ threadId, userId, metadata, steps: [], artifacts: [] });
 
 export const updateRun = (run, updates, options = {}) => run.update(updates, options);
 

@@ -11,7 +11,7 @@ const createService = overrides => createNodeResourceService({
     models: {
         Form: model([{ id: 'form_1', title: 'Registration' }]),
         Workflow: model([{ id: 'workflow_1', name: 'Welcome flow', status: 'Draft' }]),
-        ExecutionLog: model([{ id: 'run_1234567890', status: 'Succeeded', workflowId: 'workflow_1' }]),
+        AutomationRun: model([{ id: 'run_1234567890', status: 'Succeeded', workflowId: 'workflow_1' }]),
         Connection: model([{ accountEmail: 'owner@example.com' }])
     },
     getGoogleClient: async () => ({
@@ -55,4 +55,3 @@ test('node resource service returns an actionable reconnect error for unavailabl
             && error.action.href === '/app/settings/connections'
     );
 });
-

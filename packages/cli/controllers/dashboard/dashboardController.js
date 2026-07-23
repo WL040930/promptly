@@ -1,4 +1,4 @@
-import { ExecutionLog, Workflow } from '../../models/index.js';
+import { AutomationRun, Workflow } from '../../models/index.js';
 import sequelize from '../../db/index.js';
 import { QueryTypes } from 'sequelize';
 import asyncHandler from '../../utils/asyncHandler.js';
@@ -28,19 +28,19 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
         // Real GROUP BY date query for the last 7 days
         sequelize.query(
             `SELECT
-                TO_CHAR(DATE_TRUNC('day', time), 'Dy') AS day,
+                TO_CHAR(DATE_TRUNC('day', "createdAt"), 'Dy') AS day,
                 COUNT(*) AS runs
              FROM automation_runs
              WHERE "userId" = :userId
-               AND time >= NOW() - INTERVAL '7 days'
-             GROUP BY DATE_TRUNC('day', time)
-             ORDER BY DATE_TRUNC('day', time) ASC`,
+               AND "createdAt" >= NOW() - INTERVAL '7 days'
+             GROUP BY DATE_TRUNC('day', "createdAt")
+             ORDER BY DATE_TRUNC('day', "createdAt") ASC`,
             { replacements: { userId }, type: QueryTypes.SELECT }
         ),
 
-        ExecutionLog.findAll({
+        AutomationRun.findAll({
             where: { userId },
-            order: [['time', 'DESC']],
+            order: [['createdAt', 'DESC']],
             limit: 5,
             include: [{ model: Workflow, as: 'workflow', attributes: ['name'] }]
         })

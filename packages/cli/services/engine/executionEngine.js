@@ -3,8 +3,7 @@ import env from '../../config/env.js';
 import { sendEmail } from '../../utils/email.js';
 import Workflow from '../../models/workflows/Workflow.js';
 import WorkflowVersion from '../../models/workflows/WorkflowVersion.js';
-import ExecutionLog from '../../models/execution/ExecutionLog.js';
-import { WorkflowRun, WorkflowContinuation } from '../../models/index.js';
+import { AutomationRun, WorkflowContinuation } from '../../models/index.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { NodeFactory } from '../../../nodes/NodeFactory.js';
 import { validateWorkflow } from './workflowValidator.js';
@@ -72,16 +71,11 @@ const logDataFor = ({ workflowId, revisionId, userId, status, trigger, error, st
 
 const persistLog = async ({ run, ...data }) => {
     const payload = logDataFor(data);
-    if (run?.executionLogId) {
-        const log = await ExecutionLog.findByPk(run.executionLogId);
-        if (log) {
-            await log.update(payload);
-            return log;
-        }
+    if (run) {
+        await run.update({ ...payload, completedAt: ['Waiting', 'Success'].includes(payload.status) ? run.completedAt : new Date() });
+        return run;
     }
-    const log = await ExecutionLog.create(payload);
-    if (run) await run.update({ executionLogId: log.id });
-    return log;
+    return AutomationRun.create(payload);
 };
 
 const createContinuation = async ({ run, node, suspension }) => {
@@ -133,7 +127,7 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
         let state;
 
         if (executionOptions.resumeRunId) {
-            run = await WorkflowRun.findOne({ where: { id: executionOptions.resumeRunId, workflowId, userId } });
+            run = await AutomationRun.findOne({ where: { id: executionOptions.resumeRunId, workflowId, userId } });
             if (!run) throw new Error('Workflow run not found.');
             if (run.status !== 'waiting') throw new Error('Workflow run is not waiting for a continuation.');
             workflow = await Workflow.findOne({ where: { id: workflowId, userId } });
@@ -183,7 +177,7 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
                 suspendedNodeId: null,
                 suspendedInputNodeIds: []
             };
-            run = await WorkflowRun.create({
+            run = await AutomationRun.create({
                 workflowId,
                 userId,
                 revisionId: executedRevisionId || null,
@@ -322,16 +316,16 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
             status = 'Failed';
             errorMsg = [...state.unhandledFailures.values()][0].error;
         }
-        await run.update({ status: status === 'Success' ? 'succeeded' : 'failed', lastError: errorMsg, completedAt: new Date(), state: serializeState(state), suspendedNodeId: null });
+        await run.update({ status: status === 'Success' ? 'succeeded' : 'failed', error: errorMsg, completedAt: new Date(), state: serializeState(state), suspendedNodeId: null });
         return persistLog({ run, workflowId, revisionId: executedRevisionId, userId, status, trigger: executionOptions.trigger, error: errorMsg, steps: state.stepLogs, output: state.workflowOutput, durationMs: Date.now() - startTime });
     } catch (error) {
         status = 'Failed';
         errorMsg = errorMsg || error.message;
         if (run) {
-            await run.update({ status: 'failed', lastError: errorMsg, completedAt: new Date() }).catch(() => {});
+            await run.update({ status: 'failed', error: errorMsg, completedAt: new Date() }).catch(() => {});
             return persistLog({ run, workflowId, revisionId: executedRevisionId, userId, status, trigger: executionOptions.trigger, error: errorMsg, steps: [], output: null, durationMs: Date.now() - startTime });
         }
-        return ExecutionLog.create(logDataFor({ workflowId, revisionId: executedRevisionId, userId, status, trigger: executionOptions.trigger, error: errorMsg, steps: [], output: null, durationMs: Date.now() - startTime }));
+        return AutomationRun.create(logDataFor({ workflowId, revisionId: executedRevisionId, userId, status, trigger: executionOptions.trigger, error: errorMsg, steps: [], output: null, durationMs: Date.now() - startTime }));
     }
 };
 

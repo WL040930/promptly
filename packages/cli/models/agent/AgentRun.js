@@ -10,7 +10,7 @@ const AgentRun = sequelize.define(
             primaryKey: true,
             defaultValue: () => `run_${crypto.randomUUID().replace(/-/g, '')}`
         },
-        sessionId: { type: DataTypes.STRING(100), allowNull: false },
+        threadId: { type: DataTypes.STRING(100), allowNull: false },
         userId: { type: DataTypes.UUID, allowNull: false },
         status: { type: DataTypes.STRING(40), allowNull: false, defaultValue: 'received' },
         intent: { type: DataTypes.JSONB, defaultValue: null },
@@ -27,7 +27,7 @@ const AgentRun = sequelize.define(
         tableName: 'agent_runs',
         timestamps: true,
         indexes: [
-            { fields: ['sessionId', 'createdAt'], name: 'agent_runs_session_created' }
+            { fields: ['threadId', 'createdAt'], name: 'agent_runs_thread_created' }
         ]
     }
 );

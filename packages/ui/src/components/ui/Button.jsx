@@ -4,8 +4,10 @@ import { useGSAP } from '@gsap/react';
 import gsap from 'gsap';
 
 const variants = {
-    primary: 'bg-[#5b4ee8] text-white hover:bg-[#4e42d0] shadow-[0_8px_18px_rgba(91,78,232,0.2)] border border-transparent',
-    secondary: 'bg-[#f1efff] text-[#5143cc] border border-[#d9d5ff] hover:bg-[#e8e4ff] shadow-sm',
+    // Purple means “do the main thing”: create, save, continue, publish.
+    primary: 'bg-[var(--promptly-purple)] text-white hover:bg-[var(--promptly-purple-hover)] shadow-[0_8px_18px_rgba(99,83,232,0.2)] border border-transparent',
+    // Secondary actions stay visible without competing with the primary action.
+    secondary: 'bg-[var(--promptly-purple-soft)] text-[#5143cc] border border-[var(--promptly-purple-border)] hover:bg-[#e8e4ff] shadow-sm',
     danger: 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 shadow-sm',
     dangerSolid: 'bg-[#d9485f] text-white hover:bg-[#bd354b] shadow-[0_8px_18px_rgba(217,72,95,0.18)] border border-transparent',
     outline: 'bg-white text-slate-700 border border-slate-200 hover:border-[#c9c4ff] hover:bg-[#fafaff] shadow-sm',

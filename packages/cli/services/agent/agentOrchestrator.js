@@ -1,4 +1,4 @@
-import { ChatMessage, ExecutionLog, Form, Workflow, User } from '../../models/index.js';
+import { AssistantMessage, AutomationRun, Form, Workflow, User } from '../../models/index.js';
 import { runFormTurn } from '../ai/formAIService.js';
 import {
     assembleWorkflow,
@@ -75,8 +75,8 @@ const messagePayload = message => {
 };
 
 const saveReply = async (session, { text, kind = 'text', payload = null, tokenUsage = null, proposalStatus = null }) => {
-    const message = await ChatMessage.create({
-        sessionId: session.id,
+    const message = await AssistantMessage.create({
+        threadId: session.id,
         sender: 'bot',
         text: text || '',
         kind,
@@ -208,7 +208,7 @@ const research = async ({ userId, intent, context }) => {
             return { status: 'not_found', type: reference.type, query: reference.query };
         }
         if (result.status === 'resolved') {
-            const resourceModel = reference.type === 'form' ? Form : reference.type === 'workflow' ? Workflow : ExecutionLog;
+            const resourceModel = reference.type === 'form' ? Form : reference.type === 'workflow' ? Workflow : AutomationRun;
             const resource = await resourceModel.findOne({ where: { id: result.resource.id, userId } });
             if (!resource) continue;
             resources.push({
@@ -256,8 +256,8 @@ const planSolution = async ({ intent, resources, availableCapabilities = [], cla
 };
 
 const formHistory = async sessionId => {
-    const messages = await ChatMessage.findAll({
-        where: { sessionId },
+    const messages = await AssistantMessage.findAll({
+        where: { threadId: sessionId },
         order: [['createdAt', 'DESC']],
         limit: 12,
         attributes: ['sender', 'text']
@@ -625,7 +625,7 @@ const savePlanCapabilityClarification = async ({ session, run, plan, error, toke
         tokenUsage,
         plan
     });
-    await session.update({ agentState: { status: 'awaiting_agent_clarification', runId: run.id } });
+    await session.update({ state: { status: 'awaiting_agent_clarification', runId: run.id } });
     const capabilities = [...new Set((error.issues || [])
         .map(item => item.capability)
         .filter(Boolean))];
@@ -642,7 +642,7 @@ const savePlanCapabilityClarification = async ({ session, run, plan, error, toke
 
 const saveClarification = async ({ session, run, type, candidates, text }) => {
     await updateRun(run, { status: 'awaiting_clarification', currentStep: 'research' });
-    await session.update({ agentState: { status: 'awaiting_agent_clarification', runId: run.id } });
+    await session.update({ state: { status: 'awaiting_agent_clarification', runId: run.id } });
     return saveReply(session, {
         text,
         kind: 'clarification',
@@ -680,7 +680,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         clarificationAnswers: Array.isArray(context.clarificationAnswers) ? context.clarificationAnswers.slice(-8) : [],
         clarificationMode: normalizeClarificationMode(context.clarificationMode)
     };
-    const run = existingRun || await createRun({ sessionId: session.id, userId, metadata: { request: message, context: persistedContext } });
+    const run = existingRun || await createRun({ threadId: session.id, userId, metadata: { request: message, context: persistedContext } });
     if (existingRun) {
         await updateRun(run, {
             metadata: {
@@ -766,7 +766,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
                 currentStep: 'plan_review',
                 metadata: { ...(run.metadata || {}), planReviewRequested: true }
             });
-            await session.update({ agentState: { status: 'awaiting_agent_plan_review', runId: run.id } });
+            await session.update({ state: { status: 'awaiting_agent_plan_review', runId: run.id } });
             const reply = await saveReply(session, {
                 text: plan.summary || 'I prepared a plan for your review before continuing.',
                 kind: 'agent_plan_review',
@@ -875,7 +875,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
             }
             const formTurn = clarificationResult.result || clarificationResult;
             await updateRun(run, { status: 'awaiting_clarification', tokenUsage: totalUsage });
-            await session.update({ agentState: { status: 'awaiting_agent_clarification', runId: run.id } });
+            await session.update({ state: { status: 'awaiting_agent_clarification', runId: run.id } });
             const reply = await saveReply(session, {
                 text: formTurn.message,
                 kind: 'clarification',
@@ -899,7 +899,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
                 plan: runtimeResult.plan,
                 metadata: { ...(run.metadata || {}), planReviewRequested: true }
             });
-            await session.update({ agentState: { status: 'awaiting_agent_plan_review', runId: run.id } });
+            await session.update({ state: { status: 'awaiting_agent_plan_review', runId: run.id } });
             const reply = await saveReply(session, {
                 text: 'The runtime found a material change in the approach. Please review the updated outcome plan before I continue.',
                 kind: 'agent_plan_review',
@@ -932,7 +932,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
 
         await updateRun(run, { status: 'awaiting_approval', currentStep: null, tokenUsage: totalUsage });
         onEvent?.({ type: 'approval.required', runId: run.id, artifactIds });
-        await session.update({ agentState: { status: 'awaiting_agent_approval', runId: run.id } });
+        await session.update({ state: { status: 'awaiting_agent_approval', runId: run.id } });
         const firstArtifact = artifacts.find(artifact => artifact.type === 'form_proposal') || artifacts[0];
         const kind = artifacts.length > 1 ? 'solution_proposal' : firstArtifact.type === 'form_proposal' ? 'form_proposal' : 'workflow_proposal';
         const content = firstArtifact.content;
@@ -949,7 +949,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         };
         if (kind === 'form_proposal' || kind === 'solution_proposal') {
             const supersededMessageIds = await supersedePendingChatFormProposals({
-                sessionId: session.id,
+                threadId: session.id,
                 formId: payload.formId || null
             });
             if (supersededMessageIds.length > 0) payload.supersededMessageIds = supersededMessageIds;
@@ -983,7 +983,7 @@ export const resumeAgentAfterForm = async ({ run, session, userId, formId, onEve
     const result = await designWorkflow({ run, userId, message: request, workflow: existingWorkflow, form, formArtifactId: null, approverEmail: actor?.email || null, onEvent });
     if (result.status === 'clarification') {
         await updateRun(run, { status: 'awaiting_clarification', currentStep: 'design_workflow', tokenUsage: result.tokenUsage || {} });
-        await session.update({ agentState: { status: 'awaiting_agent_clarification', runId: run.id } });
+        await session.update({ state: { status: 'awaiting_agent_clarification', runId: run.id } });
         const reply = await saveReply(session, {
             text: result.result.message,
             kind: 'clarification',

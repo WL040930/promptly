@@ -74,44 +74,44 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
         : children;
 
     return (
-        <div className="flex h-screen overflow-hidden bg-[#f5f6fb] font-sans text-[#171827]">
-            <aside className={`relative z-50 flex shrink-0 flex-col border-r border-white/10 bg-[#171827] text-white transition-all duration-300 ${collapsed ? 'w-[70px]' : 'w-[252px]'}`}>
-                <div className={`flex h-16 items-center border-b border-white/10 ${collapsed ? 'justify-center' : 'justify-between px-4'}`}>
-                    {!collapsed && <div className="flex items-center gap-2.5"><img src="/logo.png" alt="Promptly" className="h-8 w-8 rounded-[10px] ring-1 ring-white/15" /><span className="font-display text-lg font-bold tracking-tight text-white">Promptly</span></div>}
+        <div className="workspace-shell flex h-screen overflow-hidden bg-[#f5f6fb] font-sans text-[#171827]">
+            <aside className={`workspace-sidebar relative z-50 flex shrink-0 flex-col text-white transition-all duration-300 ${collapsed ? 'is-collapsed w-[70px]' : 'w-[252px]'}`}>
+                <div className={`workspace-sidebar-head flex h-16 items-center ${collapsed ? 'justify-center' : 'justify-between px-4'}`}>
+                    {!collapsed && <div className="workspace-brand flex items-center gap-2.5"><img src="/logo.png" alt="Promptly" className="h-8 w-8 rounded-[10px] ring-1 ring-white/15" /><span className="font-display text-lg font-bold tracking-tight text-white">Promptly<span>.</span></span></div>}
                     <Button variant="ghost" size="icon-md" onClick={toggleCollapsed} className="p-1.5 text-slate-400 hover:bg-white/10 hover:text-white"><PanelLeftIcon /></Button>
                 </div>
 
-                <div className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
-                    <Button variant="primary" onClick={() => navigateTo({ page: 'automation-new', method: 'ai' })} className={`mb-5 rounded-xl shadow-none ${collapsed ? 'mx-auto h-10 w-10 p-0' : 'w-full'}`} title="Create automation">
+                <div className="workspace-sidebar-body flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
+                    <Button variant="primary" onClick={() => navigateTo({ page: 'automation-new', method: 'ai' })} className={`workspace-new-button mb-5 rounded-xl shadow-none ${collapsed ? 'mx-auto h-10 w-10 p-0' : 'w-full'}`} title="Create automation">
                         <span className="text-xl leading-none">+</span>{!collapsed && <span className="ml-2">New automation</span>}
                     </Button>
 
                     <div className="mb-1 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{!collapsed && 'Workspace'}</div>
                     {navigation.map(item => (
-                        <button key={item.page} type="button" onClick={() => go(item.page)} title={item.label} className={`group relative flex items-center gap-3 rounded-xl border p-2.5 text-left font-semibold transition-colors ${activePage === item.page ? 'border-white/10 bg-white text-[#5143cc] shadow-sm' : 'border-transparent text-slate-400 hover:bg-white/10 hover:text-white'} ${collapsed ? 'justify-center' : ''}`}>
+                        <button key={item.page} type="button" onClick={() => go(item.page)} title={item.label} className={`workspace-nav-item group relative flex items-center gap-3 rounded-xl border p-2.5 text-left font-semibold transition-colors ${activePage === item.page ? 'is-active border-white/10 bg-white text-[#5143cc] shadow-sm' : 'border-transparent text-slate-400 hover:bg-white/10 hover:text-white'} ${collapsed ? 'justify-center' : ''}`}>
                             {activePage === item.page && <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-[#c8f17b]" />}
                             <span className="shrink-0">{item.icon}</span>{!collapsed && <span className="truncate">{item.label}</span>}
                         </button>
                     ))}
 
-                    <button type="button" onClick={() => go('assistant')} title="Ask Promptly" className={`mt-2 flex items-center gap-3 rounded-xl border border-transparent p-2.5 text-left font-semibold text-[#b6adff] transition-colors hover:bg-[#2a2840] hover:text-white ${collapsed ? 'justify-center' : ''}`}>
+                    <button type="button" onClick={() => go('assistant')} title="Ask Promptly" className={`workspace-assistant-link mt-2 flex items-center gap-3 rounded-xl border border-transparent p-2.5 text-left font-semibold transition-colors hover:bg-[#2a2840] hover:text-white ${collapsed ? 'justify-center' : ''}`}>
                         <span className="shrink-0">{icons.assistant}</span>{!collapsed && <span>Ask Promptly</span>}
                     </button>
 
                     <div className="mt-auto pt-6">
-                        <button type="button" onClick={() => { setSettingsTab('general'); setSettingsOpen(true); }} title="Settings" className={`flex w-full items-center gap-3 rounded-xl border border-transparent p-2.5 text-left font-medium text-slate-400 transition-colors hover:bg-white/10 hover:text-white ${collapsed ? 'justify-center' : ''}`}>
+                        <button type="button" onClick={() => { setSettingsTab('general'); setSettingsOpen(true); }} title="Settings" className={`workspace-settings-link flex w-full items-center gap-3 rounded-xl border border-transparent p-2.5 text-left font-medium transition-colors hover:bg-white/10 hover:text-white ${collapsed ? 'justify-center' : ''}`}>
                             <span className="shrink-0">{icons.settings}</span>{!collapsed && <span>Settings</span>}
                         </button>
                     </div>
                 </div>
 
-                <div className={`flex items-center gap-3 border-t border-white/10 p-3 ${collapsed ? 'justify-center' : ''}`}>
+                <div className={`workspace-user flex items-center gap-3 p-3 ${collapsed ? 'justify-center' : ''}`}>
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#c8f17b] text-xs font-bold text-[#171827]">{user?.email?.substring(0, 2).toUpperCase() || 'U'}</div>
                     {!collapsed && <div className="min-w-0"><p className="truncate text-sm font-bold text-white">{user?.email || 'User'}</p><p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Promptly account</p></div>}
                 </div>
             </aside>
 
-            <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#f5f6fb]">{content}</main>
+            <main className="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#f5f6fb]">{content}</main>
 
             {settingsOpen && <SettingsModal user={user} onClose={() => setSettingsOpen(false)} onLogout={onLogout} initialTab={settingsTab} />}
         </div>

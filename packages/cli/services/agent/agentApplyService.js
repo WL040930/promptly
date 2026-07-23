@@ -1,5 +1,5 @@
 import sequelize from '../../db/index.js';
-import { AgentRun, ChatMessage, ChatSession, Form, Workflow, WorkflowVersion } from '../../models/index.js';
+import { AgentRun, AssistantMessage, AssistantThread, Form, Workflow, WorkflowVersion } from '../../models/index.js';
 import { applyFormPatches } from '../ai/form/domain/formPatchEngine.js';
 import { validateFormSchema } from '../ai/form/domain/formSchemaValidator.js';
 import { validateWorkflow } from '../engine/workflowValidator.js';
@@ -101,7 +101,7 @@ const applyWorkflowArtifact = async ({ artifact, userId, form, transaction }) =>
 
 const markProposalMessage = (run, proposalStatus, transaction = undefined) => {
     if (!run.metadata?.proposalMessageId) return Promise.resolve();
-    return ChatMessage.update(
+    return AssistantMessage.update(
         { proposalStatus },
         { where: { id: run.metadata.proposalMessageId }, ...(transaction ? { transaction } : {}) }
     );
@@ -166,23 +166,23 @@ export const approveAgentRun = async ({ runId, userId, idempotencyKey }) => {
                 error: { code: 'AGENT_TRIGGER_SETUP_FAILED', message: setupFailure.message, issues: setupFailure.issues },
                 metadata: { ...(run.metadata || {}), setupRequired: true }
             });
-            const session = await ChatSession.findByPk(run.sessionId);
-            if (session) await session.update({ agentState: {} });
+            const session = await AssistantThread.findByPk(run.threadId);
+            if (session) await session.update({ state: {} });
             return serializeRun(await getRunForUser(runId, userId));
         }
 
         if (form && !workflowArtifact && run.intent?.domains?.includes('workflow')) {
-            const session = await ChatSession.findByPk(run.sessionId);
+            const session = await AssistantThread.findByPk(run.threadId);
             if (session) {
                 const { resumeAgentAfterForm } = await import('./agentOrchestrator.js');
                 const resumed = await resumeAgentAfterForm({ run, session, userId, formId: form.id });
-                await session.update({ agentState: { status: 'awaiting_agent_approval', runId } });
+                await session.update({ state: { status: 'awaiting_agent_approval', runId } });
                 return { ...serializeRun(await getRunForUser(runId, userId)), followUpReply: resumed.reply };
             }
         }
 
-        const session = await ChatSession.findByPk(run.sessionId);
-        if (session) await session.update({ agentState: {} });
+        const session = await AssistantThread.findByPk(run.threadId);
+        if (session) await session.update({ state: {} });
         return serializeRun(await getRunForUser(runId, userId));
     } catch (error) {
         const failure = makeError(error);
@@ -205,7 +205,7 @@ export const rejectAgentRun = async ({ runId, userId }) => {
     const artifacts = getRunArtifacts(run).map(artifact => ({ ...artifact, status: 'rejected' }));
     await markProposalMessage(run, 'ignored');
     await run.update({ status: 'blocked', currentStep: null, artifacts, approval });
-    const session = await ChatSession.findByPk(run.sessionId);
-    if (session) await session.update({ agentState: {} });
+    const session = await AssistantThread.findByPk(run.threadId);
+    if (session) await session.update({ state: {} });
     return serializeRun(await getRunForUser(runId, userId));
 };

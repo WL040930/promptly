@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import sequelize from '../../../db/index.js';
-import { Form, FormAIState, FormChatMessage } from '../../../models/index.js';
+import { AssistantMessage, AssistantThread, Form } from '../../../models/index.js';
+import { createAssistantStateView, ensureAssistantThread } from '../../assistant/assistantStore.js';
 import { runFormTurn } from '../formAIService.js';
 import { FORM_AI_HISTORY_LIMIT, validateQuestionCardinality } from './context/formContext.js';
 import { applyFormPatches } from './domain/formPatchEngine.js';
@@ -74,22 +75,22 @@ const statePatchForResult = ({ result, command, form, proposalMessageId = null }
 };
 
 export const createFormAssistant = ({
-    models = { Form, FormAIState, FormChatMessage },
+    models = { Form, AssistantThread, AssistantMessage },
     db = sequelize,
     runTurn = runFormTurn,
     now = () => new Date(),
     idFactory = makeId
 } = {}) => {
-    const loadState = async (formId, transaction) => {
-        const lock = transaction?.LOCK?.UPDATE ? { lock: transaction.LOCK.UPDATE } : {};
-        const existing = await models.FormAIState.findOne({ where: { formId }, transaction, ...lock });
-        if (existing) return existing;
-        const [state] = await models.FormAIState.findOrCreate({
-            where: { formId },
-            defaults: { formId },
+    const loadState = async (formId, transaction, userId) => {
+        const thread = await ensureAssistantThread({
+            surface: 'form',
+            formId,
+            userId,
+            title: 'Form AI',
+            models: { AssistantThread: models.AssistantThread },
             transaction
         });
-        return state;
+        return createAssistantStateView(thread);
     };
 
     const submitTurn = async ({
@@ -121,7 +122,7 @@ export const createFormAssistant = ({
                 throw error;
             }
 
-            const state = await loadState(formId, transaction);
+            const state = await loadState(formId, transaction, userId);
             if (Number.isInteger(expectedStateVersion) && state.version !== expectedStateVersion) {
                 const error = new Error('The form AI conversation changed. Refresh and try again.');
                 error.code = 'FORM_AI_STATE_CONFLICT';
@@ -139,7 +140,7 @@ export const createFormAssistant = ({
             }
 
             const pending = state.activeProposalMessageId
-                ? await models.FormChatMessage.findOne({ where: { id: state.activeProposalMessageId, formId }, transaction })
+                ? await models.AssistantMessage.findOne({ where: { id: state.activeProposalMessageId, threadId: state.threadId }, transaction })
                 : null;
             const context = resolveFormTurnContext({
                 command,
@@ -150,9 +151,9 @@ export const createFormAssistant = ({
                 pendingProposal: asJson(pending)?.proposal || null,
                 clarificationMode: mode
             });
-            const userMessage = await models.FormChatMessage.create({
+            const userMessage = await models.AssistantMessage.create({
                 id: idFactory('fmsg'),
-                formId,
+                threadId: state.threadId,
                 sender: 'user',
                 text: command.type === 'decide_for_me' ? 'Use sensible defaults.' : command.text
             }, { transaction });
@@ -169,8 +170,8 @@ export const createFormAssistant = ({
 
         const { form, state, pending, context, userMessage } = reservation;
         try {
-            const rawHistory = await models.FormChatMessage.findAll({
-                where: { formId },
+            const rawHistory = await models.AssistantMessage.findAll({
+                where: { threadId: state.threadId },
                 order: [['createdAt', 'DESC']],
                 limit: FORM_AI_HISTORY_LIMIT + 2
             });
@@ -206,20 +207,22 @@ export const createFormAssistant = ({
                         formId,
                         transaction,
                         supersededBy: null,
-                        messageModel: models.FormChatMessage
+                        messageModel: models.AssistantMessage,
+                        threadId: state.threadId
                     });
                 }
-                const assistantMessage = await models.FormChatMessage.create({
+                const assistantMessage = await models.AssistantMessage.create({
                     id: idFactory('fmsg'),
-                    formId,
+                    threadId: state.threadId,
                     sender: 'bot',
                     text: messageData.text,
-                    proposal: messageData.proposal || null,
-                    options: messageData.options || null,
+                    kind: messageData.proposal ? 'form_proposal' : messageData.options ? 'clarification' : 'text',
+                    payload: messageData.proposal || messageData.options || null,
+                    proposalStatus: messageData.proposal ? 'pending' : null,
                     tokenUsage: messageData.tokenUsage
                 }, { transaction });
                 const statePatch = statePatchForResult({ result, command: context.command, form, proposalMessageId: assistantMessage.id });
-                const freshState = await models.FormAIState.findOne({ where: { formId }, transaction });
+                const freshState = await loadState(formId, transaction, form.userId);
                 await freshState.update({
                     ...statePatch,
                     version: freshState.version + 1,
@@ -239,9 +242,9 @@ export const createFormAssistant = ({
             const safeMessage = error.message || 'Form AI could not complete this request.';
             let response;
             await db.transaction(async transaction => {
-                const assistantMessage = await models.FormChatMessage.create({
+                const assistantMessage = await models.AssistantMessage.create({
                     id: idFactory('fmsg'),
-                    formId,
+                    threadId: state.threadId,
                     sender: 'bot',
                     text: safeMessage,
                     isError: true,
@@ -250,7 +253,7 @@ export const createFormAssistant = ({
                         retryable: error.status !== 404
                     }
                 }, { transaction });
-                const freshState = await models.FormAIState.findOne({ where: { formId }, transaction });
+                const freshState = await loadState(formId, transaction, form.userId);
                 await freshState.update({
                     phase: 'idle',
                     openClarification: null,
@@ -274,14 +277,14 @@ export const createFormAssistant = ({
                 error.status = 404;
                 throw error;
             }
-            const state = await loadState(formId, transaction);
+            const state = await loadState(formId, transaction, userId);
             if (state.inFlightRequestId) {
                 const error = new Error('The form AI is still processing a request. Wait for it to finish before clearing the chat.');
                 error.code = 'FORM_AI_TURN_IN_PROGRESS';
                 error.status = 409;
                 throw error;
             }
-            const deletedMessages = await models.FormChatMessage.destroy({ where: { formId }, transaction });
+            const deletedMessages = await models.AssistantMessage.destroy({ where: { threadId: state.threadId }, transaction });
             await state.update({
                 version: state.version + 1,
                 phase: 'idle',
@@ -313,23 +316,23 @@ export const createFormAssistant = ({
                 error.status = 404;
                 throw error;
             }
-            const message = await models.FormChatMessage.findOne({ where: { id: proposalMessageId, formId }, transaction });
+            const state = await loadState(formId, transaction, userId);
+            const message = await models.AssistantMessage.findOne({ where: { id: proposalMessageId, threadId: state.threadId }, transaction });
             if (!message) {
                 const error = new Error('Proposal message not found');
                 error.status = 404;
                 throw error;
             }
-            if (message.sender !== 'bot' || message.proposal?.status !== 'pending') {
+            if (message.sender !== 'bot' || message.payload?.status !== 'pending') {
                 const error = new Error('This proposal is no longer pending.');
                 error.status = 409;
                 error.code = 'FORM_PROPOSAL_NOT_PENDING';
                 throw error;
             }
 
-            const proposal = message.proposal || {};
+            const proposal = message.payload || {};
             if (action === 'reject' || action === 'ignore') {
-                await message.update({ proposal: { ...proposal, status: 'rejected' } }, { transaction });
-                const state = await models.FormAIState.findOne({ where: { formId }, transaction });
+                await message.update({ payload: { ...proposal, status: 'rejected' }, proposalStatus: 'rejected' }, { transaction });
                 if (state?.activeProposalMessageId === message.id) {
                     await state.update({
                         phase: 'idle',
@@ -366,8 +369,7 @@ export const createFormAssistant = ({
 
             const expectedRevision = baseFormUpdatedAt || proposal.baseFormUpdatedAt;
             if (expectedRevision && new Date(form.updatedAt).getTime() !== new Date(expectedRevision).getTime()) {
-                await message.update({ proposal: { ...proposal, status: 'stale', staleReason: 'FORM_VERSION_CHANGED' } }, { transaction });
-                const state = await models.FormAIState.findOne({ where: { formId }, transaction });
+                await message.update({ payload: { ...proposal, status: 'stale', staleReason: 'FORM_VERSION_CHANGED' }, proposalStatus: 'stale' }, { transaction });
                 if (state?.activeProposalMessageId === message.id) {
                     await state.update({
                         phase: 'idle',
@@ -407,15 +409,15 @@ export const createFormAssistant = ({
                 fields: applied.schema.fields
             }, { transaction });
             await message.update({
-                proposal: {
+                payload: {
                     ...proposal,
                     schema: applied.schema,
                     patches: applied.patches,
                     selectedPatchIds: requestedPatchIds,
                     status: 'accepted'
-                }
+                },
+                proposalStatus: 'accepted'
             }, { transaction });
-            const state = await models.FormAIState.findOne({ where: { formId }, transaction });
             if (state) {
                 await state.update({
                     phase: 'idle',

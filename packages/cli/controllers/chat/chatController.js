@@ -1,11 +1,11 @@
-import { ChatSession, ChatMessage } from '../../models/index.js';
+import { AssistantMessage, AssistantThread } from '../../models/index.js';
 import { Op } from 'sequelize';
 import asyncHandler from '../../utils/asyncHandler.js';
 import { processChatMessage, applyEvent, decideChatProposal, saveUserMessage } from '../../services/chat/chatAgentService.js';
 import { mergeAgentContext } from '../../services/chat/resourceResolver.js';
 
 export const createSendMessageHandler = ({
-    chatSessionModel = ChatSession,
+    chatSessionModel = AssistantThread,
     applyEventService = applyEvent,
     processChatMessageService = processChatMessage,
     saveUserMessageService = saveUserMessage,
@@ -34,7 +34,9 @@ export const createSendMessageHandler = ({
         const titleSource = message || 'New Agent Session';
         session = await chatSessionModel.create({
             userId,
-            purpose: 'general',
+            surface: 'ask_promptly',
+            context: {},
+            state: { version: 1, phase: 'idle', mode: 'important_only' },
             title: `${titleSource.substring(0, 40)}${titleSource.length > 40 ? '...' : ''}`
         });
     }
@@ -60,9 +62,9 @@ export const createSendMessageHandler = ({
     }
 
     const userMessage = await saveUserMessageService(session, message);
-    const nextAgentContext = mergeAgentContextService(session.agentContext || {}, context);
-    if (JSON.stringify(nextAgentContext) !== JSON.stringify(session.agentContext || {})) {
-        await session.update({ agentContext: nextAgentContext });
+    const nextAgentContext = mergeAgentContextService(session.context || {}, context);
+    if (JSON.stringify(nextAgentContext) !== JSON.stringify(session.context || {})) {
+        await session.update({ context: nextAgentContext });
     }
 
     const { replyObj, totalTokenUsage } = await processChatMessageService({ session, userId, context, onEvent: emit });
@@ -89,14 +91,14 @@ export const sendMessage = createSendMessageHandler();
 export const getSession = asyncHandler(async (req, res) => {
     const { sessionId } = req.params;
     const { limit = 50, before } = req.query;
-    const session = await ChatSession.findOne({ where: { id: sessionId, userId: req.user.id } });
+    const session = await AssistantThread.findOne({ where: { id: sessionId, userId: req.user.id, surface: 'ask_promptly' } });
     if (!session) return res.status(404).json({ message: 'Session not found' });
-    const whereClause = { sessionId };
+    const whereClause = { threadId: sessionId };
     if (before) {
-        const cursorMsg = await ChatMessage.findOne({ where: { id: before, sessionId } });
+        const cursorMsg = await AssistantMessage.findOne({ where: { id: before, threadId: sessionId } });
         if (cursorMsg) whereClause.createdAt = { [Op.lt]: cursorMsg.createdAt };
     }
-    const messages = await ChatMessage.findAll({ where: whereClause, order: [['createdAt', 'DESC']], limit: parseInt(limit, 10) });
+    const messages = await AssistantMessage.findAll({ where: whereClause, order: [['createdAt', 'DESC']], limit: parseInt(limit, 10) });
     
     const messagePayload = (msg) => {
         const json = msg.toJSON();
@@ -112,11 +114,20 @@ export const getSession = asyncHandler(async (req, res) => {
         };
     };
     
-    res.json({ ...session.toJSON(), messages: messages.reverse().map(messagePayload) });
+    res.json({
+        id: session.id,
+        userId: session.userId,
+        title: session.title,
+        updatedAt: session.updatedAt,
+        purpose: 'general',
+        agentContext: session.context || {},
+        agentState: session.state || {},
+        messages: messages.reverse().map(messagePayload)
+    });
 });
 
 export const decideProposal = asyncHandler(async (req, res) => {
-    const session = await ChatSession.findOne({ where: { id: req.body?.sessionId, userId: req.user.id } });
+    const session = await AssistantThread.findOne({ where: { id: req.body?.sessionId, userId: req.user.id, surface: 'ask_promptly' } });
     if (!session) return res.status(404).json({ message: 'Session not found' });
     const result = await decideChatProposal({
         session,
@@ -129,13 +140,20 @@ export const decideProposal = asyncHandler(async (req, res) => {
 });
 
 export const getSessions = asyncHandler(async (req, res) => {
-    const sessions = await ChatSession.findAll({ where: { userId: req.user.id, purpose: 'general' }, order: [['updatedAt', 'DESC']], attributes: ['id', 'title', 'updatedAt', 'agentContext', 'agentState', 'automationId', 'purpose'], limit: 50 });
-    res.json(sessions);
+    const sessions = await AssistantThread.findAll({ where: { userId: req.user.id, surface: 'ask_promptly' }, order: [['updatedAt', 'DESC']], attributes: ['id', 'title', 'updatedAt', 'context', 'state', 'surface'], limit: 50 });
+    res.json(sessions.map(session => ({
+        id: session.id,
+        title: session.title,
+        updatedAt: session.updatedAt,
+        purpose: 'general',
+        agentContext: session.context || {},
+        agentState: session.state || {}
+    })));
 });
 
 export const deleteSession = asyncHandler(async (req, res) => {
     const { sessionId } = req.params;
-    const session = await ChatSession.findOne({ where: { id: sessionId, userId: req.user.id } });
+    const session = await AssistantThread.findOne({ where: { id: sessionId, userId: req.user.id, surface: 'ask_promptly' } });
     if (!session) return res.status(404).json({ message: 'Session not found' });
     await session.destroy();
     res.json({ message: 'Session deleted' });

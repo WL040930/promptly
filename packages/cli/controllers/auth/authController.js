@@ -4,7 +4,6 @@ import crypto from 'crypto';
 import { Op } from 'sequelize';
 import User from '../../models/core/User.js';
 import Connection from '../../models/core/Connection.js';
-import OnboardingProgress from '../../models/core/OnboardingProgress.js';
 import env from '../../config/env.js';
 import { normalizeEmail, emailPattern, passwordPattern } from '../../utils/validators.js';
 import { sendEmail } from '../../utils/email.js';
@@ -17,13 +16,12 @@ const createAuthToken = (user) =>
 
 const serializeUser = async (user) => {
     const google = await Connection.findOne({ where: { userId: user.id, provider: 'google', status: 'active' } });
-    const onboarding = await OnboardingProgress.findOne({ where: { userId: user.id } });
     return {
         id: user.id,
         email: user.email,
-        onboardingStatus: onboarding?.status || 'not_started',
-        onboardingCompletedAt: onboarding?.completedAt || null,
-        onboardingVersion: onboarding?.version || 1,
+        onboardingStatus: user.onboardingCompletedAt ? 'completed' : 'not_started',
+        onboardingCompletedAt: user.onboardingCompletedAt || null,
+        onboardingVersion: 2,
         googleEmail: google?.accountEmail || null,
         googleId: google?.externalAccountId || null
     };
@@ -55,7 +53,6 @@ const register = async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({ email, passwordHash });
-    await OnboardingProgress.create({ userId: user.id });
     const token = createAuthToken(user);
 
     return res.status(201).json({
@@ -98,8 +95,10 @@ const completeOnboarding = async (req, res) => {
         return res.status(404).json({ error: 'User not found.' });
     }
 
-    const [onboarding] = await OnboardingProgress.findOrCreate({ where: { userId: user.id }, defaults: { version: 1 } });
-    await onboarding.update({ status: 'completed', currentStep: 'complete', completedAt: onboarding.completedAt || new Date(), version: Math.max(Number(onboarding.version || 0), 1) });
+    if (!user.onboardingCompletedAt) {
+        user.onboardingCompletedAt = new Date();
+        await user.save();
+    }
 
     return res.json({
         message: 'Onboarding completed successfully.',

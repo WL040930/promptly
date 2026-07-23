@@ -27,6 +27,10 @@ const User = sequelize.define(
         resetPasswordExpires: {
             type: DataTypes.DATE,
             allowNull: true
+        },
+        onboardingCompletedAt: {
+            type: DataTypes.DATE,
+            allowNull: true
         }
     },
     {

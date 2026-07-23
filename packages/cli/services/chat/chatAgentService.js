@@ -1,6 +1,6 @@
-import { ChatSession, ChatMessage, Workflow, Form, AgentRun, WorkflowVersion } from '../../models/index.js';
+import { AssistantThread, AssistantMessage, Workflow, Form, AgentRun, WorkflowVersion } from '../../models/index.js';
 import sequelize from '../../db/index.js';
-import { FormAIState, FormChatMessage, FormResponse } from '../../models/index.js';
+import { FormResponse } from '../../models/index.js';
 import { runFormTurn } from '../ai/formAIService.js';
 import { ai } from '../ai/index.js';
 import { AI_TASKS } from '../ai/core/aiTasks.js';
@@ -32,8 +32,8 @@ const messagePayload = (message) => {
 };
 
 const saveReply = async (session, { text, kind = 'text', payload = null, tokenUsage = null, proposalStatus = null }) => {
-    const reply = await ChatMessage.create({
-        sessionId: session.id,
+    const reply = await AssistantMessage.create({
+        threadId: session.id,
         sender: 'bot',
         text: text || '',
         kind,
@@ -82,7 +82,7 @@ const capabilityErrorMessage = error => {
 
 export const saveUserMessage = async (session, message) => {
     if (!message || !message.trim()) return null;
-    const saved = await ChatMessage.create({ sessionId: session.id, sender: 'user', text: message.trim(), kind: 'text' });
+    const saved = await AssistantMessage.create({ threadId: session.id, sender: 'user', text: message.trim(), kind: 'text' });
     return messagePayload(saved);
 };
 
@@ -118,8 +118,8 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
     if (!session?.id || !messageId) throw new Error('A session and proposal message are required.');
     let result;
     await sequelize.transaction(async transaction => {
-        const message = await ChatMessage.findOne({
-            where: { id: messageId, sessionId: session.id },
+        const message = await AssistantMessage.findOne({
+            where: { id: messageId, threadId: session.id },
             transaction,
             lock: transaction.LOCK.UPDATE
         });
@@ -143,7 +143,7 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
         const proposal = { ...(message.payload || {}), ...(overrides || {}) };
         if (action === 'reject' || action === 'ignore') {
             await message.update({ proposalStatus: 'ignored' }, { transaction });
-            await session.update({ agentState: {} }, { transaction });
+            await session.update({ state: {} }, { transaction });
             result = { status: 'ignored', message: messagePayload({ toJSON: () => ({ ...message.toJSON(), proposalStatus: 'ignored' }) }) };
             return;
         }
@@ -181,8 +181,7 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
                 }
                 const proposedById = new Map(proposedForms.map(form => [form.id, form]));
                 forms.forEach(form => ensureFormRevision(form, proposedById.get(form.id)?.baseFormUpdatedAt));
-                await FormChatMessage.destroy({ where: { formId: formIds }, transaction });
-                await FormAIState.destroy({ where: { formId: formIds }, transaction });
+                await AssistantThread.destroy({ where: { surface: 'form', formId: formIds }, transaction });
                 await FormResponse.destroy({ where: { formId: formIds }, transaction });
                 await Form.destroy({ where: { userId, id: formIds }, transaction });
                 result = { formIds, formCount: forms.length, action: 'delete_forms' };
@@ -234,8 +233,7 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
                 error.issues = dependencies.map(workflow => ({ id: workflow.id, name: workflow.name }));
                 throw error;
             }
-            await FormChatMessage.destroy({ where: { formId: form.id }, transaction });
-            await FormAIState.destroy({ where: { formId: form.id }, transaction });
+            await AssistantThread.destroy({ where: { surface: 'form', formId: form.id }, transaction });
             await FormResponse.destroy({ where: { formId: form.id }, transaction });
             await form.destroy({ transaction });
             result = { formId: form.id, action: 'delete_form' };
@@ -313,7 +311,7 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
 
         const nextPayload = { ...proposal, result, appliedAt: new Date().toISOString() };
         await message.update({ proposalStatus: 'applied', payload: nextPayload }, { transaction });
-        await session.update({ agentState: {} }, { transaction });
+        await session.update({ state: {} }, { transaction });
         result = { status: 'applied', message: messagePayload({ toJSON: () => ({ ...message.toJSON(), proposalStatus: 'applied', payload: nextPayload }) }), resource: result };
     });
     return result;
@@ -372,8 +370,8 @@ const compactFormContext = (form) => {
 };
 
 const formHistory = async (sessionId) => {
-    const rows = await ChatMessage.findAll({
-        where: { sessionId },
+    const rows = await AssistantMessage.findAll({
+        where: { threadId: sessionId },
         order: [['createdAt', 'ASC']],
         limit: 20,
         attributes: ['sender', 'text', 'kind', 'payload', 'proposalStatus']
@@ -414,7 +412,7 @@ const formResult = async ({ session, userId, request, formId, continuation = nul
             currentSchema,
             continuation
         };
-        await session.update({ agentState: nextState });
+        await session.update({ state: nextState });
         const reply = await saveReply(session, {
             text: result.message || 'Please provide a little more detail.',
             kind: result.kind === 'reply' ? 'text' : 'clarification',
@@ -432,9 +430,9 @@ const formResult = async ({ session, userId, request, formId, continuation = nul
         continuation,
         schema: result.schema || currentSchema
     };
-    await session.update({ agentState: nextState });
+    await session.update({ state: nextState });
     const supersededMessageIds = await supersedePendingChatFormProposals({
-        sessionId: session.id,
+        threadId: session.id,
         formId: formId || null
     });
     const proposalPayload = {
@@ -461,9 +459,9 @@ const formResult = async ({ session, userId, request, formId, continuation = nul
 
 export const applyEvent = async (session, userId, event, onEvent = null) => {
     if (!event?.type) return null;
-    const state = session.agentState || {};
+    const state = session.state || {};
     if (event.type === 'agent_plan_approved' && event.runId) {
-        const run = await AgentRun.findOne({ where: { id: event.runId, sessionId: session.id, userId } });
+        const run = await AgentRun.findOne({ where: { id: event.runId, threadId: session.id, userId } });
         if (!run || state.status !== 'awaiting_agent_plan_review' || state.runId !== run.id) {
             return { reply: await saveReply(session, { text: 'That plan is no longer waiting for approval. Please send the request again.', kind: 'error' }) };
         }
@@ -471,20 +469,20 @@ export const applyEvent = async (session, userId, event, onEvent = null) => {
         return { reply: resumed.replyObj, tokenUsage: resumed.totalTokenUsage };
     }
     if (event.type === 'agent_plan_rejected' && event.runId) {
-        const run = await AgentRun.findOne({ where: { id: event.runId, sessionId: session.id, userId } });
+        const run = await AgentRun.findOne({ where: { id: event.runId, threadId: session.id, userId } });
         if (!run || state.status !== 'awaiting_agent_plan_review' || state.runId !== run.id) {
             return { reply: await saveReply(session, { text: 'That plan is no longer waiting for approval.', kind: 'error' }) };
         }
         await run.update({ status: 'blocked', currentStep: null, error: { code: 'AGENT_PLAN_REJECTED', message: 'The user chose not to continue with the proposed plan.' } });
-        await session.update({ agentState: {} });
+        await session.update({ state: {} });
         return { reply: await saveReply(session, { text: 'I stopped before making any form or workflow changes.', kind: 'status', payload: { status: 'cancelled', runId: run.id } }) };
     }
     if (event.type === 'form_saved' && event.runId) {
-        const run = await AgentRun.findOne({ where: { id: event.runId, sessionId: session.id, userId } });
+        const run = await AgentRun.findOne({ where: { id: event.runId, threadId: session.id, userId } });
         if (!run) return { reply: await saveReply(session, { text: 'That agent run is no longer available.', kind: 'error' }) };
-        if (event.messageId) await ChatMessage.update({ proposalStatus: 'applied' }, { where: { id: event.messageId, sessionId: session.id } });
+        if (event.messageId) await AssistantMessage.update({ proposalStatus: 'applied' }, { where: { id: event.messageId, threadId: session.id } });
         const resumed = await resumeAgentAfterForm({ run, session, userId, formId: event.formId, onEvent });
-        await session.update({ agentState: { status: 'awaiting_agent_approval', runId: run.id } });
+        await session.update({ state: { status: 'awaiting_agent_approval', runId: run.id } });
         return { reply: resumed.reply, tokenUsage: resumed.tokenUsage };
     }
     if (event.type === 'workflow_target_selected') {
@@ -495,8 +493,8 @@ export const applyEvent = async (session, userId, event, onEvent = null) => {
         }
 
         await session.update({
-            agentContext: { ...(session.agentContext || {}), workflowId: workflow.id },
-            agentState: {}
+            context: { ...(session.context || {}), workflowId: workflow.id },
+            state: {}
         });
 
         return {
@@ -514,8 +512,8 @@ export const applyEvent = async (session, userId, event, onEvent = null) => {
         }
 
         await session.update({
-            agentContext: mergeAgentContext(session.agentContext || {}, { formId: form.id }),
-            agentState: {}
+            context: mergeAgentContext(session.context || {}, { formId: form.id }),
+            state: {}
         });
 
         return {
@@ -526,24 +524,24 @@ export const applyEvent = async (session, userId, event, onEvent = null) => {
         };
     }
     if (event.type === 'proposal_ignored') {
-        if (event.messageId) await ChatMessage.update({ proposalStatus: 'ignored' }, { where: { id: event.messageId, sessionId: session.id } });
-        await session.update({ agentState: {} });
+        if (event.messageId) await AssistantMessage.update({ proposalStatus: 'ignored' }, { where: { id: event.messageId, threadId: session.id } });
+        await session.update({ state: {} });
         return { reply: await saveReply(session, { text: 'Ignored.', kind: 'status', payload: { status: 'ignored' } }) };
     }
     if (event.type === 'proposal_stale') {
-        if (event.messageId) await ChatMessage.update({ proposalStatus: 'stale' }, { where: { id: event.messageId, sessionId: session.id } });
-        await session.update({ agentState: {} });
+        if (event.messageId) await AssistantMessage.update({ proposalStatus: 'stale' }, { where: { id: event.messageId, threadId: session.id } });
+        await session.update({ state: {} });
         return { reply: await saveReply(session, { text: 'This suggestion is outdated. Generate a new one.', kind: 'status', payload: { status: 'stale' } }) };
     }
     if (event.type === 'proposal_applied') {
-        if (event.messageId) await ChatMessage.update({ proposalStatus: 'applied' }, { where: { id: event.messageId, sessionId: session.id } });
-        await session.update({ agentState: {} });
+        if (event.messageId) await AssistantMessage.update({ proposalStatus: 'applied' }, { where: { id: event.messageId, threadId: session.id } });
+        await session.update({ state: {} });
         return { reply: await saveReply(session, { text: 'Applied.', kind: 'status', payload: { status: 'applied' } }) };
     }
     if (event.type === 'form_saved') {
         const msgIdToUpdate = event.messageId || state.proposalMessageId;
-        if (msgIdToUpdate) await ChatMessage.update({ proposalStatus: 'applied' }, { where: { id: msgIdToUpdate, sessionId: session.id } });
-        await session.update({ agentState: {} });
+        if (msgIdToUpdate) await AssistantMessage.update({ proposalStatus: 'applied' }, { where: { id: msgIdToUpdate, threadId: session.id } });
+        await session.update({ state: {} });
         return { reply: await saveReply(session, { text: 'Form saved.', kind: 'status', payload: { status: 'applied', formId: event.formId } }) };
     }
     return null;
@@ -556,12 +554,12 @@ If native function calling is unavailable, output a tool request exactly as <TOO
 
 // Tool definitions are generated by chatCapabilityRegistry.js.
 export const processChatMessage = async ({ session, userId, context = {}, onEvent = null }) => {
-    const effectiveContext = mergeAgentContext(session.agentContext || {}, context);
-    const latestUserMessage = await ChatMessage.findOne({
-        where: { sessionId: session.id, sender: 'user' },
+    const effectiveContext = mergeAgentContext(session.context || {}, context);
+    const latestUserMessage = await AssistantMessage.findOne({
+        where: { threadId: session.id, sender: 'user' },
         order: [['createdAt', 'DESC']]
     });
-    let pendingAgentState = session.agentState || {};
+    let pendingAgentState = session.state || {};
     // A pending clarification is scoped to its original question. An
     // unrelated sentence must start a fresh turn instead of being appended to
     // the old request (which previously caused greetings to reach the planner
@@ -570,7 +568,7 @@ export const processChatMessage = async ({ session, userId, context = {}, onEven
         'awaiting_agent_plan_review',
         'awaiting_agent_clarification'
     ].includes(pendingAgentState.status)) {
-        const pendingRun = await AgentRun.findOne({ where: { id: pendingAgentState.runId, sessionId: session.id, userId } });
+        const pendingRun = await AgentRun.findOne({ where: { id: pendingAgentState.runId, threadId: session.id, userId } });
         const decision = decidePendingTurn({
             message: latestUserMessage?.text || '',
             pending: {
@@ -590,15 +588,15 @@ export const processChatMessage = async ({ session, userId, context = {}, onEven
                     suspendedFromStatus: pendingAgentState.status
                 }
             });
-            await session.update({ agentState: {} });
+            await session.update({ state: {} });
             pendingAgentState = {};
         } else if (!pendingRun) {
-            await session.update({ agentState: {} });
+            await session.update({ state: {} });
             pendingAgentState = {};
         }
     }
     if (pendingAgentState.status === 'awaiting_agent_plan_review' && pendingAgentState.runId) {
-        const run = await AgentRun.findOne({ where: { id: pendingAgentState.runId, sessionId: session.id, userId } });
+        const run = await AgentRun.findOne({ where: { id: pendingAgentState.runId, threadId: session.id, userId } });
         const answer = String(latestUserMessage?.text || '');
         if (run && /\b(proceed|approve|continue|yes|go ahead)\b/i.test(answer)) {
             const resumed = await resumeAgentAfterPlanReview({ run, session, userId, onEvent });
@@ -606,7 +604,7 @@ export const processChatMessage = async ({ session, userId, context = {}, onEven
         }
         if (run && /\b(cancel|reject|stop|no)\b/i.test(answer)) {
             await run.update({ status: 'blocked', currentStep: null, error: { code: 'AGENT_PLAN_REJECTED', message: 'The user chose not to continue with the proposed plan.' } });
-            await session.update({ agentState: {} });
+            await session.update({ state: {} });
             const reply = await saveReply(session, { text: 'I stopped before making any form or workflow changes.', kind: 'status', payload: { status: 'cancelled', runId: run.id } });
             return { replyObj: reply, totalTokenUsage: null };
         }
@@ -620,9 +618,9 @@ export const processChatMessage = async ({ session, userId, context = {}, onEven
         }
     }
     if (pendingAgentState.status === 'awaiting_agent_clarification' && pendingAgentState.runId) {
-        const run = await AgentRun.findOne({ where: { id: pendingAgentState.runId, sessionId: session.id, userId } });
+        const run = await AgentRun.findOne({ where: { id: pendingAgentState.runId, threadId: session.id, userId } });
         if (!run) {
-            await session.update({ agentState: {} });
+            await session.update({ state: {} });
             const reply = await saveReply(session, {
                 text: 'That pending request is no longer available. Please send the request again.',
                 kind: 'error'
@@ -644,8 +642,8 @@ export const processChatMessage = async ({ session, userId, context = {}, onEven
     const agenticResult = await processAgenticTurn({ session, userId, message: latestUserMessage?.text || '', context: effectiveContext, onEvent });
     if (agenticResult.handled) return { replyObj: agenticResult.replyObj, totalTokenUsage: agenticResult.totalTokenUsage };
 
-    const history = await ChatMessage.findAll({
-        where: { sessionId: session.id },
+    const history = await AssistantMessage.findAll({
+        where: { threadId: session.id },
         order: [['createdAt', 'ASC']],
         limit: 20
     });
@@ -776,15 +774,15 @@ Clarification for form requirements: ${normalizeClarificationMode(effectiveConte
             const capabilityToolResult = JSON.stringify(capabilityResult.output ?? {
                 status: capabilityResult.status || 'completed'
             });
-            await ChatMessage.create({
-                sessionId: session.id,
+            await AssistantMessage.create({
+                threadId: session.id,
                 sender: 'bot',
                 text: replyText,
                 kind: 'tool_call',
                 ...(nativeToolCall ? { payload: { toolCalls: nativeToolCalls } } : {})
             });
-            await ChatMessage.create({
-                sessionId: session.id,
+            await AssistantMessage.create({
+                threadId: session.id,
                 sender: 'user',
                 text: capabilityToolResult,
                 kind: 'tool_response',

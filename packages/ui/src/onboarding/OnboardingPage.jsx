@@ -1,223 +1,399 @@
-import { useMemo, useState } from 'react';
-import { ClipboardCheck, Rocket, Target, Workflow } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
+import {
+    ArrowRight,
+    Check,
+    FileText,
+    Inbox,
+    MessageSquareText,
+    Play,
+    Settings2,
+    ShieldCheck,
+    Sparkles,
+    Workflow,
+    Zap
+} from 'lucide-react';
 import { useCompleteOnboarding } from '../api/hooks/useAuth.js';
 import { navigateTo } from '../utils/router.js';
 
-const steps = [
-    { label: 'What Promptly does', shortLabel: 'Overview' },
-    { label: 'Your workspace', shortLabel: 'Workspace' },
-    { label: 'Two ways to build', shortLabel: 'Build' },
-    { label: 'From draft to live', shortLabel: 'Lifecycle' },
-    { label: 'Create your first automation', shortLabel: 'Start' }
+gsap.registerPlugin(useGSAP);
+
+const pages = [
+    {
+        label: 'Home',
+        icon: Inbox,
+        kicker: 'Your command centre',
+        title: 'See what needs your attention.',
+        body: 'Home brings together the health of your workspace, recent activity, and the next useful action so you can start from signal instead of noise.',
+        accent: 'purple',
+        points: [
+            ['Workspace pulse', 'A quick read on active automations and recent runs.'],
+            ['Recent activity', 'Jump back into the work that changed most recently.'],
+            ['Shortcuts', 'Create a new automation or form without hunting through menus.']
+        ],
+        visual: 'home'
+    },
+    {
+        label: 'Automations',
+        icon: Workflow,
+        kicker: 'Where work is shaped',
+        title: 'Build work that runs.',
+        body: 'Automations turn a trigger, a few decisions, and a set of actions into repeatable work your team can inspect and improve.',
+        accent: 'teal',
+        points: [
+            ['Draft safely', 'Keep incomplete ideas unpublished while you work.'],
+            ['Choose your editor', 'Describe the outcome with AI or shape the graph visually.'],
+            ['Publish intentionally', 'Only the revision you publish is used by live triggers.']
+        ],
+        visual: 'automation'
+    },
+    {
+        label: 'Forms',
+        icon: FileText,
+        kicker: 'Where context enters',
+        title: 'Collect the right details.',
+        body: 'Forms give people a clear way to send information in. Each response can become the beginning of an automation.',
+        accent: 'gold',
+        points: [
+            ['Design the questions', 'Use fields that match the information your workflow needs.'],
+            ['Keep responses together', 'Review submissions and their status from one place.'],
+            ['Connect the next step', 'Use a form submission as a workflow trigger.']
+        ],
+        visual: 'form'
+    },
+    {
+        label: 'Runs',
+        icon: Play,
+        kicker: 'Where outcomes are explained',
+        title: 'Follow every execution.',
+        body: 'Runs show what happened, which step produced it, and where attention is needed when something does not go as planned.',
+        accent: 'blue',
+        points: [
+            ['Trace the path', 'See each node in execution order.'],
+            ['Read the result', 'Inspect outputs, timing, and useful metadata.'],
+            ['Recover with context', 'Failures keep their step and error details attached.']
+        ],
+        visual: 'runs'
+    },
+    {
+        label: 'Approvals',
+        icon: ShieldCheck,
+        kicker: 'Where judgement stays human',
+        title: 'Keep people in the loop.',
+        body: 'Approval gates pause a workflow at the moment a person needs to decide. Your answer becomes an explicit path forward.',
+        accent: 'rose',
+        points: [
+            ['Pause before action', 'Ask for a decision before a sensitive step runs.'],
+            ['Choose a branch', 'Approve or reject with a clear next action on each path.'],
+            ['Keep a record', 'The decision and its effect remain visible in the run.']
+        ],
+        visual: 'approval'
+    },
+    {
+        label: 'Ask Promptly',
+        icon: MessageSquareText,
+        kicker: 'Where the workspace listens',
+        title: 'Work in conversation.',
+        body: 'Ask Promptly is the general assistant for understanding your workspace, refining a request, or getting to the right surface faster.',
+        accent: 'purple',
+        points: [
+            ['Explain the outcome', 'Use plain language instead of memorising node names.'],
+            ['Refine safely', 'The assistant proposes a reviewable plan before applying changes.'],
+            ['Keep the context', 'Conversations stay tied to the work you are discussing.']
+        ],
+        visual: 'assistant'
+    },
+    {
+        label: 'Settings',
+        icon: Settings2,
+        kicker: 'Where the environment is managed',
+        title: 'Connect the environment.',
+        body: 'Settings keeps account details and external connections in one predictable place, so the workspace knows what it can safely use.',
+        accent: 'slate',
+        points: [
+            ['Account details', 'Manage the identity and security settings for your workspace.'],
+            ['External connections', 'Connect the services your automations are allowed to use.'],
+            ['Clear ownership', 'Resources and actions remain scoped to your account.']
+        ],
+        visual: 'settings'
+    }
 ];
 
-const starters = [
-    'Follow up after a form submission',
-    'Send a notification when something changes',
-    'Create a scheduled report',
-    'Process incoming requests'
-];
+const accentClass = page => `is-${page.accent}`;
 
-function StepBadge({ number, active, completed }) {
-    return (
-        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ${completed ? 'bg-emerald-500 text-white' : active ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
-            {completed ? '✓' : number}
-        </span>
-    );
+function TourVisual({ type, page }) {
+    const node = (icon, label, meta) => <div className="onboarding-visual-node"><span>{icon}</span><div><strong>{label}</strong><small>{meta}</small></div><Check size={13} /></div>;
+    if (type === 'home') return <div className="onboarding-visual-card"><div className="onboarding-visual-header"><span>Workspace pulse</span><i>Healthy</i></div><div className="onboarding-visual-metrics"><div><small>Active</small><strong>08</strong></div><div><small>Runs</small><strong>124</strong></div><div><small>Success</small><strong>98%</strong></div></div><div className="onboarding-visual-event"><span><Zap size={13} /></span><div><strong>All systems moving</strong><small>Updated just now</small></div></div></div>;
+    if (type === 'form') return <div className="onboarding-visual-card onboarding-visual-form"><div className="onboarding-visual-header"><span>Job application</span><i>Draft</i></div><div className="onboarding-visual-input"><small>Full name</small><span>Jordan Lee</span></div><div className="onboarding-visual-input"><small>Email address</small><span>jordan@company.com</span></div><div className="onboarding-visual-input onboarding-visual-input-wide"><small>What should happen next?</small><span>Review this application</span></div><div className="onboarding-visual-button">Send response <ArrowRight size={13} /></div></div>;
+    if (type === 'runs') return <div className="onboarding-visual-card onboarding-visual-run"><div className="onboarding-visual-header"><span>Candidate follow-up</span><i>Running</i></div><div className="onboarding-run-row"><span className="onboarding-run-icon"><Play size={12} /></span><div><strong>Form submitted</strong><small>complete · 0.4s</small></div><Check size={13} /></div><div className="onboarding-run-row"><span className="onboarding-run-icon"><ShieldCheck size={12} /></span><div><strong>Approval gate</strong><small>waiting for a decision</small></div><span className="onboarding-run-pending" /></div><div className="onboarding-run-row"><span className="onboarding-run-icon"><MessageSquareText size={12} /></span><div><strong>Send invitation</strong><small>next step</small></div><span className="onboarding-run-muted" /></div></div>;
+    const nodes = { automation: [['◈', 'Form submitted', 'trigger'], ['◇', 'Review request', 'approval'], ['✦', 'Send invitation', 'email']], approval: [['◈', 'Application received', 'event'], ['◇', 'Your decision', 'approval'], ['✦', 'Next step', 'branch']], assistant: [['✦', 'Describe intent', 'conversation'], ['◇', 'Review plan', 'proposal'], ['◈', 'Apply changes', 'workspace']], settings: [['◈', 'Account', 'secure'], ['◇', 'Google connection', 'active'], ['✦', 'Workspace scope', 'ready']] };
+    return <div className="onboarding-visual-card onboarding-visual-flow"><div className="onboarding-visual-header"><span>{page.label} flow</span><i>Reviewable</i></div>{nodes[type].map(([icon, label, meta], index) => <div key={label}>{node(icon, label, meta)}{index < nodes[type].length - 1 && <div className="onboarding-visual-connector" />}</div>)}</div>;
 }
 
-function FlowArrow() {
-    return <span className="hidden text-2xl font-light text-slate-300 md:block">→</span>;
+function TourPeek({ page, direction, onClick }) {
+    const Icon = page.icon;
+    return <button type="button" className={`onboarding-peek onboarding-peek-${direction}`} onClick={onClick} aria-label={`Go to ${page.label}`}>
+        <span className="onboarding-peek-brand"><Icon size={16} /><strong>Promptly</strong></span>
+        <span className="onboarding-peek-kicker">{page.kicker}</span>
+        <strong className="onboarding-peek-title">{page.title}</strong>
+        <span className="onboarding-peek-rule" />
+        <span className="onboarding-peek-points">{page.points.map(([title]) => <span key={title}><Check size={11} />{title}</span>)}</span>
+        <span className="onboarding-peek-footer">{direction === 'previous' ? '‹ Previous' : 'Next ›'}</span>
+    </button>;
 }
 
-function ConceptCard({ icon, title, children, tone = 'slate' }) {
-    const tones = {
-        indigo: 'border-indigo-100 bg-indigo-50/60',
-        cyan: 'border-cyan-100 bg-cyan-50/60',
-        amber: 'border-amber-100 bg-amber-50/60',
-        emerald: 'border-emerald-100 bg-emerald-50/60',
-        slate: 'border-slate-200 bg-slate-50'
-    };
+function TourCard({ page, stepIndex, isLastStep, isTransitioning, onboardingMutation, moveTo, next }) {
     return (
-        <div className={`rounded-2xl border p-5 ${tones[tone] || tones.slate}`}>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/80 text-slate-700" aria-hidden="true">{icon}</div>
-            <h3 className="mt-3 text-sm font-extrabold text-slate-900">{title}</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{children}</p>
-        </div>
-    );
-}
-
-function WorkspaceItem({ icon, name, description }) {
-    return (
-        <div className="flex gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-lg" aria-hidden="true">{icon}</span>
-            <div>
-                <h3 className="text-sm font-extrabold text-slate-900">{name}</h3>
-                <p className="mt-1 text-sm leading-5 text-slate-500">{description}</p>
+        <main className={`onboarding-card onboarding-simple-card ${accentClass(page)}`}>
+            <div className="onboarding-card-head">
+                <div>
+                    <span className="onboarding-card-kicker">{page.kicker}</span>
+                    <h1>{page.title}</h1>
+                    <p>{page.body}</p>
+                </div>
             </div>
-        </div>
+            <div className="onboarding-content">
+                <div className="onboarding-tour-page">
+                    <div className="onboarding-tour-grid">
+                        {page.points.map(([title, copy]) => (
+                            <article key={title}>
+                                <span className="onboarding-tour-check">
+                                    <Check size={14} />
+                                </span>
+                                <div>
+                                    <h3>{title}</h3>
+                                    <p>{copy}</p>
+                                </div>
+                            </article>
+                        ))}
+                    </div>
+                    <div className="onboarding-tour-visual">
+                        <TourVisual type={page.visual} page={page} />
+                    </div>
+                </div>
+                <div className="onboarding-note">
+                    <Sparkles size={16} />
+                    <span>
+                        <strong>One workspace, one source of truth.</strong> You can return to {page.label} at any time from the navigation.
+                    </span>
+                </div>
+                {onboardingMutation.isError && (
+                    <p className="onboarding-error">
+                        {onboardingMutation.error?.message || 'Could not complete the workspace tour.'}
+                    </p>
+                )}
+            </div>
+            <footer className="onboarding-footer">
+                <button
+                    type="button"
+                    onClick={() => moveTo(Math.max(1, stepIndex - 1))}
+                    disabled={stepIndex === 1 || onboardingMutation.isPending || isTransitioning}
+                    className="onboarding-back"
+                >
+                    Back
+                </button>
+                <button
+                    type="button"
+                    onClick={next}
+                    disabled={onboardingMutation.isPending || isTransitioning}
+                    className="onboarding-next"
+                >
+                    {onboardingMutation.isPending
+                        ? 'Opening workspace…'
+                        : isLastStep
+                        ? 'Finish tour'
+                        : `Next: ${pages[stepIndex]?.label}`}
+                    <ArrowRight size={16} />
+                </button>
+            </footer>
+        </main>
     );
 }
 
 export default function OnboardingPage({ onOnboardingComplete }) {
-    const [goal, setGoal] = useState('');
-    const [method, setMethod] = useState('ai');
     const [step, setStep] = useState(1);
-    const onboardingMutation = useCompleteOnboarding();
-    const currentStep = steps[step - 1];
-    const isLastStep = step === steps.length;
+    const [transitionDirection, setTransitionDirection] = useState(1);
+    const [pendingStep, setPendingStep] = useState(null);
+    const [isTransitioning, setIsTransitioning] = useState(false);
 
-    const canContinue = useMemo(() => !onboardingMutation.isPending, [onboardingMutation.isPending]);
+    const carouselRef = useRef(null);
+    const previousCellRef = useRef(null);
+    const cardSlotRef = useRef(null);
+    const nextCellRef = useRef(null);
+    const outgoingCardRef = useRef(null);
+    const incomingCardRef = useRef(null);
+
+    const onboardingMutation = useCompleteOnboarding();
+
+    const currentStep = step;
+    const activeStep = isTransitioning && pendingStep != null ? pendingStep : step;
+    const page = pages[currentStep - 1];
+    const activePage = pages[activeStep - 1];
+
+    const previousPage = isTransitioning && pendingStep != null
+        ? pages[pendingStep - 2]
+        : pages[currentStep - 2];
+    const nextPage = isTransitioning && pendingStep != null
+        ? pages[pendingStep]
+        : pages[currentStep];
+
+    const isLastStep = activeStep === pages.length;
+    const Icon = activePage.icon;
+
+    useGSAP((_, contextSafe) => {
+        if (!isTransitioning || pendingStep == null) return;
+
+        const carousel = carouselRef.current;
+        if (!carousel) return;
+
+        const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        const finishTransition = contextSafe(() => {
+            setStep(pendingStep);
+            setPendingStep(null);
+            setIsTransitioning(false);
+        });
+
+        if (reducedMotion) {
+            finishTransition();
+            return;
+        }
+
+        const dir = transitionDirection;
+        const timeline = gsap.timeline({
+            defaults: { overwrite: 'auto' },
+            onComplete: finishTransition
+        });
+
+        const xOffset = dir > 0 ? 80 : -80;
+
+        if (outgoingCardRef.current && incomingCardRef.current) {
+            timeline.fromTo(outgoingCardRef.current,
+                { x: 0, opacity: 1, scale: 1 },
+                { x: -xOffset, opacity: 0, scale: 0.96, duration: 0.42, ease: 'power3.inOut' },
+                0
+            );
+            timeline.fromTo(incomingCardRef.current,
+                { x: xOffset, opacity: 0, scale: 0.96 },
+                { x: 0, opacity: 1, scale: 1, duration: 0.42, ease: 'power3.out' },
+                0
+            );
+        }
+
+        if (previousCellRef.current) {
+            timeline.fromTo(previousCellRef.current,
+                { x: dir > 0 ? 30 : -30, opacity: 0.4, scale: 0.92 },
+                { x: 0, opacity: 1, scale: 1, duration: 0.38, ease: 'power2.out' },
+                0.04
+            );
+        }
+
+        if (nextCellRef.current) {
+            timeline.fromTo(nextCellRef.current,
+                { x: dir > 0 ? 30 : -30, opacity: 0.4, scale: 0.92 },
+                { x: 0, opacity: 1, scale: 1, duration: 0.38, ease: 'power2.out' },
+                0.04
+            );
+        }
+    }, { scope: carouselRef, dependencies: [isTransitioning, pendingStep, transitionDirection], revertOnUpdate: true });
 
     const finish = async () => {
         try {
             const response = await onboardingMutation.mutateAsync();
-            if (goal.trim()) window.localStorage.setItem('promptly.onboarding-goal', goal.trim());
             onOnboardingComplete?.(response.user);
-            navigateTo({ page: 'automation-new', method });
+            navigateTo({ page: 'home' });
         } catch {
-            // The mutation error is shown in the final step.
+            // The mutation error is shown in the footer.
         }
     };
 
-    const next = () => {
-        if (isLastStep) finish();
-        else setStep(value => Math.min(steps.length, value + 1));
+    const moveTo = targetStep => {
+        if (targetStep === step || isTransitioning) return;
+        setTransitionDirection(targetStep > step ? 1 : -1);
+        setPendingStep(targetStep);
+        setIsTransitioning(true);
     };
 
-    return (
-        <div className="surface-grid min-h-screen px-4 py-5 font-sans text-slate-900 sm:px-6 lg:h-screen lg:overflow-hidden lg:px-8 lg:py-6">
-            <div className="mx-auto flex h-full w-full max-w-[1440px] flex-col">
-                <header className="flex items-center justify-between px-1">
-                    <div className="flex items-center gap-2">
-                        <img src="/logo.png" alt="Promptly" className="h-9 w-9 rounded-xl" />
-                        <span className="font-display text-xl font-bold tracking-tight text-[#171827]">Promptly<span className="text-[#5b4ee8]">.</span></span>
-                    </div>
-                    <span className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Getting started guide</span>
-                </header>
+    const next = () => isLastStep ? finish() : moveTo(Math.min(pages.length, activeStep + 1));
 
-                <div className="mt-6 grid min-h-0 flex-1 gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
-                    <aside className="h-fit rounded-3xl border border-slate-200 bg-white p-4 shadow-sm lg:overflow-y-auto">
-                        <p className="px-3 pb-4 text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">Before you begin</p>
-                        <div className="space-y-1">
-                            {steps.map((item, index) => {
-                                const number = index + 1;
-                                return (
-                                    <button key={item.label} type="button" onClick={() => setStep(number)} className={`flex w-full items-center gap-3 rounded-2xl p-3 text-left transition ${number === step ? 'bg-indigo-50 text-indigo-700' : number < step ? 'text-slate-600 hover:bg-slate-50' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}>
-                                        <StepBadge number={number} active={number === step} completed={number < step} />
-                                        <span className="text-sm font-bold">{item.shortLabel}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                        <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-xs leading-5 text-slate-500">
-                            This guide explains the core ideas before you create anything. You can revisit the same concepts later from the workspace.
-                        </div>
-                    </aside>
+    useEffect(() => {
+        const handleKeyDown = e => {
+            if (isTransitioning || onboardingMutation.isPending) return;
+            if (e.key === 'ArrowRight') {
+                if (!isLastStep) {
+                    moveTo(step + 1);
+                } else {
+                    finish();
+                }
+            } else if (e.key === 'ArrowLeft') {
+                if (step > 1) {
+                    moveTo(step - 1);
+                }
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [step, isTransitioning, isLastStep, onboardingMutation.isPending]);
 
-                    <main className="workspace-surface flex min-h-0 flex-col overflow-hidden rounded-[2rem] p-6 md:p-10 xl:p-12">
-                        <div className="flex items-start justify-between gap-6 border-b border-slate-100 pb-6">
-                            <div>
-                                <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-indigo-500">Step {step} of {steps.length}</p>
-                                <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 md:text-4xl">{currentStep.label}</h1>
+    return <div className="onboarding-screen onboarding-tour-screen">
+        <div className="onboarding-ambient onboarding-ambient-one" />
+        <div className="onboarding-ambient onboarding-ambient-two" />
+        <div className="onboarding-inner onboarding-simple-inner">
+            <header className="onboarding-topbar">
+                <div className="onboarding-brand"><img src="/logo.png" alt="Promptly" /><span>Promptly<span>.</span></span></div>
+                <div className="onboarding-top-actions"><span><span className="onboarding-live-dot" /> Workspace tour</span><button type="button" onClick={finish} disabled={onboardingMutation.isPending}>Skip tour</button></div>
+            </header>
+            <div className="onboarding-simple-meta">
+                <div className="onboarding-surface-label"><span className="onboarding-surface-icon"><Icon size={17} /></span><span><small>Now exploring</small><strong>{activePage.label}</strong></span></div>
+                <div className="onboarding-progress onboarding-progress-wide"><div><i style={{ width: `${(activeStep / pages.length) * 100}%` }} /></div><small>{activeStep} of {pages.length} pages</small></div>
+            </div>
+            <div ref={carouselRef} className="onboarding-carousel" aria-label="Workspace tour pages" aria-busy={isTransitioning}>
+                <div ref={previousCellRef} className="onboarding-carousel-cell onboarding-carousel-cell-previous">
+                    {previousPage ? <TourPeek page={previousPage} direction="previous" onClick={() => moveTo(Math.max(1, activeStep - 1))} /> : <div className="onboarding-peek-placeholder" />}
+                </div>
+                <div ref={cardSlotRef} className="onboarding-card-slot">
+                    {!isTransitioning || pendingStep == null ? (
+                        <TourCard
+                            page={page}
+                            stepIndex={step}
+                            isLastStep={step === pages.length}
+                            isTransitioning={false}
+                            onboardingMutation={onboardingMutation}
+                            moveTo={moveTo}
+                            next={next}
+                        />
+                    ) : (
+                        <>
+                            <div ref={outgoingCardRef} style={{ width: '100%', height: '100%' }}>
+                                <TourCard
+                                    page={pages[step - 1]}
+                                    stepIndex={step}
+                                    isLastStep={step === pages.length}
+                                    isTransitioning={true}
+                                    onboardingMutation={onboardingMutation}
+                                    moveTo={moveTo}
+                                    next={next}
+                                />
                             </div>
-                            <div className="hidden rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-500 sm:block">{Math.round((step / steps.length) * 100)}% complete</div>
-                        </div>
-
-                        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                        {step === 1 && (
-                            <div className="pt-8">
-                                <p className="max-w-3xl text-lg leading-8 text-slate-600">Promptly helps you turn a desired outcome into a repeatable automation. An automation listens for a trigger, performs steps, and records what happened.</p>
-                                <div className="mt-7 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-5"><h2 className="text-sm font-extrabold text-indigo-950">Focus on the outcome first</h2><p className="mt-2 text-sm leading-6 text-indigo-900">You do not need to understand every node or setting before you begin. Start by deciding what should happen, then use the workspace to shape and verify the steps.</p></div>
-                                <div className="mt-8 grid gap-3 md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] md:items-center">
-                                    <ConceptCard icon={<Target size={22} strokeWidth={2} />} title="Choose an outcome" tone="indigo">Start with the result you want, such as “notify my team when a new request arrives.”</ConceptCard>
-                                    <FlowArrow />
-                                    <ConceptCard icon={<Workflow size={22} strokeWidth={2} />} title="Build the steps" tone="cyan">Add the trigger, conditions, data handling, and actions needed to produce that result.</ConceptCard>
-                                    <FlowArrow />
-                                    <ConceptCard icon={<ClipboardCheck size={22} strokeWidth={2} />} title="Review and test" tone="amber">Inspect the proposed steps, correct anything unsafe, and run a test with sample data before activating it.</ConceptCard>
-                                    <FlowArrow />
-                                    <ConceptCard icon={<Rocket size={22} strokeWidth={2} />} title="Publish and monitor" tone="emerald">Publishing makes the automation live. Every run is recorded so you can see success, errors, timing, and output.</ConceptCard>
-                                </div>
-                                <div className="mt-8 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5">
-                                    <h2 className="text-sm font-extrabold text-indigo-900">Your role</h2>
-                                    <p className="mt-2 text-sm leading-6 text-indigo-800">Promptly can help create the draft, but you decide what the automation does, when it goes live, and whether it should remain active.</p>
-                                </div>
+                            <div ref={incomingCardRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+                                <TourCard
+                                    page={pages[pendingStep - 1]}
+                                    stepIndex={pendingStep}
+                                    isLastStep={pendingStep === pages.length}
+                                    isTransitioning={true}
+                                    onboardingMutation={onboardingMutation}
+                                    moveTo={moveTo}
+                                    next={next}
+                                />
                             </div>
-                        )}
-
-                        {step === 2 && (
-                            <div className="pt-8">
-                                <p className="max-w-3xl text-lg leading-8 text-slate-600">The workspace is organized around the things you create and operate. These sections are connected, but each has a different job.</p>
-                                <div className="mt-8 grid gap-3 md:grid-cols-2">
-                                    <WorkspaceItem icon="⌂" name="Home" description="Your starting point: a summary of your automations, recent activity, and useful shortcuts." />
-                                    <WorkspaceItem icon="⤢" name="Automations" description="The main library of automations. Create, open, duplicate, publish, pause, or delete them here." />
-                                    <WorkspaceItem icon="▤" name="Forms" description="Create forms that collect information. A form submission can become the trigger for an automation." />
-                                    <WorkspaceItem icon="›_" name="Runs" description="Review execution history: whether a run succeeded, where it failed, how long it took, and what it produced." />
-                                    <WorkspaceItem icon="✦" name="Ask Promptly" description="Use the assistant for general questions or to work on a specific automation when you provide its context." />
-                                    <WorkspaceItem icon="⚙" name="Settings" description="Manage your account, password, and external connections such as Google services." />
-                                </div>
-                                <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                                    <h2 className="text-sm font-extrabold text-slate-900">A typical path</h2>
-                                    <p className="mt-2 text-sm leading-6 text-slate-600"><span className="font-bold text-indigo-600">Automations</span> → open an automation → <span className="font-bold text-indigo-600">Build</span> → test it → <span className="font-bold text-indigo-600">Publish</span> → inspect it later in <span className="font-bold text-indigo-600">Runs</span>.</p>
-                                </div>
-                            </div>
-                        )}
-
-                        {step === 3 && (
-                            <div className="pt-8">
-                                <p className="max-w-3xl text-lg leading-8 text-slate-600">AI and Visual Builder are not two different products or two different kinds of automation. They are two editing surfaces for the same automation.</p>
-                                <div className="mt-8 grid gap-5 md:grid-cols-2">
-                                    <div className={`rounded-3xl border-2 p-6 ${method === 'ai' ? 'border-indigo-400 bg-indigo-50/50' : 'border-slate-200 bg-white'}`}>
-                                        <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-xl">✦</span><div><h2 className="text-lg font-extrabold text-slate-900">AI editor</h2><p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Best for describing intent</p></div></div>
-                                        <ul className="mt-5 space-y-3 text-sm leading-6 text-slate-600"><li><span className="mr-2 font-bold text-indigo-600">1.</span>Explain what you want to happen.</li><li><span className="mr-2 font-bold text-indigo-600">2.</span>Promptly proposes nodes, connections, and configuration.</li><li><span className="mr-2 font-bold text-indigo-600">3.</span>Ask follow-up questions or request changes.</li></ul>
-                                        <p className="mt-5 rounded-xl bg-white/80 p-3 text-xs leading-5 text-slate-500">Example: “When a form is submitted, summarize the response and email it to my team.”</p>
-                                    </div>
-                                    <div className="rounded-3xl border-2 border-slate-200 bg-white p-6">
-                                        <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-100 text-xl">⌘</span><div><h2 className="text-lg font-extrabold text-slate-900">Visual editor</h2><p className="text-xs font-bold uppercase tracking-wider text-cyan-700">Best for inspecting structure</p></div></div>
-                                        <ul className="mt-5 space-y-3 text-sm leading-6 text-slate-600"><li><span className="mr-2 font-bold text-cyan-700">1.</span>Place triggers and action nodes on the canvas.</li><li><span className="mr-2 font-bold text-cyan-700">2.</span>Connect branches, conditions, and error paths.</li><li><span className="mr-2 font-bold text-cyan-700">3.</span>Open each node to configure its details.</li></ul>
-                                        <p className="mt-5 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500">Use it when you need precise control over order, branching, data mapping, or recovery behavior.</p>
-                                    </div>
-                                </div>
-                                <div className="mt-7 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-5"><h2 className="text-sm font-extrabold text-emerald-900">You can switch later</h2><p className="mt-2 text-sm leading-6 text-emerald-800">Starting with AI does not lock you into AI. Starting visually does not remove the assistant. Both editors read and update the same draft and revisions.</p></div>
-                            </div>
-                        )}
-
-                        {step === 4 && (
-                            <div className="pt-8">
-                                <p className="max-w-3xl text-lg leading-8 text-slate-600">Promptly separates editing from execution so you can make changes safely and understand what is live.</p>
-                                <div className="mt-8 space-y-4">
-                                    <div className="flex gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-5"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-extrabold text-slate-700">1</span><div><h2 className="font-extrabold text-slate-900">Draft</h2><p className="mt-1 text-sm leading-6 text-slate-600">Your edits are saved as a draft revision. A draft can be incomplete while you are still designing it.</p></div></div>
-                                    <div className="flex gap-4 rounded-2xl border border-amber-100 bg-amber-50/60 p-5"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-200 text-sm font-extrabold text-amber-800">2</span><div><h2 className="font-extrabold text-slate-900">Test</h2><p className="mt-1 text-sm leading-6 text-slate-600">Run the current draft with sample input. Check node results, output, errors, and whether the data is mapped as expected.</p></div></div>
-                                    <div className="flex gap-4 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-200 text-sm font-extrabold text-indigo-800">3</span><div><h2 className="font-extrabold text-slate-900">Publish</h2><p className="mt-1 text-sm leading-6 text-slate-600">Publishing marks the selected revision as live. Real triggers use the published revision, not an unfinished draft.</p></div></div>
-                                    <div className="flex gap-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-5"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-200 text-sm font-extrabold text-emerald-800">4</span><div><h2 className="font-extrabold text-slate-900">Monitor</h2><p className="mt-1 text-sm leading-6 text-slate-600">Use Runs to investigate each execution. If needed, pause the automation, edit a new draft, test again, and republish.</p></div></div>
-                                </div>
-                                <div className="mt-7 rounded-2xl border border-red-100 bg-red-50/70 p-5"><h2 className="text-sm font-extrabold text-red-900">What happens when something fails?</h2><p className="mt-2 text-sm leading-6 text-red-800">The run is recorded as failed with the step and error details. The automation does not silently change itself or publish an AI repair without your approval.</p></div>
-                            </div>
-                        )}
-
-                        {step === 5 && (
-                            <div className="pt-8">
-                                <p className="max-w-3xl text-lg leading-8 text-slate-600">Now choose a real outcome to use while you learn. You can change the draft before publishing it.</p>
-                                <label className="mt-7 block text-sm font-extrabold text-slate-800" htmlFor="onboarding-goal">What do you want your first automation to do?</label>
-                                <textarea id="onboarding-goal" value={goal} onChange={event => setGoal(event.target.value)} rows={4} placeholder="For example: When a new form response arrives, summarize it and notify my team…" className="mt-3 w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-800 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-100" />
-                                <div className="mt-4 grid gap-2 sm:grid-cols-2">{starters.map(starter => <button key={starter} type="button" onClick={() => setGoal(starter)} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-600 transition hover:border-indigo-300 hover:bg-indigo-50/50 hover:text-indigo-700">{starter}</button>)}</div>
-                                <h2 className="mt-8 text-sm font-extrabold text-slate-800">Choose where to begin</h2>
-                                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                                    <button type="button" onClick={() => setMethod('ai')} className={`rounded-2xl border-2 p-5 text-left transition ${method === 'ai' ? 'border-indigo-500 bg-indigo-50/60' : 'border-slate-200 hover:border-indigo-200'}`}><div className="flex items-center justify-between"><span className="text-xl">✦</span>{method === 'ai' && <span className="text-xs font-extrabold text-indigo-600">SELECTED</span>}</div><h3 className="mt-3 font-extrabold text-slate-900">Describe it with AI</h3><p className="mt-1 text-sm leading-5 text-slate-500">Start from your written goal and review the proposed automation.</p></button>
-                                    <button type="button" onClick={() => setMethod('visual')} className={`rounded-2xl border-2 p-5 text-left transition ${method === 'visual' ? 'border-indigo-500 bg-indigo-50/60' : 'border-slate-200 hover:border-indigo-200'}`}><div className="flex items-center justify-between"><span className="text-xl">⌘</span>{method === 'visual' && <span className="text-xs font-extrabold text-indigo-600">SELECTED</span>}</div><h3 className="mt-3 font-extrabold text-slate-900">Build it on the canvas</h3><p className="mt-1 text-sm leading-5 text-slate-500">Start with an empty automation and place the steps yourself.</p></button>
-                                </div>
-                                {onboardingMutation.isError && <p className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{onboardingMutation.error?.message || 'Could not complete onboarding.'}</p>}
-                            </div>
-                        )}
-                        </div>
-
-                        <footer className="mt-6 flex shrink-0 items-center justify-between border-t border-slate-100 pt-6">
-                            <button type="button" onClick={() => setStep(value => Math.max(1, value - 1))} disabled={step === 1 || onboardingMutation.isPending} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:invisible">Back</button>
-                            <button type="button" onClick={next} disabled={!canContinue} className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 hover:bg-indigo-700 disabled:cursor-wait disabled:opacity-60">{onboardingMutation.isPending ? 'Starting…' : isLastStep ? 'Start my first automation' : 'Continue'}</button>
-                        </footer>
-                    </main>
+                        </>
+                    )}
+                </div>
+                <div ref={nextCellRef} className="onboarding-carousel-cell onboarding-carousel-cell-next">
+                    {nextPage ? <TourPeek page={nextPage} direction="next" onClick={() => moveTo(Math.min(pages.length, activeStep + 1))} /> : <div className="onboarding-peek-placeholder" />}
                 </div>
             </div>
         </div>
-    );
+    </div>;
 }
+

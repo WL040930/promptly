@@ -1,4 +1,4 @@
-import { ExecutionLog, Form, FormResponse, Workflow } from '../../models/index.js';
+import { AutomationRun, Form, FormResponse, Workflow } from '../../models/index.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { resolveResource } from './resourceResolver.js';
 import {
@@ -136,7 +136,7 @@ export const createChatCapabilityRegistry = ({
                     .find(message => message.sender === 'user' && message.kind === 'text')?.text;
                 if (args.purpose === 'choose_target' && workflows.length > 0 && request) {
                     await session.update({
-                        agentState: {
+                        state: {
                             status: 'awaiting_workflow_target',
                             continuation: { request }
                         }
@@ -172,7 +172,7 @@ export const createChatCapabilityRegistry = ({
                         .reverse()
                         .find(message => message.sender === 'user' && message.kind === 'text')?.text;
                     await session.update({
-                        agentState: {
+                        state: {
                             status: `awaiting_${type}_target`,
                             continuation: { request }
                         }
@@ -280,7 +280,7 @@ export const createChatCapabilityRegistry = ({
                 const where = { userId };
                 if (args.workflowId) where.workflowId = args.workflowId;
                 if (args.status && args.status !== 'All') where.status = args.status;
-                const logs = await ExecutionLog.findAll({
+                const logs = await AutomationRun.findAll({
                     where,
                     attributes: ['id', 'time', 'durationMs', 'status', 'trigger', 'workflowId', 'error'],
                     include: [{ model: Workflow, as: 'workflow', attributes: ['id', 'name'], required: false }],
@@ -301,7 +301,7 @@ export const createChatCapabilityRegistry = ({
             'Get one execution log including its step details and error.',
             { logId: { type: 'string' } },
             async ({ args }) => {
-                const log = await ExecutionLog.findOne({
+                const log = await AutomationRun.findOne({
                     where: { id: args.logId, userId },
                     include: [{ model: Workflow, as: 'workflow', attributes: ['id', 'name'], required: false }]
                 });
@@ -326,7 +326,7 @@ export const createChatCapabilityRegistry = ({
                     state: { action: formId ? 'edit_form' : 'create_form' }
                 });
                 if (result.reply?.kind === 'form_proposal') {
-                    await session.update({ agentState: { proposalMessageId: result.reply.id } });
+                    await session.update({ state: { proposalMessageId: result.reply.id } });
                     return approval(result.reply);
                 }
                 if (result.reply?.kind === 'text') return completed(result.reply);
@@ -362,7 +362,7 @@ export const createChatCapabilityRegistry = ({
                     },
                     proposalStatus: 'pending'
                 });
-                await session.update({ agentState: { status: 'awaiting_form_approval', formId: form.id, proposalMessageId: reply.id } });
+                    await session.update({ state: { status: 'awaiting_form_approval', formId: form.id, proposalMessageId: reply.id } });
                 return approval(reply);
             },
             'proposal'
@@ -398,7 +398,7 @@ export const createChatCapabilityRegistry = ({
                     },
                     proposalStatus: 'pending'
                 });
-                await session.update({ agentState: { status: 'awaiting_form_delete_approval', formId: form.id, proposalMessageId: reply.id } });
+                    await session.update({ state: { status: 'awaiting_form_delete_approval', formId: form.id, proposalMessageId: reply.id } });
                 return approval(reply);
             },
             'proposal'
@@ -459,7 +459,7 @@ export const createChatCapabilityRegistry = ({
                     proposalStatus: 'pending'
                 });
                 await session.update({
-                    agentState: {
+                    state: {
                         status: 'awaiting_form_bulk_delete_approval',
                         formIds: forms.map(form => form.id),
                         proposalMessageId: reply.id
@@ -488,7 +488,7 @@ export const createChatCapabilityRegistry = ({
                     },
                     proposalStatus: 'pending'
                 });
-                await session.update({ agentState: { status: 'awaiting_form_response_clear_approval', formId: form.id, proposalMessageId: reply.id } });
+                    await session.update({ state: { status: 'awaiting_form_response_clear_approval', formId: form.id, proposalMessageId: reply.id } });
                 return approval(reply);
             },
             'proposal'
@@ -537,7 +537,7 @@ export const createChatCapabilityRegistry = ({
                         },
                         proposalStatus: 'pending'
                     });
-                    await session.update({ agentState: {
+                    await session.update({ state: {
                         status: 'awaiting_workflow_approval',
                         workflowId: workflow.id,
                         proposalMessageId: reply.id
@@ -574,7 +574,7 @@ export const createChatCapabilityRegistry = ({
                     },
                     proposalStatus: 'pending'
                 });
-                await session.update({ agentState: {
+                    await session.update({ state: {
                     status: 'awaiting_workflow_approval',
                     workflowId: null,
                     proposalMessageId: reply.id

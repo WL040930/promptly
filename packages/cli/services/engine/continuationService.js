@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { Op } from 'sequelize';
-import { User, WorkflowContinuation, WorkflowRun } from '../../models/index.js';
+import { User, WorkflowContinuation, AutomationRun } from '../../models/index.js';
 import { resumeWorkflowRun } from './executionEngine.js';
 
 const hash = value => crypto.createHash('sha256').update(String(value)).digest('hex');
@@ -37,7 +37,7 @@ const claim = async () => {
 };
 
 const resume = async continuation => {
-    const run = await WorkflowRun.findByPk(continuation.runId);
+    const run = await AutomationRun.findByPk(continuation.runId);
     if (!run || run.status !== 'waiting') {
         await continuation.update({ status: 'discarded', lastError: 'Workflow run is no longer waiting.' });
         return;
@@ -68,7 +68,7 @@ export const resolveApprovalToken = async ({ token, decision, userId = null }) =
         if (user && continuation.assigneeEmail && user.email.toLowerCase() !== continuation.assigneeEmail.toLowerCase()) throw new Error('You are not the assigned approver.');
     }
     await continuation.update({ status: 'resuming', resolution: { decision }, resolvedAt: new Date(), resolvedBy: userId });
-    const run = await WorkflowRun.findByPk(continuation.runId);
+    const run = await AutomationRun.findByPk(continuation.runId);
     if (!run) throw new Error('The workflow run no longer exists.');
     try {
         const log = await resumeWorkflowRun({ run, userId: run.userId, resolution: { decision, continuationId: continuation.id } });
@@ -86,7 +86,7 @@ export const resolveApprovalForUser = async ({ id, decision, userId }) => {
     const continuation = await WorkflowContinuation.findOne({ where: { id, kind: 'approval', status: 'pending' } });
     if (!user || !continuation || (continuation.assigneeUserId !== userId && continuation.assigneeEmail?.toLowerCase() !== user.email.toLowerCase())) throw new Error('Approval request not found.');
     await continuation.update({ status: 'resuming', resolution: { decision }, resolvedAt: new Date(), resolvedBy: userId });
-    const run = await WorkflowRun.findByPk(continuation.runId);
+    const run = await AutomationRun.findByPk(continuation.runId);
     if (!run) throw new Error('The workflow run no longer exists.');
     try {
         const log = await resumeWorkflowRun({ run, userId: run.userId, resolution: { decision, continuationId: continuation.id } });

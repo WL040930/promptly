@@ -1,4 +1,4 @@
-import { Form, Workflow, ExecutionLog } from '../../../../cli/models/index.js';
+import { Form, Workflow, AutomationRun } from '../../../../cli/models/index.js';
 
 const RESOURCE_DEFINITIONS = Object.freeze({
     forms: {
@@ -16,11 +16,11 @@ const RESOURCE_DEFINITIONS = Object.freeze({
         defaultOrder: 'updatedAt'
     },
     executionLogs: {
-        model: ExecutionLog,
+        model: AutomationRun,
         filters: new Set(['id', 'workflowId', 'status', 'trigger']),
         writable: new Set(),
-        orderFields: new Set(['time', 'createdAt', 'id']),
-        defaultOrder: 'time',
+        orderFields: new Set(['createdAt', 'id']),
+        defaultOrder: 'createdAt',
         readOnly: true
     }
 });

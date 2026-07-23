@@ -5,11 +5,11 @@ import { createFormAssistant } from './formAssistant.js';
 const createMemoryModels = () => {
     const forms = [{ id: 'form_1', userId: 'user_1', title: 'Event', description: '', settings: {}, fields: [], updatedAt: new Date().toISOString() }];
     const messages = [];
-    const states = [];
+    const threads = [];
     const instance = value => ({
         ...value,
-        toJSON() { return { ...this }; },
-        async update(patch) { Object.assign(this, patch); return this; }
+        toJSON() { return { ...this, ...(this.kind === 'form_proposal' ? { proposal: this.payload } : {}), ...(this.kind === 'clarification' ? { options: this.payload } : {}) }; },
+        async update(patch) { Object.assign(value, patch); Object.assign(this, patch); return this; }
     });
     const findBy = (rows, where) => rows.find(row => Object.entries(where || {}).every(([key, value]) => row[key] === value));
     const model = rows => ({
@@ -25,16 +25,16 @@ const createMemoryModels = () => {
         }
     });
     const Form = model(forms);
-    const FormChatMessage = model(messages);
-    const FormAIState = {
-        async findOrCreate({ where, defaults }) {
-            let row = findBy(states, where);
-            if (!row) { row = instance({ ...defaults, version: 1, phase: 'idle', mode: 'important_only' }); states.push(row); }
-            return [row, !row];
-        },
-        async findOne({ where }) { const row = findBy(states, where); return row || null; }
+    const AssistantMessage = model(messages);
+    const AssistantThread = {
+        async findOne({ where }) { const row = findBy(threads, where); return row ? instance(row) : null; },
+        async create(value) {
+            const row = instance(value);
+            threads.push(row);
+            return row;
+        }
     };
-    return { models: { Form, FormChatMessage, FormAIState }, forms, messages, states };
+    return { models: { Form, AssistantMessage, AssistantThread }, forms, messages, threads };
 };
 
 test('form assistant persists a clarification and opens explicit decision state', async () => {
@@ -86,7 +86,8 @@ test('form assistant preserves non-fatal form AI warnings in the reviewable prop
 
 test('form assistant clears chat messages without changing the form', async () => {
     const memory = createMemoryModels();
-    await memory.models.FormChatMessage.create({ id: 'message_1', formId: 'form_1', sender: 'user', text: 'Keep the form' });
+    const thread = await memory.models.AssistantThread.create({ id: 'thread_1', userId: 'user_1', surface: 'form', formId: 'form_1', state: { version: 1, phase: 'idle' }, context: {} });
+    await memory.models.AssistantMessage.create({ id: 'message_1', threadId: thread.id, sender: 'user', text: 'Keep the form' });
     const assistant = createFormAssistant({
         models: memory.models,
         db: { transaction: async callback => callback({ LOCK: { UPDATE: 'update' } }) }
@@ -97,24 +98,23 @@ test('form assistant clears chat messages without changing the form', async () =
     assert.equal(result.cleared, true);
     assert.equal(result.deletedMessages, 1);
     assert.equal(memory.messages.length, 0);
-    assert.equal(memory.states[0].phase, 'idle');
+    assert.equal(memory.threads[0].state.phase, 'idle');
     assert.equal(memory.forms[0].title, 'Event');
 });
 
 test('form assistant accepts a proposal through the same state boundary', async () => {
     const memory = createMemoryModels();
-    const state = (await memory.models.FormAIState.findOrCreate({
-        where: { formId: 'form_1' },
-        defaults: { formId: 'form_1' }
-    }))[0];
-    state.activeProposalMessageId = 'proposal_1';
-    state.phase = 'awaiting_proposal';
-    await memory.models.FormChatMessage.create({
+    const state = await memory.models.AssistantThread.create({
+        id: 'thread_1', userId: 'user_1', surface: 'form', formId: 'form_1',
+        state: { version: 1, phase: 'awaiting_proposal', activeProposalMessageId: 'proposal_1' }, context: {}
+    });
+    await memory.models.AssistantMessage.create({
         id: 'proposal_1',
-        formId: 'form_1',
+        threadId: state.id,
         sender: 'bot',
+        kind: 'form_proposal',
         text: 'Added a section heading.',
-        proposal: {
+        payload: {
             status: 'pending',
             patches: [{ op: 'add', field: { id: 'heading_contact', type: 'heading', label: 'Contact Information' } }]
         }
@@ -132,8 +132,8 @@ test('form assistant accepts a proposal through the same state boundary', async 
 
     assert.equal(result.proposal.status, 'accepted');
     assert.equal(result.form.fields[0].type, 'heading');
-    assert.equal(memory.states[0].phase, 'idle');
-    assert.equal(memory.states[0].activeProposalMessageId, null);
+    assert.equal(memory.threads[0].state.phase, 'idle');
+    assert.equal(memory.threads[0].state.activeProposalMessageId, null);
 });
 
 test('form assistant keeps section intent and excludes the prior proposal on correction', async () => {

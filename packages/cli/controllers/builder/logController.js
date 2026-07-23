@@ -1,4 +1,4 @@
-import { ExecutionLog, Workflow } from '../../models/index.js';
+import { AutomationRun, Workflow } from '../../models/index.js';
 import { Op } from 'sequelize';
 import asyncHandler from '../../utils/asyncHandler.js';
 
@@ -56,7 +56,7 @@ export const getExecutionLogs = asyncHandler(async (req, res) => {
         workflowId
     });
 
-    const { rows, count } = await ExecutionLog.findAndCountAll({
+    const { rows, count } = await AutomationRun.findAndCountAll({
         where: whereClause,
         attributes: { exclude: ['steps'] },
         include: [{
@@ -65,7 +65,7 @@ export const getExecutionLogs = asyncHandler(async (req, res) => {
             attributes: ['id', 'name'],
             required: false
         }],
-        order: [['time', 'DESC'], ['id', 'DESC']],
+        order: [['createdAt', 'DESC'], ['id', 'DESC']],
         limit: pageSize,
         offset,
         distinct: true
@@ -87,7 +87,7 @@ export const getExecutionLogs = asyncHandler(async (req, res) => {
 });
 
 export const getExecutionLog = asyncHandler(async (req, res) => {
-    const log = await ExecutionLog.findOne({
+    const log = await AutomationRun.findOne({
         where: {
             id: req.params.id,
             userId: req.user.id

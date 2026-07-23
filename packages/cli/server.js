@@ -14,8 +14,6 @@ const startServer = async () => {
   try {
     assertAIConfig();
     await sequelize.authenticate();
-    // The clean-slate schema is created explicitly by the database bootstrap.
-    // Keep sync non-destructive, then apply only explicit additive compatibility changes.
     await sequelize.sync();
     await ensureDatabaseSchema(sequelize);
     await ensureDatabaseChangeTriggers(sequelize);

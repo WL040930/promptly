@@ -1,16 +1,16 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../../db/index.js';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 
-const WorkflowChatMessage = sequelize.define(
-    'WorkflowChatMessage',
+const AssistantMessage = sequelize.define(
+    'AssistantMessage',
     {
         id: {
             type: DataTypes.STRING(100),
             primaryKey: true,
-            defaultValue: () => `wmsg_${crypto.randomUUID().replace(/-/g, '')}`
+            defaultValue: () => `amsg_${crypto.randomUUID().replace(/-/g, '')}`
         },
-        workflowId: {
+        threadId: {
             type: DataTypes.STRING(100),
             allowNull: false
         },
@@ -47,20 +47,38 @@ const WorkflowChatMessage = sequelize.define(
             type: DataTypes.BOOLEAN,
             allowNull: false,
             defaultValue: false
-        },
-        sourceMessageId: {
-            type: DataTypes.STRING(100),
-            allowNull: true,
-            unique: true
         }
     },
     {
-        tableName: 'workflow_chat_messages',
+        tableName: 'assistant_messages',
         timestamps: true,
         indexes: [
-            { fields: ['workflowId', 'createdAt'], name: 'workflow_chat_messages_workflow_created' }
+            { fields: ['threadId', 'createdAt'], name: 'assistant_messages_thread_created' }
         ]
     }
 );
 
-export default WorkflowChatMessage;
+const baseToJSON = AssistantMessage.prototype.toJSON;
+AssistantMessage.prototype.toJSON = function toJSON() {
+    const value = baseToJSON.call(this);
+    return {
+        ...value,
+        ...(this.kind === 'form_proposal' ? { proposal: this.payload } : {}),
+        ...(this.kind === 'clarification' ? { options: this.payload } : {})
+    };
+};
+
+Object.defineProperties(AssistantMessage.prototype, {
+    proposal: {
+        get() {
+            return this.kind === 'form_proposal' ? this.payload : null;
+        }
+    },
+    options: {
+        get() {
+            return this.kind === 'clarification' ? this.payload : null;
+        }
+    }
+});
+
+export default AssistantMessage;

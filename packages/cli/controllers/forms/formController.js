@@ -1,5 +1,5 @@
 import sequelize from '../../db/index.js';
-import { Form, FormResponse, FormChatMessage, FormAIState, Workflow } from '../../models/index.js';
+import { AssistantMessage, AssistantThread, Form, FormResponse, Workflow } from '../../models/index.js';
 import { validateQuestionCardinality } from '../../services/ai/form/context/formContext.js';
 import { applyFormPatches } from '../../services/ai/form/domain/formPatchEngine.js';
 import { validateFormSchema } from '../../services/ai/form/domain/formSchemaValidator.js';
@@ -126,8 +126,8 @@ export const deleteForm = asyncHandler(async (req, res) => {
     if (!form) return res.status(404).json({ message: 'Form not found' });
 
     await sequelize.transaction(async (transaction) => {
-        await FormChatMessage.destroy({
-            where: { formId: form.id },
+        await AssistantThread.destroy({
+            where: { surface: 'form', formId: form.id },
             transaction
         });
 
@@ -239,46 +239,45 @@ export const getFormChatHistory = asyncHandler(async (req, res) => {
     const form = await Form.findOne({ where: { id: formId, userId: req.user.id } });
     if (!form) return res.status(404).json({ message: 'Form not found' });
 
-    const messages = await FormChatMessage.findAll({
-        where: { formId },
+    const thread = await AssistantThread.findOne({ where: { surface: 'form', formId, userId: req.user.id } });
+    if (!thread) return res.json([]);
+    const messages = await AssistantMessage.findAll({
+        where: { threadId: thread.id },
         order: [['createdAt', 'DESC']],
         limit: parseInt(limit, 10),
         offset: parseInt(offset, 10)
     });
 
     // Return messages in chronological order for the frontend
-    res.json(messages.reverse());
+    res.json(messages.reverse().map(message => ({ ...message.toJSON(), formId })));
 });
 
 export const updateFormChatMessage = asyncHandler(async (req, res) => {
     const { messageId } = req.params;
     const { proposal } = req.body;
 
-    const message = await FormChatMessage.findOne({
-        where: { id: messageId },
-        include: [{
-            model: Form,
-            as: 'form',
-            where: { userId: req.user.id }
-        }]
-    });
+    const message = await AssistantMessage.findByPk(messageId);
+    const thread = message
+        ? await AssistantThread.findOne({ where: { id: message.threadId, surface: 'form', userId: req.user.id } })
+        : null;
 
-    if (!message) return res.status(404).json({ message: 'Message not found' });
+    if (!message || !thread) return res.status(404).json({ message: 'Message not found' });
 
-    await message.update({ proposal });
+    await message.update({ payload: proposal, proposalStatus: proposal?.status || message.proposalStatus });
     let stateVersion = null;
     if (['rejected', 'stale', 'superseded', 'accepted'].includes(proposal?.status)) {
-        const formId = message.formId;
-        const state = await FormAIState.findOne({ where: { formId } });
-        if (state?.activeProposalMessageId === message.id) {
-            await state.update({
+        const state = thread.state || {};
+        if (state.activeProposalMessageId === message.id) {
+            const nextState = {
+                ...state,
                 phase: 'idle',
                 activeProposalMessageId: null,
                 openClarification: null,
                 activeWork: null,
-                version: state.version + 1
-            });
-            stateVersion = state.version;
+                version: Number(state.version || 1) + 1
+            };
+            await thread.update({ state: nextState });
+            stateVersion = nextState.version;
         }
     }
     res.json({ ...message.toJSON(), stateVersion });

@@ -65,12 +65,8 @@ export default function ChatTab({ conversationId = null, startNewAutomation = fa
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const prompt = params.get('prompt');
-        const onboardingGoal = startNewAutomation ? window.localStorage.getItem('promptly.onboarding-goal') : '';
-        if (!prompt && !onboardingGoal) return;
-
-        if (prompt || onboardingGoal) setInput(prompt || onboardingGoal);
-
-        if (startNewAutomation) window.localStorage.removeItem('promptly.onboarding-goal');
+        if (prompt) setInput(prompt);
+        if (!prompt && !startNewAutomation) return;
         if (startNewAutomation) navigateTo({ page: 'assistant', conversationId: sessionId || undefined });
     }, [startNewAutomation, sessionId]);
 
