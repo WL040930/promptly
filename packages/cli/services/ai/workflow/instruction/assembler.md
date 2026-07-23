@@ -8,6 +8,8 @@ The first node must be a trigger. Connect nodes in logical execution order witho
 Edge IDs are internal; do not provide them. The server generates them after validating the graph.
 Runtime IDs and respondent bindings are compiled by the server. Preserve the requested workflow shape and content, but do not rely on guessed field IDs or hand-written edge IDs being authoritative.
 
+When the required capability includes `application_review_decision`, create one form-submission trigger followed by one approval node. Connect its exact `approved` output to an email inviting the applicant to interview next week, and its exact `rejected` output to a separate thank-you email. Both branch emails must use the submitted applicant email field; the server validates and repairs these bindings.
+
 Resource rules:
 - For resource-select inputs, use only an exact `value` from the account resources block or the approved form ID supplied by the server.
 - When a resource entry contains `variants`, first choose the exact variant whose `params` match the node's other config values, then choose an option from that variant only.

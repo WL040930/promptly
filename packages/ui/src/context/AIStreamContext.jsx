@@ -1,9 +1,9 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo } from 'react';
 
 const AIStreamContext = createContext(null);
 
 export const AIStreamProvider = ({ children }) => {
-    // Stores stream state keyed by id (e.g. formId or sessionId)
+    // Stores stream state above the router so active turns survive navigation.
     const [streams, setStreams] = useState({});
 
     const setStreamState = useCallback((id, state) => {
@@ -21,11 +21,30 @@ export const AIStreamProvider = ({ children }) => {
         });
     }, []);
 
+    const activeStreams = useMemo(() => Object.entries(streams)
+        .filter(([, state]) => state?.isTyping === true)
+        .map(([id, state]) => ({
+            id,
+            progressLabel: state.progressLabel || 'Working…',
+            surface: state.surface || null,
+            requestId: state.requestId || null,
+            sessionId: state.sessionId || null
+        })), [streams]);
+
     return (
-        <AIStreamContext.Provider value={{ streams, setStreamState, clearStreamState }}>
+        <AIStreamContext.Provider value={{ streams, setStreamState, clearStreamState, activeStreams }}>
             {children}
         </AIStreamContext.Provider>
     );
+};
+
+export const useAIActivity = () => {
+    const context = useContext(AIStreamContext);
+    if (!context) return { isAnyAIActive: false, activeStreams: [] };
+    return {
+        isAnyAIActive: context.activeStreams.length > 0,
+        activeStreams: context.activeStreams
+    };
 };
 
 export const useAIStream = (id) => {

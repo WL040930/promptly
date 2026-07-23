@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { acceptFormProposal, getFormChatHistory, updateFormChatMessage } from '../../api/backend.js';
+import { acceptFormProposal, clearFormAIChat, getFormChatHistory, updateFormChatMessage } from '../../api/backend.js';
 import { submitFormAITurnStream } from '../../api/aiStream.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useAIStream } from '../../context/AIStreamContext.jsx';
@@ -221,6 +221,19 @@ export const useFormAIAssistant = (form) => {
         }
     });
 
+    const clearChatMutation = useMutation({
+        mutationFn: () => clearFormAIChat(form.id),
+        onSuccess: result => {
+            clearStreamState();
+            if (Number.isInteger(result?.state?.version)) setAIStateVersion(result.state.version);
+            queryClient.setQueryData(queryKey, { pages: [{ messages: [], nextOffset: undefined }], pageParams: [0] });
+            toast.success('Form AI chat cleared.');
+        },
+        onError: error => {
+            toast.error(error.message || 'The form AI chat could not be cleared.');
+        }
+    });
+
     const handleSend = useCallback((value, command = null) => {
         const text = typeof value === 'string'
             ? value
@@ -311,6 +324,11 @@ export const useFormAIAssistant = (form) => {
         });
     }, [updateProposalMutation, rawMessages]);
 
+    const clearChat = useCallback(() => {
+        if (!form?.id || clearChatMutation.isPending) return Promise.resolve();
+        return clearChatMutation.mutateAsync();
+    }, [clearChatMutation, form?.id]);
+
     return {
         messages: rawMessages,
         input,
@@ -326,6 +344,8 @@ export const useFormAIAssistant = (form) => {
         handleRejectProposal,
         acceptingProposalId,
         rejectingProposalId,
-        progressLabel
+        progressLabel,
+        clearChat,
+        isClearingChat: clearChatMutation.isPending
     };
 };

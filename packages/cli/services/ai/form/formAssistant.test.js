@@ -15,7 +15,14 @@ const createMemoryModels = () => {
     const model = rows => ({
         async findOne({ where }) { const row = findBy(rows, where); return row ? instance(row) : null; },
         async findAll() { return rows.map(instance); },
-        async create(value) { const row = instance(value); rows.push(row); return row; }
+        async create(value) { const row = instance(value); rows.push(row); return row; },
+        async destroy({ where }) {
+            const before = rows.length;
+            for (let index = rows.length - 1; index >= 0; index -= 1) {
+                if (Object.entries(where || {}).every(([key, value]) => rows[index][key] === value)) rows.splice(index, 1);
+            }
+            return before - rows.length;
+        }
     });
     const Form = model(forms);
     const FormChatMessage = model(messages);
@@ -27,7 +34,7 @@ const createMemoryModels = () => {
         },
         async findOne({ where }) { const row = findBy(states, where); return row || null; }
     };
-    return { models: { Form, FormChatMessage, FormAIState }, messages, states };
+    return { models: { Form, FormChatMessage, FormAIState }, forms, messages, states };
 };
 
 test('form assistant persists a clarification and opens explicit decision state', async () => {
@@ -75,6 +82,23 @@ test('form assistant preserves non-fatal form AI warnings in the reviewable prop
     const result = await assistant.submitTurn({ userId: 'user_1', formId: 'form_1', text: 'Create an application form' });
 
     assert.deepEqual(result.botMsg.proposal.warnings, [{ code: 'UNSUPPORTED_SETTINGS_IGNORED', message: 'Ignored an unsupported optional setting.' }]);
+});
+
+test('form assistant clears chat messages without changing the form', async () => {
+    const memory = createMemoryModels();
+    await memory.models.FormChatMessage.create({ id: 'message_1', formId: 'form_1', sender: 'user', text: 'Keep the form' });
+    const assistant = createFormAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({ LOCK: { UPDATE: 'update' } }) }
+    });
+
+    const result = await assistant.clearChat({ userId: 'user_1', formId: 'form_1' });
+
+    assert.equal(result.cleared, true);
+    assert.equal(result.deletedMessages, 1);
+    assert.equal(memory.messages.length, 0);
+    assert.equal(memory.states[0].phase, 'idle');
+    assert.equal(memory.forms[0].title, 'Event');
 });
 
 test('form assistant accepts a proposal through the same state boundary', async () => {

@@ -27,7 +27,9 @@ const FormAIAssistant = ({ form }) => {
         handleRejectProposal,
         acceptingProposalId,
         rejectingProposalId,
-        progressLabel
+        progressLabel,
+        clearChat,
+        isClearingChat
     } = useFormAIAssistant(form);
 
     const [previewProposal, setPreviewProposal] = useState(null);
@@ -76,6 +78,9 @@ const FormAIAssistant = ({ form }) => {
                 placeholder="Ask AI to build or modify form..."
                 suggestions={SUGGESTIONS}
                 bottomNotice="AI can make mistakes. Please verify."
+                onClearChat={clearChat}
+                isClearingChat={isClearingChat}
+                clearChatLabel="Clear form chat"
             />
             <FormDiffPreviewModal
                 isOpen={!!previewProposal}

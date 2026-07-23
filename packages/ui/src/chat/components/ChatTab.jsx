@@ -4,27 +4,27 @@ import { useGSAP } from '@gsap/react';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useApproveAgentRun, useChatSession, useChatSessions, useDecideChatProposal, useDeleteChatSession, useRejectAgentRun, useSendAssistantTurnStream } from '../../api/hooks/useChat.js';
 import { useForm } from '../../api/hooks/useForms.js';
-import { useWorkflow } from '../../api/hooks/useWorkflows.js';
 import Button from '../../components/ui/Button.jsx';
 import GenericChatWidget from '../../components/chat/GenericChatWidget.jsx';
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 import FormDiffPreviewModal from '../../forms/ai/FormDiffPreviewModal.jsx';
-import { navigate, navigateTo, parsePath, getQuery } from '../../utils/router.js';
+import { navigateTo, parsePath, getQuery } from '../../utils/router.js';
 import { formatCompactRelativeTime } from '../../utils/time.js';
 import ChatSessionsSkeleton from '../../components/chat/ChatSessionsSkeleton.jsx';
 import ClarificationModeSelect from '../../components/chat/ClarificationModeSelect.jsx';
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
 import { getClarificationModePreference, setClarificationModePreference } from '../../utils/storage.js';
 import { getAgentProgressLabel } from '../../../../shared/agentProgress.js';
+import { LoaderCircle } from 'lucide-react';
+import { useAIActivity, useAIStream } from '../../context/AIStreamContext.jsx';
 
 const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I can build automations and forms from a description. What would you like to automate?' };
 
-export default function ChatTab({ conversationId = null, automationId = null, startNewAutomation = false }) {
+export default function ChatTab({ conversationId = null, startNewAutomation = false }) {
     const toast = useToast();
     const container = useRef(null);
     const [messages, setMessages] = useState([welcome]);
     const [sessionId, setSessionId] = useState(() => conversationId || getQuery(window.location.href).get('conversation') || parsePath(window.location.href).conversationId || null);
-    const [targetWorkflowId, setTargetWorkflowId] = useState(automationId || getQuery(window.location.href).get('automationId') || null);
     const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
@@ -37,10 +37,18 @@ export default function ChatTab({ conversationId = null, automationId = null, st
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
     const loadedSessionIdRef = useRef(null);
+    const activityKey = sessionId ? `ask-promptly:${sessionId}` : 'ask-promptly:new';
+    const {
+        isTyping: sharedIsTyping,
+        progressLabel: sharedProgressLabel,
+        setStreamState,
+        clearStreamState
+    } = useAIStream(activityKey);
+    const { activeStreams } = useAIActivity();
+    const askActivity = activeStreams.find(stream => stream.id === activityKey);
 
     const { data: sessions = [], isPending: isSessionsPending } = useChatSessions();
     const { data: session, isPending: isSessionPending } = useChatSession(sessionId);
-    const { data: targetWorkflow } = useWorkflow(targetWorkflowId);
     const { data: previewForm } = useForm(previewFormId);
     const sendAssistantTurnMutation = useSendAssistantTurnStream();
     const approveAgentRunMutation = useApproveAgentRun();
@@ -52,31 +60,34 @@ export default function ChatTab({ conversationId = null, automationId = null, st
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
     }, { scope: container });
 
-    // Automation Center can hand the chat a workflow target and a starter
-    // request through the URL. This keeps the handoff deep: callers only need
-    // to provide context, while chat owns loading and persisting that context.
+    // Ask Promptly owns general automation/form conversations. Workflow edits
+    // are routed to the workflow-owned assistant by the workspace router.
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        const workflowId = automationId || params.get('automationId');
         const prompt = params.get('prompt');
         const onboardingGoal = startNewAutomation ? window.localStorage.getItem('promptly.onboarding-goal') : '';
-        if (!workflowId && !prompt && !onboardingGoal) return;
+        if (!prompt && !onboardingGoal) return;
 
-        if (workflowId) setTargetWorkflowId(workflowId);
         if (prompt || onboardingGoal) setInput(prompt || onboardingGoal);
 
         if (startNewAutomation) window.localStorage.removeItem('promptly.onboarding-goal');
         if (startNewAutomation) navigateTo({ page: 'assistant', conversationId: sessionId || undefined });
-    }, [automationId, startNewAutomation, sessionId]);
+    }, [startNewAutomation, sessionId]);
 
     useEffect(() => {
         if (!session || loadedSessionIdRef.current === sessionId) return;
         loadedSessionIdRef.current = sessionId;
         setMessages(session.messages?.length ? session.messages : [welcome]);
-        setTargetWorkflowId(session.agentContext?.workflowId || null);
         setClarificationMode(getClarificationModePreference() || session.agentContext?.clarificationMode || DEFAULT_CLARIFICATION_MODE);
         setIsSidebarOpen(false);
     }, [session, sessionId]);
+
+    // Local typing state belongs to the selected conversation. Reset it when
+    // the route/session changes; the shared stream state continues tracking
+    // any request that belongs to the conversation we left.
+    useEffect(() => {
+        setIsTyping(false);
+    }, [sessionId]);
     const filteredSessions = useMemo(() => {
         return sidebarSearch
             ? sessions.filter(s => s.title?.toLowerCase().includes(sidebarSearch.toLowerCase()))
@@ -88,9 +99,7 @@ export default function ChatTab({ conversationId = null, automationId = null, st
             setSessionId(response.sessionId);
             // Replace url to have new session id without refreshing page
             const parsed = parsePath(window.location.href);
-            if (automationId) {
-                navigate(`/app/automations/${automationId}/build?editor=ai&conversation=${encodeURIComponent(response.sessionId)}`);
-            } else if (!parsed.conversationId) {
+            if (!parsed.conversationId) {
                 navigateTo({ page: 'assistant', conversationId: response.sessionId });
             }
         }
@@ -114,26 +123,33 @@ export default function ChatTab({ conversationId = null, automationId = null, st
 
     const send = async (text, event = null) => {
         if (!text?.trim() && !event) return;
+        if (isTyping || sharedIsTyping) return;
         if (text?.trim()) setMessages(previous => [...previous, { id: `local_${Date.now()}`, sender: 'user', kind: 'text', text }]);
         setInput('');
         if (text && /form/i.test(text)) setProgressLabel('Designing form');
-        else if (text && targetWorkflow && /\b(add|remove|change|modify|update|insert|delete|edit)\b/i.test(text)) setProgressLabel('Analysing current workflow');
-        else setProgressLabel(targetWorkflow ? 'Analysing current workflow' : 'Scanning node library');
+        else setProgressLabel('Scanning available capabilities');
         setIsTyping(true);
+        setStreamState({
+            isTyping: true,
+            progressLabel: text && /form/i.test(text) ? 'Designing form' : 'Scanning available capabilities',
+            surface: 'ask-promptly',
+            sessionId
+        });
         try {
             const response = await sendAssistantTurnMutation.mutateAsync({
                 sessionId,
                 message: text,
                 context: {
                     surface: 'chat',
-                    automationId: targetWorkflow?.id || targetWorkflowId || null,
-                    workflowId: targetWorkflow?.id || null,
                     clarificationMode
                 },
                 event,
                 onEvent: data => {
                     const label = getAgentProgressLabel(data);
-                    if (label) setProgressLabel(label);
+                    if (label) {
+                        setProgressLabel(label);
+                        setStreamState({ isTyping: true, progressLabel: label, surface: 'ask-promptly', sessionId });
+                    }
                 }
             });
             appendResponse(response);
@@ -141,6 +157,7 @@ export default function ChatTab({ conversationId = null, automationId = null, st
             setMessages(previous => [...previous, { id: `error_${Date.now()}`, sender: 'bot', kind: 'error', text: error.message || 'Sorry, I could not process that request.' }]);
         } finally {
             setIsTyping(false);
+            clearStreamState();
         }
     };
 
@@ -217,10 +234,6 @@ export default function ChatTab({ conversationId = null, automationId = null, st
         if (option?.type === 'agent_plan_approved' || option?.type === 'agent_plan_rejected') {
             return send(null, { type: option.type, runId: option.runId });
         }
-        if (option?.id && option?.name) {
-            setTargetWorkflowId(option.id);
-            return send(null, { type: 'workflow_target_selected', workflowId: option.id });
-        }
         if (option?.id && option?.title) return send(null, { type: 'form_target_selected', formId: option.id });
         if (option?.type === 'preview_form') {
             setPreviewFormId(option.formId || null);
@@ -241,24 +254,23 @@ export default function ChatTab({ conversationId = null, automationId = null, st
 
     const newChat = () => { 
         setSessionId(null); 
+        setIsTyping(false);
         setMessages([welcome]); 
-        setTargetWorkflowId(null);
         setClarificationMode(getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
         setPreviewFormId(null);
         loadedSessionIdRef.current = null;
         setIsSidebarOpen(false); 
-        if (automationId) navigate(`/app/automations/${automationId}/build?editor=ai`);
-        else navigateTo({ page: 'assistant' });
+        navigateTo({ page: 'assistant' });
     };
     
     const loadChat = (id) => {
         loadedSessionIdRef.current = null;
+        setIsTyping(false);
         setSessionId(id);
         setMessages([welcome]);
         setClarificationMode(getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
         setIsSidebarOpen(false);
-        if (automationId) navigate(`/app/automations/${automationId}/build?editor=ai&conversation=${encodeURIComponent(id)}`);
-        else navigateTo({ page: 'assistant', conversationId: id });
+        navigateTo({ page: 'assistant', conversationId: id });
     };
 
     const confirmDelete = async () => {
@@ -273,6 +285,9 @@ export default function ChatTab({ conversationId = null, automationId = null, st
             setChatToDelete(null);
         }
     };
+
+    const effectiveIsTyping = isTyping || sharedIsTyping;
+    const isCurrentConversationWorking = Boolean(sharedIsTyping && askActivity);
 
     return (
         <div ref={container} className="surface-grid relative flex h-full min-h-0 w-full overflow-hidden font-sans">
@@ -356,6 +371,9 @@ export default function ChatTab({ conversationId = null, automationId = null, st
                                         </span>
                                     )}
                                 </div>
+                                {activeStreams.some(stream => stream.id === `ask-promptly:${session.id}`) && (
+                                    <LoaderCircle size={15} className="mt-0.5 shrink-0 animate-spin text-indigo-500" aria-label="AI is working" />
+                                )}
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -388,13 +406,16 @@ export default function ChatTab({ conversationId = null, automationId = null, st
                             <h2 className="text-[15px] font-extrabold text-gray-900 tracking-tight">AI Assistant</h2>
                             <p className="text-[11px] text-gray-500 font-medium">Describe and refine automations and forms</p>
                         </div>
+                        {isCurrentConversationWorking && (
+                            <LoaderCircle size={16} className="animate-spin text-indigo-500" aria-label="AI is working" />
+                        )}
                     </div>
                 </div>
                 <GenericChatWidget 
                     messages={messages}
                     input={input}
                     setInput={setInput}
-                    isTyping={isTyping}
+                    isTyping={effectiveIsTyping}
                     isLoadingHistory={Boolean(sessionId && isSessionPending)}
                     handleSend={send}
                     handleApply={(msg, filteredSchema, unselectedIndices) => {
@@ -416,7 +437,7 @@ export default function ChatTab({ conversationId = null, automationId = null, st
                     handleOption={handleOption}
                     acceptingProposalId={acceptingProposalId}
                     rejectingProposalId={rejectingProposalId}
-                    progressLabel={progressLabel}
+                    progressLabel={sharedProgressLabel || progressLabel}
                     inputAccessory={<ClarificationModeSelect value={clarificationMode} onChange={handleClarificationModeChange} />}
                     placeholder="Describe what you want to build..."
                     suggestions={[

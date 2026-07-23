@@ -8,6 +8,7 @@ import NodeRegistry from '../../utils/NodeRegistry.js';
 import env from '../../config/env.js';
 import { mergeAgentContext } from './resourceResolver.js';
 import { processAgenticTurn, resumeAgentAfterClarification, resumeAgentAfterForm, resumeAgentAfterPlanReview } from '../agent/agentOrchestrator.js';
+import { decidePendingTurn } from '../agent/turnCoordinator.js';
 import { createChatCapabilityRegistry } from './chatCapabilityRegistry.js';
 import { hasFallbackToolMarkup, parseFallbackToolCall } from './fallbackToolCall.js';
 import { getClarificationModeInstruction, normalizeClarificationMode } from '../../../shared/agentContract.js';
@@ -560,7 +561,42 @@ export const processChatMessage = async ({ session, userId, context = {}, onEven
         where: { sessionId: session.id, sender: 'user' },
         order: [['createdAt', 'DESC']]
     });
-    const pendingAgentState = session.agentState || {};
+    let pendingAgentState = session.agentState || {};
+    // A pending clarification is scoped to its original question. An
+    // unrelated sentence must start a fresh turn instead of being appended to
+    // the old request (which previously caused greetings to reach the planner
+    // and produced invalid self-dependent plans).
+    if (pendingAgentState.runId && [
+        'awaiting_agent_plan_review',
+        'awaiting_agent_clarification'
+    ].includes(pendingAgentState.status)) {
+        const pendingRun = await AgentRun.findOne({ where: { id: pendingAgentState.runId, sessionId: session.id, userId } });
+        const decision = decidePendingTurn({
+            message: latestUserMessage?.text || '',
+            pending: {
+                kind: pendingRun?.metadata?.workflowClarification?.kind || pendingAgentState.status,
+                question: pendingRun?.metadata?.workflowClarification || pendingAgentState.question,
+                options: pendingAgentState.options
+            }
+        });
+        onEvent?.({ type: 'agent.turn.routed', route: decision.kind, pendingStatus: pendingAgentState.status });
+        if (pendingRun && (decision.kind === 'conversation' || decision.kind === 'new_action')) {
+            await pendingRun.update({
+                status: 'suspended',
+                currentStep: null,
+                metadata: {
+                    ...(pendingRun.metadata || {}),
+                    suspendedAt: new Date().toISOString(),
+                    suspendedFromStatus: pendingAgentState.status
+                }
+            });
+            await session.update({ agentState: {} });
+            pendingAgentState = {};
+        } else if (!pendingRun) {
+            await session.update({ agentState: {} });
+            pendingAgentState = {};
+        }
+    }
     if (pendingAgentState.status === 'awaiting_agent_plan_review' && pendingAgentState.runId) {
         const run = await AgentRun.findOne({ where: { id: pendingAgentState.runId, sessionId: session.id, userId } });
         const answer = String(latestUserMessage?.text || '');

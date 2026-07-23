@@ -2,7 +2,7 @@ import { User, Connection, OnboardingProgress } from './core/index.js';
 import { ChatSession, ChatMessage } from './chat/index.js';
 import { AgentRun } from './agent/index.js';
 import { Form, FormResponse, FormChatMessage, FormAIState } from './forms/index.js';
-import { Workflow, WorkflowVersion } from './workflows/index.js';
+import { Workflow, WorkflowVersion, WorkflowAIState, WorkflowChatMessage } from './workflows/index.js';
 import { ExecutionLog, EmailDelivery, WorkflowRun, WorkflowContinuation, Asset } from './execution/index.js';
 import { TriggerSubscription, TriggerEvent, DatabaseChangeEvent } from './triggers/index.js';
 import { KnowledgeBase, KnowledgeDocument, KnowledgeChunk } from './knowledge/index.js';
@@ -18,6 +18,10 @@ User.hasMany(Workflow, { foreignKey: 'userId', as: 'workflows' });
 
 Workflow.hasMany(WorkflowVersion, { foreignKey: 'workflowId', as: 'versions', onDelete: 'CASCADE' });
 WorkflowVersion.belongsTo(Workflow, { foreignKey: 'workflowId', as: 'workflow' });
+Workflow.hasOne(WorkflowAIState, { foreignKey: { name: 'workflowId', allowNull: false }, as: 'aiState', onDelete: 'CASCADE' });
+WorkflowAIState.belongsTo(Workflow, { foreignKey: { name: 'workflowId', allowNull: false }, as: 'workflow', onDelete: 'CASCADE' });
+Workflow.hasMany(WorkflowChatMessage, { foreignKey: { name: 'workflowId', allowNull: false }, as: 'aiMessages', onDelete: 'CASCADE' });
+WorkflowChatMessage.belongsTo(Workflow, { foreignKey: { name: 'workflowId', allowNull: false }, as: 'workflow', onDelete: 'CASCADE' });
 
 // --- Form Associations ---
 Form.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -113,6 +117,8 @@ export {
     FormChatMessage,
     FormAIState,
     WorkflowVersion,
+    WorkflowAIState,
+    WorkflowChatMessage,
     EmailDelivery,
     TriggerSubscription,
     TriggerEvent,

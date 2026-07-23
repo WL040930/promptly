@@ -56,6 +56,11 @@ export const submitFormAITurn = asyncHandler(async (req, res) => {
     res.status(201).json(result);
 });
 
+export const clearFormAIChat = asyncHandler(async (req, res) => {
+    const result = await formAssistant.clearChat({ userId: req.user.id, formId: req.params.formId });
+    res.json(result);
+});
+
 export const decideFormProposal = asyncHandler(async (req, res) => {
     const { formId, messageId } = req.params;
     const { action = 'accept', selectedPatchIds, baseFormUpdatedAt } = req.body || {};

@@ -23,8 +23,8 @@ const validateGraph = ({ nodes = [], edges = [], isActive = false }) => {
     }
 };
 
-export const saveAutomationDraft = async ({ automationId, userId, nodes, edges, expectedRevision, source = 'visual', summary = null }) => {
-    return sequelize.transaction(async transaction => {
+export const saveAutomationDraft = async ({ automationId, userId, nodes, edges, expectedRevision, source = 'visual', summary = null, transaction: externalTransaction = null }) => {
+    const save = async transaction => {
         const automation = await Workflow.findOne({
             where: { id: automationId, userId },
             transaction,
@@ -54,7 +54,8 @@ export const saveAutomationDraft = async ({ automationId, userId, nodes, edges, 
 
         await automation.update({ nodes, edges, revision: nextRevision, draftRevisionId: version.id }, { transaction });
         return { automation, version };
-    });
+    };
+    return externalTransaction ? save(externalTransaction) : sequelize.transaction(save);
 };
 
 export const publishAutomation = async ({ automationId, userId }) => {

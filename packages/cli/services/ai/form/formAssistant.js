@@ -266,6 +266,35 @@ export const createFormAssistant = ({
         }
     };
 
+    const clearChat = async ({ userId, formId } = {}) => {
+        return db.transaction(async transaction => {
+            const form = await models.Form.findOne({ where: { id: formId, userId }, transaction, lock: transaction.LOCK.UPDATE });
+            if (!form) {
+                const error = new Error('Form not found');
+                error.status = 404;
+                throw error;
+            }
+            const state = await loadState(formId, transaction);
+            if (state.inFlightRequestId) {
+                const error = new Error('The form AI is still processing a request. Wait for it to finish before clearing the chat.');
+                error.code = 'FORM_AI_TURN_IN_PROGRESS';
+                error.status = 409;
+                throw error;
+            }
+            const deletedMessages = await models.FormChatMessage.destroy({ where: { formId }, transaction });
+            await state.update({
+                version: state.version + 1,
+                phase: 'idle',
+                activeWork: null,
+                openClarification: null,
+                activeProposalMessageId: null,
+                inFlightRequestId: null,
+                inFlightStartedAt: null
+            }, { transaction });
+            return { cleared: true, deletedMessages, state: asJson(state) };
+        });
+    };
+
     const decideProposal = async ({
         userId,
         formId,
@@ -403,7 +432,7 @@ export const createFormAssistant = ({
         return response;
     };
 
-    return { submitTurn, decideProposal };
+    return { submitTurn, clearChat, decideProposal };
 };
 
 export const formAssistant = createFormAssistant();

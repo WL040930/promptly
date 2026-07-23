@@ -14,6 +14,12 @@ export const createSendMessageHandler = ({
     let { sessionId, message, context = {}, event } = req.body || {};
     const userId = req.user.id;
     const useSSE = String(req.headers.accept || '').includes('text/event-stream');
+    if (context?.workflowId || context?.automationId) {
+        return res.status(409).json({
+            code: 'WORKFLOW_AI_REQUIRED',
+            message: 'Workflow changes must be handled by the workflow-owned AI assistant.'
+        });
+    }
     if (useSSE) {
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -28,8 +34,7 @@ export const createSendMessageHandler = ({
         const titleSource = message || 'New Agent Session';
         session = await chatSessionModel.create({
             userId,
-            automationId: context?.automationId || context?.workflowId || null,
-            purpose: context?.automationId || context?.workflowId ? 'automation_edit' : 'general',
+            purpose: 'general',
             title: `${titleSource.substring(0, 40)}${titleSource.length > 40 ? '...' : ''}`
         });
     }
@@ -124,7 +129,7 @@ export const decideProposal = asyncHandler(async (req, res) => {
 });
 
 export const getSessions = asyncHandler(async (req, res) => {
-    const sessions = await ChatSession.findAll({ where: { userId: req.user.id }, order: [['updatedAt', 'DESC']], attributes: ['id', 'title', 'updatedAt', 'agentContext', 'agentState', 'automationId', 'purpose'], limit: 50 });
+    const sessions = await ChatSession.findAll({ where: { userId: req.user.id, purpose: 'general' }, order: [['updatedAt', 'DESC']], attributes: ['id', 'title', 'updatedAt', 'agentContext', 'agentState', 'automationId', 'purpose'], limit: 50 });
     res.json(sessions);
 });
 

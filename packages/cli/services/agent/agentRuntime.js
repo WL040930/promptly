@@ -170,9 +170,12 @@ export const createAgentRuntime = ({ registry, planner, limits = {}, onEvent = n
             emit({ type: 'step.started', step: clone(step), actionCount: actionCount + 1 });
             let observation;
             try {
+                const dependencyOutputs = Object.fromEntries(
+                    step.dependsOn.map(dependency => [dependency, clone(runtimeState.outputs[dependency])])
+                );
                 observation = normalizeObservation(await capability.execute({
                     args: step.args || {},
-                    context: { input, state: runtimeState, plan, step, signal },
+                    context: { input, state: runtimeState, plan, step, signal, dependencies: dependencyOutputs },
                     capability
                 }));
                 const outputIssues = typeof registry.validateOutput === 'function'

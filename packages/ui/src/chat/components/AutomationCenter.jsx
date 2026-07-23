@@ -91,6 +91,11 @@ const getHealthStyles = (health) => {
 };
 
 const buildChatUrl = (workflowId, prompt = '') => {
+    if (workflowId) {
+        const params = new URLSearchParams({ editor: 'ai' });
+        if (prompt) params.set('prompt', prompt);
+        return `/app/automations/${workflowId}/build?${params.toString()}`;
+    }
     const params = new URLSearchParams();
     if (workflowId) params.set('automationId', workflowId);
     if (prompt) params.set('prompt', prompt);

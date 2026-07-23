@@ -3,7 +3,7 @@ import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import WorkflowCanvas from './components/canvas/WorkflowCanvas';
 import PropertyInspector from './components/panels/PropertyInspector';
-import AIAgentChat from './components/sidebars/AIAgentChat';
+import WorkflowAIAssistant from './components/sidebars/WorkflowAIAssistant.jsx';
 import NodeLibrarySidebar from './components/sidebars/NodeLibrarySidebar';
 import BuilderToolbar from './components/layout/BuilderToolbar';
 import OverviewModal from './overview/OverviewModal';
@@ -11,9 +11,8 @@ import { MODAL_TYPES, MODAL_CONFIG } from './overview/constants.js';
 import TestRunModal from './components/modals/TestRunModal';
 import VersionHistorySidebar from './components/sidebars/VersionHistorySidebar';
 import { navigate } from '../utils/router.js';
-import { useWorkflow, useCreateWorkflow, useUpdateWorkflow, useSaveWorkflowVersion } from '../api/hooks/useWorkflows.js';
+import { useWorkflow, useUpdateWorkflow, useSaveWorkflowVersion } from '../api/hooks/useWorkflows.js';
 import { useRunWorkflow } from '../api/hooks/useRunWorkflow.js';
-import { useCreateForm, useUpdateForm } from '../api/hooks/useForms.js';
 import ExecutionPanel from './components/panels/ExecutionPanel';
 import BuilderLoadingSkeleton from './components/layout/BuilderLoadingSkeleton.jsx';
 import { useUndoRedo } from '../hooks/useUndoRedo';
@@ -26,11 +25,8 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     const { data: activeWorkflowData, isPending: isActiveWorkflowPending } = useWorkflow(activeWorkflowId);
 
     const [activeNodeId, setActiveNodeId] = useState(null);
-    const createWorkflowMutation = useCreateWorkflow();
     const updateWorkflowMutation = useUpdateWorkflow();
     const saveVersionMutation = useSaveWorkflowVersion();
-    const createFormMutation = useCreateForm();
-    const updateFormMutation = useUpdateForm();
     const toast = useToast();
 
     // Only show skeleton on initial load (no data yet), not on background refetches
@@ -274,85 +270,6 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
         }
         return uniqueTitle;
     }, [nodes]);
-
-    const attachedFormId = useMemo(() => {
-        const formNode = nodes.find(node => node.subType === 'form-submission');
-        return formNode?.config?.formId || null;
-    }, [nodes]);
-
-    const handleApplyAction = useCallback(async (message) => {
-        const payload = message.payload || {};
-        if (message.kind === 'form_proposal') {
-            const schema = payload.schema || {};
-            const formData = {
-                title: schema.title || 'New Promptly Form',
-                description: schema.description || '',
-                settings: schema.settings || {},
-                fields: schema.fields || []
-            };
-            const saved = payload.formId
-                ? await updateFormMutation.mutateAsync({ id: payload.formId, data: formData })
-                : await createFormMutation.mutateAsync(formData);
-            return { formId: saved.id };
-        }
-
-        if (message.kind === 'workflow_diff') {
-            if (payload.baseWorkflowRevision !== undefined && activeWorkflow?.revision !== undefined
-                && Number(payload.baseWorkflowRevision) !== Number(activeWorkflow.revision)) {
-                throw new Error('This workflow changed while the proposal was open. Please generate the changes again.');
-            }
-            await updateWorkflowMutation.mutateAsync({
-                id: activeWorkflowId,
-                data: {
-                    nodes: payload.nodes,
-                    edges: payload.edges,
-                    ...(payload.baseWorkflowRevision !== undefined ? { expectedRevision: payload.baseWorkflowRevision } : {}),
-                    source: 'ai',
-                    summary: 'Applied AI workflow proposal'
-                }
-            });
-            return { workflowId: activeWorkflowId };
-        }
-
-        if (message.kind === 'workflow_proposal') {
-            if (payload.baseWorkflowRevision !== undefined && activeWorkflow?.revision !== undefined
-                && Number(payload.baseWorkflowRevision) !== Number(activeWorkflow.revision)) {
-                throw new Error('This workflow changed while the proposal was open. Please generate the workflow again.');
-            }
-            const hasCurrentNodes = nodes.length > 0;
-            let targetWorkflowId = activeWorkflowId;
-            if (hasCurrentNodes) {
-                const replace = window.confirm('This workflow already has nodes. Choose OK to replace it, or Cancel to create a separate workflow.');
-                if (!replace) {
-                    const created = await createWorkflowMutation.mutateAsync({
-                        name: payload.name || 'New Automation',
-                        status: 'Draft',
-                        iconColor: 'text-indigo-600',
-                        iconBg: 'bg-indigo-100',
-                        nodes: payload.nodes || [],
-                        edges: payload.edges || []
-                    });
-                    targetWorkflowId = created.id;
-                    toast.success('Created a separate automation from the proposal.');
-                    return { workflowId: targetWorkflowId };
-                }
-            }
-            await updateWorkflowMutation.mutateAsync({
-                id: targetWorkflowId,
-                data: {
-                    name: payload.name || activeWorkflow?.name || 'New Automation',
-                    nodes: payload.nodes || [],
-                    edges: payload.edges || [],
-                    ...(payload.baseWorkflowRevision !== undefined ? { expectedRevision: payload.baseWorkflowRevision } : {}),
-                    source: 'ai',
-                    summary: 'Applied AI workflow proposal'
-                }
-            });
-            toast.success('Automation proposal applied.');
-            return { workflowId: targetWorkflowId };
-        }
-        return null;
-    }, [activeWorkflow, activeWorkflowId, createFormMutation, createWorkflowMutation, nodes, toast, updateFormMutation, updateWorkflowMutation]);
 
     const handleAddNode = useCallback((nodeData, position) => {
         const newNodeId = `${activeWorkflowId}-${Date.now()}`;
@@ -641,7 +558,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                         <VersionHistorySidebar workflowId={activeWorkflowId} currentWorkflow={activeWorkflow} />
                     ) : (
                         rightTab === 'chat' ? (
-                            <AIAgentChat workflow={activeWorkflow} formId={attachedFormId} onApplyProposal={handleApplyAction} onBeforeSend={flushPendingWorkflowSave} />
+                            <WorkflowAIAssistant workflow={activeWorkflow} onBeforeSend={flushPendingWorkflowSave} />
                         ) : (
                             <PropertyInspector activeNode={activeNode} onUpdateNode={handleUpdateNode} onTestWorkflow={handleTestRunClick} nodes={nodes} edges={edges} />
                         )

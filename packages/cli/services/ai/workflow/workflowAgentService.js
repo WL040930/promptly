@@ -15,7 +15,8 @@ const instructionDir = path.join(__dirname, 'instruction');
 const validActions = new Set(['create_workflow', 'edit_workflow']);
 
 const requiredNodeKeysByCapability = Object.freeze({
-    respondent_confirmation: ['trigger:form-submission', 'action:email']
+    respondent_confirmation: ['trigger:form-submission', 'action:email'],
+    application_review_decision: ['trigger:form-submission', 'logic:approval', 'action:email']
 });
 
 const readInstruction = async (name) => fs.readFile(path.join(instructionDir, name), 'utf8');
@@ -235,10 +236,17 @@ export const validateGeneratedResourceValues = ({ nodes = [], specs = [], resour
 const isEmailAction = node => node?.subType === 'email' || node?.nodeKey === 'action:email';
 
 const respondentConfirmationPattern = /(?:\b(?:thank[- ]?you|confirmation|confirm|acknowledg)\b.{0,80}\b(?:email|message|respondent|user|applicant|submitter)\b|\b(?:email|notify|send)\b.{0,80}\b(?:respondent|user|applicant|submitter)\b)/i;
+const applicationReviewPattern = /\b(?:approve|approval|reject|rejected|rejection)\b/i;
 
-export const requiredCapabilitiesForRequest = message => respondentConfirmationPattern.test(String(message || ''))
-    ? ['respondent_confirmation']
-    : [];
+export const requiredCapabilitiesForRequest = message => {
+    const text = String(message || '');
+    const capabilities = [];
+    if (respondentConfirmationPattern.test(text)) capabilities.push('respondent_confirmation');
+    if (applicationReviewPattern.test(text) && /\b(form|submission|applicant|candidate|workflow|automation)\b/i.test(text)) {
+        capabilities.push('application_review_decision');
+    }
+    return capabilities;
+};
 
 const emailFieldsFor = formSchema => (Array.isArray(formSchema?.fields) ? formSchema.fields : [])
     .filter(field => field?.type === 'email' && field?.required === true && typeof field.id === 'string' && field.id.trim());
@@ -325,13 +333,16 @@ export const compileWorkflowDraft = ({
     requiredCapabilities = [],
     formSchema = null,
     respondentEmailFieldId = null,
+    approverEmail = null,
     nodes = [],
     edges = []
 } = {}) => {
     const nextNodes = nodes.map(node => ({ ...node, config: { ...(node.config || {}) } }));
     const nextEdges = edges.map(edge => ({ ...edge }));
     const repairs = [];
-    if (!requiredCapabilities.includes('respondent_confirmation')) return { nodes: nextNodes, edges: nextEdges, repairs };
+    const wantsRespondentConfirmation = requiredCapabilities.includes('respondent_confirmation');
+    const wantsApplicationReview = requiredCapabilities.includes('application_review_decision');
+    if (!wantsRespondentConfirmation && !wantsApplicationReview) return { nodes: nextNodes, edges: nextEdges, repairs };
 
     const formTriggers = nextNodes.filter(node => node?.subType === 'form-submission');
     const emailActions = nextNodes.filter(isEmailAction);
@@ -339,12 +350,22 @@ export const compileWorkflowDraft = ({
 
     // Correct only the runtime binding when the workflow has one clear
     // confirmation action. Leave all other model-authored decisions untouched.
-    if (formTriggers.length === 1 && emailActions.length === 1 && respondentEmail.field) {
-        const emailAction = emailActions[0];
+    if (wantsRespondentConfirmation && formTriggers.length === 1 && respondentEmail.field
+        && (emailActions.length === 1 || wantsApplicationReview)) {
         const expected = recipientPathFor(formTriggers[0], respondentEmail.field);
-        if (emailAction.config.to !== expected) {
-            emailAction.config.to = expected;
-            repairs.push({ code: 'RESPONDENT_RECIPIENT_BOUND', nodeId: emailAction.id, fieldId: respondentEmail.field.id });
+        for (const emailAction of emailActions) {
+            if (emailAction.config.to !== expected) {
+                emailAction.config.to = expected;
+                repairs.push({ code: 'RESPONDENT_RECIPIENT_BOUND', nodeId: emailAction.id, fieldId: respondentEmail.field.id });
+            }
+        }
+    }
+
+    if (wantsApplicationReview && approverEmail) {
+        const approvals = nextNodes.filter(node => node?.subType === 'approval');
+        if (approvals.length === 1 && approvals[0].config.assigneeEmail !== approverEmail) {
+            approvals[0].config.assigneeEmail = approverEmail;
+            repairs.push({ code: 'APPROVER_BOUND_TO_ACCOUNT', nodeId: approvals[0].id });
         }
     }
 
@@ -361,10 +382,13 @@ export const validateGeneratedWorkflowCapabilities = ({
     requiredCapabilities = [],
     formSchema = null,
     respondentEmailFieldId = null,
+    approverEmail = null,
     nodes = [],
     edges = []
 } = {}) => {
-    if (!requiredCapabilities.includes('respondent_confirmation')) return [];
+    const wantsRespondentConfirmation = requiredCapabilities.includes('respondent_confirmation');
+    const wantsApplicationReview = requiredCapabilities.includes('application_review_decision');
+    if (!wantsRespondentConfirmation && !wantsApplicationReview) return [];
 
     const issues = [];
     const formTriggers = nodes.filter(node => node?.subType === 'form-submission');
@@ -372,20 +396,20 @@ export const validateGeneratedWorkflowCapabilities = ({
     const contactFields = emailFieldsFor(formSchema);
     const respondentEmail = resolveRespondentEmailField({ formSchema, preferredFieldId: respondentEmailFieldId });
 
-    if (formTriggers.length === 0) {
+    if (wantsRespondentConfirmation && formTriggers.length === 0) {
         issues.push({ code: 'FORM_SUBMISSION_TRIGGER_MISSING', path: 'nodes', message: 'A form-submission trigger is required for respondent confirmation.' });
     }
-    if (contactFields.length === 0) {
+    if (wantsRespondentConfirmation && contactFields.length === 0) {
         issues.push({ code: 'RESPONDENT_CONTACT_FIELD_MISSING', path: 'form.fields', message: 'The form must contain a required email field for respondent confirmation.' });
     }
-    if (emailActions.length === 0) {
+    if (wantsRespondentConfirmation && emailActions.length === 0) {
         issues.push({ code: 'EMAIL_ACTION_MISSING', path: 'nodes', message: 'An email action is required for respondent confirmation.' });
     }
 
     const contactFieldIds = new Set(contactFields.map(field => field.id));
     const reachable = reachableFrom(formTriggers, edges);
     const reachableEmailActions = emailActions.filter(action => reachable.has(action.id));
-    if (reachableEmailActions.length === 0) {
+    if (wantsRespondentConfirmation && reachableEmailActions.length === 0) {
         issues.push({ code: 'RESPONDENT_CONFIRMATION_DISCONNECTED', path: 'nodes', message: 'At least one confirmation email must be reachable from the form-submission trigger.' });
     }
 
@@ -397,7 +421,7 @@ export const validateGeneratedWorkflowCapabilities = ({
             && contactFieldIds.has(parts[2])
         ));
     }));
-    if (!hasValidRecipient) {
+    if (wantsRespondentConfirmation && !hasValidRecipient) {
         const paths = emailActions.flatMap(emailAction => dynamicPathsIn(emailAction.config?.to));
         issues.push({
             code: paths.length > 0
@@ -416,6 +440,28 @@ export const validateGeneratedWorkflowCapabilities = ({
                 }))
             } : {})
         });
+    }
+
+    if (wantsApplicationReview) {
+        const approvalNodes = nodes.filter(node => node?.subType === 'approval');
+        if (formTriggers.length === 0) issues.push({ code: 'FORM_SUBMISSION_TRIGGER_MISSING', path: 'nodes', message: 'A form-submission trigger is required before application review.' });
+        if (approvalNodes.length === 0) issues.push({ code: 'APPROVAL_NODE_MISSING', path: 'nodes', message: 'An approval node is required to review each application.' });
+        if (emailActions.length < 2) issues.push({ code: 'APPROVAL_BRANCH_EMAILS_MISSING', path: 'nodes', message: 'Approved and rejected branches each need an email action.' });
+        if (approvalNodes.length > 0) {
+            const configuredApprover = String(approvalNodes[0].config?.assigneeEmail || '').trim().toLowerCase();
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(configuredApprover)) {
+                issues.push({ code: 'APPROVER_EMAIL_MISSING', path: `nodes.${approvalNodes[0].id}.config.assigneeEmail`, message: 'The approval must be assigned to a valid account email.' });
+            } else if (approverEmail && configuredApprover !== String(approverEmail).trim().toLowerCase()) {
+                issues.push({ code: 'APPROVER_EMAIL_NOT_ACCOUNT', path: `nodes.${approvalNodes[0].id}.config.assigneeEmail`, message: 'The approval assignee must be the authenticated account email.' });
+            }
+        }
+        if (approvalNodes.length > 0) {
+            const approval = approvalNodes[0];
+            const approvedReachable = reachableFrom([approval], edges.filter(edge => !edge.sourceHandle || edge.sourceHandle === 'approved'));
+            const rejectedReachable = reachableFrom([approval], edges.filter(edge => !edge.sourceHandle || edge.sourceHandle === 'rejected'));
+            if (!emailActions.some(action => approvedReachable.has(action.id))) issues.push({ code: 'APPROVED_BRANCH_EMAIL_MISSING', path: 'edges', message: 'The approved branch must reach an interview email.' });
+            if (!emailActions.some(action => rejectedReachable.has(action.id))) issues.push({ code: 'REJECTED_BRANCH_EMAIL_MISSING', path: 'edges', message: 'The rejected branch must reach a thank-you email.' });
+        }
     }
 
     return issues;
@@ -486,7 +532,7 @@ export const layoutWorkflowNodes = (nodes = [], edges = []) => {
     });
 };
 
-export const assembleWorkflow = async ({ message, specs, workflowName, formId, formSchema = null, formBinding = null, respondentEmailFieldId = null, requiredCapabilities = [], resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
+export const assembleWorkflow = async ({ message, specs, workflowName, formId, formSchema = null, formBinding = null, respondentEmailFieldId = null, approverEmail = null, requiredCapabilities = [], resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
     const formFields = Array.isArray(formSchema?.fields)
         ? formSchema.fields.map(field => ({ id: field.id, label: field.label || field.name || '', type: field.type, required: field.required === true }))
         : [];
@@ -559,7 +605,7 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId, f
     });
     if (!nodes.length) throw new Error('Assembler returned no valid nodes');
     if (nodes[0].type !== 'trigger') throw new Error('Assembler must place a trigger first');
-    const compiled = compileWorkflowDraft({ requiredCapabilities, formSchema, respondentEmailFieldId, nodes, edges });
+    const compiled = compileWorkflowDraft({ requiredCapabilities, formSchema, respondentEmailFieldId, approverEmail, nodes, edges });
     if (compiled.repairs.length > 0) {
         await recordAiDiagnostic({
             event: 'workflow_draft_repaired',
@@ -587,6 +633,7 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId, f
         requiredCapabilities,
         formSchema,
         respondentEmailFieldId,
+        approverEmail,
         nodes: positionedNodes,
         edges: compiled.edges
     });
@@ -836,7 +883,7 @@ export const compileWorkflowEdits = ({ currentWorkflow = {}, operations = [], sp
     return { nodes, edges, originalNodes, originalEdges, refs };
 };
 
-export const patchWorkflow = async ({ message, currentWorkflow, classification, specs, formSchema = null, respondentEmailFieldId = null, requiredCapabilities = [], resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
+export const patchWorkflow = async ({ message, currentWorkflow, classification, specs, formSchema = null, respondentEmailFieldId = null, approverEmail = null, requiredCapabilities = [], resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
     const formFields = Array.isArray(formSchema?.fields)
         ? formSchema.fields.map(field => ({ id: field.id, label: field.label || field.name || '', type: field.type, required: field.required === true }))
         : [];
@@ -868,7 +915,7 @@ export const patchWorkflow = async ({ message, currentWorkflow, classification, 
         }
     }
     if (!applied) throw lastError || new Error('Workflow edit could not be compiled.');
-    const compiled = compileWorkflowDraft({ requiredCapabilities, formSchema, respondentEmailFieldId, nodes: applied.nodes, edges: applied.edges });
+    const compiled = compileWorkflowDraft({ requiredCapabilities, formSchema, respondentEmailFieldId, approverEmail, nodes: applied.nodes, edges: applied.edges });
     const resourceIssues = validateGeneratedResourceValues({ nodes: compiled.nodes, specs, resourceContext });
     if (resourceIssues.length > 0) {
         await recordAiDiagnostic({
@@ -886,6 +933,7 @@ export const patchWorkflow = async ({ message, currentWorkflow, classification, 
         requiredCapabilities,
         formSchema,
         respondentEmailFieldId,
+        approverEmail,
         nodes: compiled.nodes,
         edges: compiled.edges
     });

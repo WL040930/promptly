@@ -11,6 +11,16 @@ export const triggerWorkflow = (id, payload, revisionId = null) => apiRequest(`/
 export const getWorkflowVersions = (id) => apiRequest(`/api/automations/${id}/versions`);
 export const saveWorkflowVersion = (id) => apiRequest(`/api/automations/${id}/versions`, { method: 'POST' });
 export const restoreWorkflowVersion = (id, versionId) => apiRequest(`/api/automations/${id}/versions/${versionId}/restore`, { method: 'POST' });
+export const getWorkflowAIChat = (id, limit = 50, before = null) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (before) params.set('before', before);
+    return apiRequest(`/api/automations/${id}/ai-chat?${params.toString()}`);
+};
+export const clearWorkflowAIChat = (id) => apiRequest(`/api/automations/${id}/ai-chat`, { method: 'DELETE' });
+export const decideWorkflowAIProposal = (workflowId, messageId, action = 'accept', expectedStateVersion = null) => apiRequest(`/api/automations/${workflowId}/ai-proposals/${messageId}/decision`, {
+    method: 'POST',
+    body: JSON.stringify({ action, ...(Number.isInteger(expectedStateVersion) ? { expectedStateVersion } : {}) })
+});
 export const getNodeResourceOptions = (resource, params = {}) => {
     const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ''));
     return apiRequest(`/api/nodes/resources/${encodeURIComponent(resource)}${query.size ? `?${query.toString()}` : ''}`);
@@ -27,6 +37,7 @@ export const submitFormResponse = (formId, responseData) => apiRequest(`/api/for
 export const getFormResponses = (formId) => apiRequest(`/api/forms/${formId}/responses`);
 export const getPublicForm = (id) => apiRequest(`/api/forms/public/${id}`);
 export const getFormChatHistory = (formId, limit = 50, offset = 0) => apiRequest(`/api/forms/${formId}/chat?limit=${limit}&offset=${offset}`);
+export const clearFormAIChat = (formId) => apiRequest(`/api/forms/${formId}/chat`, { method: 'DELETE' });
 export const updateFormChatMessage = (messageId, updates) => apiRequest(`/api/forms/chat/${messageId}`, { method: 'PUT', body: JSON.stringify(updates) });
 
 // --- Logs ---

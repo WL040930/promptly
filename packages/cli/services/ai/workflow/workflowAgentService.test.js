@@ -1,7 +1,7 @@
 import path from 'path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assembleWorkflow, buildWorkflowEditView, classifyRequest, compileWorkflowEdits, layoutWorkflowNodes, loadWorkflowResourceContext, patchWorkflow, readWorkflowInstruction, requiredCapabilitiesForRequest, resolveRespondentEmailField, validateGeneratedResourceValues, validateGeneratedWorkflowCapabilities } from './workflowAgentService.js';
+import { assembleWorkflow, buildWorkflowEditView, classifyRequest, compileWorkflowDraft, compileWorkflowEdits, layoutWorkflowNodes, loadWorkflowResourceContext, patchWorkflow, readWorkflowInstruction, requiredCapabilitiesForRequest, resolveRespondentEmailField, validateGeneratedResourceValues, validateGeneratedWorkflowCapabilities } from './workflowAgentService.js';
 import NodeRegistry from '../../../utils/NodeRegistry.js';
 
 const spec = (nodeKey, type, subType) => ({
@@ -258,6 +258,49 @@ test('request capability detection recognises equivalent confirmation language',
         assert.deepEqual(requiredCapabilitiesForRequest(message), ['respondent_confirmation']);
     }
     assert.deepEqual(requiredCapabilitiesForRequest('Store the response in a spreadsheet.'), []);
+});
+
+test('request capability detection requires explicit approval branches for review requests', () => {
+    const capabilities = requiredCapabilitiesForRequest('When the job application is submitted, approve or reject it and email the applicant.');
+    assert.deepEqual(capabilities, ['respondent_confirmation', 'application_review_decision']);
+});
+
+test('application review capability validates both approval output branches', () => {
+    const nodes = [
+        { id: 'trigger', type: 'trigger', subType: 'form-submission' },
+        { id: 'approval', type: 'logic', subType: 'approval', config: { assigneeEmail: 'owner@example.com' } },
+        { id: 'approved_mail', type: 'action', subType: 'email', config: {} },
+        { id: 'rejected_mail', type: 'action', subType: 'email', config: {} }
+    ];
+    const edges = [
+        { source: 'trigger', target: 'approval' },
+        { source: 'approval', target: 'approved_mail', sourceHandle: 'approved' },
+        { source: 'approval', target: 'rejected_mail', sourceHandle: 'rejected' }
+    ];
+    assert.deepEqual(validateGeneratedWorkflowCapabilities({
+        requiredCapabilities: ['application_review_decision'],
+        approverEmail: 'owner@example.com',
+        nodes,
+        edges
+    }), []);
+});
+
+test('application review binds both branch emails to the required applicant field', () => {
+    const result = compileWorkflowDraft({
+        requiredCapabilities: ['respondent_confirmation', 'application_review_decision'],
+        approverEmail: 'owner@example.com',
+        formSchema: { fields: [{ id: 'email', type: 'email', label: 'Email', required: true }] },
+        nodes: [
+            { id: 'trigger', type: 'trigger', subType: 'form-submission', config: {} },
+            { id: 'approval', type: 'logic', subType: 'approval', config: { assigneeEmail: 'invented@example.com' } },
+            { id: 'approved_mail', type: 'action', subType: 'email', config: { to: 'invented@example.com' } },
+            { id: 'rejected_mail', type: 'action', subType: 'email', config: { to: 'invented@example.com' } }
+        ],
+        edges: []
+    });
+    assert.equal(result.nodes.find(node => node.id === 'approval').config.assigneeEmail, 'owner@example.com');
+    assert.equal(result.nodes.find(node => node.id === 'approved_mail').config.to, '{{trigger.fields.email}}');
+    assert.equal(result.nodes.find(node => node.id === 'rejected_mail').config.to, '{{trigger.fields.email}}');
 });
 
 test('confirmation capability rejects a literal or unknown respondent recipient', () => {

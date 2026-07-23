@@ -1,6 +1,23 @@
+const normalizeOperations = value => Array.isArray(value)
+    ? value.slice(0, 12).map(operation => ({
+        domain: ['form', 'workflow', 'execution', 'integration'].includes(operation?.domain) ? operation.domain : null,
+        action: ['create', 'modify', 'delete', 'connect', 'explain', 'debug'].includes(operation?.action) ? operation.action : 'create',
+        target: String(operation?.target || '').trim().slice(0, 255),
+        reason: String(operation?.reason || '').trim().slice(0, 500)
+    })).filter(operation => operation.domain) : [];
+
+const normalizeResourceInputs = value => Array.isArray(value)
+    ? value.slice(0, 12).map(reference => ({
+        type: ['form', 'workflow', 'execution'].includes(reference?.type) ? reference.type : 'workflow',
+        query: String(reference?.query || '').trim().slice(0, 255),
+        role: String(reference?.role || 'input').trim().slice(0, 80)
+    })).filter(reference => reference.query) : [];
+
 export const makeIntent = (value = {}) => ({
     goal: ['create', 'modify', 'delete', 'explain', 'debug', 'connect'].includes(value.goal) ? value.goal : 'create',
     domains: [...new Set((Array.isArray(value.domains) ? value.domains : []).filter(domain => ['form', 'workflow', 'execution', 'integration'].includes(domain)))],
+    requestedOperations: normalizeOperations(value.requestedOperations || value.operations),
+    resourceInputs: normalizeResourceInputs(value.resourceInputs),
     resourceReferences: Array.isArray(value.resourceReferences) ? value.resourceReferences.slice(0, 8).map(reference => ({
         type: ['form', 'workflow', 'execution'].includes(reference?.type) ? reference.type : 'workflow',
         query: String(reference?.query || '').trim().slice(0, 255)

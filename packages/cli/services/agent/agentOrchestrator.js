@@ -1,4 +1,4 @@
-import { ChatMessage, ExecutionLog, Form, Workflow } from '../../models/index.js';
+import { ChatMessage, ExecutionLog, Form, Workflow, User } from '../../models/index.js';
 import { runFormTurn } from '../ai/formAIService.js';
 import {
     assembleWorkflow,
@@ -106,7 +106,9 @@ const compactWorkflow = workflow => workflow ? ({
 const deterministicIntent = ({ message, context = {} }) => {
     const text = String(message || '');
     const domains = [];
-    if (/\b(form|survey|field|question|response)\b/i.test(text)) domains.push('form');
+    const formMutation = /\b(create|build|design|update|modify|edit|change|remove|delete)\b[^.!?]{0,55}\b(form|survey)\b/i.test(text)
+        && !/\bworkflow\b[^.!?]{0,80}\b(form|survey)\b/i.test(text);
+    if (formMutation) domains.push('form');
     const explicitWorkflow = /\b(workflow|automation|trigger|node|sheet|spreadsheet|webhook|database)\b/i.test(text);
     const respondentAction = requiredCapabilitiesForRequest(text).length > 0;
     const emailAction = /\b(send|notify|email|confirmation|thank[- ]?you)\b/i.test(text)
@@ -120,9 +122,20 @@ const deterministicIntent = ({ message, context = {} }) => {
     const isDeletion = /\b(delete|remove|clear)\b/i.test(text);
     const isModification = /\b(modify|update|change|add|remove|edit|improve)\b/i.test(text);
     const isActionRequest = /\b(create|build|design|draft|make|set up|setup|automate|connect|i need|i want|please)\b/i.test(text);
+    const requestedOperations = [
+        ...(formMutation ? [{ domain: 'form', action: isModification ? 'modify' : 'create', target: 'form' }] : []),
+        ...((explicitWorkflow || respondentAction || emailAction)
+            ? [{ domain: 'workflow', action: isModification ? 'modify' : 'create', target: 'workflow' }]
+            : [])
+    ];
+    const resourceInputs = !formMutation && /\b(form|survey)\b/i.test(text)
+        ? [{ type: 'form', query: context.formId || 'mentioned form', role: 'workflow trigger input' }]
+        : [];
     return makeIntent({
         goal: isDeletion ? 'delete' : isModification ? 'modify' : isActionRequest ? 'create' : 'explain',
         domains,
+        requestedOperations,
+        resourceInputs,
         resourceReferences: [
             context.formId ? { type: 'form', query: context.formId } : null,
             context.workflowId ? { type: 'workflow', query: context.workflowId } : null,
@@ -134,6 +147,8 @@ const deterministicIntent = ({ message, context = {} }) => {
     });
 };
 
+export { deterministicIntent };
+
 const analyzeIntent = async ({ message, context }) => {
     const fallback = deterministicIntent({ message, context });
     if (fallback.goal === 'delete') return { intent: fallback, tokenUsage: {} };
@@ -144,17 +159,26 @@ const analyzeIntent = async ({ message, context }) => {
                 'User request:', message,
                 '',
                 'Selected UI context:', JSON.stringify({ formId: context.formId || null, workflowId: context.workflowId || null, executionId: context.executionId || null }),
+                'Answers already provided for this run:', JSON.stringify(context.clarificationAnswers || []),
                 '',
                 'Return the typed intent. Keep requirements concise.'
             ].join('\n')
         });
         const intent = makeIntent(result.value);
-        if (intent.domains.length === 0) return { intent: fallback, tokenUsage: result.tokenUsage };
-        const requiredDomains = fallback.domains.filter(domain => domain === 'form' || domain === 'workflow');
+        if (intent.domains.length === 0 && intent.requestedOperations.length === 0) return { intent: fallback, tokenUsage: result.tokenUsage };
+        // A model may mention a form as an input to a workflow. Preserve only
+        // domains supported by the deterministic request reading; references
+        // are not mutation requests.
+        const requiredDomains = fallback.domains;
+        const modelDomains = intent.domains.filter(domain => requiredDomains.includes(domain));
         return {
             intent: makeIntent({
                 ...intent,
-                domains: [...new Set([...intent.domains, ...requiredDomains])]
+                domains: [...new Set([...modelDomains, ...requiredDomains])],
+                requestedOperations: fallback.requestedOperations.length > 0
+                    ? fallback.requestedOperations
+                    : intent.requestedOperations,
+                resourceInputs: [...fallback.resourceInputs, ...intent.resourceInputs]
             }),
             tokenUsage: result.tokenUsage
         };
@@ -170,7 +194,8 @@ const research = async ({ userId, intent, context }) => {
         context.formId ? { type: 'form', query: context.formId } : null,
         context.workflowId ? { type: 'workflow', query: context.workflowId } : null,
         context.executionId ? { type: 'execution', query: context.executionId } : null,
-        ...(intent.resourceReferences || [])
+        ...(intent.resourceReferences || []),
+        ...(intent.resourceInputs || []).filter(reference => reference.query && reference.query !== 'mentioned form')
     ].filter(Boolean);
 
     for (const reference of references) {
@@ -260,6 +285,11 @@ const designForm = async ({ run, session, message, form, clarificationMode = DEF
             history: await formHistory(session.id),
             clarificationMode
         });
+        if (result.kind === 'reply' && form && /\b(already|current|existing|no changes? needed|nothing to change|no further changes?)\b/i.test(String(result.message || ''))) {
+            const reused = { disposition: 'reused', formId: form.id, message: result.message || 'The existing form already satisfies the request.' };
+            await completeStep(step, { result: reused, tokenUsage: result.tokenUsage || {} });
+            return { status: 'completed', disposition: 'reused', form, tokenUsage: result.tokenUsage || {} };
+        }
         if (result.kind === 'reply' || result.kind === 'clarification') {
             await completeStep(step, { result, tokenUsage: result.tokenUsage || {} });
             return { status: 'clarification', result, tokenUsage: result.tokenUsage || {} };
@@ -293,7 +323,7 @@ const designForm = async ({ run, session, message, form, clarificationMode = DEF
     }
 };
 
-const designWorkflow = async ({ run, userId, message, workflow, form, formSchema = null, formArtifactId = null, formBinding = null, respondentEmailFieldId = null, onEvent = null }) => {
+const designWorkflow = async ({ run, userId, message, workflow, form, formSchema = null, formArtifactId = null, formBinding = null, respondentEmailFieldId = null, approverEmail = null, onEvent = null }) => {
     const step = await createStep(run, { stepKey: 'design_workflow', type: 'design_workflow' });
     await startStep(step);
     try {
@@ -321,6 +351,7 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
                 resourceContext,
                 formSchema: form?.toJSON?.() || form || formSchema || null,
                 respondentEmailFieldId,
+                approverEmail,
                 requiredCapabilities
             });
             const content = {
@@ -358,6 +389,7 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
             formSchema: form?.toJSON?.() || form || formSchema || null,
             formBinding,
             respondentEmailFieldId,
+            approverEmail,
             requiredCapabilities,
             resourceContext
         });
@@ -429,18 +461,21 @@ const createSolutionCapabilityRegistry = ({
     resources,
     clarificationMode,
     userId,
+    actorEmail,
     onEvent
 }) => createAgentCapabilityRegistry([
     {
         name: 'research',
         description: 'Use the already-resolved account resources for this run.',
         risk: 'read',
+        produces: ['resolved_resources'],
         execute: async () => ({ output: { resources: resources.map(item => item.resource) } })
     },
     {
         name: 'design_form',
         description: 'Prepare a reviewable form proposal.',
         risk: 'proposal',
+        produces: ['form_proposal', 'form_resource'],
         execute: async () => {
             const result = await designForm({ run, session, message, form, clarificationMode });
             if (result.status === 'clarification') {
@@ -452,7 +487,7 @@ const createSolutionCapabilityRegistry = ({
                 };
             }
             return {
-                output: { artifact: result.artifact },
+                output: { artifact: result.artifact || null, disposition: result.disposition || 'created', formId: result.form?.id || null },
                 tokenUsage: result.tokenUsage
             };
         }
@@ -461,8 +496,12 @@ const createSolutionCapabilityRegistry = ({
         name: 'design_workflow',
         description: 'Prepare a reviewable workflow proposal.',
         risk: 'proposal',
+        produces: ['workflow_proposal'],
         execute: async ({ context }) => {
-            const formProposal = context.state.outputs.design_form?.artifact || null;
+            const formOutput = Object.values(context.dependencies || {}).find(output => output?.artifact || output?.disposition === 'reused')
+                || context.state.outputs.design_form
+                || {};
+            const formProposal = formOutput.artifact || null;
             const result = await designWorkflow({
                 run,
                 userId,
@@ -476,6 +515,7 @@ const createSolutionCapabilityRegistry = ({
                     source: { artifactKey: 'form_proposal', appliedResource: 'id' }
                 } : null,
                 respondentEmailFieldId: context.input?.context?.respondentEmailFieldId || null,
+                approverEmail: actorEmail,
                 onEvent
             });
             if (result.status === 'clarification') {
@@ -507,7 +547,7 @@ const verifySolutionArtifacts = (run, intent = null) => {
     });
     const artifactTypes = new Set(artifacts.map(artifact => artifact.type));
     const expectedArtifacts = [
-        ...(intent?.domains?.includes('form') ? ['form_proposal'] : []),
+        ...(intent?.domains?.includes('form') && !(run.steps || []).some(step => step.stepKey === 'design_form' && step.result?.disposition === 'reused') ? ['form_proposal'] : []),
         ...(intent?.domains?.includes('workflow') ? ['workflow_proposal'] : [])
     ];
     for (const artifactType of expectedArtifacts) {
@@ -637,6 +677,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         executionId: context.executionId || null,
         activeResource: context.activeResource || null,
         respondentEmailFieldId: context.respondentEmailFieldId || null,
+        clarificationAnswers: Array.isArray(context.clarificationAnswers) ? context.clarificationAnswers.slice(-8) : [],
         clarificationMode: normalizeClarificationMode(context.clarificationMode)
     };
     const run = existingRun || await createRun({ sessionId: session.id, userId, metadata: { request: message, context: persistedContext } });
@@ -688,6 +729,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
 
         const form = resourceByType(researched.resources, 'form');
         const workflow = resourceByType(researched.resources, 'workflow');
+        const actor = context.actorEmail ? { email: context.actorEmail } : await User.findByPk(userId, { attributes: ['email'] });
         const capabilityRegistry = createSolutionCapabilityRegistry({
             run,
             session,
@@ -697,6 +739,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
             resources: researched.resources,
             clarificationMode: persistedContext.clarificationMode,
             userId,
+            actorEmail: actor?.email || null,
             onEvent
         });
 
@@ -936,7 +979,8 @@ export const resumeAgentAfterForm = async ({ run, session, userId, formId, onEve
     const form = await Form.findOne({ where: { id: formId, userId } });
     if (!form) throw new Error('The approved form could not be found.');
     const existingWorkflow = context.workflowId ? await Workflow.findOne({ where: { id: context.workflowId, userId } }) : null;
-    const result = await designWorkflow({ run, userId, message: request, workflow: existingWorkflow, form, formArtifactId: null, onEvent });
+    const actor = await User.findByPk(userId, { attributes: ['email'] });
+    const result = await designWorkflow({ run, userId, message: request, workflow: existingWorkflow, form, formArtifactId: null, approverEmail: actor?.email || null, onEvent });
     if (result.status === 'clarification') {
         await updateRun(run, { status: 'awaiting_clarification', currentStep: 'design_workflow', tokenUsage: result.tokenUsage || {} });
         await session.update({ agentState: { status: 'awaiting_agent_clarification', runId: run.id } });
@@ -967,6 +1011,10 @@ export const resumeAgentAfterClarification = async ({ run, session, userId, answ
     if (!request) throw new Error('The pending agent request is no longer available.');
 
     const nextContext = { ...(context || metadata.context || {}) };
+    nextContext.clarificationAnswers = [
+        ...(Array.isArray(nextContext.clarificationAnswers) ? nextContext.clarificationAnswers : []),
+        String(answer || '').trim()
+    ].filter(Boolean).slice(-8);
     const workflowClarification = metadata.workflowClarification;
     if (workflowClarification?.kind === 'respondent_email_field') {
         const normalizedAnswer = String(answer || '').trim().toLowerCase();
@@ -991,7 +1039,7 @@ export const resumeAgentAfterClarification = async ({ run, session, userId, answ
         run,
         session,
         userId,
-        message: answer ? `${request}\n\nUser clarification: ${answer}` : request,
+        message: request,
         context: nextContext,
         force: true,
         onEvent

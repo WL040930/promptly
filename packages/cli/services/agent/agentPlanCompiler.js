@@ -12,6 +12,13 @@ const validatorCache = new WeakMap();
 
 const issue = (code, path, message, details = {}) => ({ code, path, message, ...details });
 
+const requestedDomains = intent => {
+    const operations = Array.isArray(intent?.requestedOperations) ? intent.requestedOperations : [];
+    return operations.length > 0
+        ? [...new Set(operations.map(operation => operation.domain).filter(Boolean))]
+        : (Array.isArray(intent?.domains) ? intent.domains : []);
+};
+
 const stepCapability = step => String(step?.capability || step?.type || '').trim();
 const boundedArgs = value => isPlainObject(value)
     ? Object.fromEntries(Object.entries(value).slice(0, 24).map(([key, item]) => [String(key).slice(0, 120), clone(item)]))
@@ -31,7 +38,9 @@ const normalizeOutcome = (outcome, index) => ({
     id: String(outcome?.id || `outcome_${index + 1}`).trim(),
     title: String(outcome?.title || outcome?.type || `Outcome ${index + 1}`).trim(),
     description: String(outcome?.description || outcome?.reason || '').trim(),
-    dependsOn: Array.isArray(outcome?.dependsOn) ? outcome.dependsOn.map(String).slice(0, MAX_DEPENDENCIES) : [],
+    dependsOn: Array.isArray(outcome?.dependsOn)
+        ? outcome.dependsOn.map(String).filter(dependency => dependency !== String(outcome?.id || `outcome_${index + 1}`).trim()).slice(0, MAX_DEPENDENCIES)
+        : [],
     artifactTypes: Array.isArray(outcome?.artifactTypes) ? outcome.artifactTypes.map(String).slice(0, 8) : [],
     affectedResources: Array.isArray(outcome?.affectedResources) ? clone(outcome.affectedResources).slice(0, 8) : [],
     risk: ['low', 'medium', 'high'].includes(outcome?.risk) ? outcome.risk : 'medium'
@@ -52,19 +61,20 @@ const outcomesFrom = (value = {}) => {
 
 const requiredOutcomeDefinitions = (intent = {}) => {
     const outcomes = [];
-    if (intent.domains?.includes('form')) outcomes.push({
+    const domains = requestedDomains(intent);
+    if (domains.includes('form')) outcomes.push({
         id: 'form_solution',
         title: intent.goal === 'modify' ? 'Update the form' : 'Create the form',
         description: 'Prepare a reviewable form proposal.',
         artifactTypes: ['form_proposal'],
         risk: intent.risk || 'medium'
     });
-    if (intent.domains?.includes('workflow')) outcomes.push({
+    if (domains.includes('workflow')) outcomes.push({
         id: 'workflow_solution',
         title: intent.goal === 'modify' ? 'Update the workflow' : 'Create the workflow',
         description: 'Prepare a reviewable workflow proposal using supported nodes and account resources.',
         artifactTypes: ['workflow_proposal'],
-        dependsOn: intent.domains?.includes('form') ? ['form_solution'] : [],
+        dependsOn: domains.includes('form') ? ['form_solution'] : [],
         risk: intent.risk || 'medium'
     });
     return outcomes;
@@ -110,6 +120,7 @@ const uniqueStepId = (steps, preferred) => {
 };
 
 const ensureExecutionCoverage = (steps, intent = {}) => {
+    const domains = requestedDomains(intent);
     const next = steps.map(step => ({
         ...step,
         dependsOn: Array.isArray(step?.dependsOn) ? [...new Set(step.dependsOn.map(String))] : []
@@ -130,10 +141,10 @@ const ensureExecutionCoverage = (steps, intent = {}) => {
         return step;
     };
 
-    const formStep = intent.domains?.includes('form')
+    const formStep = domains.includes('form')
         ? ensureStep('design_form', 'Prepare the form proposal', 'Prepare a reviewable form proposal.')
         : null;
-    const workflowStep = intent.domains?.includes('workflow')
+    const workflowStep = domains.includes('workflow')
         ? ensureStep('design_workflow', 'Prepare the workflow proposal', 'Prepare a reviewable workflow proposal.')
         : null;
     if (formStep && workflowStep && !workflowStep.dependsOn.includes(formStep.id)) {
@@ -141,7 +152,7 @@ const ensureExecutionCoverage = (steps, intent = {}) => {
     }
 
     const requiredCapabilities = new Set(
-        ['design_form', 'design_workflow'].filter(capability => intent.domains?.includes(capability === 'design_form' ? 'form' : 'workflow'))
+        ['design_form', 'design_workflow'].filter(capability => domains.includes(capability === 'design_form' ? 'form' : 'workflow'))
     );
     return [
         ...next.filter(step => requiredCapabilities.has(stepCapability(step))),
@@ -160,7 +171,8 @@ export const makeOutcomePlan = (value = {}, intent = {}) => ({
     approvalRequired: true,
     intent: {
         goal: intent.goal || null,
-        domains: Array.isArray(intent.domains) ? intent.domains : []
+        domains: requestedDomains(intent),
+        requestedOperations: Array.isArray(intent.requestedOperations) ? intent.requestedOperations : []
     }
 });
 
@@ -174,16 +186,17 @@ export const makeAdaptivePlan = (value = {}, intent = {}) => {
 };
 
 const makeFallbackExecutionSteps = (intent = {}) => {
+    const domains = requestedDomains(intent);
     const steps = [];
-    if (intent.domains?.includes('form')) {
+    if (domains.includes('form')) {
         steps.push({ id: 'design_form', type: 'design_form', title: 'Prepare the form proposal', dependsOn: [] });
     }
-    if (intent.domains?.includes('workflow')) {
+    if (domains.includes('workflow')) {
         steps.push({
             id: 'design_workflow',
             type: 'design_workflow',
             title: 'Prepare the workflow proposal',
-            dependsOn: intent.domains?.includes('form') ? ['design_form'] : []
+            dependsOn: domains.includes('form') ? ['design_form'] : []
         });
     }
     return steps;
@@ -292,7 +305,9 @@ export const compileExecutionPlan = ({ plan, registry, context = {} } = {}) => {
     const steps = rawSteps.slice(0, MAX_STEPS).map((rawStep, index) => {
         const id = String(rawStep?.id || `step_${index + 1}`).trim();
         const capabilityName = stepCapability(rawStep);
-        const dependsOn = Array.isArray(rawStep?.dependsOn) ? [...new Set(rawStep.dependsOn.map(String))].slice(0, MAX_DEPENDENCIES) : [];
+        const dependsOn = Array.isArray(rawStep?.dependsOn)
+            ? [...new Set(rawStep.dependsOn.map(String))].filter(dependency => dependency !== id).slice(0, MAX_DEPENDENCIES)
+            : [];
         const refs = collectReferences(rawStep?.args);
         refs.forEach(reference => {
             if (!dependsOn.includes(reference)) dependsOn.push(reference);

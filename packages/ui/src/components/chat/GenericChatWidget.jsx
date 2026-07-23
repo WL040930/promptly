@@ -1,7 +1,8 @@
-import { useRef, useEffect } from 'react';
-import { ArrowUp, LoaderCircle } from 'lucide-react';
+import { useRef, useEffect, useState } from 'react';
+import { ArrowUp, LoaderCircle, Trash2 } from 'lucide-react';
 import AgentMessage from './AgentMessage.jsx';
 import ChatHistorySkeleton from './ChatHistorySkeleton.jsx';
+import ConfirmModal from '../modals/ConfirmModal.jsx';
 
 export default function GenericChatWidget({
     messages = [],
@@ -23,11 +24,15 @@ export default function GenericChatWidget({
     bottomNotice = "AI can make mistakes. Please verify.",
     innerClassName = "w-full",
     composerClassName = innerClassName,
-    inputAccessory = null
+    inputAccessory = null,
+    onClearChat = null,
+    isClearingChat = false,
+    clearChatLabel = 'Clear chat'
 }) {
     const scrollContainerRef = useRef(null);
     const inputRef = useRef(null);
     const initialScrollDone = useRef(false);
+    const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
 
     const handleInputChange = (event) => {
         setInput(event.target.value);
@@ -77,8 +82,52 @@ export default function GenericChatWidget({
         }
     };
 
+    const handleClearChat = () => {
+        if (!onClearChat || isClearingChat) return;
+        setIsClearConfirmOpen(true);
+    };
+
+    const confirmClearChat = async () => {
+        if (!onClearChat || isClearingChat) return;
+        try {
+            await onClearChat();
+            setIsClearConfirmOpen(false);
+        } catch {
+            // The assistant hook owns the error toast; keep the modal open so
+            // the user can retry without losing their place in the chat.
+        }
+    };
+
     return (
         <div className="flex min-h-0 flex-1 flex-col w-full bg-transparent relative overflow-hidden">
+            {onClearChat && (
+                <div className="flex shrink-0 items-center justify-between border-b border-slate-200/70 bg-white/90 px-4 py-2.5">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Assistant chat</span>
+                    <div className="flex items-center gap-1">
+                        {isTyping && <LoaderCircle size={15} className="mr-1 animate-spin text-indigo-500" aria-label="AI is working" />}
+                        <button
+                            type="button"
+                            onClick={handleClearChat}
+                            disabled={isClearingChat}
+                            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+                            aria-label={clearChatLabel}
+                        >
+                            <Trash2 size={14} strokeWidth={1.8} />
+                            {isClearingChat ? 'Clearing…' : clearChatLabel}
+                        </button>
+                    </div>
+                </div>
+            )}
+            <ConfirmModal
+                isOpen={isClearConfirmOpen}
+                onClose={() => setIsClearConfirmOpen(false)}
+                onConfirm={confirmClearChat}
+                title={clearChatLabel}
+                message="Clear this assistant chat? The form or workflow will not be deleted."
+                confirmText="Clear chat"
+                confirmVariant="danger"
+                isLoading={isClearingChat}
+            />
             {/* Chat Body */}
             <div
                 ref={scrollContainerRef}

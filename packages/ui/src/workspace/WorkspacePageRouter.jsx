@@ -4,6 +4,8 @@ import FormsTab from '../builder/components/tabs/FormsTab.jsx';
 import AutomationCenter from '../chat/components/AutomationCenter.jsx';
 import ChatTab from '../chat/components/ChatTab.jsx';
 import WorkflowBuilderView from '../builder/WorkflowBuilderView.jsx';
+import WorkflowAIAssistant from '../builder/components/sidebars/WorkflowAIAssistant.jsx';
+import { useWorkflow } from '../api/hooks/useWorkflows.js';
 import { navigateTo } from '../utils/router.js';
 import { useCreateWorkflow } from '../api/hooks/useWorkflows.js';
 import AutomationVersionsPage from './AutomationVersionsPage.jsx';
@@ -35,6 +37,13 @@ function AutomationDetailPage({ automationId }) {
     );
 }
 
+function WorkflowAIEditorPage({ automationId }) {
+    const { data: workflow, isPending } = useWorkflow(automationId);
+    const initialPrompt = new URLSearchParams(window.location.search).get('prompt') || '';
+    if (isPending && !workflow) return <PageFrame><div className="flex h-full items-center justify-center text-sm text-slate-500">Loading workflow assistant…</div></PageFrame>;
+    return <PageFrame><WorkflowAIAssistant workflow={workflow} initialPrompt={initialPrompt} /></PageFrame>;
+}
+
 function NewAutomationPage({ method = 'ai' }) {
     const createAutomationMutation = useCreateWorkflow();
     const started = useRef(false);
@@ -61,7 +70,7 @@ export default function WorkspacePageRouter({ route, isSidebarCollapsed, setSide
             return <AutomationDetailPage automationId={route.automationId} />;
         case 'automation-build':
             return route.editor === 'ai'
-                ? <PageFrame><ChatTab automationId={route.automationId} conversationId={new URLSearchParams(window.location.search).get('conversation')} /></PageFrame>
+                ? <WorkflowAIEditorPage automationId={route.automationId} />
                 : <PageFrame><WorkflowBuilderView route={route} isSidebarCollapsed={isSidebarCollapsed} setSidebarCollapsed={setSidebarCollapsed} /></PageFrame>;
         case 'automation-runs':
             return <PageFrame><Suspense fallback={<div className="p-8 text-sm text-slate-500">Loading runs…</div>}><LogsTab workflowId={route.automationId} /></Suspense></PageFrame>;

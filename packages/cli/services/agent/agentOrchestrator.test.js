@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ensureRespondentEmailField, shouldPauseForPlanReview } from './agentOrchestrator.js';
+import { deterministicIntent, ensureRespondentEmailField, shouldPauseForPlanReview } from './agentOrchestrator.js';
 import { compileExecutionPlan, makeAdaptivePlan, makeFallbackOutcomePlan } from './agentPlanCompiler.js';
 import { createAgentCapabilityRegistry } from './agentCapabilityRegistry.js';
 
@@ -88,6 +88,36 @@ test('fallback plans describe supported outcomes without adding a verification c
     assert.deepEqual(result.outcomes.map(outcome => outcome.id), ['form_solution', 'workflow_solution']);
     assert.deepEqual(result.steps.map(step => step.type), ['design_form', 'design_workflow']);
     assert.equal(result.steps.some(step => step.type === 'verify'), false);
+});
+
+test('form references used by a workflow are inputs, not form work', () => {
+    const intent = deterministicIntent({
+        message: 'Create a new workflow when the user submits the form, then send an email.'
+    });
+    assert.deepEqual(intent.requestedOperations.map(operation => operation.domain), ['workflow']);
+    const plan = makeAdaptivePlan({}, intent);
+    assert.deepEqual(plan.steps.map(step => step.type), ['design_workflow']);
+    assert.deepEqual(plan.outcomes.map(outcome => outcome.artifactTypes[0]), ['workflow_proposal']);
+});
+
+test('compound form and workflow requests retain both requested operations', () => {
+    const intent = deterministicIntent({
+        message: 'Create a job application form, then approve submissions and email the applicant.'
+    });
+    assert.deepEqual(intent.requestedOperations.map(operation => operation.domain), ['form', 'workflow']);
+});
+
+test('self dependencies are normalized before cycle validation', () => {
+    const registry = createAgentCapabilityRegistry([
+        { name: 'create_form', execute: async () => ({}) },
+        { name: 'design_form', execute: async () => ({}) }
+    ]);
+    const plan = makeAdaptivePlan({
+        outcomes: [{ id: 'form_solution', title: 'Create form', artifactTypes: ['form_proposal'], dependsOn: ['form_solution'] }],
+        steps: [{ id: 'form_step', type: 'create_form', dependsOn: ['form_step'] }]
+    }, { requestedOperations: [{ domain: 'form', action: 'create' }] });
+    const result = compileExecutionPlan({ plan, registry });
+    assert.equal(result.valid, true);
 });
 
 test('adaptive compiler rejects unavailable capabilities with repairable issues', () => {
