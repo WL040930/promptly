@@ -25,9 +25,25 @@ export default function VersionHistorySidebar({ workflowId, currentWorkflow }) {
                 
                 {versions.map(v => (
                     <div key={v.id} className="border border-slate-200 rounded-lg p-3 bg-white shadow-sm flex flex-col gap-2">
-                        <div className="flex items-center justify-between">
-                            <span className="font-medium text-slate-800 text-sm">Version {v.versionNumber}</span>
-                            <span className="text-xs text-slate-500">{new Date(v.createdAt).toLocaleString()}</span>
+                        <div className="flex min-w-0 flex-col gap-1">
+                            <div className="flex min-w-0 items-center gap-2">
+                                <span className="whitespace-nowrap text-sm font-medium text-slate-800">Version {v.versionNumber}</span>
+                                {currentWorkflow?.publishedRevisionId === v.id && (
+                                    <span className="whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-emerald-700">Live</span>
+                                )}
+                                {currentWorkflow?.draftRevisionId === v.id && currentWorkflow?.publishedRevisionId !== v.id && (
+                                    <span className="whitespace-nowrap rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-indigo-700">Current draft</span>
+                                )}
+                            </div>
+                            <span className="truncate text-[11px] font-medium text-slate-400">
+                                {new Date(v.createdAt).toLocaleString(undefined, {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                    hour: 'numeric',
+                                    minute: '2-digit'
+                                })}
+                            </span>
                         </div>
                         <div className="text-xs text-slate-500">
                             {v.nodes?.length || 0} nodes, {v.edges?.length || 0} edges

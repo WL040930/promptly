@@ -130,6 +130,8 @@ export const useSaveWorkflowVersion = () => {
         mutationFn: (id) => import('../backend.js').then(m => m.saveWorkflowVersion(id)),
         onSuccess: (newVersion, id) => {
             queryClient.invalidateQueries({ queryKey: ['workflows', id, 'versions'] });
+            queryClient.invalidateQueries({ queryKey: ['workflows', id] });
+            queryClient.invalidateQueries({ queryKey: ['workflows'] });
         },
     });
 };

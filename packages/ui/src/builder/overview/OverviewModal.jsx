@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ICON_MAP } from '../utils/iconMap.jsx';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
+import { WORKFLOW_MODAL_LAYERS } from '../modalLayers.js';
 
 const COLOR_PRESETS = [
     { name: 'Indigo', bg: 'bg-indigo-100', text: 'text-indigo-600' },
@@ -54,7 +55,7 @@ const OverviewModal = ({ config, inputValue, formData, isSubmitting, onInputChan
     if (!config) return null;
 
     return createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ zIndex: 99999 }}>
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4" style={{ zIndex: WORKFLOW_MODAL_LAYERS.config }}>
             <div 
                 ref={overlayRef}
                 className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm"

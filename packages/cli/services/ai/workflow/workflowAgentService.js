@@ -361,11 +361,14 @@ export const compileWorkflowDraft = ({
         }
     }
 
-    if (wantsApplicationReview && approverEmail) {
+    if (wantsApplicationReview) {
         const approvals = nextNodes.filter(node => node?.subType === 'approval');
-        if (approvals.length === 1 && approvals[0].config.assigneeEmail !== approverEmail) {
-            approvals[0].config.assigneeEmail = approverEmail;
-            repairs.push({ code: 'APPROVER_BOUND_TO_ACCOUNT', nodeId: approvals[0].id });
+        if (approvals.length === 1 && approvals[0].config.assigneeType !== 'external') {
+            approvals[0].config.assigneeType = 'owner';
+            // Retain the authenticated owner email for legacy serializers and
+            // older saved drafts; runtime ownership is determined by the type.
+            if (approverEmail) approvals[0].config.assigneeEmail = approverEmail;
+            repairs.push({ code: 'APPROVER_DEFAULTED_TO_OWNER', nodeId: approvals[0].id });
         }
     }
 
@@ -448,11 +451,11 @@ export const validateGeneratedWorkflowCapabilities = ({
         if (approvalNodes.length === 0) issues.push({ code: 'APPROVAL_NODE_MISSING', path: 'nodes', message: 'An approval node is required to review each application.' });
         if (emailActions.length < 2) issues.push({ code: 'APPROVAL_BRANCH_EMAILS_MISSING', path: 'nodes', message: 'Approved and rejected branches each need an email action.' });
         if (approvalNodes.length > 0) {
-            const configuredApprover = String(approvalNodes[0].config?.assigneeEmail || '').trim().toLowerCase();
-            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(configuredApprover)) {
-                issues.push({ code: 'APPROVER_EMAIL_MISSING', path: `nodes.${approvalNodes[0].id}.config.assigneeEmail`, message: 'The approval must be assigned to a valid account email.' });
-            } else if (approverEmail && configuredApprover !== String(approverEmail).trim().toLowerCase()) {
-                issues.push({ code: 'APPROVER_EMAIL_NOT_ACCOUNT', path: `nodes.${approvalNodes[0].id}.config.assigneeEmail`, message: 'The approval assignee must be the authenticated account email.' });
+            const approvalConfig = approvalNodes[0].config || {};
+            const assigneeType = approvalConfig.assigneeType || (approvalConfig.assigneeEmail ? 'external' : 'owner');
+            const configuredApprover = String(approvalConfig.assigneeEmail || '').trim().toLowerCase();
+            if (assigneeType === 'external' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(configuredApprover)) {
+                issues.push({ code: 'APPROVER_EMAIL_MISSING', path: `nodes.${approvalNodes[0].id}.config.assigneeEmail`, message: 'An external approval needs a valid approver email.' });
             }
         }
         if (approvalNodes.length > 0) {

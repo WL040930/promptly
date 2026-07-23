@@ -29,11 +29,27 @@ const syncSchedule = (workflowId, userId, nodes, isActive) => {
 };
 
 export const getWorkflows = asyncHandler(async (req, res) => {
-    const workflows = await Workflow.findAll({ 
-        where: { userId: req.user.id },
-        attributes: { exclude: ['nodes', 'edges'] }
-    });
-    res.json(workflows);
+    const workflows = await Workflow.findAll({ where: { userId: req.user.id } });
+    res.json(workflows.map(workflow => {
+        const value = workflow.toJSON();
+        const nodes = Array.isArray(value.nodes) ? value.nodes : [];
+        const edges = Array.isArray(value.edges) ? value.edges : [];
+        const triggerNodes = nodes.filter(node => node?.type === 'trigger');
+        const trigger = triggerNodes[0] || null;
+        // Keep the list response compact while exposing the information needed
+        // to render a useful automation summary and run controls.
+        delete value.nodes;
+        delete value.edges;
+        return {
+            ...value,
+            triggerType: trigger?.subType || null,
+            triggerTitle: trigger?.title || null,
+            triggerCount: triggerNodes.length,
+            nodeCount: nodes.length,
+            edgeCount: edges.length,
+            hasPublishedVersion: Boolean(value.publishedRevisionId)
+        };
+    }));
 });
 
 export const getWorkflow = asyncHandler(async (req, res) => {
@@ -132,6 +148,21 @@ export const triggerWorkflow = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { payload, revisionId } = req.body;
     const log = await executeWorkflow(id, req.user.id, payload, { runType: 'test', revisionId, trigger: 'manual-test' });
+    res.json(log);
+});
+
+export const triggerProductionWorkflow = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const workflow = await Workflow.findOne({ where: { id, userId: req.user.id } });
+    if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
+    if (!workflow.publishedRevisionId) return res.status(409).json({ message: 'Publish this automation before running it live.' });
+    if (!workflow.isActive) return res.status(409).json({ message: 'Activate this automation before running it live.' });
+
+    const log = await executeWorkflow(id, req.user.id, req.body?.payload || {}, {
+        runType: 'production',
+        revisionId: workflow.publishedRevisionId,
+        trigger: 'manual-production'
+    });
     res.json(log);
 });
 

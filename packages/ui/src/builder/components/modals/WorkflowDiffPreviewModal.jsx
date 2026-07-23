@@ -8,6 +8,7 @@ import DynamicNode from '../../../nodes/DynamicNode';
 import DeletableEdge from '../canvas/edges/DeletableEdge';
 import Button from '../../../components/ui/Button.jsx';
 import { getIconByName, resolveNodeUi } from '../../utils/iconMap.jsx';
+import { WORKFLOW_MODAL_LAYERS } from '../../modalLayers.js';
 
 const nodeTypes = {
     trigger: DynamicNode,
@@ -149,7 +150,7 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
     if (!isOpen || !versionWorkflow) return null;
 
     return createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6" style={{ zIndex: 99999 }}>
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 sm:p-6" style={{ zIndex: WORKFLOW_MODAL_LAYERS.config }}>
             {/* Overlay */}
             <div
                 ref={overlayRef}

@@ -8,6 +8,7 @@ export const publishWorkflow = (id) => apiRequest(`/api/automations/${id}/publis
 export const pauseWorkflow = (id) => apiRequest(`/api/automations/${id}/pause`, { method: 'POST' });
 export const deleteWorkflow = (id) => apiRequest(`/api/automations/${id}`, { method: 'DELETE' });
 export const triggerWorkflow = (id, payload, revisionId = null) => apiRequest(`/api/automations/${id}/test`, { method: 'POST', body: JSON.stringify({ payload, ...(revisionId ? { revisionId } : {}) }) });
+export const triggerProductionWorkflow = (id, payload = {}) => apiRequest(`/api/automations/${id}/run`, { method: 'POST', body: JSON.stringify({ payload }) });
 export const getWorkflowVersions = (id) => apiRequest(`/api/automations/${id}/versions`);
 export const saveWorkflowVersion = (id) => apiRequest(`/api/automations/${id}/versions`, { method: 'POST' });
 export const restoreWorkflowVersion = (id, versionId) => apiRequest(`/api/automations/${id}/versions/${versionId}/restore`, { method: 'POST' });

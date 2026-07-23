@@ -3,7 +3,7 @@ import env from '../../config/env.js';
 import { sendEmail } from '../../utils/email.js';
 import Workflow from '../../models/workflows/Workflow.js';
 import WorkflowVersion from '../../models/workflows/WorkflowVersion.js';
-import { AutomationRun, WorkflowContinuation } from '../../models/index.js';
+import { AutomationRun, WorkflowContinuation, User } from '../../models/index.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { NodeFactory } from '../../../nodes/NodeFactory.js';
 import { validateWorkflow } from './workflowValidator.js';
@@ -80,6 +80,11 @@ const persistLog = async ({ run, ...data }) => {
 
 const createContinuation = async ({ run, node, suspension }) => {
     const token = suspension.kind === 'approval' ? crypto.randomBytes(32).toString('hex') : null;
+    const owner = suspension.kind === 'approval' && !suspension.assigneeEmail
+        ? await User.findByPk(run.userId, { attributes: ['id', 'email'] })
+        : null;
+    const assigneeUserId = suspension.assigneeUserId || (suspension.kind === 'approval' && !suspension.assigneeEmail ? run.userId : null);
+    const assigneeEmail = suspension.assigneeEmail || owner?.email || null;
     const continuation = await WorkflowContinuation.create({
         runId: run.id,
         workflowId: run.workflowId,
@@ -89,15 +94,15 @@ const createContinuation = async ({ run, node, suspension }) => {
         status: 'pending',
         availableAt: new Date(suspension.availableAt || Date.now()),
         expiresAt: suspension.expiresAt ? new Date(suspension.expiresAt) : null,
-        assigneeEmail: suspension.assigneeEmail || null,
-        assigneeUserId: suspension.assigneeUserId || null,
+        assigneeEmail,
+        assigneeUserId,
         tokenHash: token ? hash(token) : null,
         payload: suspension.payload || {}
     });
-    if (token && suspension.assigneeEmail) {
+    if (token && assigneeEmail) {
         const approvalUrl = `${env.app.clientOrigin}/app/approvals?token=${encodeURIComponent(token)}`;
         await sendEmail({
-            to: suspension.assigneeEmail,
+            to: assigneeEmail,
             subject: `Approval required: ${suspension.payload?.title || 'Workflow review'}`,
             text: `${suspension.payload?.instructions || 'A workflow is waiting for your review.'}\n\nOpen Promptly to decide: ${approvalUrl}`,
             html: `<p>${String(suspension.payload?.instructions || 'A workflow is waiting for your review.').replaceAll('<', '&lt;')}</p><p><a href="${approvalUrl}">Open approval in Promptly</a></p>`
@@ -140,7 +145,10 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
         } else {
             workflow = await Workflow.findOne({ where: { id: workflowId, userId } });
             if (!workflow) throw new Error('Workflow not found');
-            executedRevisionId = executionOptions.revisionId || (executionOptions.runType === 'production' ? workflow.publishedRevisionId : workflow.draftRevisionId) || null;
+            // Live runs are pinned to a published revision. Test runs execute
+            // the current working draft, including edits that have not yet
+            // been saved into version history.
+            executedRevisionId = executionOptions.revisionId || (executionOptions.runType === 'production' ? workflow.publishedRevisionId : null) || null;
             const revision = executedRevisionId ? await WorkflowVersion.findOne({ where: { id: executedRevisionId, workflowId: workflow.id } }) : null;
             nodes = revision?.nodes || workflow.nodes || [];
             edges = revision?.edges || workflow.edges || [];

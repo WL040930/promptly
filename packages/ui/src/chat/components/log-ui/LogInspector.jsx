@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Check, CheckCircle2, Circle, Copy, X, XCircle } from 'lucide-react';
+import { Check, CheckCircle2, Circle, Clock3, Copy, X, XCircle } from 'lucide-react';
 import { useExecutionLog } from '../../../api/hooks/useLogs.js';
-import { formatDuration, formatLogDate, getStatusClasses, getWorkflowName } from './logFormatters.js';
+import { formatDuration, formatLogDate, getStatusClasses, getWorkflowName, isSuccessStatus, isWaitingStatus } from './logFormatters.js';
 import { LogInspectorSkeleton } from './LogsSkeleton.jsx';
 
 const LogInspector = ({ logId, isOpen = true, onClose }) => {
@@ -69,13 +69,19 @@ const LogInspector = ({ logId, isOpen = true, onClose }) => {
                             <div className="flex flex-col gap-0.5">
                                 <span className="font-medium text-slate-500 text-xs">Outcome</span>
                                 <span className={`inline-flex items-center gap-1 font-semibold ${statusClasses.icon}`}>
-                                    {log.status === 'Success' ? <CheckCircle2 size={14} aria-hidden="true" /> : <XCircle size={14} aria-hidden="true" />}
+                                    {isSuccessStatus(log.status) ? <CheckCircle2 size={14} aria-hidden="true" /> : isWaitingStatus(log.status) ? <Clock3 size={14} aria-hidden="true" /> : <XCircle size={14} aria-hidden="true" />}
                                     {log.status}
                                 </span>
                             </div>
                         </div>
 
-                        {log.error && (
+                        {isWaitingStatus(log.status) && (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                                This run is paused until the approval is resolved. It will continue automatically after a decision.
+                            </div>
+                        )}
+
+                        {log.error && log.status?.toLowerCase() === 'failed' && (
                             <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                                 {log.error}
                             </div>

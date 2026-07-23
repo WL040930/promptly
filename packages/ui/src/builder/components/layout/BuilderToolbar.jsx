@@ -1,3 +1,18 @@
+import {
+    ArrowLeft,
+    ChevronRight,
+    Play,
+    Rocket,
+    Save,
+    Upload,
+    History,
+    Pencil,
+    PanelLeft,
+    Workflow,
+    Sparkles,
+    Layers,
+    Clock
+} from 'lucide-react';
 import { ICON_MAP } from '../../utils/iconMap.jsx';
 import Switch from '../../../components/ui/Switch.jsx';
 import RelativeTimeDisplay from '../../../components/ui/RelativeTimeDisplay.jsx';
@@ -5,161 +20,205 @@ import Button from '../../../components/ui/Button.jsx';
 
 const BuilderToolbar = ({
     isLeftSidebarOpen,
-    isRightSidebarOpen,
     onToggleLeft,
-    onToggleRight,
     onBack,
     activeWorkflow,
     onTitleEditStart,
     nodeCount = 0,
     onTestRun,
+    onProductionRun,
+    isProductionReady = false,
     isRunning = false,
     isSavingVersion = false,
     onSaveVersion,
+    onPublish,
+    isPublishing = false,
     onToggleHistory,
     onToggleActive,
+    isHistorySidebarOpen,
+    viewMode = 'canvas',
+    onViewModeChange
 }) => {
-    return (
-        <div className="flex flex-col shrink-0 z-10">
-            {/* Main toolbar row — 3-column grid: [left-icons | title | right-actions] */}
-            <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 overflow-hidden border-b border-slate-200/60 bg-white/80 px-3 shadow-sm backdrop-blur-md">
+    const isActive = activeWorkflow?.isActive || false;
 
-                {/* LEFT: sidebar toggles + back */}
-                <div className="flex shrink-0 items-center gap-2">
+    return (
+        <header className="relative z-20 flex h-[4.25rem] w-full shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white/95 px-3 shadow-[0_2px_16px_rgba(15,23,42,0.04)] backdrop-blur-md select-none sm:px-4 lg:gap-5">
+            {/* Identity rail: navigation, title, and small workflow context. */}
+            <div className="flex min-w-0 flex-1 items-center gap-2 lg:min-w-[18rem]">
+                <div className="flex shrink-0 items-center gap-0.5 rounded-xl border border-slate-200/80 bg-slate-50/80 p-0.5">
                     <Button
-                        variant={isLeftSidebarOpen ? "secondary" : "ghost"}
+                        variant={isLeftSidebarOpen ? 'secondary' : 'ghost'}
                         size="icon-sm"
                         onClick={onToggleLeft}
-                        title="Toggle Navigation Sidebar"
+                        title="Toggle node library"
+                        className="shrink-0"
                     >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                            <line x1="9" y1="3" x2="9" y2="21"></line>
-                        </svg>
+                        <PanelLeft className="h-4 w-4" />
                     </Button>
-
-                    <Button
-                        variant="ghost"
-                        size="icon-sm"
+                    <button
+                        type="button"
                         onClick={onBack}
-                        title="Back to Automations"
+                        title="Back to automations"
+                        className="group flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-white hover:text-slate-900 sm:w-auto sm:gap-1 sm:px-2"
                     >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline>
-                        </svg>
-                    </Button>
+                        <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />
+                        <span className="hidden text-xs font-semibold sm:inline">Automations</span>
+                    </button>
                 </div>
 
-                {/* CENTER: breadcrumb + title — strictly contained, never overflows */}
-                <div className="flex items-center gap-1.5 min-w-0 overflow-hidden px-1">
-                    <Button
-                        variant="ghost"
-                        className="group px-1.5 py-0.5 transition-colors min-w-0 overflow-hidden font-normal"
-                        onClick={onTitleEditStart}
-                        title="Click to edit name and icon"
-                    >
-                        <div className="flex items-center gap-1.5 min-w-0 overflow-hidden w-full">
-                            {activeWorkflow?.icon && ICON_MAP[activeWorkflow.icon] && (
-                                <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${activeWorkflow.iconBg} ${activeWorkflow.iconColor}`}>
-                                    {ICON_MAP[activeWorkflow.icon]}
-                                </div>
-                            )}
-                            <h2 className="text-base font-semibold text-slate-900 truncate">
-                                {activeWorkflow?.name || 'Untitled'}
-                            </h2>
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400 group-hover:text-indigo-500 transition-all shrink-0">
-                                <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
-                            </svg>
+                <ChevronRight className="hidden h-4 w-4 shrink-0 text-slate-300 sm:block" />
+
+                <button
+                    type="button"
+                    onClick={onTitleEditStart}
+                    title="Edit automation details"
+                    className="group flex h-10 min-w-0 max-w-full items-center gap-2 rounded-xl border border-transparent px-1.5 text-left transition-colors hover:border-slate-200/80 hover:bg-slate-50"
+                >
+                    {activeWorkflow?.icon && ICON_MAP[activeWorkflow.icon] ? (
+                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl shadow-2xs ${activeWorkflow.iconBg || 'bg-indigo-100'} ${activeWorkflow.iconColor || 'text-indigo-600'}`}>
+                            {ICON_MAP[activeWorkflow.icon]}
                         </div>
-                    </Button>
-
-                    <span className="shrink-0 text-[10px] font-bold tracking-wide uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 hidden lg:block">
-                        Saved
+                    ) : (
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 shadow-2xs">
+                            <Workflow className="h-4 w-4" />
+                        </div>
+                    )}
+                    <span className="min-w-0">
+                        <span className="flex items-center gap-1.5">
+                            <h1 className="max-w-[9rem] truncate text-sm font-bold tracking-tight text-slate-900 transition-colors group-hover:text-indigo-600 sm:max-w-[13rem] lg:max-w-[18rem]">
+                                {activeWorkflow?.name || 'Untitled automation'}
+                            </h1>
+                            <Pencil className="hidden h-3 w-3 shrink-0 text-slate-400 transition-colors group-hover:text-indigo-500 sm:block" />
+                        </span>
+                        <span className="mt-0.5 hidden items-center gap-2 whitespace-nowrap text-[10px] font-semibold text-slate-400 xl:flex">
+                            <span className="inline-flex items-center gap-1"><Layers className="h-3 w-3 text-indigo-400" />{nodeCount} step{nodeCount !== 1 ? 's' : ''}</span>
+                            <span className="h-1 w-1 rounded-full bg-slate-300" />
+                            <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3 text-slate-400" /><RelativeTimeDisplay timestamp={activeWorkflow?.updatedAt || activeWorkflow?.createdAt} /></span>
+                        </span>
                     </span>
-                </div>
+                </button>
+            </div>
 
-                {/* RIGHT: actions — fixed, never shrinks */}
-                <div className="no-scrollbar flex max-w-[58vw] shrink-0 items-center gap-2 overflow-x-auto lg:max-w-none">
+            {/* The editor mode stays visually centered and independent of the action rail. */}
+            {onViewModeChange && (
+                <div className="hidden shrink-0 items-center rounded-2xl border border-slate-200/80 bg-slate-100/80 p-1 shadow-2xs sm:flex">
+                    <button
+                        type="button"
+                        aria-pressed={viewMode === 'canvas'}
+                        onClick={() => onViewModeChange('canvas')}
+                        className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${viewMode === 'canvas'
+                            ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/70'
+                            : 'text-slate-500 hover:text-slate-900'
+                            }`}
+                    >
+                        <Workflow className="h-3.5 w-3.5 text-indigo-500" />
+                        <span className="hidden xl:inline">Canvas</span>
+                    </button>
+                    <button
+                        type="button"
+                        aria-pressed={viewMode === 'ai'}
+                        onClick={() => onViewModeChange('ai')}
+                        className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${viewMode === 'ai'
+                            ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200/70'
+                            : 'text-slate-500 hover:text-slate-900'
+                            }`}
+                    >
+                        <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                        <span className="hidden xl:inline">AI assistant</span>
+                    </button>
+                </div>
+            )}
+
+            {/* Action rail: a compact Run group, then a compact Release group. */}
+            <div className="flex shrink-0 items-center gap-1.5 lg:gap-2">
+                <div className="flex items-center gap-0.5 rounded-xl border border-slate-200/80 bg-slate-50/80 p-0.5">
                     <Button
                         variant="outline"
-                        size="sm"
+                        size="xs"
                         onClick={onTestRun}
                         disabled={isRunning}
                         isLoading={isRunning}
-                        loadingText={<span className="hidden sm:inline">Running…</span>}
-                        iconLeft={
-                            !isRunning && (
-                                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <polygon points="5 3 19 12 5 21 5 3" />
-                                </svg>
-                            )
-                        }
+                        title="Run the draft in test mode"
+                        loadingText={<span className="hidden md:inline">Testing…</span>}
+                        iconLeft={!isRunning && <Play className="h-3.5 w-3.5 text-indigo-600 fill-indigo-600/20" />}
+                        className="h-8 gap-0 rounded-lg border-transparent px-2 shadow-none hover:border-indigo-200 hover:bg-indigo-50/70 hover:text-indigo-700 sm:px-2.5 xl:gap-2"
                     >
-                        <span className="hidden sm:inline">Test Run</span>
+                        <span className="hidden xl:inline">Test</span>
                     </Button>
-
-                    {/* Divider */}
-                    <div className="w-px h-5 bg-slate-200 shrink-0"></div>
-
-                    {/* Activation Toggle */}
-                    <div className="flex items-center gap-1.5 shrink-0">
-                        <Switch
-                            size="md"
-                            checked={activeWorkflow?.isActive || false}
-                            onChange={onToggleActive}
-                            title={activeWorkflow?.isActive ? 'Deactivate automation' : 'Activate automation'}
-                        />
-                    </div>
-
                     <Button
-                        variant="primary"
-                        size="sm"
+                        variant={isProductionReady ? 'dangerSolid' : 'danger'}
+                        size="xs"
+                        onClick={onProductionRun}
+                        disabled={isRunning}
+                        aria-disabled={!isProductionReady}
+                        title={isProductionReady ? 'Run the published automation with real side effects' : 'Publish and activate this automation before running it live'}
+                        iconLeft={!isRunning && <Rocket className="h-3.5 w-3.5" />}
+                        className="h-8 gap-0 rounded-lg px-2 sm:px-2.5 xl:gap-2"
+                    >
+                        <span className="hidden xl:inline">Live</span>
+                    </Button>
+                </div>
+
+                <div className="flex items-center gap-0.5 rounded-xl border border-slate-200/80 bg-white p-0.5 shadow-2xs">
+                    <Button
+                        variant="ghost"
+                        size="xs"
                         onClick={onSaveVersion}
                         disabled={isSavingVersion}
                         isLoading={isSavingVersion}
-                        loadingText="Saving…"
+                        title="Save version snapshot"
+                        loadingText={<span className="hidden xl:inline">Saving…</span>}
+                        iconLeft={!isSavingVersion && <Save className="h-3.5 w-3.5" />}
+                        className="h-8 gap-0 rounded-lg px-2 hover:bg-slate-100 sm:px-2.5 xl:gap-2"
                     >
-                        Save version
+                        <span className="hidden xl:inline">Save</span>
                     </Button>
-
-                    {/* History button */}
                     <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={onToggleHistory}
-                        title="View Version History"
+                        variant="primary"
+                        size="xs"
+                        onClick={onPublish}
+                        disabled={isPublishing}
+                        isLoading={isPublishing}
+                        title="Publish the latest saved version for live runs"
+                        loadingText={<span className="hidden xl:inline">Publishing…</span>}
+                        iconLeft={!isPublishing && <Upload className="h-3.5 w-3.5" />}
+                        className="h-8 gap-0 rounded-lg px-2 shadow-none sm:px-2.5 xl:gap-2"
                     >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <polyline points="12 6 12 12 16 14"></polyline>
-                        </svg>
-                    </Button>
-
-                    {/* Right sidebar toggle */}
-                    <Button
-                        variant={isRightSidebarOpen ? "secondary" : "ghost"}
-                        size="icon-sm"
-                        onClick={onToggleRight}
-                        title="Toggle assistant and configuration"
-                    >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="15" y1="3" x2="15" y2="21"></line>
-                        </svg>
+                        <span className="hidden xl:inline">Publish</span>
                     </Button>
                 </div>
-            </div>
 
-            {/* Metadata sub-bar */}
-            <div className="px-6 py-2 bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-500 flex items-center justify-between shrink-0">
-                <span>Active nodes: {nodeCount}</span>
-                <div className="flex items-center gap-1">
-                    <span>Last edit:</span>
-                    <span className="font-medium">
-                        <RelativeTimeDisplay timestamp={activeWorkflow?.updatedAt || activeWorkflow?.createdAt} />
-                    </span>
+                <div
+                    role="group"
+                    onClick={onToggleActive}
+                    title={isActive ? 'Deactivate automation' : 'Activate automation'}
+                    className={`flex h-9 cursor-pointer items-center gap-1.5 rounded-xl border px-2 transition-all sm:px-2.5 ${isActive
+                        ? 'border-emerald-300/70 bg-emerald-50 text-emerald-800 hover:bg-emerald-100/80'
+                        : 'border-slate-200/80 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                        }`}
+                >
+                    <span className={`h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                    <span className="hidden text-xs font-bold xl:inline">{isActive ? 'Active' : 'Inactive'}</span>
+                    <Switch
+                        size="sm"
+                        checked={isActive}
+                        activeColor="#10b981"
+                        onChange={onToggleActive}
+                        ariaLabel={isActive ? 'Deactivate automation' : 'Activate automation'}
+                    />
                 </div>
+
+                <Button
+                    variant={isHistorySidebarOpen ? 'secondary' : 'ghost'}
+                    size="icon-sm"
+                    onClick={onToggleHistory}
+                    title="View version history"
+                    className={`h-9 w-9 shrink-0 rounded-xl ${isHistorySidebarOpen ? 'border border-indigo-200/60 bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100 hover:text-indigo-600'}`}
+                >
+                    <History className="h-4 w-4" />
+                </Button>
             </div>
-        </div>
+        </header>
     );
 };
 

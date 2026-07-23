@@ -2,7 +2,7 @@ import { Router } from 'express';
 import asyncHandler from '../../utils/asyncHandler.js';
 import { requireAuth } from '../../middleware/authMiddleware.js';
 import { 
-    getWorkflows, getWorkflow, createWorkflow, updateWorkflow, deleteWorkflow, triggerWorkflow,
+    getWorkflows, getWorkflow, createWorkflow, updateWorkflow, deleteWorkflow, triggerWorkflow, triggerProductionWorkflow,
     getWorkflowVersions, saveWorkflowVersion, restoreWorkflowVersion, publishWorkflow, pauseWorkflow
 } from '../../controllers/builder/workflowController.js';
 import { getWorkflowAIChat, clearWorkflowAIChat, submitWorkflowAITurn, decideWorkflowAIProposal } from '../../controllers/builder/workflowAIController.js';
@@ -17,6 +17,7 @@ router.post('/', asyncHandler(createWorkflow));
 router.put('/:id', asyncHandler(updateWorkflow));
 router.delete('/:id', asyncHandler(deleteWorkflow));
 router.post('/:id/test', asyncHandler(triggerWorkflow));
+router.post('/:id/run', asyncHandler(triggerProductionWorkflow));
 router.post('/:id/publish', asyncHandler(publishWorkflow));
 router.post('/:id/pause', asyncHandler(pauseWorkflow));
 router.get('/:id/ai-chat', getWorkflowAIChat);

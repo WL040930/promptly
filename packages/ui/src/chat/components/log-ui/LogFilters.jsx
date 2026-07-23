@@ -1,6 +1,6 @@
 import { ChevronDown, Search, SlidersHorizontal, X } from 'lucide-react';
 
-const STATUS_OPTIONS = ['All', 'Success', 'Failed'];
+const STATUS_OPTIONS = ['All', 'Success', 'Waiting', 'Failed'];
 const CONTROL_CLASS = 'h-11 box-border appearance-none bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 leading-5 outline-none focus:border-indigo-400 transition-colors';
 
 const LogFilters = ({

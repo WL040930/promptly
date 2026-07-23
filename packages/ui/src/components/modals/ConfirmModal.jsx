@@ -13,7 +13,8 @@ export default function ConfirmModal({
     confirmText = 'Confirm', 
     cancelText = 'Cancel',
     confirmVariant = 'primary',
-    isLoading = false 
+    isLoading = false,
+    children = null
 }) {
     // Prevent background scrolling when open
     useEffect(() => {
@@ -79,6 +80,7 @@ export default function ConfirmModal({
                 <div className="p-6">
                     <h2 className="text-xl font-bold text-slate-900 mb-2">{title}</h2>
                     <p className="text-sm text-slate-600 leading-relaxed">{message}</p>
+                    {children && <div className="mt-4">{children}</div>}
                 </div>
 
                 <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">

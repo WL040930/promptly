@@ -1,8 +1,9 @@
 import { CheckCircle2, Clock3, XCircle } from 'lucide-react';
-import { formatDuration, formatLogDate, getStatusClasses, getWorkflowName } from './logFormatters.js';
+import { formatDuration, formatLogDate, getStatusClasses, getWorkflowName, isSuccessStatus, isWaitingStatus } from './logFormatters.js';
 
 const StatusIcon = ({ status, className }) => {
-    if (status === 'Success') return <CheckCircle2 size={16} aria-hidden="true" className={className} />;
+    if (isSuccessStatus(status)) return <CheckCircle2 size={16} aria-hidden="true" className={className} />;
+    if (isWaitingStatus(status)) return <Clock3 size={16} aria-hidden="true" className={className} />;
     return <XCircle size={16} aria-hidden="true" className={className} />;
 };
 
@@ -41,7 +42,7 @@ const LogList = ({ logs, selectedLogId, onSelect }) => (
                             <span className="font-mono text-slate-400 truncate max-w-[18rem]">Run ID: {log.id}</span>
                         </div>
 
-                        {log.error && (
+                        {log.error && log.status?.toLowerCase() === 'failed' && (
                             <div className="text-xs font-medium text-red-600 bg-red-50/50 border border-red-100 rounded-lg py-1.5 px-3 mt-1 leading-relaxed truncate">
                                 {log.error}
                             </div>

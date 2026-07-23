@@ -288,19 +288,22 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
                 userId
             }, { transaction });
             const nextRevision = Number(saved.revision || 0) + (workflow ? 1 : 0);
-            const version = await WorkflowVersion.create({
-                workflowId: saved.id,
-                versionNumber: workflow ? nextRevision : 1,
-                baseRevisionId: workflow ? String(saved.revision || 1) : null,
-                nodes,
-                edges,
-                source: 'ai',
-                summary: proposal.summary || 'Applied AI automation proposal'
-            }, { transaction });
-            await saved.update({
-                draftRevisionId: version.id,
-                ...(workflow ? { nodes, edges, revision: nextRevision } : {})
-            }, { transaction });
+            if (workflow) {
+                // Existing workflow edits remain in the working draft until
+                // the user explicitly saves a version from the builder.
+                await saved.update({ nodes, edges, revision: nextRevision }, { transaction });
+            } else {
+                const version = await WorkflowVersion.create({
+                    workflowId: saved.id,
+                    versionNumber: 1,
+                    baseRevisionId: null,
+                    nodes,
+                    edges,
+                    source: 'ai',
+                    summary: proposal.summary || 'Applied AI automation proposal'
+                }, { transaction });
+                await saved.update({ draftRevisionId: version.id }, { transaction });
+            }
             result = { workflowId: saved.id, action: workflow ? 'edit_workflow' : 'create_workflow' };
         } else {
             const error = new Error('Unsupported chat proposal.');

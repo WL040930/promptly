@@ -1,4 +1,9 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
+import { WORKFLOW_MODAL_LAYERS } from '../../modalLayers.js';
+
+gsap.registerPlugin(useGSAP);
 
 const TYPE_COLORS = {
   string: 'bg-emerald-100 text-emerald-700 border-emerald-200',
@@ -28,6 +33,41 @@ export default function VariablePickerModal({ isOpen, onClose, onSelect, availab
   const [expandedPaths, setExpandedPaths] = useState(new Set());
   const [customPathTarget, setCustomPathTarget] = useState(null);
   const [customPath, setCustomPath] = useState('');
+  const modalRootRef = useRef(null);
+  const modalRef = useRef(null);
+  const closeAnimationRef = useRef(null);
+  const isClosingRef = useRef(false);
+
+  useGSAP((_, contextSafe) => {
+    if (!isOpen || !modalRootRef.current || !modalRef.current) return;
+
+    isClosingRef.current = false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reducedMotion) {
+      closeAnimationRef.current = contextSafe(onClose);
+      return () => { closeAnimationRef.current = null; };
+    }
+
+    gsap.fromTo(modalRootRef.current,
+      { autoAlpha: 0 },
+      { autoAlpha: 1, duration: 0.2, ease: 'power2.out' }
+    );
+    gsap.fromTo(modalRef.current,
+      { autoAlpha: 0, y: 24, scale: 0.96 },
+      { autoAlpha: 1, y: 0, scale: 1, duration: 0.32, delay: 0.03, ease: 'back.out(1.2)' }
+    );
+
+    closeAnimationRef.current = contextSafe(() => {
+      if (isClosingRef.current) return;
+      isClosingRef.current = true;
+      gsap.killTweensOf([modalRootRef.current, modalRef.current]);
+      gsap.timeline({ defaults: { overwrite: 'auto' }, onComplete: contextSafe(onClose) })
+        .to(modalRef.current, { autoAlpha: 0, y: 14, scale: 0.96, duration: 0.16, ease: 'power2.in' })
+        .to(modalRootRef.current, { autoAlpha: 0, duration: 0.14, ease: 'power2.in' }, '<');
+    });
+
+    return () => { closeAnimationRef.current = null; };
+  }, { scope: modalRootRef, dependencies: [isOpen], revertOnUpdate: true });
 
   // Reset state when modal opens
   useEffect(() => {
@@ -100,17 +140,25 @@ export default function VariablePickerModal({ isOpen, onClose, onSelect, availab
     setCustomPath('');
   };
 
+  const requestClose = () => {
+    if (closeAnimationRef.current) {
+      closeAnimationRef.current();
+    } else {
+      onClose();
+    }
+  };
+
   const insertCustomPath = () => {
     if (!customPathTarget) return;
     const cleanPath = customPath.trim();
     if (!/^[\w-]+(\.[\w-]+)*$/.test(cleanPath)) return;
     onSelect(`${customPathTarget.path}.${cleanPath}`);
-    onClose();
+    requestClose();
   };
 
   const handleSelect = (path) => {
     onSelect(path);
-    onClose();
+    requestClose();
   };
 
   const renderNestedRows = (parentVar) => {
@@ -238,12 +286,15 @@ export default function VariablePickerModal({ isOpen, onClose, onSelect, availab
   };
 
   return (
-    <div 
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200"
-      onClick={onClose}
+    <div
+      ref={modalRootRef}
+      className="fixed inset-0 z-[100100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+      style={{ zIndex: WORKFLOW_MODAL_LAYERS.nested }}
+      onClick={requestClose}
     >
       <div 
-        className="bg-white w-full max-w-4xl h-[70vh] min-h-[500px] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200"
+        ref={modalRef}
+        className="bg-white w-full max-w-4xl h-[70vh] min-h-[500px] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200"
         onClick={e => e.stopPropagation()}
       >
         
@@ -259,7 +310,7 @@ export default function VariablePickerModal({ isOpen, onClose, onSelect, availab
             </div>
           </div>
           <button 
-            onClick={onClose}
+            onClick={requestClose}
             className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-200 hover:bg-slate-300 text-slate-800 transition-colors"
             title="Close"
           >

@@ -19,7 +19,8 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
         sequelize.query(
             `SELECT
                 COUNT(*) AS "totalRuns",
-                COUNT(*) FILTER (WHERE status = 'Success') AS "successRuns"
+                COUNT(*) FILTER (WHERE status = 'Success') AS "successRuns",
+                COUNT(*) FILTER (WHERE status IN ('Success', 'Failed')) AS "completedRuns"
              FROM automation_runs
              WHERE "userId" = :userId`,
             { replacements: { userId }, type: QueryTypes.SELECT }
@@ -46,10 +47,11 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
         })
     ]);
 
-    const { totalRuns, successRuns } = runAggregate[0] || { totalRuns: 0, successRuns: 0 };
+    const { totalRuns, successRuns, completedRuns } = runAggregate[0] || { totalRuns: 0, successRuns: 0, completedRuns: 0 };
     const totalRunsNum = parseInt(totalRuns, 10);
     const successRunsNum = parseInt(successRuns, 10);
-    const successRate = totalRunsNum === 0 ? '—' : `${((successRunsNum / totalRunsNum) * 100).toFixed(1)}%`;
+    const completedRunsNum = parseInt(completedRuns, 10);
+    const successRate = completedRunsNum === 0 ? '—' : `${((successRunsNum / completedRunsNum) * 100).toFixed(1)}%`;
 
     // Fill in any days with zero runs so the chart always shows 7 bars
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -75,7 +77,7 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
             action: `${log.workflow ? log.workflow.name : 'Workflow'} ${log.status}`,
             detail: `Triggered by ${log.trigger}`,
             time: log.time,
-            type: log.status === 'Success' ? 'success' : 'error',
+            type: String(log.status || '').toLowerCase() === 'success' ? 'success' : ['waiting', 'running', 'resuming', 'pending'].includes(String(log.status || '').toLowerCase()) ? 'pending' : 'error',
             latency: `${log.durationMs}ms`
         }))
     });

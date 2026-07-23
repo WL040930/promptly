@@ -1,6 +1,8 @@
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
+import { X, Sliders } from 'lucide-react';
 import WorkflowCanvas from './components/canvas/WorkflowCanvas';
 import PropertyInspector from './components/panels/PropertyInspector';
 import WorkflowAIAssistant from './components/sidebars/WorkflowAIAssistant.jsx';
@@ -11,13 +13,135 @@ import { MODAL_TYPES, MODAL_CONFIG } from './overview/constants.js';
 import TestRunModal from './components/modals/TestRunModal';
 import VersionHistorySidebar from './components/sidebars/VersionHistorySidebar';
 import { navigate } from '../utils/router.js';
-import { useWorkflow, useUpdateWorkflow, useSaveWorkflowVersion } from '../api/hooks/useWorkflows.js';
+import { useWorkflow, useUpdateWorkflow, useSaveWorkflowVersion, usePublishWorkflow } from '../api/hooks/useWorkflows.js';
 import { useRunWorkflow } from '../api/hooks/useRunWorkflow.js';
 import ExecutionPanel from './components/panels/ExecutionPanel';
 import BuilderLoadingSkeleton from './components/layout/BuilderLoadingSkeleton.jsx';
 import { useUndoRedo } from '../hooks/useUndoRedo';
 import { useToast } from '../context/ToastContext.jsx';
 import { cloneWorkflowNodeForPaste } from './utils/nodeClipboard.js';
+import { WORKFLOW_MODAL_LAYERS } from './modalLayers.js';
+
+function NodeConfigModal({ isOpen, onClose, activeNode, onUpdateNode, onTestWorkflow, nodes, edges }) {
+    const modalRef = useRef(null);
+    const overlayRef = useRef(null);
+
+    useGSAP(() => {
+        if (isOpen && overlayRef.current && modalRef.current) {
+            gsap.fromTo(overlayRef.current, { opacity: 0 }, { opacity: 1, duration: 0.2, ease: 'power2.out' });
+            gsap.fromTo(modalRef.current, { opacity: 0, y: 15, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 0.25, ease: 'back.out(1.2)' });
+        }
+    }, { dependencies: [isOpen] });
+
+    if (!isOpen || !activeNode) return null;
+
+    const handleClose = () => {
+        if (overlayRef.current && modalRef.current) {
+            gsap.to(overlayRef.current, { opacity: 0, duration: 0.15 });
+            gsap.to(modalRef.current, { opacity: 0, y: 10, scale: 0.96, duration: 0.15, onComplete: onClose });
+        } else {
+            onClose();
+        }
+    };
+
+    return createPortal(
+        <div className="fixed inset-0 flex items-center justify-center p-4 select-none" style={{ zIndex: WORKFLOW_MODAL_LAYERS.config }}>
+            <div ref={overlayRef} className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={handleClose} />
+            <div ref={modalRef} className="relative bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[85vh] overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200/80 bg-slate-50/70 shrink-0">
+                    <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-bold shrink-0">
+                            <Sliders className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                            <h3 className="text-sm font-bold text-slate-900 truncate">{activeNode?.title || activeNode?.subType || 'Configure Step'}</h3>
+                            <p className="text-xs text-slate-500 font-medium truncate">Edit parameters and options for this step</p>
+                        </div>
+                    </div>
+                    <button type="button" onClick={handleClose} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-lg transition-colors">
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 select-text">
+                    <PropertyInspector
+                        activeNode={activeNode}
+                        onUpdateNode={onUpdateNode}
+                        onTestWorkflow={onTestWorkflow}
+                        nodes={nodes}
+                        edges={edges}
+                    />
+                </div>
+                <div className="px-5 py-3 bg-slate-50 border-t border-slate-200/80 flex items-center justify-end shrink-0">
+                    <button type="button" onClick={handleClose} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold text-xs rounded-xl shadow-xs transition-all">
+                        Done
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+}
+
+function HistoryDrawer({ isOpen, onClose, workflowId, currentWorkflow }) {
+    const drawerRef = useRef(null);
+    const backdropRef = useRef(null);
+
+    useGSAP(() => {
+        const drawer = drawerRef.current;
+        const backdrop = backdropRef.current;
+        if (!drawer || !backdrop) return;
+
+        const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        const duration = reduceMotion ? 0 : 0.28;
+        const ease = 'power3.out';
+
+        if (isOpen) {
+            gsap.timeline({ defaults: { overwrite: 'auto' } })
+                .set(drawer, { autoAlpha: 1, xPercent: 100 })
+                .set(backdrop, { autoAlpha: 0 })
+                .to(backdrop, { autoAlpha: 1, duration: duration * 0.8, ease }, 0)
+                .to(drawer, { xPercent: 0, duration, ease }, 0);
+        } else {
+            gsap.timeline({ defaults: { overwrite: 'auto' } })
+                .to(drawer, { xPercent: 100, autoAlpha: 0, duration, ease: 'power2.in' })
+                .to(backdrop, { autoAlpha: 0, duration: duration * 0.8, ease: 'power2.in' }, 0);
+        }
+    }, { dependencies: [isOpen], revertOnUpdate: true });
+
+    return (
+        <>
+            <div
+                ref={backdropRef}
+                aria-hidden="true"
+                onClick={onClose}
+                className={`absolute inset-0 z-30 bg-slate-900/10 backdrop-blur-[1px] ${isOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
+            />
+            <aside
+                ref={drawerRef}
+                aria-hidden={!isOpen}
+                className={`absolute inset-y-0 right-0 z-40 flex h-full w-[min(360px,100vw)] shrink-0 flex-col border-l border-slate-200/80 bg-white/95 shadow-2xl backdrop-blur-md ${isOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
+            >
+                <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200/80 bg-slate-50/80 px-3">
+                    <div className="flex flex-1 items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-800">
+                        <span className="h-2 w-2 rounded-full bg-indigo-600" />
+                        Version history
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        aria-label="Close version history"
+                        className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-200/60 hover:text-slate-700"
+                    >
+                        <X className="h-4 w-4" />
+                    </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-hidden">
+                    <VersionHistorySidebar workflowId={workflowId} currentWorkflow={currentWorkflow} />
+                </div>
+            </aside>
+        </>
+    );
+}
 
 const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed }) => {
     // ── Server data ──────────────────────────────────────────────────────────
@@ -27,16 +151,17 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     const [activeNodeId, setActiveNodeId] = useState(null);
     const updateWorkflowMutation = useUpdateWorkflow();
     const saveVersionMutation = useSaveWorkflowVersion();
+    const publishWorkflowMutation = usePublishWorkflow();
     const toast = useToast();
 
     // Only show skeleton on initial load (no data yet), not on background refetches
     const loading = isActiveWorkflowPending && !activeWorkflowData;
 
     // ── UI state ─────────────────────────────────────────────────────────────
+    const [viewMode, setViewMode] = useState(() => (route?.editor === 'ai' ? 'ai' : 'canvas'));
     const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(() => !window.matchMedia?.('(max-width: 767px)').matches);
-    const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(() => !window.matchMedia?.('(max-width: 767px)').matches);
+    const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [isHistorySidebarOpen, setIsHistorySidebarOpen] = useState(false);
-    const [rightTab, setRightTab] = useState('chat');
     const [draggedNode, setDraggedNode] = useState(null);
     const [modal, setModal] = useState({ isOpen: false, type: null, data: null, inputValue: '', formData: {} });
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -89,27 +214,47 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     // ── Execution panel state ─────────────────────────────────────────────
     const [isExecutionPanelOpen, setIsExecutionPanelOpen] = useState(false);
     const [isTestRunModalOpen, setIsTestRunModalOpen] = useState(false);
+    const [runMode, setRunMode] = useState('test');
+    const [lastExecutionRunType, setLastExecutionRunType] = useState('test');
     const [lastExecutionLog, setLastExecutionLog] = useState(null);
     const runWorkflowMutation = useRunWorkflow();
 
     const handleTestRunClick = () => {
         if (!activeWorkflowId) return;
+        setRunMode('test');
         setIsTestRunModalOpen(true);
     };
 
-    const handleTestRunConfirm = async (payload) => {
+    const handleProductionRunClick = () => {
+        if (!activeWorkflowId) return;
+        if (!activeWorkflowData?.publishedRevisionId || !activeWorkflowData?.isActive) {
+            toast.error('Publish and activate this automation before running it live.');
+            return;
+        }
+        setRunMode('production');
+        setIsTestRunModalOpen(true);
+    };
+
+    const handleRunConfirm = async (payload) => {
+        const mode = runMode === 'production' ? 'production' : 'test';
         setIsTestRunModalOpen(false);
         setIsExecutionPanelOpen(true);
+        setLastExecutionRunType(mode);
         setLastExecutionLog(null);
         try {
-            const log = await runWorkflowMutation.mutateAsync({ workflowId: activeWorkflowId, payload, revisionId: activeWorkflowData?.draftRevisionId || null });
+            const log = await runWorkflowMutation.mutateAsync({
+                workflowId: activeWorkflowId,
+                payload,
+                // Test the current working draft, including edits that have
+                // not been committed to version history yet.
+                revisionId: null,
+                runType: mode
+            });
             setLastExecutionLog(log);
         } catch (err) {
             setLastExecutionLog({ status: 'Failed', durationMs: 0, steps: [], error: err.message });
         }
     };
-
-    // Real-time relative timestamp ticker removed for performance, handled by child components now
 
     // ── Derived data ─────────────────────────────────────────────────────────
     const activeWorkflow = activeWorkflowData || null;
@@ -147,18 +292,44 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
 
     const flushPendingWorkflowSave = useCallback(() => pendingWorkflowSaveRef.current, []);
 
-    const handleToggleActive = useCallback(() => {
+    const handleToggleActive = useCallback(async () => {
         if (!activeWorkflow) return;
-        handleWorkflowUpdate({ isActive: !activeWorkflow.isActive });
-    }, [activeWorkflow, handleWorkflowUpdate]);
+        const nextIsActive = !activeWorkflow.isActive;
+        try {
+            await handleWorkflowUpdate({ isActive: nextIsActive });
+            if (nextIsActive && !activeWorkflow.publishedRevisionId) {
+                toast.info('Automation activated. Publish a version before running it live.');
+            } else {
+                toast.success(nextIsActive ? 'Automation activated.' : 'Automation deactivated.');
+            }
+        } catch (error) {
+            toast.error(error.message || `Could not ${nextIsActive ? 'activate' : 'deactivate'} automation.`);
+        }
+    }, [activeWorkflow, handleWorkflowUpdate, toast]);
 
-    const handleSaveVersion = useCallback(() => {
+    const handleSaveVersion = useCallback(async () => {
         if (!activeWorkflowId) return;
-        saveVersionMutation.mutate(activeWorkflowId, {
-            onSuccess: () => toast.success('New version snapshot saved!'),
-            onError: () => toast.error('Failed to save version')
-        });
-    }, [activeWorkflowId, saveVersionMutation, toast]);
+        try {
+            await flushPendingWorkflowSave();
+            await saveVersionMutation.mutateAsync(activeWorkflowId);
+            toast.success('Version snapshot saved.');
+        } catch (error) {
+            toast.error(error.message || 'Failed to save version.');
+        }
+    }, [activeWorkflowId, flushPendingWorkflowSave, saveVersionMutation, toast]);
+
+    const handlePublishWorkflow = useCallback(async () => {
+        if (!activeWorkflowId) return;
+        try {
+            // Finish any in-flight draft save before checking the publish
+            // boundary. Publishing itself never creates a history entry.
+            await flushPendingWorkflowSave();
+            await publishWorkflowMutation.mutateAsync(activeWorkflowId);
+            toast.success('Automation published. Live runs now use this version.');
+        } catch (error) {
+            toast.error(error.message || 'Could not publish automation. Save a version first.');
+        }
+    }, [activeWorkflowId, flushPendingWorkflowSave, publishWorkflowMutation, toast]);
 
     // ── Undo / Redo Keybinds ──────────────────────────────────────────────────
     const handleUndo = useCallback(() => {
@@ -250,8 +421,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     // ── Node operations ──────────────────────────────────────────────────────
     const handleNodeClick = useCallback((nodeId) => {
         setActiveNodeId(nodeId);
-        setRightTab('properties');
-        setIsRightSidebarOpen(true);
+        setIsConfigModalOpen(true);
     }, []);
 
     const generateUniqueTitle = useCallback((baseTitle, excludeNodeId = null) => {
@@ -344,7 +514,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
             updatedNodes = updatedNodes.filter(node => !removeIds.includes(node.id));
             if (removeIds.includes(activeNodeId)) {
                 setActiveNodeId(null);
-                setIsRightSidebarOpen(false);
+                setIsConfigModalOpen(false);
             }
         }
 
@@ -419,17 +589,6 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
         }
     }, []);
 
-    // ── GSAP Right Panel Animations ───────────────────────────────────────────
-    const rightPanelContentRef = useRef(null);
-    useGSAP(() => {
-        if (rightPanelContentRef.current) {
-            gsap.fromTo(rightPanelContentRef.current,
-                { opacity: 0, x: 15 },
-                { opacity: 1, x: 0, duration: 0.3, ease: 'power2.out', clearProps: 'all' }
-            );
-        }
-    }, { dependencies: [isHistorySidebarOpen, rightTab] });
-
     if (loading) {
         return <BuilderLoadingSkeleton />;
     }
@@ -438,14 +597,16 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     return (
         <div ref={builderContainer} className="relative flex h-full w-full flex-1 overflow-hidden bg-slate-50 font-sans">
 
-            {/* 1. LEFT SIDEBAR: Add steps */}
-            <NodeLibrarySidebar
-                isOpen={isLeftSidebarOpen}
-                onDragStart={(node) => setDraggedNode(node)}
-                onDragEnd={() => setDraggedNode(null)}
-            />
+            {/* 1. LEFT SIDEBAR: Node Library (visible in canvas mode) */}
+            {viewMode === 'canvas' && (
+                <NodeLibrarySidebar
+                    isOpen={isLeftSidebarOpen}
+                    onDragStart={(node) => setDraggedNode(node)}
+                    onDragEnd={() => setDraggedNode(null)}
+                />
+            )}
 
-            {/* 2. CENTER: Canvas + Toolbar */}
+            {/* 2. CENTER: Main View + Toolbar */}
             <main className="flex-1 flex flex-col h-full bg-slate-50/50 relative overflow-hidden">
                 {modal.isOpen && (
                     <OverviewModal
@@ -461,119 +622,73 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                 )}
                 <BuilderToolbar
                     isLeftSidebarOpen={isLeftSidebarOpen}
-                    isRightSidebarOpen={isRightSidebarOpen}
                     onToggleLeft={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)}
-                    onToggleRight={() => setIsRightSidebarOpen(!isRightSidebarOpen)}
                     onBack={() => navigate('/app/automations')}
                     activeWorkflow={activeWorkflow}
                     onTitleEditStart={handleTitleEditStart}
                     nodeCount={nodes.length}
                     onTestRun={handleTestRunClick}
+                    onProductionRun={handleProductionRunClick}
+                    isProductionReady={Boolean(activeWorkflow?.isActive && activeWorkflow?.publishedRevisionId)}
                     isRunning={runWorkflowMutation.isPending}
                     isSavingVersion={saveVersionMutation.isPending}
                     onSaveVersion={handleSaveVersion}
-                    onToggleHistory={() => {
-                        setIsHistorySidebarOpen(!isHistorySidebarOpen);
-                        if (!isHistorySidebarOpen && !isRightSidebarOpen) {
-                            setIsRightSidebarOpen(true);
-                        }
-                    }}
+                    onPublish={handlePublishWorkflow}
+                    isPublishing={publishWorkflowMutation.isPending}
+                    onToggleHistory={() => setIsHistorySidebarOpen(!isHistorySidebarOpen)}
                     onToggleActive={handleToggleActive}
+                    isHistorySidebarOpen={isHistorySidebarOpen}
+                    viewMode={viewMode}
+                    onViewModeChange={(mode) => setViewMode(mode)}
                 />
 
-                <div className="flex-1 p-6 overflow-hidden flex flex-col bg-slate-50">
-                    <WorkflowCanvas
-                        initialNodes={nodes}
-                        initialEdges={edges}
-                        activeNodeId={activeNodeId}
-                        onNodeClick={handleNodeClick}
-                        onAddNode={handleAddNode}
-                        onPasteNode={handlePasteNode}
-                        onNodesChangeCallback={handleNodesChange}
-                        onEdgesChangeCallback={handleEdgesChange}
-                        onEdgeDelete={handleEdgeDelete}
-                        draggedNode={draggedNode}
-                    />
+                <div className="flex-1 p-0 overflow-hidden flex flex-col bg-slate-50 relative">
+                    {viewMode === 'canvas' ? (
+                        <WorkflowCanvas
+                            initialNodes={nodes}
+                            initialEdges={edges}
+                            activeNodeId={activeNodeId}
+                            onNodeClick={handleNodeClick}
+                            onAddNode={handleAddNode}
+                            onPasteNode={handlePasteNode}
+                            onNodesChangeCallback={handleNodesChange}
+                            onEdgesChangeCallback={handleEdgesChange}
+                            onEdgeDelete={handleEdgeDelete}
+                            draggedNode={draggedNode}
+                        />
+                    ) : (
+                        <WorkflowAIAssistant workflow={activeWorkflow} onBeforeSend={flushPendingWorkflowSave} />
+                    )}
                 </div>
             </main>
 
+            {/* 3. RIGHT SIDEBAR: animated version history drawer */}
+            <HistoryDrawer
+                isOpen={isHistorySidebarOpen}
+                onClose={() => setIsHistorySidebarOpen(false)}
+                workflowId={activeWorkflowId}
+                currentWorkflow={activeWorkflow}
+            />
 
+            <NodeConfigModal
+                isOpen={isConfigModalOpen && Boolean(activeNode)}
+                onClose={() => setIsConfigModalOpen(false)}
+                activeNode={activeNode}
+                onUpdateNode={handleUpdateNode}
+                onTestWorkflow={handleTestRunClick}
+                nodes={nodes}
+                edges={edges}
+            />
 
-            {/* 3. RIGHT PANEL: AI assistant & configuration */}
-            <aside
-                className={`absolute inset-y-0 right-0 z-30 flex h-full shrink-0 flex-col border-l border-slate-200/60 bg-white/95 backdrop-blur-md transition-all duration-300 shadow-2xl md:relative md:inset-auto md:z-20 md:shadow-xl ${isRightSidebarOpen ? 'w-[min(340px,100vw)]' : 'w-0 overflow-hidden border-none opacity-0'
-                    }`}
-            >
-                <div className="flex border-b border-slate-200/60 shrink-0">
-                    {isHistorySidebarOpen ? (
-                        <>
-                            <div className="flex-1 py-3 px-4 text-sm font-semibold text-slate-800 flex items-center">
-                                Version History
-                            </div>
-                            <button
-                                onClick={() => setIsHistorySidebarOpen(false)}
-                                className="px-3 py-3 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors border-b-2 border-transparent"
-                                title="Back to Tools"
-                            >
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                                </svg>
-                            </button>
-                        </>
-                    ) : (
-                        <>
-                            <button
-                                onClick={() => setRightTab('chat')}
-                                className={`flex-1 py-3 px-1 text-center text-sm truncate font-medium transition-all border-b-2 ${rightTab === 'chat'
-                                        ? 'border-indigo-600 text-indigo-600 bg-indigo-50/30'
-                                        : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                                    }`}
-                            >
-                                AI Assistant
-                            </button>
-                            <button
-                                onClick={() => setRightTab('properties')}
-                                className={`flex-1 py-3 px-1 text-center text-sm truncate font-medium transition-all border-b-2 ${rightTab === 'properties'
-                                        ? 'border-indigo-600 text-indigo-600 bg-indigo-50/30'
-                                        : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                                    }`}
-                            >
-                                Configure
-                            </button>
-                            <button
-                                onClick={() => setIsRightSidebarOpen(false)}
-                                className="px-3 py-3 text-slate-400 hover:text-slate-700 hover:bg-slate-50 border-b-2 border-transparent transition-colors"
-                                title="Close Panel"
-                            >
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                    <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
-                                </svg>
-                            </button>
-                        </>
-                    )}
-                </div>
-                <div ref={rightPanelContentRef} className="flex-1 overflow-hidden">
-                    {isHistorySidebarOpen ? (
-                        <VersionHistorySidebar workflowId={activeWorkflowId} currentWorkflow={activeWorkflow} />
-                    ) : (
-                        rightTab === 'chat' ? (
-                            <WorkflowAIAssistant workflow={activeWorkflow} onBeforeSend={flushPendingWorkflowSave} />
-                        ) : (
-                            <PropertyInspector activeNode={activeNode} onUpdateNode={handleUpdateNode} onTestWorkflow={handleTestRunClick} nodes={nodes} edges={edges} />
-                        )
-                    )}
-                </div>
-            </aside>
-
-            {/* Test Run Modal */}
+            {/* Test Run Modal — rendered above node configuration */}
             <TestRunModal
                 isOpen={isTestRunModalOpen}
                 onClose={() => setIsTestRunModalOpen(false)}
-                onConfirm={handleTestRunConfirm}
+                onConfirm={handleRunConfirm}
                 isLoading={runWorkflowMutation.isPending}
                 workflowId={activeWorkflowId}
                 nodes={nodes}
+                runType={runMode}
             />
 
             {/* Execution results panel */}
@@ -582,6 +697,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                 onClose={() => setIsExecutionPanelOpen(false)}
                 log={lastExecutionLog}
                 isLoading={runWorkflowMutation.isPending}
+                runType={lastExecutionRunType}
             />
         </div>
     );

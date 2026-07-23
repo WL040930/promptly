@@ -3,9 +3,10 @@ import { BaseNode } from '../../../BaseNode.js';
 export default class ApprovalNode extends BaseNode {
     async execute(context) {
         const config = this.getResolvedConfig(context);
+        const assigneeType = config.assigneeType || (config.assigneeEmail ? 'external' : 'owner');
         const assigneeEmail = String(config.assigneeEmail || '').trim().toLowerCase();
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assigneeEmail)) {
-            return { success: false, error: 'A valid approver email is required.' };
+        if (assigneeType === 'external' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assigneeEmail)) {
+            return { success: false, error: 'A valid external approver email is required.' };
         }
         if (context.metadata?.runType !== 'production') {
             return { success: true, outputData: { decision: 'approved', preview: true }, targetHandle: 'approved' };
@@ -15,7 +16,7 @@ export default class ApprovalNode extends BaseNode {
             success: true,
             suspend: {
                 kind: 'approval',
-                assigneeEmail,
+                ...(assigneeType === 'external' ? { assigneeEmail } : { assigneeUserId: context.metadata?.userId || null }),
                 availableAt: new Date().toISOString(),
                 expiresAt: new Date(Date.now() + expiresAfterHours * 60 * 60 * 1000).toISOString(),
                 payload: {

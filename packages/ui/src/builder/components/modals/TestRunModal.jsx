@@ -3,6 +3,7 @@ import { useForms } from '../../../api/hooks/useForms.js';
 import { useFormEngine } from '../../../forms/engine/useFormEngine.js';
 import FieldRenderer from '../../../forms/preview/FieldRenderer.jsx';
 import Button from '../../../components/ui/Button.jsx';
+import { WORKFLOW_MODAL_LAYERS } from '../../modalLayers.js';
 
 const STORAGE_KEY = (id) => `promptly-test-payload-${id}`;
 
@@ -75,7 +76,7 @@ function RawJsonEditor({ value, onChange, error }) {
     );
 }
 
-function FormFillMode({ form, savedValues, onSubmit, isSubmitting }) {
+function FormFillMode({ form, savedValues, onSubmit, isSubmitting, isProduction = false }) {
     const engine = useFormEngine(form, onSubmit, null);
     const { values, errors, currentPage, pages, progress, handleChange, handleNextPage, handleBackPage, handleFinalSubmit } = engine;
 
@@ -127,15 +128,16 @@ function FormFillMode({ form, savedValues, onSubmit, isSubmitting }) {
                         </button>
                     )}
                 </div>
-                <Button variant="primary" onClick={isLastPage ? handleFinalSubmit : handleNextPage} isLoading={isLastPage && isSubmitting} loadingText="Running…">
-                    {isLastPage ? 'Run Test' : 'Next →'}
+                <Button variant={isProduction && isLastPage ? 'dangerSolid' : 'primary'} onClick={isLastPage ? handleFinalSubmit : handleNextPage} isLoading={isLastPage && isSubmitting} loadingText="Running…">
+                    {isLastPage ? (isProduction ? 'Run live now' : 'Run Test') : 'Next →'}
                 </Button>
             </div>
         </div>
     );
 }
 
-const TestRunModal = ({ isOpen, onClose, onConfirm, isLoading, workflowId, nodes }) => {
+const TestRunModal = ({ isOpen, onClose, onConfirm, isLoading, workflowId, nodes, runType = 'test' }) => {
+    const isProduction = runType === 'production';
     const { data: forms = [] } = useForms();
 
     const trigger = useMemo(() => detectTrigger(nodes), [nodes]);
@@ -209,7 +211,11 @@ const TestRunModal = ({ isOpen, onClose, onConfirm, isLoading, workflowId, nodes
                 ])
         );
         storage.save(workflowId, fieldValues);
-        onConfirm({ fields, responseId: `test-run-${Date.now()}`, submittedAt: new Date().toISOString() });
+        onConfirm({
+            fields,
+            responseId: `${isProduction ? 'production' : 'test'}-run-${Date.now()}`,
+            submittedAt: new Date().toISOString()
+        });
     };
 
     const handleReset = () => {
@@ -232,22 +238,25 @@ const TestRunModal = ({ isOpen, onClose, onConfirm, isLoading, workflowId, nodes
     const showFooterRun = activeTab !== 'form' || trigger.type === 'schedule';
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[100200] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" style={{ zIndex: WORKFLOW_MODAL_LAYERS.testRun }}>
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
 
                 <div className="p-5 border-b border-slate-100 flex items-start justify-between bg-slate-50/50 shrink-0">
                     <div>
                         <div className="flex items-center gap-2 mb-1">
-                            <h2 className="text-base font-bold text-slate-900">Test Run</h2>
-                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${meta.color}`}>{meta.label}</span>
+                            <h2 className="text-base font-bold text-slate-900">{isProduction ? 'Run live automation' : 'Test Run'}</h2>
+                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${isProduction ? 'bg-rose-100 text-rose-700 border-rose-200' : meta.color}`}>{isProduction ? 'Production' : meta.label}</span>
                         </div>
                         <p className="text-xs text-slate-500">
-                            {trigger.type === 'form'
+                            {isProduction
+                                ? 'This uses the published version and performs real actions. Approval steps will wait for a real decision.'
+                                : trigger.type === 'form'
                                 ? 'Fill in the form below to simulate a real submission. Values are saved for next time.'
                                 : trigger.type === 'schedule'
                                 ? 'Schedule triggers carry no payload. The test will simulate a scheduled fire.'
                                 : 'Provide the payload that will be passed to the workflow trigger.'}
                         </p>
+                        {isProduction && <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold leading-4 text-rose-800">Live run warning: emails, approvals, webhooks, and connected services may execute immediately.</div>}
                     </div>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-lg transition-colors ml-3 shrink-0">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -277,7 +286,7 @@ const TestRunModal = ({ isOpen, onClose, onConfirm, isLoading, workflowId, nodes
 
                         <div className="p-5 overflow-y-auto flex-1">
                             {activeTab === 'form' && (linkedForm ? (
-                                <FormFillMode key={formKey} form={linkedForm} savedValues={savedFormValues} onSubmit={handleFormSubmit} isSubmitting={isLoading} />
+                                <FormFillMode key={formKey} form={linkedForm} savedValues={savedFormValues} onSubmit={handleFormSubmit} isSubmitting={isLoading} isProduction={isProduction} />
                             ) : (
                                 <div className="text-center py-10">
                                     <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
@@ -301,8 +310,8 @@ const TestRunModal = ({ isOpen, onClose, onConfirm, isLoading, workflowId, nodes
                     <div className="flex items-center gap-2">
                         <Button variant="ghost" onClick={onClose} disabled={isLoading}>Cancel</Button>
                         {showFooterRun && (
-                            <Button variant="primary" onClick={trigger.type === 'schedule' ? () => onConfirm({}) : handleNonFormSubmit} isLoading={isLoading} loadingText="Running…">
-                                Run Test
+                            <Button variant={isProduction ? 'dangerSolid' : 'primary'} onClick={trigger.type === 'schedule' ? () => onConfirm({}) : handleNonFormSubmit} isLoading={isLoading} loadingText="Running…">
+                                {isProduction ? 'Run live now' : 'Run Test'}
                             </Button>
                         )}
                     </div>

@@ -118,18 +118,25 @@ function SummaryBar({ log }) {
     const passed  = log.steps?.filter(s => s.status === 'success').length ?? 0;
     const failed  = log.steps?.filter(s => s.status === 'failed').length  ?? 0;
     const total   = log.steps?.length ?? 0;
-    const overall = log.status === 'Success';
+    const normalizedStatus = String(log.status || '').toLowerCase();
+    const overall = normalizedStatus === 'success';
+    const waiting = ['waiting', 'running', 'resuming', 'pending'].includes(normalizedStatus);
+    const tone = overall ? 'emerald' : waiting ? 'amber' : 'red';
 
     return (
         <div className={`flex items-center gap-3 px-4 py-3 border-b ${
-            overall ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'
+            tone === 'emerald' ? 'bg-emerald-50 border-emerald-100' : tone === 'amber' ? 'bg-amber-50 border-amber-100' : 'bg-red-50 border-red-100'
         }`}>
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                overall ? 'bg-emerald-100' : 'bg-red-100'
+                tone === 'emerald' ? 'bg-emerald-100' : tone === 'amber' ? 'bg-amber-100' : 'bg-red-100'
             }`}>
                 {overall ? (
                     <svg className="w-4 h-4 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M20 6L9 17l-5-5" />
+                    </svg>
+                ) : waiting ? (
+                    <svg className="w-4 h-4 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
                     </svg>
                 ) : (
                     <svg className="w-4 h-4 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -139,11 +146,11 @@ function SummaryBar({ log }) {
             </div>
 
             <div className="flex-1 min-w-0">
-                <p className={`text-sm font-bold ${overall ? 'text-emerald-800' : 'text-red-800'}`}>
-                    {overall ? 'Run Succeeded' : 'Run Failed'}
+                <p className={`text-sm font-bold ${tone === 'emerald' ? 'text-emerald-800' : tone === 'amber' ? 'text-amber-800' : 'text-red-800'}`}>
+                    {overall ? 'Run Succeeded' : waiting ? 'Run Waiting' : 'Run Failed'}
                 </p>
-                <p className={`text-[11px] font-medium ${overall ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {passed}/{total} steps passed · {log.durationMs}ms total
+                <p className={`text-[11px] font-medium ${tone === 'emerald' ? 'text-emerald-600' : tone === 'amber' ? 'text-amber-600' : 'text-red-600'}`}>
+                    {waiting ? 'Waiting for approval' : `${passed}/${total} steps passed · ${log.durationMs}ms total`}
                 </p>
             </div>
 
@@ -172,8 +179,11 @@ function SummaryBar({ log }) {
  *   onClose   — () => void
  *   log       — ExecutionLog object { status, durationMs, steps, error }
  *   isLoading — boolean (while API is in flight)
+ *   runType    — 'test' or 'production'
  */
-const ExecutionPanel = ({ isOpen, onClose, log, isLoading }) => {
+const ExecutionPanel = ({ isOpen, onClose, log, isLoading, runType = 'test' }) => {
+    const isProduction = runType === 'production';
+
     return (
         <>
             {/* Backdrop */}
@@ -196,7 +206,9 @@ const ExecutionPanel = ({ isOpen, onClose, log, isLoading }) => {
                         <svg className="w-4 h-4 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <polygon points="5 3 19 12 5 21 5 3" />
                         </svg>
-                        <h3 className="text-sm font-bold text-slate-900">Test Run Results</h3>
+                        <h3 className="text-sm font-bold text-slate-900">
+                            {isProduction ? 'Live Run Results' : 'Test Run Results'}
+                        </h3>
                     </div>
                     <button
                         onClick={onClose}
@@ -217,7 +229,9 @@ const ExecutionPanel = ({ isOpen, onClose, log, isLoading }) => {
                                 <div className="w-10 h-10 rounded-full border-2 border-indigo-200" />
                                 <div className="w-10 h-10 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin absolute inset-0" />
                             </div>
-                            <p className="text-sm font-medium text-slate-500">Running workflow…</p>
+                            <p className="text-sm font-medium text-slate-500">
+                                {isProduction ? 'Running live automation…' : 'Running workflow…'}
+                            </p>
                         </div>
                     )}
 
@@ -231,7 +245,9 @@ const ExecutionPanel = ({ isOpen, onClose, log, isLoading }) => {
                             </div>
                             <div>
                                 <p className="text-sm font-semibold text-slate-700">No results yet</p>
-                                <p className="text-xs text-slate-400 mt-1">Click "Test Run" in the toolbar to execute this workflow</p>
+                                <p className="text-xs text-slate-400 mt-1">
+                                    Click {isProduction ? '"Run live"' : '"Test Run"'} in the toolbar to execute this workflow
+                                </p>
                             </div>
                         </div>
                     )}

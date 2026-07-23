@@ -380,6 +380,146 @@ button {
   }
 }
 
+/* Automation list: respond to the list's available width, not the browser window. */
+.automation-list {
+  container-type: inline-size;
+}
+
+.automation-list__head {
+  display: none;
+}
+
+.automation-row {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px 20px;
+}
+
+.automation-row__identity {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.automation-row__metadata {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+.automation-row__status,
+.automation-row__health {
+  justify-self: start;
+  white-space: nowrap;
+  width: max-content;
+}
+
+.automation-row__last-run {
+  align-items: center;
+  color: #64748b;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.automation-row__actions {
+  align-items: center;
+  border-top: 1px solid #eef2f7;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 12px;
+}
+
+.automation-row__secondary-actions {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+}
+
+@container (min-width: 42rem) {
+  .automation-row {
+    align-items: center;
+    column-gap: 24px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 8px;
+  }
+
+  .automation-row__identity {
+    grid-row: 1 / span 2;
+  }
+
+  .automation-row__metadata,
+  .automation-row__actions {
+    justify-content: flex-end;
+  }
+
+  .automation-row__actions {
+    border-top: 0;
+    padding-top: 0;
+  }
+}
+
+@container (min-width: 70rem) {
+  .automation-list__head,
+  .automation-row {
+    column-gap: 16px;
+    grid-template-columns: minmax(0, 1.5fr) 100px 140px 130px minmax(334px, auto);
+  }
+
+  .automation-list__head {
+    align-items: center;
+    display: grid;
+  }
+
+  .automation-row {
+    align-items: center;
+    row-gap: 0;
+  }
+
+  .automation-row__identity {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .automation-row__metadata {
+    display: contents;
+  }
+
+  .automation-row__status {
+    grid-column: 2;
+  }
+
+  .automation-row__health {
+    grid-column: 3;
+  }
+
+  .automation-row__last-run {
+    grid-column: 4;
+  }
+
+  .automation-row__actions {
+    grid-column: 5;
+    justify-content: flex-end;
+  }
+}
+
+@container (max-width: 31.99rem) {
+  .automation-row {
+    padding: 16px;
+  }
+}
+
 /* Spacious desktop pass: the tour should feel like a full product surface,
    not three compressed cards sitting in a row. */
 @media (min-width: 1121px) {

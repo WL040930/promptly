@@ -86,16 +86,24 @@ const applyWorkflowArtifact = async ({ artifact, userId, form, transaction }) =>
         userId
     }, { transaction });
     const nextRevision = Number(workflow.revision || 0) + (source ? 1 : 0);
-    const version = await WorkflowVersion.create({
-        workflowId: workflow.id,
-        versionNumber: source ? nextRevision : 1,
-        baseRevisionId: source ? String(workflow.revision || 1) : null,
-        nodes,
-        edges,
-        source: 'ai',
-        summary: content.summary || 'Applied AI automation proposal'
-    }, { transaction });
-    await workflow.update({ draftRevisionId: version.id, ...(source ? { nodes, edges, revision: nextRevision } : {}) }, { transaction });
+    if (source) {
+        // Applying an AI proposal changes the working draft. The user can
+        // explicitly save it to history from the builder when ready.
+        await workflow.update({ nodes, edges, revision: nextRevision }, { transaction });
+    } else {
+        // A newly created automation still receives its initial saved version
+        // so it has a stable draft revision from the start.
+        const version = await WorkflowVersion.create({
+            workflowId: workflow.id,
+            versionNumber: 1,
+            baseRevisionId: null,
+            nodes,
+            edges,
+            source: 'ai',
+            summary: content.summary || 'Applied AI automation proposal'
+        }, { transaction });
+        await workflow.update({ draftRevisionId: version.id }, { transaction });
+    }
     return workflow;
 };
 
