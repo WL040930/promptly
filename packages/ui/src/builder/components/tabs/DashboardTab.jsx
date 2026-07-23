@@ -150,7 +150,7 @@ const DashboardTab = () => {
         const active = workflows.filter(workflow => statusForWorkflow(workflow) === 'Active');
         const drafts = workflows.filter(workflow => statusForWorkflow(workflow) === 'Draft');
         const paused = workflows.filter(workflow => statusForWorkflow(workflow) === 'Paused');
-        const failures = recentLogs.filter(log => log.status === 'Failed');
+        const failures = recentLogs.filter(log => String(log.status || '').toLowerCase() === 'failed');
         const failureWorkflowIds = new Set(failures.map(log => log.workflowId).filter(Boolean));
 
         const failureItems = failures.slice(0, 3).map(log => ({
@@ -250,7 +250,7 @@ const DashboardTab = () => {
                                 <div className="mt-5 space-y-1">
                                     {recentLogs.length > 0 ? recentLogs.slice(0, 5).map(log => {
                                         const normalizedStatus = String(log.status || '').toLowerCase();
-                                        const success = normalizedStatus === 'success';
+                                        const success = ['success', 'succeeded'].includes(normalizedStatus);
                                         const waiting = ['waiting', 'running', 'resuming', 'pending'].includes(normalizedStatus);
                                         return <button key={log.id} type="button" onClick={() => openRun(log.id)} className="group flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition hover:bg-slate-50"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${success ? 'bg-emerald-50 text-emerald-600' : waiting ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600'}`}>{success ? <CheckCircle2 size={16} /> : waiting ? <Clock3 size={16} /> : <XCircle size={16} />}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-800">{workflowNameForLog(log)}</span><span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400"><span>{waiting ? 'Waiting for approval' : log.trigger || 'Manual run'}</span><span>·</span><span>{formatRelative(log.time)}</span></span></span><span className="shrink-0 text-[11px] font-medium text-slate-400">{formatDuration(log.durationMs)}</span></button>;
                                     }) : <EmptyPanel icon={Activity} title="No executions yet" detail="Run an automation to start building an activity history." onAction={() => go('workflows')} action="Open automations" />}

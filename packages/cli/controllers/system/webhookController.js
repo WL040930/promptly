@@ -60,7 +60,7 @@ export const handleWebhook = asyncHandler(async (req, res) => {
             } catch (error) {
                 return res.status(504).json({ status: 'failed', webhookId, error: error.message });
             }
-            if (log.status !== 'Success') return res.status(502).json({ status: 'failed', webhookId, error: log.error || 'Synchronous workflow failed.' });
+            if (log.status !== 'succeeded') return res.status(502).json({ status: 'failed', webhookId, error: log.error || 'Synchronous workflow failed.' });
             const output = log.output || {};
             for (const [name, value] of Object.entries(output.headers || {})) res.setHeader(name, value);
             return res.status(Number(output.statusCode) || 200).send(output.body ?? output.output ?? { status: 'ok', webhookId });

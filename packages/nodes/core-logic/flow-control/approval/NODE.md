@@ -2,7 +2,7 @@
 title: "Approval"
 type: logic
 subType: approval
-description: "Pause until one assigned person approves or rejects"
+description: "Pause until the automation owner approves or rejects"
 implementationStatus: beta
 ui:
   icon: check
@@ -14,4 +14,4 @@ ui:
 
 # Approval Node
 
-Pause a production workflow and create a review item for one assignee. The run resumes through the approved or rejected output route.
+Pause a production workflow and create a review item in the automation owner's Approvals inbox. The run resumes through the approved or rejected output route.

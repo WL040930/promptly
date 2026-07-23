@@ -19,8 +19,8 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
         sequelize.query(
             `SELECT
                 COUNT(*) AS "totalRuns",
-                COUNT(*) FILTER (WHERE status = 'Success') AS "successRuns",
-                COUNT(*) FILTER (WHERE status IN ('Success', 'Failed')) AS "completedRuns"
+                COUNT(*) FILTER (WHERE status = 'succeeded') AS "successRuns",
+                COUNT(*) FILTER (WHERE status IN ('succeeded', 'failed')) AS "completedRuns"
              FROM automation_runs
              WHERE "userId" = :userId`,
             { replacements: { userId }, type: QueryTypes.SELECT }
@@ -77,7 +77,7 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
             action: `${log.workflow ? log.workflow.name : 'Workflow'} ${log.status}`,
             detail: `Triggered by ${log.trigger}`,
             time: log.time,
-            type: String(log.status || '').toLowerCase() === 'success' ? 'success' : ['waiting', 'running', 'resuming', 'pending'].includes(String(log.status || '').toLowerCase()) ? 'pending' : 'error',
+            type: ['success', 'succeeded'].includes(String(log.status || '').toLowerCase()) ? 'success' : ['waiting', 'running', 'resuming', 'pending'].includes(String(log.status || '').toLowerCase()) ? 'pending' : 'error',
             latency: `${log.durationMs}ms`
         }))
     });

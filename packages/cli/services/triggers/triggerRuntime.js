@@ -181,7 +181,7 @@ const processPendingEvents = async ({ limit = 10 } = {}) => {
                     causationId: event.causationId,
                     depth: event.depth
                 });
-                if (execution.status === 'Failed') throw new Error(execution.error || 'Triggered workflow execution failed.');
+                if (String(execution.status || '').toLowerCase() === 'failed') throw new Error(execution.error || 'Triggered workflow execution failed.');
                 await event.update({ status: 'succeeded', processedAt: new Date(), lastError: null });
             }
         } catch (error) {

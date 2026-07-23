@@ -333,7 +333,6 @@ export const compileWorkflowDraft = ({
     requiredCapabilities = [],
     formSchema = null,
     respondentEmailFieldId = null,
-    approverEmail = null,
     nodes = [],
     edges = []
 } = {}) => {
@@ -363,11 +362,10 @@ export const compileWorkflowDraft = ({
 
     if (wantsApplicationReview) {
         const approvals = nextNodes.filter(node => node?.subType === 'approval');
-        if (approvals.length === 1 && approvals[0].config.assigneeType !== 'external') {
-            approvals[0].config.assigneeType = 'owner';
-            // Retain the authenticated owner email for legacy serializers and
-            // older saved drafts; runtime ownership is determined by the type.
-            if (approverEmail) approvals[0].config.assigneeEmail = approverEmail;
+        if (approvals.length === 1) {
+            delete approvals[0].config.assigneeType;
+            delete approvals[0].config.assigneeEmail;
+            delete approvals[0].config.expiresAfterHours;
             repairs.push({ code: 'APPROVER_DEFAULTED_TO_OWNER', nodeId: approvals[0].id });
         }
     }
@@ -385,7 +383,6 @@ export const validateGeneratedWorkflowCapabilities = ({
     requiredCapabilities = [],
     formSchema = null,
     respondentEmailFieldId = null,
-    approverEmail = null,
     nodes = [],
     edges = []
 } = {}) => {
@@ -450,14 +447,6 @@ export const validateGeneratedWorkflowCapabilities = ({
         if (formTriggers.length === 0) issues.push({ code: 'FORM_SUBMISSION_TRIGGER_MISSING', path: 'nodes', message: 'A form-submission trigger is required before application review.' });
         if (approvalNodes.length === 0) issues.push({ code: 'APPROVAL_NODE_MISSING', path: 'nodes', message: 'An approval node is required to review each application.' });
         if (emailActions.length < 2) issues.push({ code: 'APPROVAL_BRANCH_EMAILS_MISSING', path: 'nodes', message: 'Approved and rejected branches each need an email action.' });
-        if (approvalNodes.length > 0) {
-            const approvalConfig = approvalNodes[0].config || {};
-            const assigneeType = approvalConfig.assigneeType || (approvalConfig.assigneeEmail ? 'external' : 'owner');
-            const configuredApprover = String(approvalConfig.assigneeEmail || '').trim().toLowerCase();
-            if (assigneeType === 'external' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(configuredApprover)) {
-                issues.push({ code: 'APPROVER_EMAIL_MISSING', path: `nodes.${approvalNodes[0].id}.config.assigneeEmail`, message: 'An external approval needs a valid approver email.' });
-            }
-        }
         if (approvalNodes.length > 0) {
             const approval = approvalNodes[0];
             const approvedReachable = reachableFrom([approval], edges.filter(edge => !edge.sourceHandle || edge.sourceHandle === 'approved'));
@@ -535,7 +524,7 @@ export const layoutWorkflowNodes = (nodes = [], edges = []) => {
     });
 };
 
-export const assembleWorkflow = async ({ message, specs, workflowName, formId, formSchema = null, formBinding = null, respondentEmailFieldId = null, approverEmail = null, requiredCapabilities = [], resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
+export const assembleWorkflow = async ({ message, specs, workflowName, formId, formSchema = null, formBinding = null, respondentEmailFieldId = null, requiredCapabilities = [], resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
     const formFields = Array.isArray(formSchema?.fields)
         ? formSchema.fields.map(field => ({ id: field.id, label: field.label || field.name || '', type: field.type, required: field.required === true }))
         : [];
@@ -608,7 +597,7 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId, f
     });
     if (!nodes.length) throw new Error('Assembler returned no valid nodes');
     if (nodes[0].type !== 'trigger') throw new Error('Assembler must place a trigger first');
-    const compiled = compileWorkflowDraft({ requiredCapabilities, formSchema, respondentEmailFieldId, approverEmail, nodes, edges });
+    const compiled = compileWorkflowDraft({ requiredCapabilities, formSchema, respondentEmailFieldId, nodes, edges });
     if (compiled.repairs.length > 0) {
         await recordAiDiagnostic({
             event: 'workflow_draft_repaired',
@@ -636,7 +625,6 @@ export const assembleWorkflow = async ({ message, specs, workflowName, formId, f
         requiredCapabilities,
         formSchema,
         respondentEmailFieldId,
-        approverEmail,
         nodes: positionedNodes,
         edges: compiled.edges
     });
@@ -886,7 +874,7 @@ export const compileWorkflowEdits = ({ currentWorkflow = {}, operations = [], sp
     return { nodes, edges, originalNodes, originalEdges, refs };
 };
 
-export const patchWorkflow = async ({ message, currentWorkflow, classification, specs, formSchema = null, respondentEmailFieldId = null, approverEmail = null, requiredCapabilities = [], resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
+export const patchWorkflow = async ({ message, currentWorkflow, classification, specs, formSchema = null, respondentEmailFieldId = null, requiredCapabilities = [], resourceContext = {}, provider = providerJson, instructionReader = readInstruction, registry = NodeRegistry }) => {
     const formFields = Array.isArray(formSchema?.fields)
         ? formSchema.fields.map(field => ({ id: field.id, label: field.label || field.name || '', type: field.type, required: field.required === true }))
         : [];
@@ -918,7 +906,7 @@ export const patchWorkflow = async ({ message, currentWorkflow, classification, 
         }
     }
     if (!applied) throw lastError || new Error('Workflow edit could not be compiled.');
-    const compiled = compileWorkflowDraft({ requiredCapabilities, formSchema, respondentEmailFieldId, approverEmail, nodes: applied.nodes, edges: applied.edges });
+    const compiled = compileWorkflowDraft({ requiredCapabilities, formSchema, respondentEmailFieldId, nodes: applied.nodes, edges: applied.edges });
     const resourceIssues = validateGeneratedResourceValues({ nodes: compiled.nodes, specs, resourceContext });
     if (resourceIssues.length > 0) {
         await recordAiDiagnostic({
@@ -936,7 +924,6 @@ export const patchWorkflow = async ({ message, currentWorkflow, classification, 
         requiredCapabilities,
         formSchema,
         respondentEmailFieldId,
-        approverEmail,
         nodes: compiled.nodes,
         edges: compiled.edges
     });

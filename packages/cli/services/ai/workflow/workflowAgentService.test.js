@@ -268,7 +268,7 @@ test('request capability detection requires explicit approval branches for revie
 test('application review capability validates both approval output branches', () => {
     const nodes = [
         { id: 'trigger', type: 'trigger', subType: 'form-submission' },
-        { id: 'approval', type: 'logic', subType: 'approval', config: { assigneeEmail: 'owner@example.com' } },
+        { id: 'approval', type: 'logic', subType: 'approval', config: {} },
         { id: 'approved_mail', type: 'action', subType: 'email', config: {} },
         { id: 'rejected_mail', type: 'action', subType: 'email', config: {} }
     ];
@@ -279,7 +279,6 @@ test('application review capability validates both approval output branches', ()
     ];
     assert.deepEqual(validateGeneratedWorkflowCapabilities({
         requiredCapabilities: ['application_review_decision'],
-        approverEmail: 'owner@example.com',
         nodes,
         edges
     }), []);
@@ -288,17 +287,16 @@ test('application review capability validates both approval output branches', ()
 test('application review binds both branch emails to the required applicant field', () => {
     const result = compileWorkflowDraft({
         requiredCapabilities: ['respondent_confirmation', 'application_review_decision'],
-        approverEmail: 'owner@example.com',
         formSchema: { fields: [{ id: 'email', type: 'email', label: 'Email', required: true }] },
         nodes: [
             { id: 'trigger', type: 'trigger', subType: 'form-submission', config: {} },
-            { id: 'approval', type: 'logic', subType: 'approval', config: { assigneeEmail: 'invented@example.com' } },
+            { id: 'approval', type: 'logic', subType: 'approval', config: { assigneeEmail: 'invented@example.com', assigneeType: 'external', expiresAfterHours: 24 } },
             { id: 'approved_mail', type: 'action', subType: 'email', config: { to: 'invented@example.com' } },
             { id: 'rejected_mail', type: 'action', subType: 'email', config: { to: 'invented@example.com' } }
         ],
         edges: []
     });
-    assert.equal(result.nodes.find(node => node.id === 'approval').config.assigneeEmail, 'owner@example.com');
+    assert.deepEqual(result.nodes.find(node => node.id === 'approval').config, {});
     assert.equal(result.nodes.find(node => node.id === 'approved_mail').config.to, '{{trigger.fields.email}}');
     assert.equal(result.nodes.find(node => node.id === 'rejected_mail').config.to, '{{trigger.fields.email}}');
 });

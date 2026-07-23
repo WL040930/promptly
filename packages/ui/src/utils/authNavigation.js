@@ -8,11 +8,11 @@
 export const getAuthRedirect = ({ user, isLoading, routeState }) => {
     if (isLoading) return null;
 
-    if (user && !routeState.isDashboard && !routeState.isOnboarding && !routeState.isResetPassword && !routeState.isPublicForm && !routeState.isApprovalAction) {
+    if (user && !routeState.isDashboard && !routeState.isOnboarding && !routeState.isResetPassword && !routeState.isPublicForm) {
         return '/app/home';
     }
 
-    if (!user && (routeState.isDashboard || routeState.isOnboarding) && !routeState.isApprovalAction) {
+    if (!user && (routeState.isDashboard || routeState.isOnboarding)) {
         return '/login';
     }
 

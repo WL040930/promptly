@@ -19,7 +19,15 @@ const buildLogWhereClause = async ({ userId, search, status, workflowId }) => {
     const whereClause = { userId };
 
     if (status && status !== 'All') {
-        whereClause.status = status;
+        const normalizedStatus = {
+            success: 'succeeded',
+            succeeded: 'succeeded',
+            waiting: 'waiting',
+            running: 'running',
+            resuming: 'resuming',
+            failed: 'failed'
+        }[String(status).trim().toLowerCase()];
+        if (normalizedStatus) whereClause.status = normalizedStatus;
     }
 
     if (workflowId) {

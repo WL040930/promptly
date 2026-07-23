@@ -87,7 +87,7 @@ const getWorkflowErrorMessage = error => error?.payload?.issues?.[0]?.message ||
 const getHealth = (workflow, logs) => {
     const workflowLogs = logs.filter(log => log.workflowId === workflow.id || log.workflow?.id === workflow.id);
     if (workflowLogs.length === 0) return 'No runs';
-    return workflowLogs.slice(0, 5).some(log => log.status === 'Failed') ? 'Needs attention' : 'Healthy';
+    return workflowLogs.slice(0, 5).some(log => String(log.status || '').toLowerCase() === 'failed') ? 'Needs attention' : 'Healthy';
 };
 
 const getLatestLog = (workflow, logs) => logs
@@ -170,7 +170,7 @@ function WorkflowDetailDrawer({ workflowId, onClose, onClosed, isClosing = false
     const { data: versions = [], isFetching: isVersionsFetching } = useWorkflowVersions(workflowId);
     const restoreVersionMutation = useRestoreWorkflowVersion();
     const logs = logResponse?.data || [];
-    const latestFailure = logs.find(log => log.status === 'Failed');
+    const latestFailure = logs.find(log => String(log.status || '').toLowerCase() === 'failed');
     const health = workflow ? getHealth(workflow, logs) : 'No runs';
     const nodeCount = workflow?.nodes?.length || 0;
     const activationIssue = getActivationIssue(workflow);
@@ -290,7 +290,7 @@ function InfoCell({ label, value, icon: Icon }) {
 
 function ExecutionRow({ log }) {
     const normalizedStatus = String(log.status || '').toLowerCase();
-    const success = normalizedStatus === 'success';
+    const success = ['success', 'succeeded'].includes(normalizedStatus);
     const waiting = ['waiting', 'running', 'resuming', 'pending'].includes(normalizedStatus);
     const failed = normalizedStatus === 'failed';
     const color = success ? 'text-emerald-600' : waiting ? 'text-amber-600' : failed ? 'text-red-500' : 'text-slate-500';
@@ -384,8 +384,8 @@ export default function AutomationCenter() {
                 setRunWorkflow(null);
                 setSelectedWorkflowId(runWorkflow.id);
                 toast.success(runType === 'production'
-                    ? (result?.status === 'Success' ? 'Live automation completed successfully.' : 'Live automation started.')
-                    : (result?.status === 'Success' ? 'Automation test completed successfully.' : 'Automation test finished with an error.'));
+                    ? (String(result?.status || '').toLowerCase() === 'succeeded' ? 'Live automation completed successfully.' : 'Live automation started.')
+                    : (String(result?.status || '').toLowerCase() === 'succeeded' ? 'Automation test completed successfully.' : 'Automation test finished with an error.'));
                 queryClient.invalidateQueries({ queryKey: ['executionLogs'] });
                 queryClient.invalidateQueries({ queryKey: ['executionLog'] });
             },

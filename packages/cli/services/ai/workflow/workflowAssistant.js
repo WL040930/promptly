@@ -151,7 +151,6 @@ const runWorkflowTurn = async ({ workflow, userId, userEmail, text, clarificatio
         specs,
         formSchema: form?.toJSON?.() || null,
         respondentEmailFieldId: form?.respondentEmailFieldId || form?.settings?.respondentEmailFieldId || null,
-        approverEmail: userEmail || null,
         requiredCapabilities,
         resourceContext
     });

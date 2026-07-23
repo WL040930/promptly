@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { navigateTo } from '../utils/router.js';
+import { apiRequest } from '../api/client.js';
 import SettingsModal from '../dashboard/SettingsModal.jsx';
 import Button from '../components/ui/Button.jsx';
 
@@ -41,6 +43,13 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [settingsTab, setSettingsTab] = useState('general');
     const activePage = route ? pageForRoute(route) : 'home';
+    const approvalSummaryQuery = useQuery({
+        queryKey: ['approval-summary'],
+        queryFn: () => apiRequest('/api/continuations/approvals/summary'),
+        refetchInterval: 10000,
+        refetchOnWindowFocus: true
+    });
+    const pendingApprovalCount = Number(approvalSummaryQuery.data?.pendingCount || 0);
 
     useEffect(() => {
         if (route?.page === 'settings') {
@@ -88,9 +97,10 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
 
                     <div className="mb-1 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{!collapsed && 'Workspace'}</div>
                     {navigation.map(item => (
-                        <button key={item.page} type="button" onClick={() => go(item.page)} title={item.label} className={`workspace-nav-item group relative flex items-center gap-3 rounded-xl border p-2.5 text-left font-semibold transition-colors ${activePage === item.page ? 'is-active border-white/10 bg-white text-[#5143cc] shadow-sm' : 'border-transparent text-slate-400 hover:bg-white/10 hover:text-white'} ${collapsed ? 'justify-center' : ''}`}>
+                        <button key={item.page} type="button" onClick={() => go(item.page)} title={item.label} aria-label={item.page === 'approvals' && pendingApprovalCount > 0 ? `${item.label}, ${pendingApprovalCount} pending` : item.label} className={`workspace-nav-item group relative flex items-center gap-3 rounded-xl border p-2.5 text-left font-semibold transition-colors ${activePage === item.page ? 'is-active border-white/10 bg-white text-[#5143cc] shadow-sm' : 'border-transparent text-slate-400 hover:bg-white/10 hover:text-white'} ${collapsed ? 'justify-center' : ''}`}>
                             {activePage === item.page && <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-[#c8f17b]" />}
                             <span className="shrink-0">{item.icon}</span>{!collapsed && <span className="truncate">{item.label}</span>}
+                            {item.page === 'approvals' && pendingApprovalCount > 0 && <span className={`${collapsed ? 'absolute right-1.5 top-1.5 h-2.5 w-2.5' : 'ml-auto min-w-5 px-1.5'} flex items-center justify-center rounded-full bg-amber-400 text-[10px] font-bold leading-5 text-[#171827]`}>{!collapsed && pendingApprovalCount > 99 ? '99+' : !collapsed ? pendingApprovalCount : null}</span>}
                         </button>
                     ))}
 

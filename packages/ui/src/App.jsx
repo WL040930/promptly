@@ -6,7 +6,6 @@ import { getDashboardPath, getRouteState, navigate, parsePath } from './utils/ro
 import AppLoadingSkeleton from './components/ui/AppLoadingSkeleton.jsx';
 import WorkspaceShell from './workspace/WorkspaceShell.jsx';
 import WorkspacePageRouter from './workspace/WorkspacePageRouter.jsx';
-import ApprovalsPage from './workspace/ApprovalsPage.jsx';
 import { getAuthRedirect } from './utils/authNavigation.js';
 
 const LandingPage = React.lazy(() => import('./landing/LandingPage.jsx'));
@@ -64,7 +63,6 @@ function App() {
     };
 
     if (routeState.isPublicForm) return <PublicFormView />;
-    if (routeState.isApprovalAction) return <ApprovalsPage />;
     if (isLoading) return <AppLoadingFallback />;
 
     if (routeState.isOnboarding && user) {

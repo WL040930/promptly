@@ -6,8 +6,7 @@ const dashboardRoute = {
     isDashboard: true,
     isOnboarding: false,
     isResetPassword: false,
-    isPublicForm: false,
-    isApprovalAction: false
+    isPublicForm: false
 };
 
 test('keeps a deep link while the authenticated session is loading', () => {

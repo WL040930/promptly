@@ -28,7 +28,7 @@ export function isWaitingStatus(status) {
 }
 
 export function isSuccessStatus(status) {
-    return normalizeStatus(status) === 'success';
+    return ['success', 'succeeded'].includes(normalizeStatus(status));
 }
 
 export function isFailedStatus(status) {

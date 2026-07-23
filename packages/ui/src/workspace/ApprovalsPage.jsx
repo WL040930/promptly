@@ -5,7 +5,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowUpRight,
-  CalendarClock,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -15,13 +14,11 @@ import {
   Inbox,
   Search,
   ShieldCheck,
-  UserRound,
   Workflow,
   X,
   XCircle,
 } from "lucide-react";
 import { apiRequest } from "../api/client.js";
-import { getQuery } from "../utils/router.js";
 import { useToast } from "../context/ToastContext.jsx";
 import ConfirmModal from "../components/modals/ConfirmModal.jsx";
 import Button from "../components/ui/Button.jsx";
@@ -35,17 +32,6 @@ const formatDate = (value) =>
         timeStyle: "short",
       }).format(new Date(value))
     : "Unknown time";
-const formatRelative = (value) => {
-  if (!value) return "Unknown";
-  const delta = Date.now() - new Date(value).getTime();
-  const minutes = Math.max(0, Math.floor(delta / 60000));
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-};
-
 const statusMeta = (status) =>
   ({
     pending: { label: "Needs decision", tone: "amber", Icon: Clock3 },
@@ -206,15 +192,11 @@ function ApprovalList({ approvals, selectedId, tab, onSelect }) {
             </div>
             <div className="flex shrink-0 flex-col items-end gap-1.5 text-right">
               <span className="text-xs font-medium text-slate-800">
-                {item.expiresAt
-                  ? `Expires ${formatRelative(item.expiresAt)}`
-                  : "No expiry"}
+                Awaiting your decision
               </span>
               {tab === "pending" && (
                 <span className="text-xs text-slate-400">
-                  {item.approval?.assignee === "external_approver"
-                    ? "External approver"
-                    : "Automation owner"}
+                  Assigned to you
                 </span>
               )}
             </div>
@@ -254,13 +236,7 @@ function ReviewEntries({ item }) {
   );
 }
 
-function ApprovalInspector({
-  item,
-  tokenMode,
-  isOpen = true,
-  onClose,
-  onDecision,
-}) {
+function ApprovalInspector({ item, isOpen = true, onClose, onDecision }) {
   return (
     <div
       className={`shrink-0 overflow-hidden transition-[width] duration-300 ease-out motion-reduce:transition-none ${isOpen ? "w-full lg:w-[420px]" : "w-0"}`}
@@ -277,17 +253,15 @@ function ApprovalInspector({
               {item.id}
             </span>
           </div>
-          {!tokenMode && (
-            <button
-              type="button"
-              onClick={onClose}
-              title="Close inspector"
-              aria-label="Close inspector"
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
-            >
-              <X className="h-[18px] w-[18px]" />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close inspector"
+            aria-label="Close inspector"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+          >
+            <X className="h-[18px] w-[18px]" />
+          </button>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
           <div className="flex flex-col gap-6">
@@ -323,20 +297,9 @@ function ApprovalInspector({
                 value={formatDate(item.createdAt)}
               />
               <Detail
-                icon={CalendarClock}
-                label="Expires"
-                value={
-                  item.expiresAt ? formatDate(item.expiresAt) : "No expiry"
-                }
-              />
-              <Detail
-                icon={UserRound}
+                icon={ShieldCheck}
                 label="Assigned to"
-                value={
-                  item.approval?.assignee === "external_approver"
-                    ? item.assigneeEmail || "External approver"
-                    : "Automation owner"
-                }
+                value="You"
               />
               <Detail
                 icon={ShieldCheck}
@@ -434,8 +397,6 @@ function ApprovalSkeleton() {
 export default function ApprovalsPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
-  const [tokenValue] = useState(() => getQuery().get("token"));
-  const tokenMode = Boolean(tokenValue);
   const [tab, setTab] = useState("pending");
   const [selectedId, setSelectedId] = useState(null);
   const [searchInput, setSearchInput] = useState("");
@@ -443,7 +404,6 @@ export default function ApprovalsPage() {
   const [decisionModal, setDecisionModal] = useState(null);
   const [decisionNote, setDecisionNote] = useState("");
   const [isResolving, setIsResolving] = useState(false);
-  const [resolvedTokenDetail, setResolvedTokenDetail] = useState(null);
   const [inspectorId, setInspectorId] = useState(null);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const inspectorOpenFrame = useRef(null);
@@ -461,28 +421,15 @@ export default function ApprovalsPage() {
     { scope: containerRef },
   );
 
-  const tokenQuery = useQuery({
-    queryKey: ["approval-token", tokenValue],
-    enabled: tokenMode,
-    queryFn: () =>
-      apiRequest(
-        `/api/continuations/approvals/token/${encodeURIComponent(tokenValue)}`,
-      ),
-  });
   const listQuery = useQuery({
     queryKey: ["approvals", tab],
-    enabled: !tokenMode,
     queryFn: () => apiRequest(`/api/continuations/approvals?status=${tab}`),
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
   });
-  const rawApprovals = tokenMode
-    ? resolvedTokenDetail
-      ? [resolvedTokenDetail]
-      : tokenQuery.data
-        ? [tokenQuery.data]
-        : []
-    : Array.isArray(listQuery.data)
-      ? listQuery.data
-      : listQuery.data?.items || [];
+  const rawApprovals = Array.isArray(listQuery.data)
+    ? listQuery.data
+    : listQuery.data?.items || [];
   const search = searchInput.trim().toLowerCase();
   const approvals = useMemo(
     () =>
@@ -508,11 +455,9 @@ export default function ApprovalsPage() {
       ).filter(([id]) => id),
     [rawApprovals],
   );
-  const inspectorItem = tokenMode
-    ? approvals[0]
-    : approvals.find((item) => item.id === inspectorId) || null;
-  const isLoading = tokenMode ? tokenQuery.isPending : listQuery.isPending;
-  const isError = tokenMode ? tokenQuery.isError : listQuery.isError;
+  const inspectorItem = approvals.find((item) => item.id === inspectorId) || null;
+  const isLoading = listQuery.isPending;
+  const isError = listQuery.isError;
 
   useEffect(
     () => () => {
@@ -521,10 +466,6 @@ export default function ApprovalsPage() {
     },
     [],
   );
-
-  useEffect(() => {
-    if (tokenMode && inspectorItem) setIsInspectorOpen(true);
-  }, [tokenMode, inspectorItem]);
 
   useEffect(() => {
     if (isInspectorOpen || !inspectorId) return undefined;
@@ -573,9 +514,7 @@ export default function ApprovalsPage() {
     setIsResolving(true);
     const { item, decision } = decisionModal;
     try {
-      const path = tokenMode
-        ? `/api/continuations/approvals/${encodeURIComponent(tokenValue)}/resolve`
-        : `/api/continuations/approvals/id/${encodeURIComponent(item.id)}/resolve`;
+      const path = `/api/continuations/approvals/id/${encodeURIComponent(item.id)}/resolve`;
       const result = await apiRequest(path, {
         method: "POST",
         body: JSON.stringify({
@@ -589,13 +528,9 @@ export default function ApprovalsPage() {
           : "Rejection recorded. The rejected branch is continuing.",
       );
       setDecisionModal(null);
-      if (tokenMode) {
-        setResolvedTokenDetail(result.continuation);
-        window.history.replaceState({}, "", "/app/approvals");
-      } else {
-        await queryClient.invalidateQueries({ queryKey: ["approvals"] });
-        closeInspector();
-      }
+      await queryClient.invalidateQueries({ queryKey: ["approvals"] });
+      await queryClient.invalidateQueries({ queryKey: ["approval-summary"] });
+      closeInspector();
     } catch (error) {
       toast.error(error.message || "This approval could not be resolved.");
     } finally {
@@ -622,27 +557,25 @@ export default function ApprovalsPage() {
               branch continues.
             </p>
           </div>
-          {!tokenMode && (
-            <ApprovalFilters
-              search={searchInput}
-              workflowFilter={workflowFilter}
-              workflows={workflows}
-              tab={tab}
-              onSearch={(value) => {
-                setSearchInput(value);
-                closeInspector();
-              }}
-              onWorkflow={(value) => {
-                setWorkflowFilter(value);
-                closeInspector();
-              }}
-              onTab={(value) => {
-                setTab(value);
-                closeInspector();
-              }}
-              onClear={clearFilters}
-            />
-          )}
+          <ApprovalFilters
+            search={searchInput}
+            workflowFilter={workflowFilter}
+            workflows={workflows}
+            tab={tab}
+            onSearch={(value) => {
+              setSearchInput(value);
+              closeInspector();
+            }}
+            onWorkflow={(value) => {
+              setWorkflowFilter(value);
+              closeInspector();
+            }}
+            onTab={(value) => {
+              setTab(value);
+              closeInspector();
+            }}
+            onClear={clearFilters}
+          />
           {isLoading ? (
             <ApprovalSkeleton />
           ) : isError ? (
@@ -652,14 +585,12 @@ export default function ApprovalsPage() {
                 Unable to load approvals
               </p>
               <p className="mt-1 text-sm text-rose-700">
-                The request may have expired or the service may be unavailable.
+                The service may be unavailable. Please try again.
               </p>
               <Button
                 variant="outline"
                 className="mt-4"
-                onClick={() =>
-                  tokenMode ? tokenQuery.refetch() : listQuery.refetch()
-                }
+                onClick={() => listQuery.refetch()}
               >
                 Try again
               </Button>
@@ -668,24 +599,12 @@ export default function ApprovalsPage() {
             <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/70 p-12 text-center">
               <ShieldCheck className="h-9 w-9 text-indigo-300" />
               <p className="mt-4 font-semibold text-slate-700">
-                {tokenMode
-                  ? "This approval is no longer available"
-                  : tab === "pending"
-                    ? "No approvals waiting"
-                    : "No decisions found"}
+                {tab === "pending" ? "No approvals waiting" : "No decisions found"}
               </p>
               <p className="mt-1 text-sm text-slate-400">
-                {tokenMode
-                  ? "The link may have expired or already been used."
-                  : tab === "pending"
-                    ? "New approval requests will appear here when a workflow pauses."
-                    : "Resolved workflow decisions will appear here."}
-              </p>
-            </div>
-          ) : tokenMode ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-sm text-slate-500">
-                Opening approval details…
+                {tab === "pending"
+                  ? "New approval requests will appear here when a workflow pauses."
+                  : "Resolved workflow decisions will appear here."}
               </p>
             </div>
           ) : (
@@ -710,7 +629,6 @@ export default function ApprovalsPage() {
       {inspectorItem && (
         <ApprovalInspector
           item={inspectorItem}
-          tokenMode={tokenMode}
           isOpen={isInspectorOpen}
           onClose={closeInspector}
           onDecision={openDecision}

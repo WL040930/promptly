@@ -119,7 +119,7 @@ function SummaryBar({ log }) {
     const failed  = log.steps?.filter(s => s.status === 'failed').length  ?? 0;
     const total   = log.steps?.length ?? 0;
     const normalizedStatus = String(log.status || '').toLowerCase();
-    const overall = normalizedStatus === 'success';
+    const overall = ['success', 'succeeded'].includes(normalizedStatus);
     const waiting = ['waiting', 'running', 'resuming', 'pending'].includes(normalizedStatus);
     const tone = overall ? 'emerald' : waiting ? 'amber' : 'red';
 

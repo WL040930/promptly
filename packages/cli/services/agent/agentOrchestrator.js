@@ -323,7 +323,7 @@ const designForm = async ({ run, session, message, form, clarificationMode = DEF
     }
 };
 
-const designWorkflow = async ({ run, userId, message, workflow, form, formSchema = null, formArtifactId = null, formBinding = null, respondentEmailFieldId = null, approverEmail = null, onEvent = null }) => {
+const designWorkflow = async ({ run, userId, message, workflow, form, formSchema = null, formArtifactId = null, formBinding = null, respondentEmailFieldId = null, onEvent = null }) => {
     const step = await createStep(run, { stepKey: 'design_workflow', type: 'design_workflow' });
     await startStep(step);
     try {
@@ -351,7 +351,6 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
                 resourceContext,
                 formSchema: form?.toJSON?.() || form || formSchema || null,
                 respondentEmailFieldId,
-                approverEmail,
                 requiredCapabilities
             });
             const content = {
@@ -389,7 +388,6 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
             formSchema: form?.toJSON?.() || form || formSchema || null,
             formBinding,
             respondentEmailFieldId,
-            approverEmail,
             requiredCapabilities,
             resourceContext
         });
@@ -515,7 +513,6 @@ const createSolutionCapabilityRegistry = ({
                     source: { artifactKey: 'form_proposal', appliedResource: 'id' }
                 } : null,
                 respondentEmailFieldId: context.input?.context?.respondentEmailFieldId || null,
-                approverEmail: actorEmail,
                 onEvent
             });
             if (result.status === 'clarification') {
@@ -979,8 +976,7 @@ export const resumeAgentAfterForm = async ({ run, session, userId, formId, onEve
     const form = await Form.findOne({ where: { id: formId, userId } });
     if (!form) throw new Error('The approved form could not be found.');
     const existingWorkflow = context.workflowId ? await Workflow.findOne({ where: { id: context.workflowId, userId } }) : null;
-    const actor = await User.findByPk(userId, { attributes: ['email'] });
-    const result = await designWorkflow({ run, userId, message: request, workflow: existingWorkflow, form, formArtifactId: null, approverEmail: actor?.email || null, onEvent });
+    const result = await designWorkflow({ run, userId, message: request, workflow: existingWorkflow, form, formArtifactId: null, onEvent });
     if (result.status === 'clarification') {
         await updateRun(run, { status: 'awaiting_clarification', currentStep: 'design_workflow', tokenUsage: result.tokenUsage || {} });
         await session.update({ state: { status: 'awaiting_agent_clarification', runId: run.id } });

@@ -11,10 +11,6 @@ const WorkflowContinuation = sequelize.define('WorkflowContinuation', {
     kind: { type: DataTypes.STRING(30), allowNull: false },
     status: { type: DataTypes.STRING(30), allowNull: false, defaultValue: 'pending' },
     availableAt: { type: DataTypes.DATE, allowNull: false },
-    expiresAt: { type: DataTypes.DATE, allowNull: true },
-    assigneeEmail: { type: DataTypes.STRING(255), allowNull: true },
-    assigneeUserId: { type: DataTypes.UUID, allowNull: true },
-    tokenHash: { type: DataTypes.STRING(64), allowNull: true },
     payload: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
     resolution: { type: DataTypes.JSONB, allowNull: true },
     resolvedAt: { type: DataTypes.DATE, allowNull: true },
@@ -25,8 +21,7 @@ const WorkflowContinuation = sequelize.define('WorkflowContinuation', {
     timestamps: true,
     indexes: [
         { fields: ['status', 'availableAt', 'createdAt'] },
-        { fields: ['runId', 'status'] },
-        { unique: true, fields: ['tokenHash'], name: 'workflow_continuation_token_unique' }
+        { fields: ['runId', 'status'] }
     ]
 });
 

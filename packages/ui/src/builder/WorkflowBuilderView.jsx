@@ -252,7 +252,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
             });
             setLastExecutionLog(log);
         } catch (err) {
-            setLastExecutionLog({ status: 'Failed', durationMs: 0, steps: [], error: err.message });
+            setLastExecutionLog({ status: 'failed', durationMs: 0, steps: [], error: err.message });
         }
     };
 

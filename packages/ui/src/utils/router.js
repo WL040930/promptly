@@ -45,7 +45,6 @@ export function getRouteState(path = window.location.pathname) {
         isForgotPassword: pathname === '/forgot-password',
         isResetPassword: pathname.startsWith('/reset-password/'),
         isPublicForm: pathname.startsWith('/f/'),
-        isApprovalAction: pathname === '/app/approvals' && Boolean(getQuery(path).get('token')),
         isDashboard: isAppRoute(pathname),
         isOnboarding: pathname === '/onboarding',
         isSecurity: pathname === '/landing/security' || pathname === '/security'

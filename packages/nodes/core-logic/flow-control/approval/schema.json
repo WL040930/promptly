@@ -1,11 +1,8 @@
 {
   "inputs": [
     { "name": "inputData", "type": "object", "label": "Input Data", "isConnection": true },
-    { "name": "assigneeType", "type": "select", "label": "Who decides?", "defaultValue": "owner", "options": [{ "value": "owner", "label": "Automation owner" }, { "value": "external", "label": "Someone else" }], "helpText": "The owner is notified by default. Choose someone else to send a secure approval link to another email address." },
-    { "name": "assigneeEmail", "type": "text", "label": "Approver email", "placeholder": "approver@example.com", "showWhen": { "field": "assigneeType", "equals": "external" }, "requiredWhen": { "field": "assigneeType", "equals": "external" } },
     { "name": "title", "type": "text", "label": "Approval title", "required": true, "defaultValue": "Review required" },
-    { "name": "instructions", "type": "textarea", "label": "Instructions", "defaultValue": "Please review the information and choose an outcome.", "rows": 4 },
-    { "name": "expiresAfterHours", "type": "number", "label": "Expires after (hours)", "defaultValue": 72, "min": 1, "max": 720 }
+    { "name": "instructions", "type": "textarea", "label": "Instructions", "defaultValue": "Please review the information and choose an outcome.", "rows": 4 }
   ],
   "outputs": [
     { "name": "approved", "type": "object", "label": "Approved", "isConnection": true },

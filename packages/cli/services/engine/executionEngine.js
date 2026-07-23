@@ -1,9 +1,6 @@
-import crypto from 'node:crypto';
-import env from '../../config/env.js';
-import { sendEmail } from '../../utils/email.js';
 import Workflow from '../../models/workflows/Workflow.js';
 import WorkflowVersion from '../../models/workflows/WorkflowVersion.js';
-import { AutomationRun, WorkflowContinuation, User } from '../../models/index.js';
+import { AutomationRun, WorkflowContinuation } from '../../models/index.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { NodeFactory } from '../../../nodes/NodeFactory.js';
 import { validateWorkflow } from './workflowValidator.js';
@@ -14,8 +11,6 @@ const validationError = issues => new Error(
 );
 
 const clone = value => JSON.parse(JSON.stringify(value ?? null));
-const hash = value => crypto.createHash('sha256').update(String(value)).digest('hex');
-
 const defineRuntime = (contextData, runtimeState) => {
     Object.defineProperty(contextData, '__runtime', {
         value: runtimeState,
@@ -72,19 +67,16 @@ const logDataFor = ({ workflowId, revisionId, userId, status, trigger, error, st
 const persistLog = async ({ run, ...data }) => {
     const payload = logDataFor(data);
     if (run) {
-        await run.update({ ...payload, completedAt: ['Waiting', 'Success'].includes(payload.status) ? run.completedAt : new Date() });
+        await run.update({
+            ...payload,
+            completedAt: ['succeeded', 'failed'].includes(payload.status) ? new Date() : null
+        });
         return run;
     }
     return AutomationRun.create(payload);
 };
 
 const createContinuation = async ({ run, node, suspension }) => {
-    const token = suspension.kind === 'approval' ? crypto.randomBytes(32).toString('hex') : null;
-    const owner = suspension.kind === 'approval' && !suspension.assigneeEmail
-        ? await User.findByPk(run.userId, { attributes: ['id', 'email'] })
-        : null;
-    const assigneeUserId = suspension.assigneeUserId || (suspension.kind === 'approval' && !suspension.assigneeEmail ? run.userId : null);
-    const assigneeEmail = suspension.assigneeEmail || owner?.email || null;
     const continuation = await WorkflowContinuation.create({
         runId: run.id,
         workflowId: run.workflowId,
@@ -93,22 +85,9 @@ const createContinuation = async ({ run, node, suspension }) => {
         kind: suspension.kind,
         status: 'pending',
         availableAt: new Date(suspension.availableAt || Date.now()),
-        expiresAt: suspension.expiresAt ? new Date(suspension.expiresAt) : null,
-        assigneeEmail,
-        assigneeUserId,
-        tokenHash: token ? hash(token) : null,
         payload: suspension.payload || {}
     });
-    if (token && assigneeEmail) {
-        const approvalUrl = `${env.app.clientOrigin}/app/approvals?token=${encodeURIComponent(token)}`;
-        await sendEmail({
-            to: assigneeEmail,
-            subject: `Approval required: ${suspension.payload?.title || 'Workflow review'}`,
-            text: `${suspension.payload?.instructions || 'A workflow is waiting for your review.'}\n\nOpen Promptly to decide: ${approvalUrl}`,
-            html: `<p>${String(suspension.payload?.instructions || 'A workflow is waiting for your review.').replaceAll('<', '&lt;')}</p><p><a href="${approvalUrl}">Open approval in Promptly</a></p>`
-        });
-    }
-    return { continuation, token };
+    return { continuation };
 };
 
 const resolveSuspendedResult = ({ node, resumeResult }) => ({
@@ -122,7 +101,7 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
     const startTime = Date.now();
     let run = null;
     let executedRevisionId = executionOptions.revisionId || null;
-    let status = 'Success';
+    let status = 'succeeded';
     let errorMsg = null;
 
     try {
@@ -134,7 +113,9 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
         if (executionOptions.resumeRunId) {
             run = await AutomationRun.findOne({ where: { id: executionOptions.resumeRunId, workflowId, userId } });
             if (!run) throw new Error('Workflow run not found.');
-            if (run.status !== 'waiting') throw new Error('Workflow run is not waiting for a continuation.');
+            if (run.status !== 'waiting') {
+                throw Object.assign(new Error('Workflow run is not waiting for a continuation.'), { code: 'RUN_NOT_WAITING' });
+            }
             workflow = await Workflow.findOne({ where: { id: workflowId, userId } });
             if (!workflow) throw new Error('Workflow not found');
             executedRevisionId = run.revisionId;
@@ -305,12 +286,12 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
             }
 
             if (executionResult.suspend) {
-                const { continuation, token } = await createContinuation({ run, node, suspension: executionResult.suspend });
+                const { continuation } = await createContinuation({ run, node, suspension: executionResult.suspend });
                 state.suspendedNodeId = nodeId;
                 state.suspendedInputNodeIds = inputNodeIds;
                 state.stepLogs.push({ name: node.title || node.type, type: node.type, status: 'waiting', time: `${Date.now() - stepStartTime}ms`, details: `Waiting for ${executionResult.suspend.kind}.`, continuationId: continuation.id });
                 await run.update({ status: 'waiting', suspendedNodeId: nodeId, state: serializeState(state) });
-                return persistLog({ run, workflowId, revisionId: executedRevisionId, userId, status: 'Waiting', trigger: executionOptions.trigger, error: null, steps: state.stepLogs, output: state.workflowOutput, durationMs: Date.now() - startTime }).then(log => ({ ...log.toJSON(), continuationId: continuation.id, actionToken: token }));
+                return persistLog({ run, workflowId, revisionId: executedRevisionId, userId, status: 'waiting', trigger: executionOptions.trigger, error: null, steps: state.stepLogs, output: state.workflowOutput, durationMs: Date.now() - startTime }).then(log => ({ ...log.toJSON(), continuationId: continuation.id }));
             }
 
             completeNode(nodeId, node, executionResult, inputNodeIds, { time: `${Date.now() - stepStartTime}ms`, details: stepDetails }, stepStatus);
@@ -318,16 +299,17 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
 
         const unresolved = nodes.filter(node => !state.settled.has(node.id));
         if (unresolved.length > 0) {
-            status = 'Failed';
+            status = 'failed';
             errorMsg ||= `Execution stopped before reaching nodes: ${unresolved.map(node => node.id).join(', ')}`;
         } else if (state.unhandledFailures.size > 0) {
-            status = 'Failed';
+            status = 'failed';
             errorMsg = [...state.unhandledFailures.values()][0].error;
         }
-        await run.update({ status: status === 'Success' ? 'succeeded' : 'failed', error: errorMsg, completedAt: new Date(), state: serializeState(state), suspendedNodeId: null });
+        await run.update({ status, error: errorMsg, state: serializeState(state), suspendedNodeId: null });
         return persistLog({ run, workflowId, revisionId: executedRevisionId, userId, status, trigger: executionOptions.trigger, error: errorMsg, steps: state.stepLogs, output: state.workflowOutput, durationMs: Date.now() - startTime });
     } catch (error) {
-        status = 'Failed';
+        if (error.code === 'RUN_NOT_WAITING') throw error;
+        status = 'failed';
         errorMsg = errorMsg || error.message;
         if (run) {
             await run.update({ status: 'failed', error: errorMsg, completedAt: new Date() }).catch(() => {});
