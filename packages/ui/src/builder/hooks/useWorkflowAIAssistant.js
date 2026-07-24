@@ -225,14 +225,14 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
     }, [isTyping, onBeforeSend, sendMutation, workflowId]);
 
     const handleApply = useCallback(async message => {
-        if (message.kind !== 'workflow_proposal') return;
+        if (message.kind !== 'workflow_proposal' && message.kind !== 'workflow_diff') return;
         setAcceptingProposalId(message.id);
         try { await decideMutation.mutateAsync({ messageId: message.id, action: 'accept' }); }
         finally { setAcceptingProposalId(null); }
     }, [decideMutation]);
 
     const handleIgnore = useCallback(async message => {
-        if (message.kind !== 'workflow_proposal') return;
+        if (message.kind !== 'workflow_proposal' && message.kind !== 'workflow_diff') return;
         setRejectingProposalId(message.id);
         try { await decideMutation.mutateAsync({ messageId: message.id, action: 'reject' }); }
         finally { setRejectingProposalId(null); }

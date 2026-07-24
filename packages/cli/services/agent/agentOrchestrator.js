@@ -1,13 +1,9 @@
 import { AssistantMessage, AutomationRun, Form, Workflow, User } from '../../models/index.js';
 import { runFormTurn } from '../ai/formAIService.js';
 import {
-    assembleWorkflow,
-    classifyRequest,
-    compactWorkflowSnapshot,
-    loadWorkflowResourceContext,
-    patchWorkflow,
     requiredCapabilitiesForRequest
 } from '../ai/workflow/workflowAgentService.js';
+import { generateWorkflowTurn } from '../ai/workflow/pipeline/pipeline.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { resolveResource } from '../chat/resourceResolver.js';
 import { addUsage, requestAgentJson } from './agentAi.js';
@@ -327,84 +323,53 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
     const step = await createStep(run, { stepKey: 'design_workflow', type: 'design_workflow' });
     await startStep(step);
     try {
-        const requiredCapabilities = requiredCapabilitiesForRequest(message);
-        onEvent?.({ type: 'workflow.design.started', runId: run.id, stage: 'classify' });
-        const classification = await classifyRequest({
-            message,
-            snapshot: compactWorkflowSnapshot(workflow),
-            requiredCapabilities
+        const result = await generateWorkflowTurn({
+            request: message,
+            currentWorkflow: workflow?.toJSON?.() || workflow || { nodes: [], edges: [] },
+            userId,
+            formSchema: form?.toJSON?.() || form || formSchema || null,
+            onProgress: (progress) => {
+                onEvent?.({ type: 'workflow.design.progress', runId: run.id, stage: progress.status, message: progress.message });
+            }
         });
-        onEvent?.({ type: 'workflow.design.progress', runId: run.id, stage: 'classify', selectedNodeKeys: classification.selectedNodeKeys });
-        if (classification.action === 'edit_workflow' && workflow) {
-            const selected = [...(classification.selectedNodeKeys || [])];
-            const affected = (workflow.nodes || [])
-                .filter(node => classification.affectedNodeIds.includes(node.id))
-                .map(node => `${node.type}:${node.subType}`);
-            const specs = NodeRegistry.getSchemasFor([...selected, ...affected]);
-            const resourceContext = await loadWorkflowResourceContext({ userId, specs });
-            onEvent?.({ type: 'workflow.design.progress', runId: run.id, stage: 'patch', resourceCount: Object.keys(resourceContext).length });
-            const patched = await patchWorkflow({
-                message,
-                currentWorkflow: workflow.toJSON(),
-                classification,
-                specs,
-                resourceContext,
-                formSchema: form?.toJSON?.() || form || formSchema || null,
-                respondentEmailFieldId,
-                requiredCapabilities
-            });
-            const content = {
-                action: 'edit_workflow',
-                workflowId: workflow.id,
-                nodes: patched.nodes,
-                edges: patched.edges,
-                diff: patched.diff,
-                repairs: patched.repairs || [],
-                baseWorkflowRevision: workflow.revision,
-                formArtifactId,
-                ...(formBinding ? { resourceBindings: [formBinding] } : {}),
-                readiness: patched.readiness
+
+        if (result.type === 'reply' || result.type === 'message') {
+            const reply = {
+                status: 'clarification',
+                message: result.message,
+                inputs: result.inputs || []
             };
-            const artifact = await createArtifact({
-                run,
-                type: 'workflow_proposal',
-                artifactKey: 'workflow_proposal',
-                content,
-                baseResources: [{ type: 'workflow', id: workflow.id, updatedAt: workflow.updatedAt }]
-            });
-            const tokenUsage = addUsage(classification.tokenUsage, patched.tokenUsage);
-            await completeStep(step, { result: { artifactId: artifact.id }, outputArtifactIds: [artifact.id], tokenUsage });
-            return { artifact, tokenUsage };
+            await completeStep(step, { result: reply, tokenUsage: result.tokenUsage || {} });
+            return { status: 'clarification', result: reply, tokenUsage: result.tokenUsage || {} };
         }
 
-        const specs = NodeRegistry.getSchemasFor(classification.selectedNodeKeys);
-        const resourceContext = await loadWorkflowResourceContext({ userId, specs });
-        onEvent?.({ type: 'workflow.design.progress', runId: run.id, stage: 'assemble', resourceCount: Object.keys(resourceContext).length });
-        const assembled = await assembleWorkflow({
-            message,
-            specs,
-            workflowName: classification.workflowName,
-            formId: form?.id || null,
-            formSchema: form?.toJSON?.() || form || formSchema || null,
-            formBinding,
-            respondentEmailFieldId,
-            requiredCapabilities,
-            resourceContext
-        });
+        const action = (workflow?.nodes || []).length > 0 ? 'edit_workflow' : 'create_workflow';
+        
+        const formTrigger = (result.nodes || []).find(n => n.subType === 'form-submission');
+        const resourceBindings = [];
+        if (!form && formBinding && formTrigger) {
+            resourceBindings.push({
+                target: { nodeId: formTrigger.id, path: 'config.formId' },
+                source: formBinding.source || formBinding
+            });
+        }
+
         const content = {
-            action: 'create_workflow',
-            name: assembled.name,
-            intent: classification.intent,
-            needsForm: classification.needsForm,
-            formId: form?.id || null,
+            action,
+            workflowId: workflow?.id || null,
+            name: action === 'create_workflow' ? 'New Workflow' : workflow?.name,
+            message: result.message,
+            nodes: result.nodes,
+            edges: result.edges,
+            diff: result.diff,
+            repairs: result.warnings || [],
+            baseWorkflowRevision: workflow?.revision || null,
             formArtifactId,
-            ...(formBinding ? { resourceBindings: assembled.resourceBindings || [formBinding] } : {}),
-            nodes: assembled.nodes,
-            edges: assembled.edges,
-            repairs: assembled.repairs || [],
-            readiness: assembled.readiness,
-            plan: assembled.nodes.map(node => ({ subType: node.subType, title: node.title, reason: node.description }))
+            ...(resourceBindings.length > 0 ? { resourceBindings } : {}),
+            readiness: result.readiness,
+            plan: result.plan
         };
+
         const artifact = await createArtifact({
             run,
             type: 'workflow_proposal',
@@ -412,9 +377,9 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
             content,
             baseResources: workflow ? [{ type: 'workflow', id: workflow.id, updatedAt: workflow.updatedAt }] : []
         });
-        const tokenUsage = addUsage(classification.tokenUsage, assembled.tokenUsage);
-        await completeStep(step, { result: { artifactId: artifact.id }, outputArtifactIds: [artifact.id], tokenUsage });
-        return { artifact, tokenUsage };
+
+        await completeStep(step, { result: { artifactId: artifact.id }, outputArtifactIds: [artifact.id], tokenUsage: result.tokenUsage });
+        return { artifact, tokenUsage: result.tokenUsage };
     } catch (error) {
         const ambiguousRecipient = (error.issues || []).find(issue => issue.code === 'RESPONDENT_RECIPIENT_FIELD_AMBIGUOUS');
         if (ambiguousRecipient) {

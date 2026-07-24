@@ -1,5 +1,6 @@
 import Button from '../ui/Button.jsx';
 import FormProposalWidget from './FormProposalWidget.jsx';
+import WorkflowProposalWidget from './WorkflowProposalWidget.jsx';
 import MarkdownRenderer from '../ui/MarkdownRenderer.jsx';
 import MessageOptionsWidget from './MessageOptionsWidget.jsx';
 import { proposalStatusLabel, shouldShowProposalActions } from './proposalStatus.js';
@@ -70,16 +71,16 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
     const proposalTitle = message.kind === 'solution_proposal'
         ? 'Solution proposal'
         : message.kind === 'workflow_diff'
-        ? 'Workflow changes'
-        : isBulkDeleteProposal
-            ? 'Delete all forms'
-            : isDeleteProposal
-            ? 'Delete form'
-            : isDuplicateProposal
-                ? 'Duplicate form'
-                : isResponseClearProposal
-                    ? 'Clear form responses'
-                    : 'Workflow proposal';
+            ? 'Workflow changes'
+            : isBulkDeleteProposal
+                ? 'Delete all forms'
+                : isDeleteProposal
+                    ? 'Delete form'
+                    : isDuplicateProposal
+                        ? 'Duplicate form'
+                        : isResponseClearProposal
+                            ? 'Clear form responses'
+                            : 'Workflow proposal';
     const ProposalIcon = message.kind === 'solution_proposal' || message.kind === 'workflow_diff' || message.kind === 'workflow_proposal'
         ? GitBranch
         : isDeleteProposal || isBulkDeleteProposal
@@ -107,7 +108,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
         <div className={`flex w-full ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
             {message.sender !== 'user' && (
                 <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-4 mr-2.5 shadow-sm border border-indigo-200/50">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="14" x="3" y="8" rx="2"/><path d="M12 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 5v3"/><path d="M8 14h.01"/><path d="M16 14h.01"/><path d="M9 19h6"/></svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="14" x="3" y="8" rx="2" /><path d="M12 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" /><path d="M12 5v3" /><path d="M8 14h.01" /><path d="M16 14h.01" /><path d="M9 19h6" /></svg>
                 </div>
             )}
             <div className={`flex flex-col gap-1 ${message.sender === 'user' ? 'items-end' : 'items-start'} max-w-[90%] min-w-0`}>
@@ -184,7 +185,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                 )}
 
                 {kind === 'clarification' && options.length > 0 && (
-                    <MessageOptionsWidget 
+                    <MessageOptionsWidget
                         options={options}
                         allowDecide={clarification?.allowDecide === true}
                         clarificationId={clarification?.clarificationId || clarification?.id}
@@ -194,7 +195,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                 )}
 
                 {isProposal && kind === 'form_proposal' && (
-                    <FormProposalWidget 
+                    <FormProposalWidget
                         proposal={payload}
                         status={status}
                         onAccept={(filteredSchema, unselectedIndices) => onApply?.(message, filteredSchema, unselectedIndices)}
@@ -206,7 +207,19 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                     />
                 )}
 
-                {isProposal && kind !== 'form_proposal' && (
+                {isProposal && (kind === 'workflow_proposal' || kind === 'workflow_diff') && (
+                    <WorkflowProposalWidget
+                        proposal={payload}
+                        status={status}
+                        onAccept={() => onApply?.(message)}
+                        onIgnore={() => onIgnore?.(message)}
+                        onPreview={() => onOption?.({ type: 'preview_workflow', proposal: payload, workflowId: payload.workflowId })}
+                        accepting={isAccepting}
+                        rejecting={isRejecting}
+                    />
+                )}
+
+                {isProposal && !['form_proposal', 'workflow_proposal', 'workflow_diff'].includes(kind) && (
                     <div className={`mt-2 w-full overflow-hidden rounded-2xl border flex flex-col ${proposalTone.card}`}>
                         <div className={`flex items-start gap-3 border-b px-4 py-3 ${proposalTone.header}`}>
                             <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${proposalTone.icon}`}>
@@ -225,95 +238,87 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                             </span>
                         </div>
                         <div className="flex flex-col gap-3 p-4">
-                        {(message.kind === 'workflow_proposal' || message.kind === 'solution_proposal') && (
-                            <div className="flex flex-col gap-1">
-                                {planSteps.map((item, index) => <div key={`${item.subType || item.id || item.type}-${index}`} className="text-xs text-slate-600"><span className="font-bold text-slate-800">{item.title || item.type}</span>{item.reason || item.description ? ` — ${item.reason || item.description}` : ''}</div>)}
-                                {message.kind === 'solution_proposal' && (payload.solution || []).map(artifact => (
-                                    <div key={artifact.id || artifact.type} className="text-xs text-slate-600">
-                                        <span className="font-bold text-slate-800">{artifact.type === 'form_proposal' ? 'Form' : artifact.type === 'workflow_proposal' ? 'Workflow' : artifact.type}</span>
-                                        {' '}is included in this bundle.
-                                    </div>
-                                ))}
-                                {payload.needsForm && <div className="text-xs font-semibold text-orange-700">A form will be created before this workflow can run.</div>}
-                                {payload.readiness && (
-                                    <div className={`mt-2 rounded-xl border px-3 py-2.5 text-xs ${payload.readiness.ready ? 'border-emerald-200 bg-emerald-50/70 text-emerald-800' : 'border-amber-200 bg-amber-50/70 text-amber-900'}`}>
-                                        <div className="font-bold">{payload.readiness.ready ? 'Ready to test' : 'Setup needed before testing'}</div>
-                                        {!payload.readiness.ready && (payload.readiness.issues || []).slice(0, 3).map((item, index) => <div key={`${item.code || 'issue'}-${index}`} className="mt-1 leading-4">• {item.message}</div>)}
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                        {message.kind === 'workflow_diff' && (
-                            <div className="flex flex-col gap-1 text-xs">
-                                {(payload.diff?.addedNodes || []).map(node => <div key={`a-${node.id}`} className="text-emerald-700">+ {node.title}</div>)}
-                                {(payload.diff?.updatedNodes || []).map(node => <div key={`u-${node.id}`} className="text-amber-700">~ {node.title}</div>)}
-                                {(payload.diff?.removedNodes || []).map(node => <div key={`r-${node.id}`} className="text-red-700">− {node.title}</div>)}
-                                {(payload.diff?.edges || []).length > 0 && <div className="text-indigo-700">↔ Edge connections changed</div>}
-                            </div>
-                        )}
-                        {['form_delete_proposal', 'form_bulk_delete_proposal', 'form_duplicate_proposal', 'form_response_clear_proposal'].includes(message.kind) && (
-                            <div className="flex flex-col gap-3">
-                                <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-3">
-                                    {isBulkDeleteProposal ? (
-                                        <>
-                                            <div className="text-sm font-bold text-slate-800">{payload.formCount || payload.forms?.length || 0} forms selected</div>
-                                            <div className="mt-2 max-h-36 overflow-y-auto border-t border-slate-200/80 pt-2 text-xs text-slate-600">
-                                                {(payload.forms || []).map(form => <div key={form.id} className="flex items-center justify-between gap-3 py-1"><span className="truncate">{form.title || form.id}</span><span className="shrink-0 text-slate-400">{form.responseCount || 0} responses</span></div>)}
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <>
-                                            {payload.title && <div className="text-sm font-bold text-slate-800">{payload.title}</div>}
-                                            {payload.sourceTitle && <div className="mt-1 text-xs text-slate-500">Copy of {payload.sourceTitle}</div>}
-                                        </>
-                                    )}
-                                    {payload.responseCount !== undefined && !isBulkDeleteProposal && (
-                                        <div className="mt-3 flex items-center justify-between border-t border-slate-200/80 pt-2.5 text-xs">
-                                            <span className="text-slate-500">Responses affected</span>
-                                            <span className="font-bold text-slate-800">{payload.responseCount}</span>
+                            {message.kind === 'solution_proposal' && (
+                                <div className="flex flex-col gap-1">
+                                    {planSteps.map((item, index) => <div key={`${item.subType || item.id || item.type}-${index}`} className="text-xs text-slate-600"><span className="font-bold text-slate-800">{item.title || item.type}</span>{item.reason || item.description ? ` — ${item.reason || item.description}` : ''}</div>)}
+                                    {(payload.solution || []).map(artifact => (
+                                        <div key={artifact.id || artifact.type} className="text-xs text-slate-600">
+                                            <span className="font-bold text-slate-800">{artifact.type === 'form_proposal' ? 'Form' : artifact.type === 'workflow_proposal' ? 'Workflow' : artifact.type}</span>
+                                            {' '}is included in this bundle.
+                                        </div>
+                                    ))}
+                                    {payload.needsForm && <div className="text-xs font-semibold text-orange-700">A form will be created before this workflow can run.</div>}
+                                    {payload.readiness && (
+                                        <div className={`mt-2 rounded-xl border px-3 py-2.5 text-xs ${payload.readiness.ready ? 'border-emerald-200 bg-emerald-50/70 text-emerald-800' : 'border-amber-200 bg-amber-50/70 text-amber-900'}`}>
+                                            <div className="font-bold">{payload.readiness.ready ? 'Ready to test' : 'Setup needed before testing'}</div>
+                                            {!payload.readiness.ready && (payload.readiness.issues || []).slice(0, 3).map((item, index) => <div key={`${item.code || 'issue'}-${index}`} className="mt-1 leading-4">• {item.message}</div>)}
                                         </div>
                                     )}
-                                    {isBulkDeleteProposal && payload.totalResponseCount !== undefined && <div className="mt-3 flex items-center justify-between border-t border-slate-200/80 pt-2.5 text-xs"><span className="text-slate-500">Total responses affected</span><span className="font-bold text-slate-800">{payload.totalResponseCount}</span></div>}
                                 </div>
-                                {payload.permanent && (
-                                    <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50/70 px-3.5 py-3 text-xs leading-5 text-red-800">
-                                        <AlertTriangle size={15} className="mt-0.5 shrink-0 text-red-600" />
-                                        <span><span className="font-bold">Permanent deletion.</span> These forms and their responses cannot be recovered.</span>
+                            )}
+                            {['form_delete_proposal', 'form_bulk_delete_proposal', 'form_duplicate_proposal', 'form_response_clear_proposal'].includes(message.kind) && (
+                                <div className="flex flex-col gap-3">
+                                    <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-3">
+                                        {isBulkDeleteProposal ? (
+                                            <>
+                                                <div className="text-sm font-bold text-slate-800">{payload.formCount || payload.forms?.length || 0} forms selected</div>
+                                                <div className="mt-2 max-h-36 overflow-y-auto border-t border-slate-200/80 pt-2 text-xs text-slate-600">
+                                                    {(payload.forms || []).map(form => <div key={form.id} className="flex items-center justify-between gap-3 py-1"><span className="truncate">{form.title || form.id}</span><span className="shrink-0 text-slate-400">{form.responseCount || 0} responses</span></div>)}
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                {payload.title && <div className="text-sm font-bold text-slate-800">{payload.title}</div>}
+                                                {payload.sourceTitle && <div className="mt-1 text-xs text-slate-500">Copy of {payload.sourceTitle}</div>}
+                                            </>
+                                        )}
+                                        {payload.responseCount !== undefined && !isBulkDeleteProposal && (
+                                            <div className="mt-3 flex items-center justify-between border-t border-slate-200/80 pt-2.5 text-xs">
+                                                <span className="text-slate-500">Responses affected</span>
+                                                <span className="font-bold text-slate-800">{payload.responseCount}</span>
+                                            </div>
+                                        )}
+                                        {isBulkDeleteProposal && payload.totalResponseCount !== undefined && <div className="mt-3 flex items-center justify-between border-t border-slate-200/80 pt-2.5 text-xs"><span className="text-slate-500">Total responses affected</span><span className="font-bold text-slate-800">{payload.totalResponseCount}</span></div>}
                                     </div>
-                                )}
-                            </div>
-                        )}
-                        {!showProposalActions ? (
-                            <div className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold ${status === 'Applied' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
-                                {status === 'Applied' ? <CheckCircle2 size={14} /> : null}
-                                {status}
-                            </div>
-                        ) : (
-                            <div className="flex flex-col gap-2 border-t border-slate-100 pt-3 sm:flex-row">
-                                <Button
-                                    variant={isDeleteProposal || isBulkDeleteProposal ? 'dangerSolid' : 'primary'}
-                                    size="action"
-                                    className="!rounded-xl flex-1"
-                                    onClick={() => onApply?.(message)}
-                                    isLoading={isAccepting}
-                                    disabled={isRejecting}
-                                    loadingText={isBulkDeleteProposal ? 'Deleting forms…' : isDeleteProposal ? 'Deleting…' : 'Applying…'}
-                                >
-                                    {isBulkDeleteProposal ? 'Delete all forms' : isDeleteProposal ? 'Delete form' : 'Apply'}
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    size="action"
-                                    className="!rounded-xl flex-1"
-                                    onClick={() => onIgnore?.(message)}
-                                    isLoading={isRejecting}
-                                    disabled={isAccepting}
-                                    loadingText={isBulkDeleteProposal ? 'Keeping forms…' : isDeleteProposal ? 'Keeping…' : 'Ignoring…'}
-                                >
-                                    {isBulkDeleteProposal ? 'Keep forms' : isDeleteProposal ? 'Keep form' : 'Ignore'}
-                                </Button>
-                            </div>
-                        )}
+                                    {payload.permanent && (
+                                        <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50/70 px-3.5 py-3 text-xs leading-5 text-red-800">
+                                            <AlertTriangle size={15} className="mt-0.5 shrink-0 text-red-600" />
+                                            <span><span className="font-bold">Permanent deletion.</span> These forms and their responses cannot be recovered.</span>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            {!showProposalActions ? (
+                                <div className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold ${status === 'Applied' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+                                    {status === 'Applied' ? <CheckCircle2 size={14} /> : null}
+                                    {status}
+                                </div>
+                            ) : (
+                                <div className="flex flex-col gap-2 border-t border-slate-100 pt-3 sm:flex-row">
+                                    <Button
+                                        variant={isDeleteProposal || isBulkDeleteProposal ? 'dangerSolid' : 'primary'}
+                                        size="action"
+                                        className="!rounded-xl flex-1"
+                                        onClick={() => onApply?.(message)}
+                                        isLoading={isAccepting}
+                                        disabled={isRejecting}
+                                        loadingText={isBulkDeleteProposal ? 'Deleting forms…' : isDeleteProposal ? 'Deleting…' : 'Applying…'}
+                                    >
+                                        {isBulkDeleteProposal ? 'Delete all forms' : isDeleteProposal ? 'Delete form' : 'Apply'}
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="action"
+                                        className="!rounded-xl flex-1"
+                                        onClick={() => onIgnore?.(message)}
+                                        isLoading={isRejecting}
+                                        disabled={isAccepting}
+                                        loadingText={isBulkDeleteProposal ? 'Keeping forms…' : isDeleteProposal ? 'Keeping…' : 'Ignoring…'}
+                                    >
+                                        {isBulkDeleteProposal ? 'Keep forms' : isDeleteProposal ? 'Keep form' : 'Ignore'}
+                                    </Button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}

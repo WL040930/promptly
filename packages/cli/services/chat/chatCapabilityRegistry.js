@@ -2,12 +2,9 @@ import { AutomationRun, Form, FormResponse, Workflow } from '../../models/index.
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { resolveResource } from './resourceResolver.js';
 import {
-    assembleWorkflow,
-    classifyRequest,
-    compactWorkflowSnapshot,
-    patchWorkflow,
     requiredCapabilitiesForRequest
 } from '../ai/workflow/workflowAgentService.js';
+import { generateWorkflowTurn } from '../ai/workflow/pipeline/pipeline.js';
 import { createAgentCapabilityRegistry } from '../agent/agentCapabilityRegistry.js';
 
 const completed = output => ({ status: 'completed', output });
@@ -503,82 +500,52 @@ export const createChatCapabilityRegistry = ({
             async ({ args }) => {
                 const workflowId = args.workflowId || effectiveContext.workflowId || null;
                 const workflow = await workflowForRequest(userId, workflowId);
-                const requiredCapabilities = requiredCapabilitiesForRequest(args.prompt);
-                const classification = await classifyRequest({
-                    message: args.prompt,
-                    snapshot: compactWorkflowSnapshot(workflow),
-                    requiredCapabilities
+                const selectedForm = effectiveContext.formId ? await formForRequest(userId, effectiveContext.formId) : null;
+                
+                const result = await generateWorkflowTurn({
+                    request: args.prompt,
+                    currentWorkflow: workflow?.toJSON?.() || workflow || { nodes: [], edges: [] },
+                    userId,
+                    formSchema: selectedForm?.toJSON?.() || selectedForm || null
                 });
-                if (classification.action === 'edit_workflow' && workflowId && workflow) {
-                    const selected = [...(classification.selectedNodeKeys || [])];
-                    const affected = (workflow.nodes || [])
-                        .filter(node => classification.affectedNodeIds.includes(node.id))
-                        .map(node => `${node.type}:${node.subType}`);
-                    const specs = NodeRegistry.getSchemasFor([...selected, ...affected]);
-                    const selectedForm = effectiveContext.formId ? await formForRequest(userId, effectiveContext.formId) : null;
-                    const patched = await patchWorkflow({
-                        message: args.prompt,
-                        currentWorkflow: workflow.toJSON(),
-                        classification,
-                        specs,
-                        formSchema: selectedForm?.toJSON?.() || selectedForm || null,
-                        requiredCapabilities
+
+                if (result.type === 'reply' || result.type === 'message') {
+                    const replyMsg = await saveReply(session, {
+                        text: result.message,
+                        kind: 'text'
                     });
-                    const reply = await saveReply(session, {
-                        text: 'I prepared the requested workflow changes for your review.',
-                        kind: 'workflow_diff',
-                        payload: {
-                            action: 'edit_workflow',
-                            workflowId: workflow.id,
-                            nodes: patched.nodes,
-                            edges: patched.edges,
-                            diff: patched.diff,
-                            baseWorkflowRevision: workflow.revision
-                        },
-                        proposalStatus: 'pending'
-                    });
-                    await session.update({ state: {
-                        status: 'awaiting_workflow_approval',
-                        workflowId: workflow.id,
-                        proposalMessageId: reply.id
-                    } });
-                    return approval(reply);
+                    if (result.inputs && result.inputs.length > 0) {
+                        return clarification(replyMsg);
+                    }
+                    return completed({ replyId: replyMsg.id });
                 }
 
-                const specs = NodeRegistry.getSchemasFor(classification.selectedNodeKeys);
-                const selectedForm = effectiveContext.formId ? await formForRequest(userId, effectiveContext.formId) : null;
-                const assembled = await assembleWorkflow({
-                    message: args.prompt,
-                    specs,
-                    workflowName: classification.workflowName,
-                    formId: selectedForm?.id || null,
-                    formSchema: selectedForm?.toJSON?.() || selectedForm || null,
-                    requiredCapabilities
-                });
+                const action = (workflow?.nodes || []).length > 0 ? 'edit_workflow' : 'create_workflow';
+                
                 const reply = await saveReply(session, {
-                    text: 'The workflow is ready for your review.',
+                    text: result.message || 'I prepared the requested workflow changes for your review.',
                     kind: 'workflow_proposal',
                     payload: {
-                        action: 'create_workflow',
+                        action,
                         ...(workflow ? { workflowId: workflow.id, baseWorkflowRevision: workflow.revision } : {}),
-                        name: assembled.name,
-                        intent: classification.intent,
-                        needsForm: false,
-                        nodes: assembled.nodes,
-                        edges: assembled.edges,
-                        plan: assembled.nodes.map(node => ({
-                            subType: node.subType,
-                            title: node.title,
-                            reason: node.description
-                        }))
+                        name: action === 'create_workflow' ? 'New Workflow' : workflow?.name,
+                        message: result.message,
+                        nodes: result.nodes,
+                        edges: result.edges,
+                        diff: result.diff,
+                        repairs: result.warnings || [],
+                        readiness: result.readiness,
+                        plan: result.plan
                     },
                     proposalStatus: 'pending'
                 });
-                    await session.update({ state: {
+                
+                await session.update({ state: {
                     status: 'awaiting_workflow_approval',
-                    workflowId: null,
+                    workflowId: workflow ? workflow.id : null,
                     proposalMessageId: reply.id
                 } });
+                
                 return approval(reply);
             },
             'proposal'

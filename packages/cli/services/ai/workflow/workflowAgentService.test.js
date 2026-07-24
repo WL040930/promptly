@@ -1,7 +1,7 @@
 import path from 'path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assembleWorkflow, buildWorkflowEditView, classifyRequest, compileWorkflowDraft, compileWorkflowEdits, layoutWorkflowNodes, loadWorkflowResourceContext, patchWorkflow, readWorkflowInstruction, requiredCapabilitiesForRequest, resolveRespondentEmailField, validateGeneratedResourceValues, validateGeneratedWorkflowCapabilities } from './workflowAgentService.js';
+import { buildWorkflowEditView, compileWorkflowDraft, compileWorkflowEdits, layoutWorkflowNodes, loadWorkflowResourceContext, requiredCapabilitiesForRequest, resolveRespondentEmailField, validateGeneratedResourceValues, validateGeneratedWorkflowCapabilities } from './workflowAgentService.js';
 import NodeRegistry from '../../../utils/NodeRegistry.js';
 
 const spec = (nodeKey, type, subType) => ({
@@ -161,10 +161,14 @@ test('patch workflow performs one bounded semantic repair without exposing edge 
             attempt += 1;
             return attempt === 1
                 ? { value: { operations: [{ op: 'disconnect', from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'n1', handle: null } }] }, tokenUsage: { totalTokens: 2 } }
-                : { value: { operations: [
-                    { op: 'create_node', node: { ref: 'email_step', nodeKey: 'action:email', title: 'Send email', config: {} } },
-                    { op: 'connect', from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'email_step', handle: 'inputData' } }
-                ] }, tokenUsage: { totalTokens: 3 } };
+                : {
+                    value: {
+                        operations: [
+                            { op: 'create_node', node: { ref: 'email_step', nodeKey: 'action:email', title: 'Send email', config: {} } },
+                            { op: 'connect', from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'email_step', handle: 'inputData' } }
+                        ]
+                    }, tokenUsage: { totalTokens: 3 }
+                };
         },
         instructionReader: async () => 'Return JSON only'
     });
@@ -178,12 +182,6 @@ test('patch workflow performs one bounded semantic repair without exposing edge 
     assert.match(prompts[1], /WORKFLOW_CONNECTION_NOT_FOUND/);
 });
 
-test('workflow stages load instructions from their actual instruction directory', async () => {
-    for (const name of ['classifier.md', 'assembler.md', 'patcher.md']) {
-        const content = await readWorkflowInstruction(name);
-        assert.match(content, /Return JSON only/);
-    }
-});
 
 test('generated workflow resources must come from the account context', () => {
     const specs = [{
@@ -354,22 +352,24 @@ test('workflow assembly enforces requested capabilities against supplied form da
             'email-providers': { options: [{ value: 'system-default', label: 'Promptly email' }] }
         },
         registry,
-        provider: async () => ({ value: {
-            nodes: [
-                { id: 'submission_source', nodeKey: 'trigger:form-submission', config: {} },
-                {
-                    id: 'confirmation_step',
-                    nodeKey: 'action:email',
-                    config: {
-                        emailProvider: 'system-default',
-                        to: '{{submission_source.fields.candidate_contact}}',
-                        subject: 'Thanks for applying',
-                        body: 'We received your application.'
+        provider: async () => ({
+            value: {
+                nodes: [
+                    { id: 'submission_source', nodeKey: 'trigger:form-submission', config: {} },
+                    {
+                        id: 'confirmation_step',
+                        nodeKey: 'action:email',
+                        config: {
+                            emailProvider: 'system-default',
+                            to: '{{submission_source.fields.candidate_contact}}',
+                            subject: 'Thanks for applying',
+                            body: 'We received your application.'
+                        }
                     }
-                }
-            ],
-            edges: [{ id: 'connect', source: 'submission_source', target: 'confirmation_step', sourceHandle: 'triggerData', targetHandle: 'triggerData' }]
-        }, tokenUsage: { totalTokens: 1 } }),
+                ],
+                edges: [{ id: 'connect', source: 'submission_source', target: 'confirmation_step', sourceHandle: 'triggerData', targetHandle: 'triggerData' }]
+            }, tokenUsage: { totalTokens: 1 }
+        }),
         instructionReader: async () => 'Return JSON only'
     });
 
@@ -385,45 +385,51 @@ test('workflow assembly repairs a literal confirmation recipient when the bindin
     const registry = { getDefinition: () => ({ implementationStatus: 'experimental', configSchema: {} }) };
 
     const result = await assembleWorkflow({
-            message: 'Send a thank-you email to the form respondent.',
-            specs,
-            formId: 'form_approved',
-            formSchema: { fields: [{ id: 'contact', type: 'email', required: true }] },
-            requiredCapabilities: ['respondent_confirmation'],
-            registry,
-            provider: async () => ({ value: {
+        message: 'Send a thank-you email to the form respondent.',
+        specs,
+        formId: 'form_approved',
+        formSchema: { fields: [{ id: 'contact', type: 'email', required: true }] },
+        requiredCapabilities: ['respondent_confirmation'],
+        registry,
+        provider: async () => ({
+            value: {
                 nodes: [
                     { id: 'source', nodeKey: 'trigger:form-submission', config: {} },
                     { id: 'mailer', nodeKey: 'action:email', config: { to: 'owner@example.com' } }
                 ],
                 edges: [{ source: 'source', target: 'mailer' }]
-            }, tokenUsage: {} }),
-            instructionReader: async () => 'Return JSON only'
-        });
+            }, tokenUsage: {}
+        }),
+        instructionReader: async () => 'Return JSON only'
+    });
 
     assert.equal(result.nodes.find(node => node.subType === 'email').config.to, '{{source.fields.contact}}');
     assert.equal(result.repairs[0].code, 'RESPONDENT_RECIPIENT_BOUND');
 });
 
 test('respondent email resolution prefers the primary email over a confirmation field', () => {
-    const result = resolveRespondentEmailField({ formSchema: {
-        fields: [
-            { id: 'f_email', type: 'email', label: 'Email', required: true },
-            { id: 'f_confirm_email', type: 'email', label: 'Confirmation Email Address', required: true }
-        ]
-    } });
+    const result = resolveRespondentEmailField({
+        formSchema: {
+            fields: [
+                { id: 'f_email', type: 'email', label: 'Email', required: true },
+                { id: 'f_confirm_email', type: 'email', label: 'Confirmation Email Address', required: true }
+            ]
+        }
+    });
 
     assert.equal(result.field.id, 'f_email');
     assert.equal(result.ambiguous, false);
 });
 
 test('respondent email resolution reports genuinely tied email fields as ambiguous', () => {
-    const result = resolveRespondentEmailField({ formSchema: {
-        fields: [
-            { id: 'work_email', type: 'email', label: 'Work Email', required: true },
-            { id: 'personal_email', type: 'email', label: 'Personal Email', required: true }
-        ]
-    } });
+    const result = resolveRespondentEmailField({
+        formSchema: {
+            fields: [
+                { id: 'work_email', type: 'email', label: 'Work Email', required: true },
+                { id: 'personal_email', type: 'email', label: 'Personal Email', required: true }
+            ]
+        }
+    });
 
     assert.equal(result.field, null);
     assert.equal(result.ambiguous, true);
@@ -447,10 +453,12 @@ test('respondent email resolution honors an explicit field selection', () => {
 test('ambiguous respondent recipients expose candidate fields for clarification', () => {
     const issues = validateGeneratedWorkflowCapabilities({
         requiredCapabilities: ['respondent_confirmation'],
-        formSchema: { fields: [
-            { id: 'work_email', type: 'email', label: 'Work Email', required: true },
-            { id: 'personal_email', type: 'email', label: 'Personal Email', required: true }
-        ] },
+        formSchema: {
+            fields: [
+                { id: 'work_email', type: 'email', label: 'Work Email', required: true },
+                { id: 'personal_email', type: 'email', label: 'Personal Email', required: true }
+            ]
+        },
         nodes: [
             { id: 'source', type: 'trigger', subType: 'form-submission' },
             { id: 'mailer', type: 'action', subType: 'email', config: { to: 'owner@example.com' } }
@@ -472,19 +480,23 @@ test('workflow assembly repairs a literal recipient with a primary and confirmat
     const result = await assembleWorkflow({
         message: 'Create a job application form and send a confirmation email after submission.',
         specs,
-        formSchema: { fields: [
-            { id: 'f_email', type: 'email', label: 'Email', required: true },
-            { id: 'f_confirm_email', type: 'email', label: 'Confirmation Email Address', required: true }
-        ] },
+        formSchema: {
+            fields: [
+                { id: 'f_email', type: 'email', label: 'Email', required: true },
+                { id: 'f_confirm_email', type: 'email', label: 'Confirmation Email Address', required: true }
+            ]
+        },
         requiredCapabilities: ['respondent_confirmation'],
         registry,
-        provider: async () => ({ value: {
-            nodes: [
-                { id: 'source', nodeKey: 'trigger:form-submission', config: {} },
-                { id: 'mailer', nodeKey: 'action:email', config: { to: 'owner@example.com' } }
-            ],
-            edges: [{ source: 'source', target: 'mailer' }]
-        }, tokenUsage: {} }),
+        provider: async () => ({
+            value: {
+                nodes: [
+                    { id: 'source', nodeKey: 'trigger:form-submission', config: {} },
+                    { id: 'mailer', nodeKey: 'action:email', config: { to: 'owner@example.com' } }
+                ],
+                edges: [{ source: 'source', target: 'mailer' }]
+            }, tokenUsage: {}
+        }),
         instructionReader: async () => 'Return JSON only'
     });
 
@@ -524,18 +536,22 @@ test('workflow assembly repairs an unambiguous respondent field reference withou
         requiredCapabilities: ['respondent_confirmation'],
         resourceContext: { 'email-providers': { options: [{ value: 'system-default', label: 'Promptly email' }] } },
         registry,
-        provider: async () => ({ value: {
-            nodes: [
-                { id: 'submission', nodeKey: 'trigger:form-submission', config: {} },
-                { id: 'mailer', nodeKey: 'action:email', config: {
-                    emailProvider: 'system-default',
-                    to: '{{submission.fields.email}}',
-                    subject: 'Thanks',
-                    body: 'Received.'
-                } }
-            ],
-            edges: [{ source: 'submission', target: 'mailer', sourceHandle: 'triggerData', targetHandle: 'triggerData' }]
-        }, tokenUsage: { totalTokens: 1 } }),
+        provider: async () => ({
+            value: {
+                nodes: [
+                    { id: 'submission', nodeKey: 'trigger:form-submission', config: {} },
+                    {
+                        id: 'mailer', nodeKey: 'action:email', config: {
+                            emailProvider: 'system-default',
+                            to: '{{submission.fields.email}}',
+                            subject: 'Thanks',
+                            body: 'Received.'
+                        }
+                    }
+                ],
+                edges: [{ source: 'submission', target: 'mailer', sourceHandle: 'triggerData', targetHandle: 'triggerData' }]
+            }, tokenUsage: { totalTokens: 1 }
+        }),
         instructionReader: async () => 'Return JSON only'
     });
 
@@ -615,14 +631,16 @@ test('classifier resolves a natural-language request to canonical node contracts
             assert.match(prompt, /google-sheets/);
             assert.match(prompt, /resource-select/);
             assert.equal(operation, 'classifier');
-            return { value: {
-                action: 'create_workflow',
-                selectedNodeKeys: ['trigger:form-submission', 'action:google-sheets'],
-                workflowName: 'Form to Sheets',
-                needsForm: true,
-                affectedNodeIds: [],
-                intent: 'unknown'
-            }, tokenUsage: { totalTokens: 8 } };
+            return {
+                value: {
+                    action: 'create_workflow',
+                    selectedNodeKeys: ['trigger:form-submission', 'action:google-sheets'],
+                    workflowName: 'Form to Sheets',
+                    needsForm: true,
+                    affectedNodeIds: [],
+                    intent: 'unknown'
+                }, tokenUsage: { totalTokens: 8 }
+            };
         }
     });
     assert.deepEqual(result.selectedNodeKeys, ['trigger:form-submission', 'action:google-sheets']);
@@ -644,14 +662,16 @@ test('classifier restores required confirmation nodes when the model omits node 
         requiredCapabilities: ['respondent_confirmation'],
         registry,
         instructionReader: async () => 'Return JSON only',
-        provider: async () => ({ value: {
-            action: 'create_workflow',
-            selectedNodeKeys: [],
-            workflowName: 'Application Confirmation',
-            needsForm: true,
-            affectedNodeIds: [],
-            intent: 'unknown'
-        }, tokenUsage: {} })
+        provider: async () => ({
+            value: {
+                action: 'create_workflow',
+                selectedNodeKeys: [],
+                workflowName: 'Application Confirmation',
+                needsForm: true,
+                affectedNodeIds: [],
+                intent: 'unknown'
+            }, tokenUsage: {}
+        })
     });
 
     assert.deepEqual(result.selectedNodeKeys, ['trigger:form-submission', 'action:email']);
@@ -669,14 +689,16 @@ test('workflow classifier normalizes legacy form actions without exposing them d
         snapshot: null,
         registry,
         instructionReader: async () => 'Return JSON only',
-        provider: async () => ({ value: {
-            action: 'create_form',
-            selectedNodeKeys: ['trigger:form-submission'],
-            workflowName: 'Form Intake',
-            needsForm: true,
-            affectedNodeIds: [],
-            intent: 'unknown'
-        }, tokenUsage: {} })
+        provider: async () => ({
+            value: {
+                action: 'create_form',
+                selectedNodeKeys: ['trigger:form-submission'],
+                workflowName: 'Form Intake',
+                needsForm: true,
+                affectedNodeIds: [],
+                intent: 'unknown'
+            }, tokenUsage: {}
+        })
     });
 
     assert.equal(result.action, 'create_workflow');
@@ -734,13 +756,15 @@ test('assembler produces a runnable graph from the supplied node contracts', asy
         formId: 'form_real',
         resourceContext: { forms: { options: [{ value: 'form_real', label: 'Registration' }] } },
         registry,
-        provider: async () => ({ value: {
-            nodes: [
-                { id: 'trigger_1', nodeKey: 'trigger:form-submission', config: {} },
-                { id: 'logger_1', nodeKey: 'action:logger', config: {} }
-            ],
-            edges: [{ id: 'edge_1', source: 'trigger_1', target: 'logger_1' }]
-        }, tokenUsage: { totalTokens: 12 } }),
+        provider: async () => ({
+            value: {
+                nodes: [
+                    { id: 'trigger_1', nodeKey: 'trigger:form-submission', config: {} },
+                    { id: 'logger_1', nodeKey: 'action:logger', config: {} }
+                ],
+                edges: [{ id: 'edge_1', source: 'trigger_1', target: 'logger_1' }]
+            }, tokenUsage: { totalTokens: 12 }
+        }),
         instructionReader: async () => 'Return JSON only'
     });
     assert.deepEqual(result.nodes.map(node => node.nodeKey), ['trigger:form-submission', 'action:logger']);
@@ -779,14 +803,16 @@ test('real node catalogue can assemble a form-to-sheets workflow from user inten
         snapshot: null,
         registry: NodeRegistry,
         instructionReader: async () => 'Return JSON only',
-        provider: async () => ({ value: {
-            action: 'create_workflow',
-            selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
-            workflowName: 'Registration to Sheets',
-            needsForm: true,
-            affectedNodeIds: [],
-            intent: 'unknown'
-        }, tokenUsage: {} })
+        provider: async () => ({
+            value: {
+                action: 'create_workflow',
+                selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
+                workflowName: 'Registration to Sheets',
+                needsForm: true,
+                affectedNodeIds: [],
+                intent: 'unknown'
+            }, tokenUsage: {}
+        })
     });
     const specs = NodeRegistry.getSchemasFor(classification.selectedNodeKeys);
     const formSpec = specs.find(spec => spec.nodeKey === 'trigger:form-submission');
@@ -804,22 +830,24 @@ test('real node catalogue can assemble a form-to-sheets workflow from user inten
             'google-sheet-ranges': { options: [{ value: "'Responses'!A1:Z1000", label: 'Responses' }] }
         },
         registry: NodeRegistry,
-        provider: async () => ({ value: {
-            nodes: [
-                { id: 'trigger_1', nodeKey: 'trigger:form-submission', config: {} },
-                {
-                    id: 'sheets_1',
-                    nodeKey: 'action:googleSheets',
-                    config: {
-                        spreadsheetId: 'sheet_registration',
-                        range: "'Responses'!A1:Z1000",
-                        operation: 'append',
-                        values: [['{{trigger_1.response}}']]
+        provider: async () => ({
+            value: {
+                nodes: [
+                    { id: 'trigger_1', nodeKey: 'trigger:form-submission', config: {} },
+                    {
+                        id: 'sheets_1',
+                        nodeKey: 'action:googleSheets',
+                        config: {
+                            spreadsheetId: 'sheet_registration',
+                            range: "'Responses'!A1:Z1000",
+                            operation: 'append',
+                            values: [['{{trigger_1.response}}']]
+                        }
                     }
-                }
-            ],
-            edges: [{ id: 'edge_1', source: 'trigger_1', target: 'sheets_1', sourceHandle, targetHandle }]
-        }, tokenUsage: { totalTokens: 24 } }),
+                ],
+                edges: [{ id: 'edge_1', source: 'trigger_1', target: 'sheets_1', sourceHandle, targetHandle }]
+            }, tokenUsage: { totalTokens: 24 }
+        }),
         instructionReader: async () => 'Return JSON only'
     });
     assert.deepEqual(result.nodes.map(node => node.nodeKey), ['trigger:form-submission', 'action:googleSheets']);
