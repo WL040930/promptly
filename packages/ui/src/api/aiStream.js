@@ -147,7 +147,11 @@ export const submitFormAITurnStream = async (formId, command, clarificationMode,
     }
 };
 
-export const submitWorkflowAITurnStream = async (workflowId, text, clarificationMode, onProgress, options = {}) => {
+export const submitWorkflowAITurnStream = async (workflowId, input, clarificationMode, onProgress, options = {}) => {
+    // `input` may be a plain string (text-only) or a structured { command, text } object.
+    const command = input && typeof input === 'object' ? input.command || null : null;
+    const text = input && typeof input === 'object' ? (input.text || '') : (typeof input === 'string' ? input : '');
+
     const headers = {
         'Content-Type': 'application/json',
         'Accept': 'text/event-stream'
@@ -168,6 +172,7 @@ export const submitWorkflowAITurnStream = async (workflowId, text, clarification
             method: 'POST',
             headers,
             body: JSON.stringify({
+                ...(command ? { command } : {}),
                 text,
                 clarificationMode,
                 ...(Number.isInteger(options.expectedStateVersion) ? { expectedStateVersion: options.expectedStateVersion } : {}),

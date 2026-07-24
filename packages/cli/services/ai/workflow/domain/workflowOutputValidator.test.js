@@ -1,0 +1,208 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+    validateWorkflowPlannerResult,
+    validateWorkflowWorkerResult,
+    validateWorkflowVerifierResult,
+    summarizeWorkflowOutputIssues
+} from './workflowOutputValidator.js';
+
+// ---------------------------------------------------------------------------
+// Planner validator
+// ---------------------------------------------------------------------------
+
+test('planner validator accepts a valid reply result', () => {
+    const issues = validateWorkflowPlannerResult({ type: 'reply', message: 'Here is the current workflow.' });
+    assert.deepEqual(issues, []);
+});
+
+test('planner validator accepts a valid message (clarification) result', () => {
+    const issues = validateWorkflowPlannerResult({
+        type: 'message',
+        message: 'Which email provider?',
+        inputs: [{ id: 'q1', type: 'single_choice', label: 'Provider', options: ['Gmail', 'SendGrid'] }]
+    });
+    assert.deepEqual(issues, []);
+});
+
+test('planner validator accepts a valid direct_plan result with operations', () => {
+    const issues = validateWorkflowPlannerResult({
+        type: 'direct_plan',
+        summary: 'Update subject.',
+        requirements: [{ id: 'req_1', description: 'Set subject to Hello.' }],
+        selectedNodeKeys: ['action:email'],
+        capabilities: [],
+        operations: [{ op: 'update_node', nodeRef: 'n1', updates: { config: { subject: 'Hello' } } }]
+    });
+    assert.deepEqual(issues, []);
+});
+
+test('planner validator accepts a valid plan_complete result', () => {
+    const issues = validateWorkflowPlannerResult({
+        type: 'plan_complete',
+        summary: 'Build a full workflow.',
+        requirements: [{ id: 'req_1', description: 'Add a trigger.' }],
+        selectedNodeKeys: ['trigger:webhook'],
+        capabilities: []
+    });
+    assert.deepEqual(issues, []);
+});
+
+test('planner validator rejects an unknown type', () => {
+    const issues = validateWorkflowPlannerResult({ type: 'invent_workflow' });
+    assert.ok(issues.some(i => i.code === 'INVALID_PLANNER_TYPE'));
+});
+
+test('planner validator rejects a reply without a message', () => {
+    const issues = validateWorkflowPlannerResult({ type: 'reply', message: '' });
+    assert.ok(issues.some(i => i.code === 'REQUIRED' && i.path === 'message'));
+});
+
+test('planner validator rejects message type with no inputs', () => {
+    const issues = validateWorkflowPlannerResult({ type: 'message', message: 'Choose one', inputs: [] });
+    assert.ok(issues.some(i => i.code === 'INVALID_CLARIFICATION_INPUTS'));
+});
+
+test('planner validator rejects choice input with no options', () => {
+    const issues = validateWorkflowPlannerResult({
+        type: 'message',
+        message: 'Choose one',
+        inputs: [{ id: 'q1', type: 'single_choice', label: 'Provider', options: [] }]
+    });
+    assert.ok(issues.some(i => i.code === 'INVALID_CLARIFICATION_OPTIONS'));
+});
+
+test('planner validator rejects an unknown capability', () => {
+    const issues = validateWorkflowPlannerResult({
+        type: 'plan_complete',
+        summary: 'Build.',
+        requirements: [{ id: 'req_1', description: 'Do it.' }],
+        selectedNodeKeys: [],
+        capabilities: ['invent_magic']
+    });
+    assert.ok(issues.some(i => i.code === 'UNKNOWN_CAPABILITY'));
+});
+
+test('planner validator rejects missing requirements for plan types', () => {
+    const issues = validateWorkflowPlannerResult({
+        type: 'plan_complete',
+        summary: 'Build.',
+        requirements: [],
+        selectedNodeKeys: []
+    });
+    assert.ok(issues.some(i => i.code === 'INVALID_REQUIREMENTS'));
+});
+
+test('planner validator rejects duplicate requirement IDs', () => {
+    const issues = validateWorkflowPlannerResult({
+        type: 'plan_complete',
+        summary: 'Build.',
+        requirements: [
+            { id: 'req_1', description: 'First requirement.' },
+            { id: 'req_1', description: 'Duplicate.' }
+        ],
+        selectedNodeKeys: []
+    });
+    assert.ok(issues.some(i => i.code === 'DUPLICATE_REQUIREMENT_ID'));
+});
+
+// ---------------------------------------------------------------------------
+// Worker validator
+// ---------------------------------------------------------------------------
+
+test('worker validator accepts a valid operations array', () => {
+    const issues = validateWorkflowWorkerResult({
+        operations: [{ op: 'update_node', nodeRef: 'n1', updates: { config: { to: 'user@example.com' } } }]
+    });
+    assert.deepEqual(issues, []);
+});
+
+test('worker validator rejects missing operations array', () => {
+    const issues = validateWorkflowWorkerResult({ something: 'else' });
+    assert.ok(issues.some(i => i.code === 'INVALID_OPERATIONS'));
+});
+
+test('worker validator rejects an empty operations array', () => {
+    const issues = validateWorkflowWorkerResult({ operations: [] });
+    assert.ok(issues.some(i => i.code === 'EMPTY_OPERATIONS'));
+});
+
+test('worker validator rejects operations exceeding the maximum count', () => {
+    const issues = validateWorkflowWorkerResult({
+        operations: Array.from({ length: 55 }, (_, i) => ({ op: `op_${i}`, nodeRef: 'n1' }))
+    });
+    assert.ok(issues.some(i => i.code === 'TOO_MANY_OPERATIONS'));
+});
+
+test('worker validator rejects an operation missing an op field', () => {
+    const issues = validateWorkflowWorkerResult({
+        operations: [{ nodeRef: 'n1', updates: {} }]
+    });
+    assert.ok(issues.some(i => i.code === 'INVALID_OPERATION'));
+});
+
+// ---------------------------------------------------------------------------
+// Verifier validator
+// ---------------------------------------------------------------------------
+
+test('verifier validator accepts a passing result with no issues', () => {
+    const issues = validateWorkflowVerifierResult({ status: 'pass', issues: [] });
+    assert.deepEqual(issues, []);
+});
+
+test('verifier validator accepts a repair result with issues', () => {
+    const issues = validateWorkflowVerifierResult({
+        status: 'repair',
+        issues: [{ requirementId: 'req_1', message: 'Subject not set.' }]
+    });
+    assert.deepEqual(issues, []);
+});
+
+test('verifier validator rejects an unknown status', () => {
+    const issues = validateWorkflowVerifierResult({ status: 'unknown', issues: [] });
+    assert.ok(issues.some(i => i.code === 'INVALID_VERIFIER_STATUS'));
+});
+
+test('verifier validator rejects pass status with issues present', () => {
+    const issues = validateWorkflowVerifierResult({
+        status: 'pass',
+        issues: [{ requirementId: 'req_1', message: 'Problem.' }]
+    });
+    assert.ok(issues.some(i => i.code === 'PASS_WITH_ISSUES'));
+});
+
+test('verifier validator rejects repair status with no issues', () => {
+    const issues = validateWorkflowVerifierResult({ status: 'repair', issues: [] });
+    assert.ok(issues.some(i => i.code === 'REPAIR_WITHOUT_ISSUES'));
+});
+
+test('verifier validator rejects more than three verifier issues', () => {
+    const issues = validateWorkflowVerifierResult({
+        status: 'repair',
+        issues: [
+            { message: 'Issue 1.' },
+            { message: 'Issue 2.' },
+            { message: 'Issue 3.' },
+            { message: 'Issue 4.' }
+        ]
+    });
+    assert.ok(issues.some(i => i.code === 'TOO_MANY_VERIFIER_ISSUES'));
+});
+
+// ---------------------------------------------------------------------------
+// summarizeWorkflowOutputIssues
+// ---------------------------------------------------------------------------
+
+test('summarizeWorkflowOutputIssues joins issues into a readable string', () => {
+    const summary = summarizeWorkflowOutputIssues([
+        { code: 'REQUIRED', path: 'message', message: 'A value is required.' },
+        { code: 'INVALID_OPERATIONS', path: 'operations', message: 'Operations must be an array.' }
+    ]);
+    assert.match(summary, /REQUIRED at message/);
+    assert.match(summary, /INVALID_OPERATIONS at operations/);
+});
+
+test('summarizeWorkflowOutputIssues returns empty string for no issues', () => {
+    assert.equal(summarizeWorkflowOutputIssues([]), '');
+    assert.equal(summarizeWorkflowOutputIssues(null), '');
+});

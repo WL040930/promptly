@@ -32,14 +32,13 @@ export const getForms = () => apiRequest('/api/forms');
 export const getForm = (id) => apiRequest(`/api/forms/${id}`);
 export const createForm = (data) => apiRequest('/api/forms', { method: 'POST', body: JSON.stringify(data) });
 export const updateForm = (id, data) => apiRequest(`/api/forms/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-export const acceptFormProposal = (formId, messageId, data) => apiRequest(`/api/forms/${formId}/ai-proposals/${messageId}/accept`, { method: 'POST', body: JSON.stringify(data) });
+export const decideFormProposal = (formId, messageId, data) => apiRequest(`/api/forms/${formId}/ai-proposals/${messageId}/decide`, { method: 'POST', body: JSON.stringify(data) });
 export const deleteForm = (id) => apiRequest(`/api/forms/${id}`, { method: 'DELETE' });
 export const submitFormResponse = (formId, responseData) => apiRequest(`/api/forms/${formId}/responses`, { method: 'POST', body: JSON.stringify({ responseData }) });
 export const getFormResponses = (formId) => apiRequest(`/api/forms/${formId}/responses`);
 export const getPublicForm = (id) => apiRequest(`/api/forms/public/${id}`);
 export const getFormChatHistory = (formId, limit = 50, offset = 0) => apiRequest(`/api/forms/${formId}/chat?limit=${limit}&offset=${offset}`);
 export const clearFormAIChat = (formId) => apiRequest(`/api/forms/${formId}/chat`, { method: 'DELETE' });
-export const updateFormChatMessage = (messageId, updates) => apiRequest(`/api/forms/chat/${messageId}`, { method: 'PUT', body: JSON.stringify(updates) });
 
 // --- Logs ---
 export const getExecutionLogs = ({ search = '', status = 'All', workflowId = '', page = 1, pageSize = 10 } = {}) => {

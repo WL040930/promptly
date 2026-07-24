@@ -30,6 +30,30 @@ const writeDraft = (workflowId, value) => {
     } catch { /* Draft persistence is best effort. */ }
 };
 
+/**
+ * Normalize a send input into the canonical `{ command, text }` shape
+ * expected by submitWorkflowAITurnStream.
+ *
+ * Accepts:
+ *  - A string              → { command: null, text: string }
+ *  - { type, ... } object  → forwarded as { command: object, text: '' }
+ *  - { command, text }     → passed through as-is
+ */
+const normalizeInput = value => {
+    if (typeof value === 'string') return { command: null, text: value };
+    if (value && typeof value === 'object') {
+        if ('type' in value) return { command: value, text: '' };
+        return { command: value.command || null, text: value.text || '' };
+    }
+    return { command: null, text: '' };
+};
+
+/** Derive a display text for the optimistic user message bubble. */
+const displayTextFor = ({ command, text }) => {
+    if (command?.type === 'decide_for_me') return 'Use sensible defaults.';
+    return text || '';
+};
+
 export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt = '' } = {}) => {
     const workflowId = workflow?.id || null;
     const queryClient = useQueryClient();
@@ -41,6 +65,11 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
     const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
+    // Cursor for loading older messages (null = no earlier messages fetched yet).
+    const [beforeCursor, setBeforeCursor] = useState(null);
+    const [olderMessages, setOlderMessages] = useState([]);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+
     const {
         isTyping: sharedIsTyping,
         progressLabel: sharedProgressLabel,
@@ -75,6 +104,9 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
 
     useEffect(() => {
         setInputState(readDraft(workflowId) || initialPrompt || '');
+        // Reset pagination when switching workflows.
+        setBeforeCursor(null);
+        setOlderMessages([]);
     }, [workflowId, initialPrompt]);
 
     const setInput = useCallback(value => {
@@ -82,31 +114,39 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         writeDraft(workflowId, value);
     }, [workflowId]);
 
+    // Combine older messages (loaded via pagination) with the live query result.
     const messages = useMemo(() => {
+        const recent = historyQuery.data?.messages || [];
         if (!historyQuery.data) return [defaultMessage];
-        return historyQuery.data.messages?.length ? historyQuery.data.messages : [defaultMessage];
-    }, [historyQuery.data]);
+        const combined = [...olderMessages, ...recent];
+        return combined.length ? combined : [defaultMessage];
+    }, [historyQuery.data, olderMessages]);
 
     const sendMutation = useMutation({
-        mutationFn: async ({ text, requestId }) => submitWorkflowAITurnStream(
-            workflowId,
-            text,
-            clarificationMode,
-            progress => {
-                const label = progress.message || 'Thinking…';
-                setProgressLabel(label);
-                setStreamState({ isTyping: true, progressLabel: label, requestId });
-            },
-            { expectedStateVersion: historyQuery.data?.state?.version, requestId }
-        ),
-        onMutate: async ({ text, requestId }) => {
+        mutationFn: async ({ input: sendInput, requestId }) => {
+            const { command, text } = normalizeInput(sendInput);
+            return submitWorkflowAITurnStream(
+                workflowId,
+                { command, text },
+                clarificationMode,
+                progress => {
+                    const label = progress.message || 'Thinking…';
+                    setProgressLabel(label);
+                    setStreamState({ isTyping: true, progressLabel: label, requestId });
+                },
+                { expectedStateVersion: historyQuery.data?.state?.version, requestId }
+            );
+        },
+        onMutate: async ({ input: sendInput, requestId }) => {
+            const { command, text } = normalizeInput(sendInput);
+            const optimisticText = displayTextFor({ command, text });
             setIsTyping(true);
             setProgressLabel('Reading this workflow');
             setStreamState({ isTyping: true, progressLabel: 'Reading this workflow', requestId });
             setInput('');
             await queryClient.cancelQueries({ queryKey });
             const previous = queryClient.getQueryData(queryKey);
-            const optimistic = { id: `optimistic_${Date.now()}`, sender: 'user', kind: 'text', text, isOptimistic: true };
+            const optimistic = { id: `optimistic_${Date.now()}`, sender: 'user', kind: 'text', text: optimisticText, isOptimistic: true };
             queryClient.setQueryData(queryKey, old => ({
                 ...(old || { state: null, nextBefore: null }),
                 messages: [...(old?.messages || []), optimistic]
@@ -155,6 +195,8 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         mutationFn: () => clearWorkflowAIChat(workflowId),
         onSuccess: result => {
             clearStreamState();
+            setBeforeCursor(null);
+            setOlderMessages([]);
             queryClient.setQueryData(queryKey, { messages: [], nextBefore: null, state: result.state });
             toast.success('Workflow AI chat cleared.');
         },
@@ -163,16 +205,23 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         }
     });
 
+    /**
+     * handleSend accepts:
+     *  - A plain string  → regular text message
+     *  - A command object with `type` field → structured command (e.g. decide_for_me)
+     */
     const handleSend = useCallback(async value => {
-        const text = typeof value === 'string' ? value.trim() : '';
-        if (!text || isTyping || !workflowId) return;
+        const normalized = normalizeInput(value);
+        // Require either a non-empty text or a structured command.
+        const hasContent = normalized.command || normalized.text.trim();
+        if (!hasContent || isTyping || !workflowId) return;
         try {
             await onBeforeSend?.();
         } catch {
             return;
         }
         const requestId = globalThis.crypto?.randomUUID?.() || `workflow_turn_${Date.now()}`;
-        sendMutation.mutate({ text, requestId });
+        sendMutation.mutate({ input: normalized, requestId });
     }, [isTyping, onBeforeSend, sendMutation, workflowId]);
 
     const handleApply = useCallback(async message => {
@@ -189,9 +238,19 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         finally { setRejectingProposalId(null); }
     }, [decideMutation]);
 
+    /**
+     * handleOption handles both suggestion chip strings and structured
+     * clarification responses. When the clarification card emits a
+     * `decide_for_me` command, it should be forwarded as a command object.
+     */
     const handleOption = useCallback(option => {
-        const value = typeof option === 'string' ? option : option?.label || option?.name || option?.title || '';
-        if (value) handleSend(value);
+        if (option && typeof option === 'object' && option.type) {
+            // Structured command (e.g. { type: 'decide_for_me', clarificationId })
+            handleSend(option);
+        } else {
+            const value = typeof option === 'string' ? option : option?.label || option?.name || option?.title || '';
+            if (value) handleSend(value);
+        }
     }, [handleSend]);
 
     const clearChat = useCallback(() => {
@@ -203,6 +262,33 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         setClarificationMode(mode);
         setClarificationModePreference(mode);
     }, []);
+
+    /**
+     * Load the next page of older messages using cursor-based pagination.
+     * Results are prepended to the olderMessages list.
+     */
+    const loadMoreHistory = useCallback(async () => {
+        if (!workflowId || isLoadingMore) return;
+        const cursor = beforeCursor ?? historyQuery.data?.nextBefore;
+        if (!cursor) return;
+        setIsLoadingMore(true);
+        try {
+            const result = await getWorkflowAIChat(workflowId, LIMIT, cursor);
+            const fetched = result?.messages || [];
+            setOlderMessages(prev => [...fetched, ...prev]);
+            setBeforeCursor(result?.nextBefore || null);
+        } catch {
+            toast.error('Could not load older messages.');
+        } finally {
+            setIsLoadingMore(false);
+        }
+    }, [workflowId, isLoadingMore, beforeCursor, historyQuery.data?.nextBefore, toast]);
+
+    const hasMore = Boolean(
+        beforeCursor !== null
+            ? beforeCursor
+            : historyQuery.data?.nextBefore
+    );
 
     return {
         messages,
@@ -219,8 +305,9 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         acceptingProposalId,
         rejectingProposalId,
         isLoadingHistory: historyQuery.isLoading,
-        hasMore: Boolean(historyQuery.data?.nextBefore),
-        loadMoreHistory: undefined,
+        hasMore,
+        loadMoreHistory,
+        isLoadingMore,
         error: historyQuery.error,
         clearChat,
         isClearingChat: clearChatMutation.isPending

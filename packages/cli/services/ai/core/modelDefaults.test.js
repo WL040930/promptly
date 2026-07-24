@@ -70,11 +70,19 @@ test('completion policy precedence is global unlimited, global cap, legacy form 
     assert.equal(resolveMaxCompletionTokens(AI_TASKS.FORM_BUILD, TASK_POLICIES[AI_TASKS.FORM_BUILD], {
         aiUnlimitedCompletionTokens: false,
         aiMaxCompletionTokens: null,
-        aiFormUnlimitedCompletionTokens: true
+        aiFormUnlimitedCompletionTokens: true,
+        aiWorkflowUnlimitedCompletionTokens: false
+    }), null);
+    assert.equal(resolveMaxCompletionTokens(AI_TASKS.WORKFLOW_BUILD, TASK_POLICIES[AI_TASKS.WORKFLOW_BUILD], {
+        aiUnlimitedCompletionTokens: false,
+        aiMaxCompletionTokens: null,
+        aiFormUnlimitedCompletionTokens: false,
+        aiWorkflowUnlimitedCompletionTokens: true
     }), null);
     assert.equal(resolveMaxCompletionTokens(AI_TASKS.CHAT_RESPOND, policy, {
         aiUnlimitedCompletionTokens: false,
         aiMaxCompletionTokens: null,
-        aiFormUnlimitedCompletionTokens: false
+        aiFormUnlimitedCompletionTokens: false,
+        aiWorkflowUnlimitedCompletionTokens: false
     }), 700);
 });

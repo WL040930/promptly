@@ -11,6 +11,15 @@ const FORM_LIMITS = Object.freeze({
     [AI_TASKS.FORM_VERIFY_REPAIR]: 1024
 });
 
+const WORKFLOW_LIMITS = Object.freeze({
+    [AI_TASKS.WORKFLOW_PLAN]: 1800,
+    [AI_TASKS.WORKFLOW_PLAN_REPAIR]: 2200,
+    [AI_TASKS.WORKFLOW_BUILD]: 3072,
+    [AI_TASKS.WORKFLOW_BUILD_REPAIR]: 3072,
+    [AI_TASKS.WORKFLOW_VERIFY]: 768,
+    [AI_TASKS.WORKFLOW_VERIFY_REPAIR]: 1024
+});
+
 const TASK_POLICIES = Object.freeze({
     [AI_TASKS.CHAT_RESPOND]: {
         profiles: ['fast', 'quality', 'default'],
@@ -96,6 +105,48 @@ const TASK_POLICIES = Object.freeze({
         maxAttempts: 3,
         allowTools: false
     },
+    [AI_TASKS.WORKFLOW_PLAN]: {
+        profiles: ['fast', 'quality', 'default'],
+        responseFormat: 'json',
+        maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_PLAN],
+        maxAttempts: 4,
+        allowTools: false
+    },
+    [AI_TASKS.WORKFLOW_PLAN_REPAIR]: {
+        profiles: ['fast', 'quality', 'default'],
+        responseFormat: 'json',
+        maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_PLAN_REPAIR],
+        maxAttempts: 4,
+        allowTools: false
+    },
+    [AI_TASKS.WORKFLOW_BUILD]: {
+        profiles: ['quality', 'default', 'fast'],
+        responseFormat: 'json',
+        maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_BUILD],
+        maxAttempts: 4,
+        allowTools: false
+    },
+    [AI_TASKS.WORKFLOW_BUILD_REPAIR]: {
+        profiles: ['quality', 'default', 'fast'],
+        responseFormat: 'json',
+        maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_BUILD_REPAIR],
+        maxAttempts: 4,
+        allowTools: false
+    },
+    [AI_TASKS.WORKFLOW_VERIFY]: {
+        profiles: ['fast', 'quality', 'default'],
+        responseFormat: 'json',
+        maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_VERIFY],
+        maxAttempts: 4,
+        allowTools: false
+    },
+    [AI_TASKS.WORKFLOW_VERIFY_REPAIR]: {
+        profiles: ['fast', 'quality', 'default'],
+        responseFormat: 'json',
+        maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_VERIFY_REPAIR],
+        maxAttempts: 4,
+        allowTools: false
+    },
     [AI_TASKS.NODE_TEXT]: {
         profiles: ['quality', 'default', 'fast'],
         responseFormat: 'text',
@@ -126,6 +177,7 @@ export const resolveMaxCompletionTokens = (task, policy, config = env) => {
     if (config.aiUnlimitedCompletionTokens) return null;
     if (config.aiMaxCompletionTokens) return config.aiMaxCompletionTokens;
     if (config.aiFormUnlimitedCompletionTokens && task.startsWith('form.')) return null;
+    if (config.aiWorkflowUnlimitedCompletionTokens && task.startsWith('workflow.')) return null;
     return policy.maxCompletionTokens;
 };
 

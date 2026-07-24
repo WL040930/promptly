@@ -2,21 +2,83 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { workflowAssistantInternals } from './workflowAssistant.js';
 
-const { normalizeInput, isOutOfScope } = workflowAssistantInternals;
+const { normalizeWorkflowCommand, resolveWorkflowTurnContext } = workflowAssistantInternals;
 
-test('workflow assistant accepts workflow edits that reference form fields', () => {
-    assert.equal(isOutOfScope('Set the confirmation email recipient to the required email form field'), false);
-    assert.equal(isOutOfScope('Change the approval branch email'), false);
+// ---------------------------------------------------------------------------
+// normalizeWorkflowCommand
+// ---------------------------------------------------------------------------
+
+test('normalizeWorkflowCommand passes through a decide_for_me command object', () => {
+    const result = normalizeWorkflowCommand({ command: { type: 'decide_for_me', clarificationId: 'clar_1' }, text: '' });
+    assert.equal(result.type, 'decide_for_me');
+    assert.equal(result.clarificationId, 'clar_1');
 });
 
-test('workflow assistant redirects edits belonging to another AI surface', () => {
-    assert.equal(isOutOfScope('Create a new form'), true);
-    assert.equal(isOutOfScope('Modify another workflow'), true);
-    assert.equal(isOutOfScope('Delete my form fields'), true);
+test('normalizeWorkflowCommand detects decide phrases in free text', () => {
+    for (const phrase of ['you decide', 'Decide for me', 'use sensible defaults', 'Use defaults']) {
+        const result = normalizeWorkflowCommand({ command: null, text: phrase });
+        assert.equal(result.type, 'decide_for_me', `Expected decide_for_me for: "${phrase}"`);
+    }
 });
 
-test('workflow assistant normalizes text and command input consistently', () => {
-    assert.equal(normalizeInput(null, '  add an email step  '), 'add an email step');
-    assert.equal(normalizeInput({ type: 'submit_text', text: '  update the email  ' }, ''), 'update the email');
-    assert.equal(normalizeInput(null, ''), '');
+test('normalizeWorkflowCommand returns submit_text for ordinary messages', () => {
+    const result = normalizeWorkflowCommand({ command: null, text: '  add an email step  ' });
+    assert.equal(result.type, 'submit_text');
+    assert.equal(result.text, 'add an email step');
+});
+
+test('normalizeWorkflowCommand returns empty submit_text when no input is given', () => {
+    const result = normalizeWorkflowCommand({ command: null, text: '' });
+    assert.equal(result.type, 'submit_text');
+    assert.equal(result.text, '');
+});
+
+test('normalizeWorkflowCommand accepts a legacy string command fallback', () => {
+    const result = normalizeWorkflowCommand({ command: 'add a step', text: '' });
+    assert.equal(result.type, 'submit_text');
+    assert.equal(result.text, 'add a step');
+});
+
+// ---------------------------------------------------------------------------
+// resolveWorkflowTurnContext
+// ---------------------------------------------------------------------------
+
+test('resolveWorkflowTurnContext marks authority as assistant for decide_for_me', () => {
+    const ctx = resolveWorkflowTurnContext({
+        command: { type: 'decide_for_me', clarificationId: 'clar_1' },
+        activeWork: { sourceText: 'Add a Slack step', requestId: 'req_1', updatedAt: new Date().toISOString() }
+    });
+    assert.equal(ctx.intent.authority, 'assistant');
+    assert.equal(ctx.intent.sourceText, 'Add a Slack step');
+    assert.equal(ctx.command.type, 'decide_for_me');
+    assert.equal(ctx.command.clarificationId, 'clar_1');
+});
+
+test('resolveWorkflowTurnContext marks relation as revise when a pending proposal exists', () => {
+    const pending = { id: 'msg_1', kind: 'workflow_proposal', proposalStatus: 'pending', payload: {} };
+    const ctx = resolveWorkflowTurnContext({
+        command: { type: 'submit_text', text: 'also add a delay step' },
+        pendingProposal: pending
+    });
+    assert.equal(ctx.intent.relationToPending, 'revise');
+    assert.equal(ctx.pendingProposal.mode, 'include');
+});
+
+test('resolveWorkflowTurnContext marks relation as replace on correction language', () => {
+    const pending = { id: 'msg_1', kind: 'workflow_proposal', proposalStatus: 'pending', payload: {} };
+    const ctx = resolveWorkflowTurnContext({
+        command: { type: 'submit_text', text: 'actually, use a webhook trigger instead' },
+        pendingProposal: pending
+    });
+    assert.equal(ctx.intent.relationToPending, 'replace');
+    assert.equal(ctx.pendingProposal.mode, 'exclude');
+});
+
+test('resolveWorkflowTurnContext marks relation as none when no proposal is pending', () => {
+    const ctx = resolveWorkflowTurnContext({
+        command: { type: 'submit_text', text: 'add a Gmail step' },
+        pendingProposal: null
+    });
+    assert.equal(ctx.intent.relationToPending, 'none');
+    assert.equal(ctx.intent.authority, 'user');
 });

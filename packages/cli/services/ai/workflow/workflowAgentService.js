@@ -16,6 +16,7 @@ const validActions = new Set(['create_workflow', 'edit_workflow']);
 
 const requiredNodeKeysByCapability = Object.freeze({
     respondent_confirmation: ['trigger:form-submission', 'action:email'],
+    owner_approval: ['logic:approval'],
     application_review_decision: ['trigger:form-submission', 'logic:approval', 'action:email']
 });
 
@@ -243,7 +244,7 @@ export const requiredCapabilitiesForRequest = message => {
     const capabilities = [];
     if (respondentConfirmationPattern.test(text)) capabilities.push('respondent_confirmation');
     if (applicationReviewPattern.test(text) && /\b(form|submission|applicant|candidate|workflow|automation)\b/i.test(text)) {
-        capabilities.push('application_review_decision');
+        capabilities.push('owner_approval');
     }
     return capabilities;
 };
@@ -340,8 +341,9 @@ export const compileWorkflowDraft = ({
     const nextEdges = edges.map(edge => ({ ...edge }));
     const repairs = [];
     const wantsRespondentConfirmation = requiredCapabilities.includes('respondent_confirmation');
-    const wantsApplicationReview = requiredCapabilities.includes('application_review_decision');
-    if (!wantsRespondentConfirmation && !wantsApplicationReview) return { nodes: nextNodes, edges: nextEdges, repairs };
+    const wantsLegacyApplicationReview = requiredCapabilities.includes('application_review_decision');
+    const wantsOwnerApproval = wantsLegacyApplicationReview || requiredCapabilities.includes('owner_approval');
+    if (!wantsRespondentConfirmation && !wantsOwnerApproval) return { nodes: nextNodes, edges: nextEdges, repairs };
 
     const formTriggers = nextNodes.filter(node => node?.subType === 'form-submission');
     const emailActions = nextNodes.filter(isEmailAction);
@@ -350,7 +352,7 @@ export const compileWorkflowDraft = ({
     // Correct only the runtime binding when the workflow has one clear
     // confirmation action. Leave all other model-authored decisions untouched.
     if (wantsRespondentConfirmation && formTriggers.length === 1 && respondentEmail.field
-        && (emailActions.length === 1 || wantsApplicationReview)) {
+        && (emailActions.length === 1 || wantsOwnerApproval)) {
         const expected = recipientPathFor(formTriggers[0], respondentEmail.field);
         for (const emailAction of emailActions) {
             if (emailAction.config.to !== expected) {
@@ -360,7 +362,7 @@ export const compileWorkflowDraft = ({
         }
     }
 
-    if (wantsApplicationReview) {
+    if (wantsOwnerApproval) {
         const approvals = nextNodes.filter(node => node?.subType === 'approval');
         if (approvals.length === 1) {
             delete approvals[0].config.assigneeType;
@@ -387,8 +389,9 @@ export const validateGeneratedWorkflowCapabilities = ({
     edges = []
 } = {}) => {
     const wantsRespondentConfirmation = requiredCapabilities.includes('respondent_confirmation');
-    const wantsApplicationReview = requiredCapabilities.includes('application_review_decision');
-    if (!wantsRespondentConfirmation && !wantsApplicationReview) return [];
+    const wantsLegacyApplicationReview = requiredCapabilities.includes('application_review_decision');
+    const wantsOwnerApproval = wantsLegacyApplicationReview || requiredCapabilities.includes('owner_approval');
+    if (!wantsRespondentConfirmation && !wantsOwnerApproval) return [];
 
     const issues = [];
     const formTriggers = nodes.filter(node => node?.subType === 'form-submission');
@@ -442,12 +445,12 @@ export const validateGeneratedWorkflowCapabilities = ({
         });
     }
 
-    if (wantsApplicationReview) {
+    if (wantsOwnerApproval) {
         const approvalNodes = nodes.filter(node => node?.subType === 'approval');
-        if (formTriggers.length === 0) issues.push({ code: 'FORM_SUBMISSION_TRIGGER_MISSING', path: 'nodes', message: 'A form-submission trigger is required before application review.' });
         if (approvalNodes.length === 0) issues.push({ code: 'APPROVAL_NODE_MISSING', path: 'nodes', message: 'An approval node is required to review each application.' });
-        if (emailActions.length < 2) issues.push({ code: 'APPROVAL_BRANCH_EMAILS_MISSING', path: 'nodes', message: 'Approved and rejected branches each need an email action.' });
-        if (approvalNodes.length > 0) {
+        if (wantsLegacyApplicationReview && formTriggers.length === 0) issues.push({ code: 'FORM_SUBMISSION_TRIGGER_MISSING', path: 'nodes', message: 'A form-submission trigger is required before application review.' });
+        if (wantsLegacyApplicationReview && emailActions.length < 2) issues.push({ code: 'APPROVAL_BRANCH_EMAILS_MISSING', path: 'nodes', message: 'Approved and rejected branches each need an email action.' });
+        if (wantsLegacyApplicationReview && approvalNodes.length > 0) {
             const approval = approvalNodes[0];
             const approvedReachable = reachableFrom([approval], edges.filter(edge => !edge.sourceHandle || edge.sourceHandle === 'approved'));
             const rejectedReachable = reachableFrom([approval], edges.filter(edge => !edge.sourceHandle || edge.sourceHandle === 'rejected'));

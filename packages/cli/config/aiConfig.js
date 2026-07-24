@@ -96,6 +96,7 @@ export const createAIConfig = (source = process.env) => {
         aiUnlimitedCompletionTokens: readBoolean(source, 'AI_UNLIMITED_COMPLETION_TOKENS'),
         aiMaxCompletionTokens: readPositiveInteger(source, 'AI_MAX_COMPLETION_TOKENS'),
         aiFormUnlimitedCompletionTokens: readBoolean(source, 'AI_FORM_UNLIMITED_COMPLETION_TOKENS'),
+        aiWorkflowUnlimitedCompletionTokens: readBoolean(source, 'AI_WORKFLOW_UNLIMITED_COMPLETION_TOKENS'),
         aiChatMaxToolLoops: readPositiveInteger(source, 'AI_CHAT_MAX_TOOL_LOOPS', 8),
         aiAgentMaxActions: readPositiveInteger(source, 'AI_AGENT_MAX_ACTIONS', 8),
         aiAgentMaxReplans: readPositiveInteger(source, 'AI_AGENT_MAX_REPLANS', 1)

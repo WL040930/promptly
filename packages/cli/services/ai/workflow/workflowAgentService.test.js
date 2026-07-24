@@ -262,7 +262,7 @@ test('request capability detection recognises equivalent confirmation language',
 
 test('request capability detection requires explicit approval branches for review requests', () => {
     const capabilities = requiredCapabilitiesForRequest('When the job application is submitted, approve or reject it and email the applicant.');
-    assert.deepEqual(capabilities, ['respondent_confirmation', 'application_review_decision']);
+    assert.deepEqual(capabilities, ['respondent_confirmation', 'owner_approval']);
 });
 
 test('application review capability validates both approval output branches', () => {

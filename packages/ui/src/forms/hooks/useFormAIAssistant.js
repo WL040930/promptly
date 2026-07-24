@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { acceptFormProposal, clearFormAIChat, getFormChatHistory, updateFormChatMessage } from '../../api/backend.js';
+import { clearFormAIChat, decideFormProposal, getFormChatHistory } from '../../api/backend.js';
 import { submitFormAITurnStream } from '../../api/aiStream.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useAIStream } from '../../context/AIStreamContext.jsx';
@@ -170,57 +170,6 @@ export const useFormAIAssistant = (form) => {
         }
     });
 
-    const updateProposalMutation = useMutation({
-        mutationFn: async ({ msgId, originalProposal, status, schema, unselectedIndices }) => {
-            const updates = { 
-                proposal: { 
-                    ...originalProposal, 
-                    status,
-                    ...(schema ? { schema } : {}),
-                    ...(unselectedIndices ? { unselectedPatchIndices: unselectedIndices } : {})
-                } 
-            };
-            const result = await updateFormChatMessage(msgId, updates);
-            return { msgId, status, updates, stateVersion: result.stateVersion };
-        },
-        onMutate: async ({ msgId, originalProposal, status, schema, unselectedIndices }) => {
-            await queryClient.cancelQueries({ queryKey });
-            const previousData = queryClient.getQueryData(queryKey);
-
-            // Optimistic UI update
-            queryClient.setQueryData(queryKey, (old) => {
-                if (!old) return old;
-                return {
-                    ...old,
-                    pages: old.pages.map(page => ({
-                        ...page,
-                        messages: page.messages.map(msg => 
-                            msg.id === msgId ? { 
-                                ...msg, 
-                                proposal: { 
-                                    ...msg.proposal, 
-                                    status,
-                                    ...(schema ? { schema } : {}),
-                                    ...(unselectedIndices ? { unselectedPatchIndices: unselectedIndices } : {})
-                                } 
-                            } : msg
-                        )
-                    }))
-                };
-            });
-            return { previousData };
-        },
-        onError: (err, variables, context) => {
-            if (context?.previousData) {
-                queryClient.setQueryData(queryKey, context.previousData);
-            }
-            toast.error(`Failed to ${variables.status} proposal.`);
-        },
-        onSuccess: (data) => {
-            if (Number.isInteger(data?.stateVersion)) setAIStateVersion(data.stateVersion);
-        }
-    });
-
     const clearChatMutation = useMutation({
         mutationFn: () => clearFormAIChat(form.id),
         onSuccess: result => {
@@ -256,7 +205,8 @@ export const useFormAIAssistant = (form) => {
                 .filter(({ index }) => !unselectedIndices.includes(index))
                 .map(({ patchId }) => patchId);
 
-            const result = await acceptFormProposal(form.id, msgId, {
+            const result = await decideFormProposal(form.id, msgId, {
+                action: 'accept',
                 selectedPatchIds,
                 baseFormUpdatedAt: originalProposal.baseFormUpdatedAt || form.updatedAt
             });
@@ -281,18 +231,6 @@ export const useFormAIAssistant = (form) => {
         } catch (error) {
             console.error('Error applying proposal:', error);
             if (error.payload?.code === 'FORM_PROPOSAL_STALE') {
-                const message = rawMessages.find(item => item.id === msgId);
-                if (message?.proposal) {
-                    try {
-                        await updateProposalMutation.mutateAsync({
-                            msgId,
-                            originalProposal: message.proposal,
-                            status: 'stale'
-                        });
-                    } catch (persistError) {
-                        console.error('Failed to persist stale form proposal:', persistError);
-                    }
-                }
                 queryClient.setQueryData(queryKey, old => {
                     if (!old) return old;
                     return {
@@ -305,6 +243,7 @@ export const useFormAIAssistant = (form) => {
                         }))
                     };
                 });
+                await queryClient.invalidateQueries({ queryKey });
             }
             toast.error(error.payload?.code === 'FORM_PROPOSAL_STALE'
                 ? 'This suggestion is outdated. Generate a new one.'
@@ -312,17 +251,32 @@ export const useFormAIAssistant = (form) => {
         } finally {
             setAcceptingProposalId(null);
         }
-    }, [form, queryClient, queryKey, toast, rawMessages, updateProposalMutation]);
+    }, [form, queryClient, queryKey, toast, rawMessages]);
 
-    const handleRejectProposal = useCallback((msgId) => {
+    const handleRejectProposal = useCallback(async (msgId) => {
         setRejectingProposalId(msgId);
-        const msg = rawMessages.find(m => m.id === msgId);
-        const originalProposal = msg?.proposal || {};
-        
-        updateProposalMutation.mutate({ msgId, originalProposal, status: 'rejected' }, {
-            onSettled: () => setRejectingProposalId(null)
-        });
-    }, [updateProposalMutation, rawMessages]);
+        try {
+            const result = await decideFormProposal(form.id, msgId, { action: 'reject' });
+            if (Number.isInteger(result.state?.version)) setAIStateVersion(result.state.version);
+            queryClient.setQueryData(queryKey, old => {
+                if (!old) return old;
+                return {
+                    ...old,
+                    pages: old.pages.map(page => ({
+                        ...page,
+                        messages: page.messages.map(message => message.id === msgId
+                            ? { ...message, proposal: result.proposal }
+                            : message)
+                    }))
+                };
+            });
+            toast.success('Proposal rejected.');
+        } catch (error) {
+            toast.error(error.message || 'Failed to reject proposal.');
+        } finally {
+            setRejectingProposalId(null);
+        }
+    }, [form?.id, queryClient, queryKey, toast]);
 
     const clearChat = useCallback(() => {
         if (!form?.id || clearChatMutation.isPending) return Promise.resolve();

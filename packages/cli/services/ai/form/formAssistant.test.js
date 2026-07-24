@@ -136,6 +136,40 @@ test('form assistant accepts a proposal through the same state boundary', async 
     assert.equal(memory.threads[0].state.activeProposalMessageId, null);
 });
 
+test('form assistant rejects a proposal without letting the client alter its patches', async () => {
+    const memory = createMemoryModels();
+    const state = await memory.models.AssistantThread.create({
+        id: 'thread_1', userId: 'user_1', surface: 'form', formId: 'form_1',
+        state: { version: 1, phase: 'awaiting_proposal', activeProposalMessageId: 'proposal_1' }, context: {}
+    });
+    await memory.models.AssistantMessage.create({
+        id: 'proposal_1',
+        threadId: state.id,
+        sender: 'bot',
+        kind: 'form_proposal',
+        text: 'Add a field.',
+        payload: {
+            status: 'pending',
+            patches: [{ op: 'add', field: { id: 'email', type: 'email', label: 'Email' } }]
+        }
+    });
+
+    const assistant = createFormAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) }
+    });
+    const result = await assistant.decideProposal({
+        userId: 'user_1',
+        formId: 'form_1',
+        proposalMessageId: 'proposal_1',
+        action: 'reject'
+    });
+
+    assert.equal(result.proposal.status, 'rejected');
+    assert.equal(memory.forms[0].fields.length, 0);
+    assert.equal(memory.messages[0].payload.patches[0].field.id, 'email');
+});
+
 test('form assistant keeps section intent and excludes the prior proposal on correction', async () => {
     const memory = createMemoryModels();
     const calls = [];

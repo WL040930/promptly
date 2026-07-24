@@ -251,34 +251,3 @@ export const getFormChatHistory = asyncHandler(async (req, res) => {
     // Return messages in chronological order for the frontend
     res.json(messages.reverse().map(message => ({ ...message.toJSON(), formId })));
 });
-
-export const updateFormChatMessage = asyncHandler(async (req, res) => {
-    const { messageId } = req.params;
-    const { proposal } = req.body;
-
-    const message = await AssistantMessage.findByPk(messageId);
-    const thread = message
-        ? await AssistantThread.findOne({ where: { id: message.threadId, surface: 'form', userId: req.user.id } })
-        : null;
-
-    if (!message || !thread) return res.status(404).json({ message: 'Message not found' });
-
-    await message.update({ payload: proposal, proposalStatus: proposal?.status || message.proposalStatus });
-    let stateVersion = null;
-    if (['rejected', 'stale', 'superseded', 'accepted'].includes(proposal?.status)) {
-        const state = thread.state || {};
-        if (state.activeProposalMessageId === message.id) {
-            const nextState = {
-                ...state,
-                phase: 'idle',
-                activeProposalMessageId: null,
-                openClarification: null,
-                activeWork: null,
-                version: Number(state.version || 1) + 1
-            };
-            await thread.update({ state: nextState });
-            stateVersion = nextState.version;
-        }
-    }
-    res.json({ ...message.toJSON(), stateVersion });
-});
