@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import Button from '../ui/Button.jsx';
 
-export default function MessageOptionsWidget({ options, onSend, isTyping, allowDecide = false, clarificationId = null }) {
+export default function MessageOptionsWidget({ options, onSend, isTyping, allowDecide = false, clarificationId = null, isResolved = false, initialState = {} }) {
     // Store state for each input field by its ID
-    const [formState, setFormState] = useState({});
+    const [formState, setFormState] = useState(initialState);
 
     const handleToggle = (inputId, option, isSingle) => {
         setFormState(prev => {
@@ -40,7 +40,7 @@ export default function MessageOptionsWidget({ options, onSend, isTyping, allowD
         });
 
         if (parts.length > 0) {
-            onSend(parts.join('\n'));
+            onSend({ type: 'submit_clarification', text: parts.join('\n'), state: formState });
         }
     };
 
@@ -64,7 +64,7 @@ export default function MessageOptionsWidget({ options, onSend, isTyping, allowD
                                     <button
                                         key={resource.id}
                                         type="button"
-                                        disabled={isTyping}
+                                        disabled={isTyping || isResolved}
                                         onClick={() => onSend?.(resource)}
                                         className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-900 disabled:cursor-not-allowed disabled:opacity-50"
                                     >
@@ -95,7 +95,7 @@ export default function MessageOptionsWidget({ options, onSend, isTyping, allowD
                                                 type={isSingle ? 'radio' : 'checkbox'}
                                                 name={input.id}
                                                 checked={isChecked}
-                                                disabled={isTyping}
+                                                disabled={isTyping || isResolved}
                                                 onChange={() => handleToggle(input.id, opt, isSingle)}
                                                 className="mt-0.5 w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-500 disabled:opacity-50"
                                             />
@@ -114,7 +114,7 @@ export default function MessageOptionsWidget({ options, onSend, isTyping, allowD
                             {input.label && <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{input.label}</span>}
                             {input.type === 'textarea' || input.multiline || (input.placeholder && input.placeholder.includes('\n')) ? (
                                 <textarea
-                                    disabled={isTyping}
+                                    disabled={isTyping || isResolved}
                                     placeholder={input.placeholder || "Type here..."}
                                     value={formState[input.id] || ''}
                                     onChange={(e) => handleTextChange(input.id, e.target.value)}
@@ -123,7 +123,7 @@ export default function MessageOptionsWidget({ options, onSend, isTyping, allowD
                             ) : (
                                 <input 
                                     type="text"
-                                    disabled={isTyping}
+                                    disabled={isTyping || isResolved}
                                     placeholder={input.placeholder || "Type here..."}
                                     value={formState[input.id] || ''}
                                     onChange={(e) => handleTextChange(input.id, e.target.value)}
@@ -146,7 +146,7 @@ export default function MessageOptionsWidget({ options, onSend, isTyping, allowD
                     variant="primary"
                     size="sm"
                     onClick={handleSend}
-                    disabled={!isAnySelected || isTyping}
+                    disabled={!isAnySelected || isTyping || isResolved}
                     className="w-full mt-1"
                 >
                     Send Selected
@@ -157,7 +157,7 @@ export default function MessageOptionsWidget({ options, onSend, isTyping, allowD
                     variant="outline"
                     size="sm"
                     onClick={() => onSend?.({ type: 'decide_for_me', clarificationId })}
-                    disabled={isTyping}
+                    disabled={isTyping || isResolved}
                     className="w-full"
                 >
                     Use sensible defaults

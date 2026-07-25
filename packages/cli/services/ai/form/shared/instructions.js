@@ -24,9 +24,9 @@ const readInstruction = (fileName, suffix = '') => {
     }
 };
 
-export const plannerInstruction = readInstruction('planner.md', `\n\n${FORM_FIELD_SEMANTICS}`);
+export const plannerInstruction = readInstruction('form-planner.md', `\n\n${FORM_FIELD_SEMANTICS}`);
 export const workerInstruction = readInstruction(
-    'worker.md',
+    'form-worker.md',
     `\n\nAuthoritative supported field types: ${FORM_FIELD_TYPES.join(', ')}.\nAuthoritative form-level setting keys: ${FORM_SETTINGS_KEYS.join(', ')}.\nNever invent a setting key; omit unsupported optional settings.\n\n${FORM_FIELD_SEMANTICS}`
 );
-export const verifierInstruction = readInstruction('verifier.md', `\n\n${FORM_FIELD_SEMANTICS}`);
+export const verifierInstruction = readInstruction('form-verifier.md', `\n\n${FORM_FIELD_SEMANTICS}`);

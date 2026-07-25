@@ -138,10 +138,11 @@ export default function GenericChatWidget({
                 {isLoadingHistory ? (
                     <ChatHistorySkeleton />
                 ) : (
-                    messages.filter(msg => !['tool_call', 'tool_response'].includes(msg.kind)).map(message => (
+                    messages.filter(msg => !['tool_call', 'tool_response'].includes(msg.kind)).map((message, index, arr) => (
                         <AgentMessage
                             key={message.id}
                             message={message}
+                            isLatest={index === arr.length - 1}
                             onApply={handleApply}
                             onIgnore={handleIgnore}
                             onOption={handleOption}

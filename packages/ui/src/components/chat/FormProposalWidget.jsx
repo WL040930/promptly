@@ -117,7 +117,8 @@ export default function FormProposalWidget({
                 ...proposal,
                 schema: filteredSchema,
                 // Only keep patches that were actually selected so the preview modal renders them correctly
-                patches: proposalPatches.filter((_, idx) => !unselectedIndices.includes(idx))
+                patches: proposalPatches.filter((_, idx) => !unselectedIndices.includes(idx)),
+                unselectedIndices
             }
         };
     };
@@ -130,7 +131,7 @@ export default function FormProposalWidget({
     };
 
     const handlePreviewClick = () => {
-        if (!proposal?.schema) return onPreview();
+        if (!proposal?.schema) return onPreview(proposal);
         
         const { filteredProposal } = getFilteredProposal();
         onPreview(filteredProposal);
@@ -141,7 +142,8 @@ export default function FormProposalWidget({
             const { filteredProposal } = getFilteredProposal();
             onPreviewUpdate(filteredProposal);
         }
-    }, [selectedPatches, onPreviewUpdate]); // Re-fire whenever selected patches change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedPatches]); // Re-fire whenever selected patches change
 
     return (
         <div className="mt-2 w-full border border-slate-200 rounded-xl bg-slate-50 p-3 shadow-md flex flex-col gap-3">

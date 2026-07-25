@@ -19,6 +19,9 @@ const toCommand = ({ command, text } = {}) => {
     if (command && typeof command === 'object' && command.type === 'decide_for_me') {
         return { type: 'decide_for_me', clarificationId: command.clarificationId || null };
     }
+    if (command && typeof command === 'object' && command.type === 'submit_clarification') {
+        return { type: 'submit_clarification', text: String(command.text || '').trim(), state: command.state };
+    }
     if (command && typeof command === 'object' && command.type === 'submit_text') {
         return { type: 'submit_text', text: String(command.text || '').trim() };
     }
@@ -142,6 +145,20 @@ export const createFormAssistant = ({
             const pending = state.activeProposalMessageId
                 ? await models.AssistantMessage.findOne({ where: { id: state.activeProposalMessageId, threadId: state.threadId }, transaction })
                 : null;
+
+            if (state.openClarification && command.type === 'submit_clarification' && command.state) {
+                const clarificationMessage = await models.AssistantMessage.findOne({
+                    where: { threadId: state.threadId, sender: 'bot', kind: 'clarification' },
+                    order: [['createdAt', 'DESC']],
+                    transaction
+                });
+                if (clarificationMessage) {
+                    await clarificationMessage.update({
+                        payload: { ...clarificationMessage.payload, selectedState: command.state }
+                    }, { transaction });
+                }
+            }
+
             const context = resolveFormTurnContext({
                 command,
                 clarification: state.openClarification

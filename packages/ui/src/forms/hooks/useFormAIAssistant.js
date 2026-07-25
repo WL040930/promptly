@@ -158,7 +158,12 @@ export const useFormAIAssistant = (form) => {
                 const supersededMessageIds = new Set(data.botMsg.supersededMessageIds || []);
                 if (supersededMessageIds.size > 0) {
                     currentMessages = currentMessages.map(message => supersededMessageIds.has(message.id)
-                        ? { ...message, proposal: { ...message.proposal, status: 'superseded' } }
+                        ? { 
+                            ...message, 
+                            proposal: { ...message.proposal, status: 'superseded' },
+                            payload: { ...message.payload, status: 'superseded' },
+                            proposalStatus: 'superseded'
+                          }
                         : message);
                 }
                 newPages[0] = {
@@ -184,12 +189,23 @@ export const useFormAIAssistant = (form) => {
     });
 
     const handleSend = useCallback((value, command = null) => {
-        const text = typeof value === 'string'
-            ? value
-            : (value?.type === 'decide_for_me'
-                ? 'Use sensible defaults.'
-                : String(value?.name || value?.title || value?.label || ''));
-        const nextCommand = command || { type: 'submit_text', text };
+        let text = '';
+        let nextCommand = command;
+
+        if (typeof value === 'string') {
+            text = value;
+            nextCommand = nextCommand || { type: 'submit_text', text };
+        } else if (value?.type === 'decide_for_me') {
+            text = 'Use sensible defaults.';
+            nextCommand = nextCommand || value;
+        } else if (value?.type === 'submit_clarification') {
+            text = value.text || 'Submitted clarification';
+            nextCommand = nextCommand || value;
+        } else {
+            text = String(value?.name || value?.title || value?.label || '');
+            nextCommand = nextCommand || { type: 'submit_text', text };
+        }
+
         if (!text.trim() || isTyping || !form?.id) return;
         sendMessageMutation.mutate({ text, command: nextCommand });
     }, [form?.id, isTyping, sendMessageMutation]);
@@ -221,7 +237,7 @@ export const useFormAIAssistant = (form) => {
                     pages: old.pages.map(page => ({
                         ...page,
                         messages: page.messages.map(message => message.id === msgId
-                            ? { ...message, proposal: result.proposal }
+                            ? { ...message, proposal: result.proposal, payload: result.proposal, proposalStatus: result.proposal.status }
                             : message)
                     }))
                 };
@@ -265,7 +281,7 @@ export const useFormAIAssistant = (form) => {
                     pages: old.pages.map(page => ({
                         ...page,
                         messages: page.messages.map(message => message.id === msgId
-                            ? { ...message, proposal: result.proposal }
+                            ? { ...message, proposal: result.proposal, payload: result.proposal, proposalStatus: result.proposal.status }
                             : message)
                     }))
                 };

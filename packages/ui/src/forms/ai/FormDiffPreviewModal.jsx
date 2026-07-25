@@ -6,7 +6,7 @@ import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { formatFormSettingValue, getFormSettingLabel } from '../settings/formSettingPresentation.js';
 
-const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
+const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal, onApply, isApplying }) => {
     // Prevent background scrolling when open
     useEffect(() => {
         if (isOpen) {
@@ -225,14 +225,33 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal }) => {
                 </div>
 
                 {/* Footer */}
-                <div className="px-6 py-4 border-t border-slate-200 bg-white flex justify-end shrink-0">
+                <div className="px-6 py-4 border-t border-slate-200 bg-white flex justify-end shrink-0 gap-3">
                     <button 
                         onClick={handleClose}
-                        aria-label="Close preview changes dialog"
-                        className="px-6 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors"
+                        aria-label="Cancel preview changes"
+                        className="px-6 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors"
                     >
-                        Done
+                        Cancel
                     </button>
+                    {onApply && (
+                        <button 
+                            onClick={onApply}
+                            disabled={isApplying}
+                            className="px-6 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
+                        >
+                            {isApplying ? (
+                                <>
+                                    <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Applying...
+                                </>
+                            ) : (
+                                "Apply Changes"
+                            )}
+                        </button>
+                    )}
                 </div>
             </div>
         </div>,

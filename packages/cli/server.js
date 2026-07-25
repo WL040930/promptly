@@ -14,7 +14,7 @@ const startServer = async () => {
   try {
     assertAIConfig();
     await sequelize.authenticate();
-    await sequelize.sync();
+    await sequelize.sync({ alter: true });
     await ensureDatabaseSchema(sequelize);
     await ensureDatabaseChangeTriggers(sequelize);
     

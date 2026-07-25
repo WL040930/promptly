@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useFormAIAssistant } from '../hooks/useFormAIAssistant';
 import FormDiffPreviewModal from './FormDiffPreviewModal';
 import GenericChatWidget from '../../components/chat/GenericChatWidget.jsx';
@@ -33,6 +33,15 @@ const FormAIAssistant = ({ form }) => {
     } = useFormAIAssistant(form);
 
     const [previewProposal, setPreviewProposal] = useState(null);
+    const prevAcceptingIdRef = useRef(acceptingProposalId);
+
+    useEffect(() => {
+        // Close modal when accepting finishes (goes from truthy to falsy)
+        if (prevAcceptingIdRef.current && !acceptingProposalId && previewProposal) {
+            setPreviewProposal(null);
+        }
+        prevAcceptingIdRef.current = acceptingProposalId;
+    }, [acceptingProposalId, previewProposal]);
 
     return (
         <div className="flex min-h-0 flex-col h-full bg-transparent relative overflow-hidden">
@@ -59,7 +68,7 @@ const FormAIAssistant = ({ form }) => {
                     } else if (option?.type === 'preview_update') {
                         setPreviewProposal(prev => {
                             if (prev && prev.formId === option.proposal.formId) {
-                                return option.proposal;
+                                return { ...option.proposal, messageId: prev.messageId };
                             }
                             return prev;
                         });
@@ -87,6 +96,12 @@ const FormAIAssistant = ({ form }) => {
                 onClose={() => setPreviewProposal(null)}
                 currentForm={form}
                 proposal={previewProposal}
+                onApply={() => {
+                    if (previewProposal?.messageId) {
+                        handleAcceptProposal(previewProposal.messageId, previewProposal.unselectedIndices || []);
+                    }
+                }}
+                isApplying={acceptingProposalId === previewProposal?.messageId}
             />
         </div>
     );

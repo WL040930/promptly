@@ -50,7 +50,7 @@ const TokenUsageBreakdown = ({ tokenUsage }) => {
     );
 };
 
-export default function AgentMessage({ message, onApply, onIgnore, onOption, isTyping, isAccepting, isRejecting }) {
+export default function AgentMessage({ message, onApply, onIgnore, onOption, isTyping, isAccepting, isRejecting, isLatest = true }) {
     const payload = message.payload || message.proposal || {};
     const isProposal = message.proposal != null || ['solution_proposal', 'workflow_proposal', 'workflow_diff', 'form_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind);
     const rawStatus = message.proposalStatus || payload.status;
@@ -60,6 +60,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
     const options = Array.isArray(message.options)
         ? message.options
         : (clarification?.inputs || payload.options || []);
+    const selectedState = clarification?.selectedState || payload.selectedState || {};
     const kind = message.kind || (message.proposal ? 'form_proposal' : (options.length > 0 ? 'clarification' : 'text'));
     const planSteps = Array.isArray(payload.plan) ? payload.plan : (Array.isArray(payload.plan?.outcomes) ? payload.plan.outcomes : (Array.isArray(payload.plan?.steps) ? payload.plan.steps : []));
     const planSummary = typeof payload.plan?.summary === 'string' ? payload.plan.summary : null;
@@ -191,6 +192,8 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                         clarificationId={clarification?.clarificationId || clarification?.id}
                         onSend={(selected) => onOption?.(selected)}
                         isTyping={isTyping}
+                        isResolved={!isLatest}
+                        initialState={selectedState}
                     />
                 )}
 
@@ -200,7 +203,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                         status={status}
                         onAccept={(filteredSchema, unselectedIndices) => onApply?.(message, filteredSchema, unselectedIndices)}
                         onIgnore={() => onIgnore?.(message)}
-                        onPreview={() => onOption?.({ type: 'preview_form', proposal: payload, formId: payload.formId })}
+                        onPreview={(filteredProposal) => onOption?.({ type: 'preview_form', proposal: { ...(filteredProposal || payload), messageId: message.id }, formId: payload.formId })}
                         onPreviewUpdate={(filteredProposal) => onOption?.({ type: 'preview_update', proposal: filteredProposal, formId: payload.formId })}
                         accepting={isAccepting}
                         rejecting={isRejecting}
