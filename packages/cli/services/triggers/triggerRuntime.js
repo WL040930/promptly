@@ -2,6 +2,7 @@ import { Op } from 'sequelize';
 import TriggerSubscription from '../../models/triggers/TriggerSubscription.js';
 import TriggerEvent from '../../models/triggers/TriggerEvent.js';
 import Workflow from '../../models/workflows/Workflow.js';
+import WorkflowVersion from '../../models/workflows/WorkflowVersion.js';
 import { executeWorkflow } from '../engine/executionEngine.js';
 import { externalTriggerForNode, hashConfig, normalizeEvent } from './triggerContracts.js';
 import databaseAdapter from './databaseAdapter.js';
@@ -88,13 +89,20 @@ export const reconcileWorkflow = async workflow => {
         await disableStaleSubscriptions(workflow?.id);
         return [];
     }
-    const externalTrigger = (workflow.nodes || []).map(externalTriggerForNode).find(Boolean);
+    // Live subscriptions always use the immutable published graph, never an
+    // autosaved draft that has not been released yet.
+    const release = workflow.publishedRevisionId
+        ? await WorkflowVersion.findOne({ where: { id: workflow.publishedRevisionId, workflowId: workflow.id } })
+        : null;
+    if (!release) throw new Error('An active automation requires a published release.');
+    const liveWorkflow = { ...workflow.toJSON(), nodes: release.nodes || [], edges: release.edges || [] };
+    const externalTrigger = (liveWorkflow.nodes || []).map(externalTriggerForNode).find(Boolean);
     if (!externalTrigger) {
-        await disableStaleSubscriptions(workflow.id);
+        await disableStaleSubscriptions(liveWorkflow.id);
         return [];
     }
-    await disableStaleSubscriptions(workflow.id, externalTrigger.node.id);
-    return [await reconcileSubscription({ workflow, ...externalTrigger })];
+    await disableStaleSubscriptions(liveWorkflow.id, externalTrigger.node.id);
+    return [await reconcileSubscription({ workflow: liveWorkflow, ...externalTrigger })];
 };
 
 export const reconcileActiveWorkflows = async () => {

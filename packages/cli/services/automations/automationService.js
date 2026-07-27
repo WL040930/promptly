@@ -46,9 +46,8 @@ export const saveAutomationDraft = async ({ automationId, userId, nodes, edges, 
         }
 
         validateGraph({ nodes, edges, isActive: false });
-        // Graph edits update the working draft only. A history record is
-        // created explicitly by saveAutomationVersion, so dragging or
-        // configuring a node no longer floods version history.
+        // Graph edits update only the working draft. Publishing is the sole
+        // operation that creates a release in version history.
         const nextRevision = Number(automation.revision || 0) + 1;
         await automation.update({ nodes, edges, revision: nextRevision }, { transaction });
         return { automation, version: null };
@@ -56,26 +55,37 @@ export const saveAutomationDraft = async ({ automationId, userId, nodes, edges, 
     return externalTransaction ? save(externalTransaction) : sequelize.transaction(save);
 };
 
-export const publishAutomation = async ({ automationId, userId }) => {
-    const automation = await Workflow.findOne({ where: { id: automationId, userId } });
+export const publishAutomation = async ({ automationId, userId }) => sequelize.transaction(async transaction => {
+    const automation = await Workflow.findOne({ where: { id: automationId, userId }, transaction, lock: transaction.LOCK.UPDATE });
     if (!automation) {
         const error = new Error('Automation not found.');
         error.status = 404;
         throw error;
     }
-    const draftVersion = automation.draftRevisionId
-        ? await WorkflowVersion.findOne({ where: { id: automation.draftRevisionId, workflowId: automation.id } })
+
+    // A release is the only immutable snapshot created by the normal product
+    // flow. Draft edits are autosaved, tested independently, and never need a
+    // separate "save version" ceremony before they can be released.
+    validateGraph({ nodes: automation.nodes || [], edges: automation.edges || [], isActive: true });
+    const published = automation.publishedRevisionId
+        ? await WorkflowVersion.findOne({ where: { id: automation.publishedRevisionId, workflowId: automation.id }, transaction })
         : null;
-    if (!draftVersion || !graphMatches(automation.nodes, automation.edges, draftVersion.nodes, draftVersion.edges)) {
-        const error = new Error('Save a version before publishing this automation.');
-        error.code = 'AUTOMATION_VERSION_REQUIRED';
-        error.status = 409;
-        throw error;
+    let release = published;
+    if (!published || !graphMatches(automation.nodes, automation.edges, published.nodes, published.edges)) {
+        const latest = await WorkflowVersion.findOne({ where: { workflowId: automation.id }, order: [['versionNumber', 'DESC']], transaction });
+        release = await WorkflowVersion.create({
+            workflowId: automation.id,
+            versionNumber: Number(latest?.versionNumber || 0) + 1,
+            baseRevisionId: automation.publishedRevisionId || null,
+            nodes: automation.nodes || [],
+            edges: automation.edges || [],
+            source: 'release',
+            summary: 'Published release'
+        }, { transaction });
     }
-    validateGraph({ nodes: draftVersion.nodes || [], edges: draftVersion.edges || [], isActive: true });
-    await automation.update({ isActive: true, status: 'Active', publishedRevisionId: draftVersion.id });
+    await automation.update({ isActive: true, status: 'Live', publishedRevisionId: release.id, draftRevisionId: release.id }, { transaction });
     return automation;
-};
+});
 
 export const pauseAutomation = async ({ automationId, userId }) => {
     const automation = await Workflow.findOne({ where: { id: automationId, userId } });
@@ -86,30 +96,4 @@ export const pauseAutomation = async ({ automationId, userId }) => {
     }
     await automation.update({ isActive: false, status: 'Paused' });
     return automation;
-};
-
-export const saveAutomationVersion = async ({ automationId, userId, source = 'system', summary = null }) => {
-    const automation = await Workflow.findOne({ where: { id: automationId, userId } });
-    if (!automation) {
-        const error = new Error('Automation not found.');
-        error.status = 404;
-        throw error;
-    }
-    const latest = await WorkflowVersion.findOne({
-        where: { workflowId: automation.id },
-        order: [['versionNumber', 'DESC']]
-    });
-    if (latest && graphMatches(automation.nodes, automation.edges, latest.nodes, latest.edges)) return latest;
-
-    const version = await WorkflowVersion.create({
-        workflowId: automation.id,
-        versionNumber: Number(latest?.versionNumber || 0) + 1,
-        baseRevisionId: automation.draftRevisionId || null,
-        nodes: automation.nodes || [],
-        edges: automation.edges || [],
-        source,
-        summary
-    });
-    await automation.update({ draftRevisionId: version.id });
-    return version;
 };

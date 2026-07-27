@@ -142,7 +142,7 @@ function EmptyState({ onCreateWithAI, onBuildManually }) {
         'Describe my own automation'
     ];
     return (
-        <div className="mx-auto max-w-2xl rounded-2xl border-2 border-dashed border-indigo-200/60 bg-gradient-to-br from-indigo-50/80 via-white to-cyan-50/50 p-8 text-center md:p-12">
+        <div className="w-full rounded-2xl border-2 border-dashed border-indigo-200/60 bg-gradient-to-br from-indigo-50/80 via-white to-cyan-50/50 p-8 text-center md:p-12">
             <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20">
                 <Sparkles size={28} />
             </div>
@@ -260,7 +260,7 @@ function WorkflowDetailDrawer({ workflowId, onClose, onClosed, isClosing = false
 
                         <div className="rounded-2xl border border-slate-200 bg-white">
                             <button type="button" onClick={() => setShowVersions(value => !value)} className="flex w-full items-center justify-between p-4 text-left"><span className="flex items-center gap-2 text-sm font-bold text-slate-900"><HistoryIcon />Version history</span><ChevronRight size={16} className={`text-slate-400 transition-transform ${showVersions ? 'rotate-90' : ''}`} /></button>
-                            {showVersions && <div className="border-t border-slate-100 px-4 pb-4 pt-2">{isVersionsFetching ? <p className="py-3 text-xs text-slate-500">Loading versions…</p> : versions.length === 0 ? <p className="py-3 text-xs text-slate-500">No saved versions yet. Versions are created from the builder.</p> : versions.slice(0, 8).map(version => <div key={version.id} className="flex items-center justify-between gap-3 border-b border-slate-100 py-3 last:border-0"><div><p className="text-xs font-bold text-slate-700">Version {version.versionNumber}</p><p className="mt-0.5 text-[11px] text-slate-400">Saved {formatRelative(version.createdAt)}</p></div><button type="button" onClick={() => setVersionToRestore(version)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-bold text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700">Restore</button></div>)} </div>}
+                            {showVersions && <div className="border-t border-slate-100 px-4 pb-4 pt-2">{isVersionsFetching ? <p className="py-3 text-xs text-slate-500">Loading releases…</p> : versions.filter(version => version.source === 'release').length === 0 ? <p className="py-3 text-xs text-slate-500">No published releases yet.</p> : versions.filter(version => version.source === 'release').slice(0, 8).map(version => <div key={version.id} className="flex items-center justify-between gap-3 border-b border-slate-100 py-3 last:border-0"><div><p className="text-xs font-bold text-slate-700">Release {version.versionNumber}</p><p className="mt-0.5 text-[11px] text-slate-400">Published {formatRelative(version.createdAt)}</p></div><button type="button" onClick={() => setVersionToRestore(version)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-bold text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700">Restore to draft</button></div>)} </div>}
                         </div>
                     </div>
                 )}
@@ -398,6 +398,7 @@ export default function AutomationCenter() {
             toast.error(activationIssue);
             return;
         }
+        if (!workflow.isActive && !workflow.publishedRevisionId && !window.confirm('Publishing will activate this automation and may run real integrations. Continue?')) return;
         const mutation = workflow.isActive ? pauseWorkflowMutation : publishWorkflowMutation;
         mutation.mutate(workflow.id, {
             onSuccess: () => toast.success(workflow.isActive ? 'Automation paused.' : 'Automation published and activated.'),

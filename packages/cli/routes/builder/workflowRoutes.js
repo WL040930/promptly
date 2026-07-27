@@ -3,7 +3,7 @@ import asyncHandler from '../../utils/asyncHandler.js';
 import { requireAuth } from '../../middleware/authMiddleware.js';
 import { 
     getWorkflows, getWorkflow, createWorkflow, updateWorkflow, deleteWorkflow, triggerWorkflow, triggerProductionWorkflow,
-    getWorkflowVersions, saveWorkflowVersion, restoreWorkflowVersion, publishWorkflow, pauseWorkflow
+    getWorkflowVersions, restoreWorkflowVersion, publishWorkflow, pauseWorkflow
 } from '../../controllers/builder/workflowController.js';
 import { getWorkflowAIChat, clearWorkflowAIChat, resetWorkflowAIContext, submitWorkflowAITurn, decideWorkflowAIProposal } from '../../controllers/builder/workflowAIController.js';
 
@@ -28,7 +28,6 @@ router.post('/:id/ai-proposals/:messageId/decision', decideWorkflowAIProposal);
 
 // Versioning routes
 router.get('/:id/versions', asyncHandler(getWorkflowVersions));
-router.post('/:id/versions', asyncHandler(saveWorkflowVersion));
 router.post('/:id/versions/:versionId/restore', asyncHandler(restoreWorkflowVersion));
 
 export default router;

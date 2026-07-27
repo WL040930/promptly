@@ -15,6 +15,7 @@ import { parsePath, buildPath, replacePath } from '../../../utils/router.js';
 import { formatCompactRelativeTime } from '../../../utils/time.js';
 import ConfirmModal from '../../../components/modals/ConfirmModal.jsx';
 import FormsLoadingSkeleton from './FormsLoadingSkeleton.jsx';
+import { createDebouncedSaveQueue } from '../../../utils/formAutosave.js';
 
 /**
  * FormsTab — main orchestrator for the form builder module.
@@ -36,6 +37,13 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
     const [isShareOpen, setIsShareOpen] = useState(false);
     const [sidebarSearch, setSidebarSearch] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [draftUpdates, setDraftUpdates] = useState({});
+    const saveQueueRef = useRef(null);
+    const updateMutationRef = useRef(updateFormMutation.mutateAsync);
+
+    useEffect(() => {
+        updateMutationRef.current = updateFormMutation.mutateAsync;
+    }, [updateFormMutation.mutateAsync]);
 
     useEffect(() => {
         const handler = setTimeout(() => {
@@ -106,14 +114,28 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
     });
 
-    const activeForm = forms.find(f => f.id === activeFormId) || forms[0];
+    const remoteActiveForm = forms.find(f => f.id === activeFormId) || forms[0];
+    const activeForm = remoteActiveForm ? { ...remoteActiveForm, ...(draftUpdates[remoteActiveForm.id] || {}) } : null;
     const accentColor = activeForm?.settings?.accentColor || '#5b4ee8';
 
     // ── Form CRUD ──────────────────────────────────────────────────────────────
 
-    const updateForm = useCallback((updates) => {
-        updateFormMutation.mutate({ id: activeFormId, data: updates });
-    }, [activeFormId, updateFormMutation]);
+    useEffect(() => {
+        if (!activeFormId) return undefined;
+        const queue = createDebouncedSaveQueue({
+            delay: 600,
+            save: updates => updateMutationRef.current({ id: activeFormId, data: updates })
+        });
+        saveQueueRef.current = queue;
+        return () => { void queue.flush(); };
+    }, [activeFormId]);
+
+    const updateForm = useCallback((updates, { immediate = false } = {}) => {
+        if (!activeFormId || !saveQueueRef.current) return;
+        setDraftUpdates(current => ({ ...current, [activeFormId]: { ...(current[activeFormId] || {}), ...updates } }));
+        saveQueueRef.current.schedule(updates);
+        if (immediate) void saveQueueRef.current.flush();
+    }, [activeFormId]);
 
     const handleCreateForm = () => {
         setIsCreatingForm(true);
@@ -185,7 +207,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
     // ── Field CRUD ─────────────────────────────────────────────────────────────
 
     const handleAddField = (newField) => {
-        updateForm({ fields: [...activeForm.fields, newField] });
+        updateForm({ fields: [...activeForm.fields, newField] }, { immediate: true });
     };
 
 
@@ -199,14 +221,14 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
         const idx = activeForm.fields.findIndex(f => f.id === fieldId);
         const fields = [...activeForm.fields];
         fields.splice(idx + 1, 0, newField);
-        updateForm({ fields });
+        updateForm({ fields }, { immediate: true });
     };
 
     const handleReorderFields = (fromIndex, toIndex) => {
         const fields = [...activeForm.fields];
         const [moved] = fields.splice(fromIndex, 1);
         fields.splice(toIndex, 0, moved);
-        updateForm({ fields });
+        updateForm({ fields }, { immediate: true });
     };
 
     // ── Sidebar filtering & sorting ────────────────────────────────────────────

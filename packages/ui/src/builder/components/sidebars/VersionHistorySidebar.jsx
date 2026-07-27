@@ -15,19 +15,22 @@ export default function VersionHistorySidebar({ workflowId, currentWorkflow }) {
 
     const [versionToRestore, setVersionToRestore] = useState(null);
 
+    const releases = versions.filter(version => version.source === 'release');
+    const earlierSnapshots = versions.filter(version => version.source !== 'release');
+
     return (
         <div className="flex flex-col h-full bg-slate-50">
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {isLoading && <VersionHistorySkeleton />}
-                {!isLoading && versions.length === 0 && (
-                    <div className="text-sm text-slate-500 text-center py-4">No saved versions yet.</div>
+                {!isLoading && releases.length === 0 && (
+                    <div className="text-sm text-slate-500 text-center py-4">No releases yet. Publish when this draft is ready to run live.</div>
                 )}
                 
-                {versions.map(v => (
+                {releases.map(v => (
                     <div key={v.id} className="border border-slate-200 rounded-lg p-3 bg-white shadow-sm flex flex-col gap-2">
                         <div className="flex min-w-0 flex-col gap-1">
                             <div className="flex min-w-0 items-center gap-2">
-                                <span className="whitespace-nowrap text-sm font-medium text-slate-800">Version {v.versionNumber}</span>
+                                <span className="whitespace-nowrap text-sm font-medium text-slate-800">Release {v.versionNumber}</span>
                                 {currentWorkflow?.publishedRevisionId === v.id && (
                                     <span className="whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-emerald-700">Live</span>
                                 )}
@@ -68,6 +71,7 @@ export default function VersionHistorySidebar({ workflowId, currentWorkflow }) {
                         </div>
                     </div>
                 ))}
+                {!isLoading && earlierSnapshots.length > 0 && <details className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-500"><summary className="cursor-pointer font-semibold text-slate-700">Earlier snapshots ({earlierSnapshots.length})</summary><p className="mt-2">Saved before the release workflow. They are kept in storage but do not appear in the release timeline.</p></details>}
             </div>
 
             <ConfirmModal

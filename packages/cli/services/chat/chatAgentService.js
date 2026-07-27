@@ -1,4 +1,4 @@
-import { AssistantThread, AssistantMessage, Workflow, Form, AgentRun, WorkflowVersion } from '../../models/index.js';
+import { AssistantThread, AssistantMessage, Workflow, Form, AgentRun } from '../../models/index.js';
 import sequelize from '../../db/index.js';
 import { FormResponse } from '../../models/index.js';
 import { runFormTurn } from '../ai/formAIService.js';
@@ -289,20 +289,8 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
             }, { transaction });
             const nextRevision = Number(saved.revision || 0) + (workflow ? 1 : 0);
             if (workflow) {
-                // Existing workflow edits remain in the working draft until
-                // the user explicitly saves a version from the builder.
+                // Existing workflow edits remain in the working draft until published.
                 await saved.update({ nodes, edges, revision: nextRevision }, { transaction });
-            } else {
-                const version = await WorkflowVersion.create({
-                    workflowId: saved.id,
-                    versionNumber: 1,
-                    baseRevisionId: null,
-                    nodes,
-                    edges,
-                    source: 'ai',
-                    summary: proposal.summary || 'Applied AI automation proposal'
-                }, { transaction });
-                await saved.update({ draftRevisionId: version.id }, { transaction });
             }
             result = { workflowId: saved.id, action: workflow ? 'edit_workflow' : 'create_workflow' };
         } else {

@@ -1,5 +1,5 @@
 import sequelize from '../../db/index.js';
-import { AgentRun, AssistantMessage, AssistantThread, Form, Workflow, WorkflowVersion } from '../../models/index.js';
+import { AgentRun, AssistantMessage, AssistantThread, Form, Workflow } from '../../models/index.js';
 import { applyFormPatches } from '../ai/form/domain/formPatchEngine.js';
 import { validateFormSchema } from '../ai/form/domain/formSchemaValidator.js';
 import { validateWorkflow } from '../engine/workflowValidator.js';
@@ -87,22 +87,8 @@ const applyWorkflowArtifact = async ({ artifact, userId, form, transaction }) =>
     }, { transaction });
     const nextRevision = Number(workflow.revision || 0) + (source ? 1 : 0);
     if (source) {
-        // Applying an AI proposal changes the working draft. The user can
-        // explicitly save it to history from the builder when ready.
+        // Applying an AI proposal changes only the working draft.
         await workflow.update({ nodes, edges, revision: nextRevision }, { transaction });
-    } else {
-        // A newly created automation still receives its initial saved version
-        // so it has a stable draft revision from the start.
-        const version = await WorkflowVersion.create({
-            workflowId: workflow.id,
-            versionNumber: 1,
-            baseRevisionId: null,
-            nodes,
-            edges,
-            source: 'ai',
-            summary: content.summary || 'Applied AI automation proposal'
-        }, { transaction });
-        await workflow.update({ draftRevisionId: version.id }, { transaction });
     }
     return workflow;
 };

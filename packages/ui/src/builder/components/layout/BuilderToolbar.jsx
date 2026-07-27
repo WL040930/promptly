@@ -3,7 +3,6 @@ import {
     ChevronRight,
     Play,
     Rocket,
-    Save,
     Upload,
     History,
     Pencil,
@@ -14,7 +13,6 @@ import {
     Clock
 } from 'lucide-react';
 import { ICON_MAP } from '../../utils/iconMap.jsx';
-import Switch from '../../../components/ui/Switch.jsx';
 import RelativeTimeDisplay from '../../../components/ui/RelativeTimeDisplay.jsx';
 import Button from '../../../components/ui/Button.jsx';
 
@@ -29,17 +27,18 @@ const BuilderToolbar = ({
     onProductionRun,
     isProductionReady = false,
     isRunning = false,
-    isSavingVersion = false,
-    onSaveVersion,
     onPublish,
     isPublishing = false,
+    onPause,
+    isPausing = false,
     onToggleHistory,
-    onToggleActive,
     isHistorySidebarOpen,
     viewMode = 'canvas',
     onViewModeChange
 }) => {
     const isActive = activeWorkflow?.isActive || false;
+    const hasDraftChanges = activeWorkflow?.release?.hasDraftChanges;
+    const publishLabel = isActive && hasDraftChanges ? 'Publish changes' : isActive ? 'Resume' : 'Publish';
 
     return (
         <header className="relative z-20 flex h-[4.25rem] w-full shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white/95 px-3 shadow-[0_2px_16px_rgba(15,23,42,0.04)] backdrop-blur-md select-none sm:px-4 lg:gap-5">
@@ -161,52 +160,21 @@ const BuilderToolbar = ({
 
                 <div className="flex items-center gap-0.5 rounded-xl border border-slate-200/80 bg-white p-0.5 shadow-2xs">
                     <Button
-                        variant="ghost"
-                        size="xs"
-                        onClick={onSaveVersion}
-                        disabled={isSavingVersion}
-                        isLoading={isSavingVersion}
-                        title="Save version snapshot"
-                        loadingText={<span className="hidden xl:inline">Saving…</span>}
-                        iconLeft={!isSavingVersion && <Save className="h-3.5 w-3.5" />}
-                        className="h-8 gap-0 rounded-lg px-2 hover:bg-slate-100 sm:px-2.5 xl:gap-2"
-                    >
-                        <span className="hidden xl:inline">Save</span>
-                    </Button>
-                    <Button
                         variant="primary"
                         size="xs"
                         onClick={onPublish}
                         disabled={isPublishing}
                         isLoading={isPublishing}
-                        title="Publish the latest saved version for live runs"
+                        title={hasDraftChanges ? 'Publish draft changes for live runs' : 'Publish or resume the live release'}
                         loadingText={<span className="hidden xl:inline">Publishing…</span>}
                         iconLeft={!isPublishing && <Upload className="h-3.5 w-3.5" />}
                         className="h-8 gap-0 rounded-lg px-2 shadow-none sm:px-2.5 xl:gap-2"
                     >
-                        <span className="hidden xl:inline">Publish</span>
+                        <span className="hidden xl:inline">{publishLabel}</span>
                     </Button>
+                    {isActive && <Button variant="ghost" size="xs" onClick={onPause} disabled={isPausing} isLoading={isPausing} title="Pause live triggers" className="h-8 gap-0 rounded-lg px-2 hover:bg-slate-100 sm:px-2.5 xl:gap-2"><span className="hidden xl:inline">Pause</span></Button>}
                 </div>
-
-                <div
-                    role="group"
-                    onClick={onToggleActive}
-                    title={isActive ? 'Deactivate automation' : 'Activate automation'}
-                    className={`flex h-9 cursor-pointer items-center gap-1.5 rounded-xl border px-2 transition-all sm:px-2.5 ${isActive
-                        ? 'border-emerald-300/70 bg-emerald-50 text-emerald-800 hover:bg-emerald-100/80'
-                        : 'border-slate-200/80 bg-slate-50 text-slate-600 hover:bg-slate-100'
-                        }`}
-                >
-                    <span className={`h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-                    <span className="hidden text-xs font-bold xl:inline">{isActive ? 'Active' : 'Inactive'}</span>
-                    <Switch
-                        size="sm"
-                        checked={isActive}
-                        activeColor="#10b981"
-                        onChange={onToggleActive}
-                        ariaLabel={isActive ? 'Deactivate automation' : 'Activate automation'}
-                    />
-                </div>
+                <span className={`hidden items-center gap-1.5 text-xs font-bold xl:flex ${isActive ? 'text-emerald-700' : hasDraftChanges ? 'text-amber-700' : 'text-slate-500'}`}><span className={`h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : hasDraftChanges ? 'bg-amber-500' : 'bg-slate-400'}`} />{isActive ? (hasDraftChanges ? 'Changes not live' : 'Live') : 'Draft'}</span>
 
                 <Button
                     variant={isHistorySidebarOpen ? 'secondary' : 'ghost'}

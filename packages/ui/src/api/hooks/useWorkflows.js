@@ -123,18 +123,6 @@ export const useWorkflowVersions = (workflowId) => {
     });
 };
 
-export const useSaveWorkflowVersion = () => {
-    const queryClient = useQueryClient();
-    
-    return useMutation({
-        mutationFn: (id) => import('../backend.js').then(m => m.saveWorkflowVersion(id)),
-        onSuccess: (newVersion, id) => {
-            queryClient.invalidateQueries({ queryKey: ['workflows', id, 'versions'] });
-            queryClient.invalidateQueries({ queryKey: ['workflows', id] });
-            queryClient.invalidateQueries({ queryKey: ['workflows'] });
-        },
-    });
-};
 
 export const useRestoreWorkflowVersion = () => {
     const queryClient = useQueryClient();

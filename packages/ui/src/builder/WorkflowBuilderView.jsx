@@ -13,7 +13,7 @@ import { MODAL_TYPES, MODAL_CONFIG } from './overview/constants.js';
 import TestRunModal from './components/modals/TestRunModal';
 import VersionHistorySidebar from './components/sidebars/VersionHistorySidebar';
 import { navigate } from '../utils/router.js';
-import { useWorkflow, useUpdateWorkflow, useSaveWorkflowVersion, usePublishWorkflow } from '../api/hooks/useWorkflows.js';
+import { useWorkflow, useUpdateWorkflow, usePublishWorkflow, usePauseWorkflow } from '../api/hooks/useWorkflows.js';
 import { useRunWorkflow } from '../api/hooks/useRunWorkflow.js';
 import ExecutionPanel from './components/panels/ExecutionPanel';
 import BuilderLoadingSkeleton from './components/layout/BuilderLoadingSkeleton.jsx';
@@ -150,8 +150,8 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
 
     const [activeNodeId, setActiveNodeId] = useState(null);
     const updateWorkflowMutation = useUpdateWorkflow();
-    const saveVersionMutation = useSaveWorkflowVersion();
     const publishWorkflowMutation = usePublishWorkflow();
+    const pauseWorkflowMutation = usePauseWorkflow();
     const toast = useToast();
 
     // Only show skeleton on initial load (no data yet), not on background refetches
@@ -292,44 +292,29 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
 
     const flushPendingWorkflowSave = useCallback(() => pendingWorkflowSaveRef.current, []);
 
-    const handleToggleActive = useCallback(async () => {
-        if (!activeWorkflow) return;
-        const nextIsActive = !activeWorkflow.isActive;
-        try {
-            await handleWorkflowUpdate({ isActive: nextIsActive });
-            if (nextIsActive && !activeWorkflow.publishedRevisionId) {
-                toast.info('Automation activated. Publish a version before running it live.');
-            } else {
-                toast.success(nextIsActive ? 'Automation activated.' : 'Automation deactivated.');
-            }
-        } catch (error) {
-            toast.error(error.message || `Could not ${nextIsActive ? 'activate' : 'deactivate'} automation.`);
-        }
-    }, [activeWorkflow, handleWorkflowUpdate, toast]);
-
-    const handleSaveVersion = useCallback(async () => {
-        if (!activeWorkflowId) return;
-        try {
-            await flushPendingWorkflowSave();
-            await saveVersionMutation.mutateAsync(activeWorkflowId);
-            toast.success('Version snapshot saved.');
-        } catch (error) {
-            toast.error(error.message || 'Failed to save version.');
-        }
-    }, [activeWorkflowId, flushPendingWorkflowSave, saveVersionMutation, toast]);
-
     const handlePublishWorkflow = useCallback(async () => {
         if (!activeWorkflowId) return;
+        if (!activeWorkflow?.publishedRevisionId && !window.confirm('Publishing will activate this automation and may run real integrations. Continue?')) return;
         try {
             // Finish any in-flight draft save before checking the publish
             // boundary. Publishing itself never creates a history entry.
             await flushPendingWorkflowSave();
             await publishWorkflowMutation.mutateAsync(activeWorkflowId);
-            toast.success('Automation published. Live runs now use this version.');
+            toast.success('Automation published. Live runs now use this release.');
         } catch (error) {
             toast.error(error.message || 'Could not publish automation. Save a version first.');
         }
-    }, [activeWorkflowId, flushPendingWorkflowSave, publishWorkflowMutation, toast]);
+    }, [activeWorkflow?.publishedRevisionId, activeWorkflowId, flushPendingWorkflowSave, publishWorkflowMutation, toast]);
+
+    const handlePauseWorkflow = useCallback(async () => {
+        if (!activeWorkflowId) return;
+        try {
+            await pauseWorkflowMutation.mutateAsync(activeWorkflowId);
+            toast.success('Automation paused. Your draft and released version are unchanged.');
+        } catch (error) {
+            toast.error(error.message || 'Could not pause automation.');
+        }
+    }, [activeWorkflowId, pauseWorkflowMutation, toast]);
 
     // ── Undo / Redo Keybinds ──────────────────────────────────────────────────
     const handleUndo = useCallback(() => {
@@ -601,6 +586,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
             {viewMode === 'canvas' && (
                 <NodeLibrarySidebar
                     isOpen={isLeftSidebarOpen}
+                    onClose={() => setIsLeftSidebarOpen(false)}
                     onDragStart={(node) => setDraggedNode(node)}
                     onDragEnd={() => setDraggedNode(null)}
                 />
@@ -631,12 +617,11 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                     onProductionRun={handleProductionRunClick}
                     isProductionReady={Boolean(activeWorkflow?.isActive && activeWorkflow?.publishedRevisionId)}
                     isRunning={runWorkflowMutation.isPending}
-                    isSavingVersion={saveVersionMutation.isPending}
-                    onSaveVersion={handleSaveVersion}
                     onPublish={handlePublishWorkflow}
                     isPublishing={publishWorkflowMutation.isPending}
+                    onPause={handlePauseWorkflow}
+                    isPausing={pauseWorkflowMutation.isPending}
                     onToggleHistory={() => setIsHistorySidebarOpen(!isHistorySidebarOpen)}
-                    onToggleActive={handleToggleActive}
                     isHistorySidebarOpen={isHistorySidebarOpen}
                     viewMode={viewMode}
                     onViewModeChange={(mode) => setViewMode(mode)}
