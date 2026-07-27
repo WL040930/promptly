@@ -1,5 +1,4 @@
 import React, { Suspense, useEffect, useRef } from 'react';
-import { useWorkflow } from '../api/hooks/useWorkflows.js';
 import { navigateTo } from '../utils/router.js';
 import { useCreateWorkflow } from '../api/hooks/useWorkflows.js';
 
@@ -8,7 +7,6 @@ const FormsTab = React.lazy(() => import('../builder/components/tabs/FormsTab.js
 const AutomationCenter = React.lazy(() => import('../chat/components/AutomationCenter.jsx'));
 const ChatTab = React.lazy(() => import('../chat/components/ChatTab.jsx'));
 const WorkflowBuilderView = React.lazy(() => import('../builder/WorkflowBuilderView.jsx'));
-const WorkflowAIAssistant = React.lazy(() => import('../builder/components/sidebars/WorkflowAIAssistant.jsx'));
 const AutomationVersionsPage = React.lazy(() => import('./AutomationVersionsPage.jsx'));
 const AutomationSettingsPage = React.lazy(() => import('./AutomationSettingsPage.jsx'));
 const ApprovalsPage = React.lazy(() => import('./ApprovalsPage.jsx'));
@@ -35,13 +33,6 @@ function AutomationDetailPage({ automationId }) {
             </div>
         </PageFrame>
     );
-}
-
-function WorkflowAIEditorPage({ automationId }) {
-    const { data: workflow, isPending } = useWorkflow(automationId);
-    const initialPrompt = new URLSearchParams(window.location.search).get('prompt') || '';
-    if (isPending && !workflow) return <PageFrame><div className="flex h-full items-center justify-center text-sm text-slate-500">Loading workflow assistant…</div></PageFrame>;
-    return <PageFrame><WorkflowAIAssistant workflow={workflow} initialPrompt={initialPrompt} /></PageFrame>;
 }
 
 function NewAutomationPage({ method = 'ai' }) {
@@ -74,9 +65,7 @@ export default function WorkspacePageRouter({ route, isSidebarCollapsed, setSide
             page = <AutomationDetailPage automationId={route.automationId} />;
             break;
         case 'automation-build':
-            page = route.editor === 'ai'
-                ? <WorkflowAIEditorPage automationId={route.automationId} />
-                : <PageFrame><WorkflowBuilderView route={route} isSidebarCollapsed={isSidebarCollapsed} setSidebarCollapsed={setSidebarCollapsed} /></PageFrame>;
+            page = <PageFrame><WorkflowBuilderView route={route} isSidebarCollapsed={isSidebarCollapsed} setSidebarCollapsed={setSidebarCollapsed} /></PageFrame>;
             break;
         case 'automation-runs':
             page = <PageFrame><LogsTab workflowId={route.automationId} /></PageFrame>;

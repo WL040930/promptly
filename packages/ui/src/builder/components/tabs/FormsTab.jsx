@@ -155,28 +155,6 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
             onError: () => setIsCreatingForm(false)
         });
     };
-    const handleDuplicateForm = (formId) => {
-        const source = forms.find(f => f.id === formId);
-        if (!source) return;
-        
-        const duplicated = {
-            title: `${source.title} (copy)`,
-            description: source.description,
-            settings: source.settings,
-            fields: source.fields.map(field => ({
-                ...field,
-                id: `f_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            }))
-        };
-        
-        createFormMutation.mutate(duplicated, {
-            onSuccess: (newForm) => {
-                setActiveFormId(newForm.id);
-                setActiveSubTab('questions');
-            }
-        });
-    };
-
     const handleDeleteForm = (e, formId) => {
         e.stopPropagation();
         setFormToDelete(formId);
@@ -382,17 +360,6 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                                 {/* Actions */}
                                 <div className={`flex items-center shrink-0 -mt-0.5 -mr-1 transition-opacity duration-300 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`}>
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); handleDuplicateForm(form.id); }}
-                                        className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                                        title="Duplicate"
-                                        aria-label={`Duplicate ${form.title}`}
-                                    >
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                                        </svg>
-                                    </button>
-                                    <button
                                         onClick={(e) => handleDeleteForm(e, form.id)}
                                         className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                         title="Delete"
@@ -457,9 +424,9 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                 ) : (
                     <>
                         {/* Top Bar */}
-                        <div className="h-14 md:h-16 bg-white/90 backdrop-blur-md border-b border-gray-200/60 px-3 md:px-6 flex items-center justify-between shrink-0 z-10 shadow-sm transition-all">
+                        <div className="h-14 xl:h-16 bg-white/90 backdrop-blur-md border-b border-gray-200/60 px-3 sm:px-4 xl:px-6 flex items-center justify-between shrink-0 z-10 shadow-sm transition-all">
                             {/* Left: Form name */}
-                            <div className="flex items-center gap-2 md:gap-4 min-w-0 pr-2 md:pr-4 flex-1">
+                            <div className="flex min-w-0 flex-1 items-center gap-2 pr-2 xl:gap-4 xl:pr-4">
                                 <button onClick={() => setIsSidebarOpen(true)} aria-label="Open forms sidebar" className="md:hidden text-slate-500 hover:text-slate-800 p-1 shrink-0 rounded-lg hover:bg-slate-100 transition-colors">
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
                                 </button>
@@ -469,12 +436,12 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                                     onChange={(e) => updateForm({ title: e.target.value })}
                                     placeholder="Untitled Form"
                                     title="Click to rename"
-                                    className="text-[15px] font-extrabold text-gray-900 truncate bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 rounded-lg hover:bg-gray-100 transition-colors px-2 py-1.5 -ml-2 w-full max-w-[400px]"
+                                    className="min-w-0 w-full max-w-[400px] rounded-lg border-none bg-transparent px-2 py-1.5 text-[15px] font-extrabold text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 -ml-2"
                                 />
                             </div>
 
-                            {/* Center: Sub-tabs (Desktop) */}
-                            <div className="hidden md:flex flex-none items-center justify-center">
+                            {/* Center: compact section navigation */}
+                            <div className="flex flex-none items-center justify-center">
                                 <div role="tablist" aria-label="Form workspace sections" className="flex items-center gap-1 p-1 bg-gray-100/80 rounded-xl border border-gray-200/50">
                                     {subTabs.map(tab => {
                                         const isActive = activeSubTab === tab.id && !isPreviewMode;
@@ -484,7 +451,9 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                                                 role="tab"
                                                 aria-selected={isActive}
                                                 onClick={() => { setActiveSubTab(tab.id); setIsPreviewMode(false); }}
-                                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-bold whitespace-nowrap transition-all duration-300 ${
+                                                title={tab.label}
+                                                aria-label={tab.label}
+                                                className={`flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-[13px] font-bold transition-all duration-300 xl:h-auto xl:w-auto xl:gap-2 xl:px-3 xl:py-1.5 ${
                                                     isActive
                                                         ? 'bg-white text-gray-900 shadow-sm border border-gray-200/60'
                                                         : 'text-gray-500 hover:text-gray-800 hover:bg-black/5 border border-transparent'
@@ -493,7 +462,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                                                 <span className={isActive ? 'text-indigo-600' : 'text-gray-400'}>
                                                     {tab.icon}
                                                 </span>
-                                                <span>{tab.label}</span>
+                                                <span className="hidden xl:inline">{tab.label}</span>
                                             </button>
                                         );
                                     })}
@@ -501,52 +470,30 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                             </div>
 
                             {/* Right: Actions */}
-                            <div className="flex items-center justify-end gap-2 shrink-0 pl-2 md:pl-4 flex-1">
-                                <Button
-                                    variant={isPreviewMode ? 'primary' : 'outline'}
-                                    onClick={() => setIsPreviewMode(!isPreviewMode)}
-                                    className={`px-3 md:px-4 h-9 !rounded-xl ${isPreviewMode ? 'bg-gray-900 border-gray-900 hover:bg-gray-800' : ''}`}
-                                    iconLeft={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>}
-                                >
-                                    <span className="hidden sm:inline">Preview</span>
-                                </Button>
-                                <button
-                                    onClick={() => setIsShareOpen(true)}
-                                    className="flex items-center justify-center h-9 px-3 sm:px-4 rounded-xl text-[13px] font-bold text-white whitespace-nowrap transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
-                                    style={{ backgroundColor: accentColor, boxShadow: `0 4px 14px ${accentColor}40` }}
-                                >
-                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0">
-                                        <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-                                        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                                    </svg>
-                                    <span className="hidden sm:inline ml-2">Share</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Sub-tabs (Mobile) */}
-                        <div role="tablist" aria-label="Form workspace sections" className="md:hidden flex items-center overflow-x-auto gap-2 px-3 py-2 bg-white/80 backdrop-blur-md border-b border-gray-200/60 shrink-0 shadow-sm z-10 no-scrollbar">
-                            {subTabs.map(tab => {
-                                const isActive = activeSubTab === tab.id && !isPreviewMode;
-                                return (
-                                    <button
-                                        key={tab.id}
-                                        role="tab"
-                                        aria-selected={isActive}
-                                        onClick={() => { setActiveSubTab(tab.id); setIsPreviewMode(false); }}
-                                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-bold whitespace-nowrap transition-all duration-300 ${
-                                            isActive
-                                                ? 'bg-gray-100 text-gray-900 shadow-sm border border-gray-200/50'
-                                                : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50/80 border border-transparent'
-                                        }`}
+                            <div className="flex shrink-0 items-center justify-end gap-1.5 pl-2 sm:gap-2 xl:pl-4">
+                                <div className="flex items-center gap-0.5 rounded-xl border border-slate-200/80 bg-white p-0.5 shadow-2xs">
+                                    <Button
+                                        variant={isPreviewMode ? 'secondary' : 'outline'}
+                                        size="xs"
+                                        onClick={() => setIsPreviewMode(!isPreviewMode)}
+                                        title={isPreviewMode ? 'Return to editing' : 'Preview this form'}
+                                        iconLeft={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>}
+                                        className="h-8 w-8 gap-0 rounded-lg border-transparent px-0 shadow-none hover:border-indigo-200 hover:bg-indigo-50/70 hover:text-indigo-700 xl:w-auto xl:gap-2 xl:px-2.5"
                                     >
-                                        <span className={isActive ? 'text-indigo-600' : 'text-gray-400'}>
-                                            {tab.icon}
-                                        </span>
-                                        <span>{tab.label}</span>
-                                    </button>
-                                );
-                            })}
+                                        <span className="hidden xl:inline">Preview</span>
+                                    </Button>
+                                    <Button
+                                        variant="primary"
+                                        size="xs"
+                                        onClick={() => setIsShareOpen(true)}
+                                        title="Share this form"
+                                        iconLeft={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" /></svg>}
+                                        className="h-8 w-8 gap-0 rounded-lg px-0 shadow-none xl:w-auto xl:gap-2 xl:px-2.5"
+                                    >
+                                        <span className="hidden xl:inline">Share</span>
+                                    </Button>
+                                </div>
+                            </div>
                         </div>
 
                 {/* Body Container */}

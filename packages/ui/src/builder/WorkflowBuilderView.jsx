@@ -159,6 +159,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
 
     // ── UI state ─────────────────────────────────────────────────────────────
     const [viewMode, setViewMode] = useState(() => (route?.editor === 'ai' ? 'ai' : 'canvas'));
+    const initialAIPrompt = useMemo(() => new URLSearchParams(window.location.search).get('prompt') || '', [route?.automationId, route?.editor]);
     const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(() => !window.matchMedia?.('(max-width: 767px)').matches);
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [isHistorySidebarOpen, setIsHistorySidebarOpen] = useState(false);
@@ -170,6 +171,10 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     const workflowRevisionRef = useRef(null);
     const workflowRevisionIdRef = useRef(null);
     const pendingWorkflowSaveRef = useRef(Promise.resolve(null));
+
+    useEffect(() => {
+        setViewMode(route?.editor === 'ai' ? 'ai' : 'canvas');
+    }, [route?.automationId, route?.editor]);
 
     useEffect(() => {
         if (!activeWorkflowId) {
@@ -642,7 +647,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                             draggedNode={draggedNode}
                         />
                     ) : (
-                        <WorkflowAIAssistant workflow={activeWorkflow} onBeforeSend={flushPendingWorkflowSave} />
+                        <WorkflowAIAssistant workflow={activeWorkflow} onBeforeSend={flushPendingWorkflowSave} initialPrompt={initialAIPrompt} />
                     )}
                 </div>
             </main>
