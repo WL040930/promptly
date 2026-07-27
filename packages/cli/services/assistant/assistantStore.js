@@ -10,7 +10,8 @@ export const DEFAULT_ASSISTANT_STATE = Object.freeze({
     openClarification: null,
     activeProposalMessageId: null,
     inFlightRequestId: null,
-    inFlightStartedAt: null
+    inFlightStartedAt: null,
+    progress: null
 });
 
 const cloneState = state => ({ ...DEFAULT_ASSISTANT_STATE, ...(state || {}) });
@@ -24,6 +25,7 @@ export const publicStateForThread = thread => ({
     surface: thread?.surface || null,
     formId: thread?.formId || null,
     workflowId: thread?.workflowId || null,
+    resourceBrief: thread?.context?.resourceBrief || null,
     ...stateForThread(thread)
 });
 
@@ -43,6 +45,8 @@ export const createAssistantStateView = thread => {
         get activeProposalMessageId() { return stateForThread(thread).activeProposalMessageId; },
         get inFlightRequestId() { return stateForThread(thread).inFlightRequestId; },
         get inFlightStartedAt() { return stateForThread(thread).inFlightStartedAt; },
+        get progress() { return stateForThread(thread).progress; },
+        get context() { return thread.context || {}; },
         async update(updates = {}, options = {}) {
             const current = stateForThread(thread);
             const next = { ...current };
@@ -51,6 +55,10 @@ export const createAssistantStateView = thread => {
             }
             if (!Object.prototype.hasOwnProperty.call(updates, 'version')) next.version += 1;
             await thread.update({ state: next }, options);
+            return view;
+        },
+        async updateContext(context = {}, options = {}) {
+            await thread.update({ context }, options);
             return view;
         },
         toJSON() {

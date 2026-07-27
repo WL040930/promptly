@@ -142,11 +142,11 @@ function EmptyState({ onCreateWithAI, onBuildManually }) {
         'Describe my own automation'
     ];
     return (
-        <div className="rounded-3xl border border-dashed border-indigo-200 bg-gradient-to-br from-indigo-50/80 via-white to-cyan-50/50 p-8 text-center md:p-12">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20">
-                <Sparkles size={26} />
+        <div className="mx-auto max-w-2xl rounded-2xl border-2 border-dashed border-indigo-200/60 bg-gradient-to-br from-indigo-50/80 via-white to-cyan-50/50 p-8 text-center md:p-12">
+            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20">
+                <Sparkles size={28} />
             </div>
-            <h3 className="mt-5 text-xl font-bold tracking-tight text-slate-900">What would you like to automate?</h3>
+            <h3 className="text-lg font-bold tracking-tight text-slate-900">What would you like to automate?</h3>
             <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-slate-500">Describe the result you want. Promptly will prepare a workflow for your review before anything is changed.</p>
             <div className="mx-auto mt-6 grid max-w-3xl gap-2 text-left sm:grid-cols-2">
                 {starters.map(starter => (
@@ -452,7 +452,26 @@ export default function AutomationCenter() {
                             </div>
                         </section>
 
-                        {isError ? <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center"><p className="font-semibold text-red-700">Unable to load automations.</p><button type="button" onClick={() => refetch()} className="mt-3 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white">Try again</button></div> : isPending ? <div className="space-y-3">{[1, 2, 3].map(item => <div key={item} className="h-20 animate-pulse rounded-2xl bg-white" />)}</div> : workflows.length === 0 ? <EmptyState onCreateWithAI={openCreateAI} onBuildManually={createManually} /> : filteredRows.length === 0 ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center"><Search size={24} className="mx-auto text-slate-300" /><p className="mt-3 font-semibold text-slate-700">No automations match these filters.</p><button type="button" onClick={() => { setSearch(''); setStatusFilter('All'); setHealthFilter('All'); }} className="mt-3 text-sm font-semibold text-indigo-600">Clear filters</button></div> : <WorkflowTable rows={filteredRows} onSelect={openWorkflowDetails} onRun={workflow => openRun(workflow, 'test')} onRunLive={workflow => openRun(workflow, 'production')} onOpenBuilder={id => navigate(`/app/automations/${id}/build?editor=visual`)} onAskAI={openWorkflowAI} onDelete={setWorkflowToDelete} onToggle={toggleWorkflow} />}
+                        {isError ? (
+                            <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center">
+                                <p className="font-semibold text-red-700">Unable to load automations.</p>
+                                <button type="button" onClick={() => refetch()} className="mt-3 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white">Try again</button>
+                            </div>
+                        ) : isPending ? (
+                            <div className="space-y-3">{[1, 2, 3].map(item => <div key={item} className="h-20 animate-pulse rounded-2xl bg-white" />)}</div>
+                        ) : workflows.length === 0 ? (
+                            <EmptyState onCreateWithAI={openCreateAI} onBuildManually={createManually} />
+                        ) : filteredRows.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 p-12 text-center">
+                                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+                                    <Search className="h-6 w-6 text-slate-400" />
+                                </div>
+                                <h3 className="text-sm font-semibold text-slate-900">No automations match these filters.</h3>
+                                <button type="button" onClick={() => { setSearch(''); setStatusFilter('All'); setHealthFilter('All'); }} className="mt-4 text-sm font-semibold text-indigo-600 hover:text-indigo-700">Clear filters</button>
+                            </div>
+                        ) : (
+                            <WorkflowTable rows={filteredRows} onSelect={openWorkflowDetails} onRun={workflow => openRun(workflow, 'test')} onRunLive={workflow => openRun(workflow, 'production')} onOpenBuilder={id => navigate(`/app/automations/${id}/build?editor=visual`)} onAskAI={openWorkflowAI} onDelete={setWorkflowToDelete} onToggle={toggleWorkflow} />
+                        )}
                     </div>
                 </main>
             </div>

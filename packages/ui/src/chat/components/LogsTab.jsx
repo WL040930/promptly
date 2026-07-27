@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
+import { Activity } from 'lucide-react';
 import { useExecutionLogs } from '../../api/hooks/useLogs.js';
 import { useWorkflows } from '../../api/hooks/useWorkflows.js';
 import LogFilters from './log-ui/LogFilters.jsx';
@@ -141,9 +142,12 @@ const LogsTab = ({ workflowId: initialWorkflowId = '' } = {}) => {
                     ) : showSkeleton ? (
                         <LogsListSkeleton />
                     ) : logs.length === 0 ? (
-                        <div className="p-12 text-center border border-slate-200 rounded-2xl flex flex-col items-center justify-center bg-white/70">
-                            <div className="text-slate-600 font-semibold mb-1">No runs found</div>
-                            <div className="text-slate-400 text-sm">No runs match your current filters.</div>
+                        <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 p-12 text-center">
+                            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+                                <Activity className="h-6 w-6 text-slate-400" />
+                            </div>
+                            <h3 className="text-sm font-semibold text-slate-900">No runs found</h3>
+                            <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">No runs match your current filters.</p>
                         </div>
                     ) : (
                         <>

@@ -1,6 +1,6 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { clearFormAIChat, decideFormProposal, getFormChatHistory } from '../../api/backend.js';
+import { clearFormAIChat, decideFormProposal, getFormChatHistory, resetFormAIContext } from '../../api/backend.js';
 import { submitFormAITurnStream } from '../../api/aiStream.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useAIStream } from '../../context/AIStreamContext.jsx';
@@ -41,6 +41,7 @@ export const useFormAIAssistant = (form) => {
     const [aiStateVersion, setAIStateVersion] = useState(null);
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
+    const [isSubmittingTurn, setIsSubmittingTurn] = useState(false);
     const { isTyping, progressLabel, setStreamState, clearStreamState } = useAIStream(form?.id);
 
     const queryKey = ['formChat', form?.id];
@@ -55,14 +56,16 @@ export const useFormAIAssistant = (form) => {
         fetchNextPage,
         hasNextPage,
         isFetchingNextPage,
-        isLoading: isLoadingHistory
+        isLoading: isLoadingHistory,
+        refetch: refetchHistory
     } = useInfiniteQuery({
         queryKey,
         queryFn: async ({ pageParam = 0 }) => {
             const history = await getFormChatHistory(form.id, LIMIT, pageParam);
             return {
-                messages: history || [],
-                nextOffset: history?.length === LIMIT ? pageParam + LIMIT : undefined
+                messages: history?.messages || [],
+                state: history?.state || null,
+                nextOffset: history?.messages?.length === LIMIT ? pageParam + LIMIT : undefined
             };
         },
         getNextPageParam: (lastPage) => lastPage.nextOffset,
@@ -79,14 +82,37 @@ export const useFormAIAssistant = (form) => {
         return allMessages.length > 0 ? allMessages : [defaultMessage];
     }, [data]);
 
+    const assistantState = data?.pages?.[0]?.state || null;
+    const serverProcessing = assistantState?.phase === 'processing';
+    const recoveredProgressLabel = assistantState?.progress?.message || 'Working on your form…';
+
+    useEffect(() => {
+        if (Number.isInteger(assistantState?.version)) setAIStateVersion(assistantState.version);
+    }, [assistantState?.version]);
+
+    useEffect(() => {
+        if (!form?.id || !serverProcessing) return undefined;
+        const interval = setInterval(() => refetchHistory(), 2000);
+        return () => clearInterval(interval);
+    }, [form?.id, serverProcessing, refetchHistory]);
+
+    useEffect(() => {
+        if (serverProcessing && (!isTyping || progressLabel !== recoveredProgressLabel)) {
+            setStreamState({ isTyping: true, progressLabel: recoveredProgressLabel });
+        } else if (!serverProcessing && !isSubmittingTurn && isTyping) {
+            clearStreamState();
+        }
+    }, [serverProcessing, recoveredProgressLabel, isSubmittingTurn, isTyping, progressLabel, setStreamState, clearStreamState]);
+
     const sendMessageMutation = useMutation({
         mutationFn: async ({ text, command }) => {
             const result = await submitFormAITurnStream(form.id, command, clarificationMode, (progress) => {
-                setStreamState({ progressLabel: progress.message || 'Thinking...' });
+                setStreamState({ isTyping: true, progressLabel: progress.message || 'Working on your form…' });
             }, { expectedStateVersion: aiStateVersion });
             return result;
         },
         onMutate: async ({ text }) => {
+            setIsSubmittingTurn(true);
             setStreamState({ isTyping: true, progressLabel: 'Thinking...' });
             setInput('');
             await queryClient.cancelQueries({ queryKey });
@@ -108,6 +134,7 @@ export const useFormAIAssistant = (form) => {
             return { previousData, optimisticUserId };
         },
         onError: async (err, variables, context) => {
+            setIsSubmittingTurn(false);
             clearStreamState();
             if (context?.previousData) {
                 queryClient.setQueryData(queryKey, context.previousData);
@@ -144,6 +171,7 @@ export const useFormAIAssistant = (form) => {
             });
         },
         onSuccess: (data, variables, context) => {
+            setIsSubmittingTurn(false);
             clearStreamState();
             if (Number.isInteger(data.state?.version)) setAIStateVersion(data.state.version);
             queryClient.setQueryData(queryKey, (old) => {
@@ -168,7 +196,8 @@ export const useFormAIAssistant = (form) => {
                 }
                 newPages[0] = {
                     ...newPages[0],
-                    messages: [...currentMessages, data.userMsg, data.botMsg]
+                    messages: [...currentMessages, data.userMsg, data.botMsg],
+                    state: data.state || null
                 };
                 return { ...old, pages: newPages };
             });
@@ -180,12 +209,21 @@ export const useFormAIAssistant = (form) => {
         onSuccess: result => {
             clearStreamState();
             if (Number.isInteger(result?.state?.version)) setAIStateVersion(result.state.version);
-            queryClient.setQueryData(queryKey, { pages: [{ messages: [], nextOffset: undefined }], pageParams: [0] });
+            queryClient.setQueryData(queryKey, { pages: [{ messages: [], nextOffset: undefined, state: result.state || null }], pageParams: [0] });
             toast.success('Form AI chat cleared.');
         },
         onError: error => {
             toast.error(error.message || 'The form AI chat could not be cleared.');
         }
+    });
+
+    const resetContextMutation = useMutation({
+        mutationFn: () => resetFormAIContext(form.id),
+        onSuccess: result => {
+            if (Number.isInteger(result?.state?.version)) setAIStateVersion(result.state.version);
+            toast.success('Remembered form context reset.');
+        },
+        onError: error => toast.error(error.message || 'The remembered form context could not be reset.')
     });
 
     const handleSend = useCallback((value, command = null) => {
@@ -206,9 +244,9 @@ export const useFormAIAssistant = (form) => {
             nextCommand = nextCommand || { type: 'submit_text', text };
         }
 
-        if (!text.trim() || isTyping || !form?.id) return;
+        if (!text.trim() || isTyping || isSubmittingTurn || serverProcessing || !form?.id) return;
         sendMessageMutation.mutate({ text, command: nextCommand });
-    }, [form?.id, isTyping, sendMessageMutation]);
+    }, [form?.id, isTyping, isSubmittingTurn, serverProcessing, sendMessageMutation]);
 
     const handleAcceptProposal = useCallback(async (msgId, unselectedIndices = []) => {
         setAcceptingProposalId(msgId);
@@ -254,7 +292,7 @@ export const useFormAIAssistant = (form) => {
                         pages: old.pages.map(page => ({
                             ...page,
                             messages: page.messages.map(message => message.id === msgId
-                                ? { ...message, proposal: { ...message.proposal, status: 'stale' } }
+                                ? { ...message, proposal: { ...message.proposal, status: 'stale' }, proposalStatus: 'stale' }
                                 : message)
                         }))
                     };
@@ -305,7 +343,7 @@ export const useFormAIAssistant = (form) => {
         setInput,
         clarificationMode,
         setClarificationMode: updateClarificationMode,
-        isTyping,
+        isTyping: isTyping || isSubmittingTurn || serverProcessing,
         isLoadingHistory: isLoadingHistory && rawMessages.length === 1 && rawMessages[0].id === 'init', // Only show main loader on first ever fetch
         hasMore: !!hasNextPage,
         loadMoreHistory: fetchNextPage,
@@ -314,8 +352,10 @@ export const useFormAIAssistant = (form) => {
         handleRejectProposal,
         acceptingProposalId,
         rejectingProposalId,
-        progressLabel,
+        progressLabel: isTyping ? progressLabel : (serverProcessing ? recoveredProgressLabel : progressLabel),
         clearChat,
-        isClearingChat: clearChatMutation.isPending
+        isClearingChat: clearChatMutation.isPending,
+        resetContext: () => form?.id ? resetContextMutation.mutateAsync() : Promise.resolve(),
+        isResettingContext: resetContextMutation.isPending
     };
 };

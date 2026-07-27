@@ -1,17 +1,9 @@
 import crypto from 'crypto';
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import NodeRegistry from '../../../utils/NodeRegistry.js';
-import { ai } from '../index.js';
-import { AI_TASKS } from '../core/aiTasks.js';
-import { describeAiOutput, recordAiDiagnostic } from '../core/diagnosticsLogger.js';
 import { validateWorkflow } from '../../engine/workflowValidator.js';
 import nodeResourceService from '../../nodes/nodeResourceService.js';
 import { normalizeNodeInputOptions, resolveNodeResourceParams } from '../../../../shared/nodeConfigContract.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const instructionDir = path.join(__dirname, 'instruction');
 
 const resourceVariantKey = params => JSON.stringify(Object.fromEntries(Object.entries(params || {}).sort(([left], [right]) => left.localeCompare(right))));
 
@@ -651,4 +643,3 @@ export const compileWorkflowEdits = ({ currentWorkflow = {}, operations = [], sp
     }
     return { nodes, edges, originalNodes, originalEdges, refs };
 };
-

@@ -76,8 +76,13 @@ export const buildWorkflowPlannerContext = ({
     clarificationMode,
     turnContext = null,
     userContext = null,
+    resourceContext = null,
     forceDecision = false
 }) => [
+    'Resource Identity and Continuity:',
+    JSON.stringify(resourceContext || {}),
+    'You are editing this existing workflow. Preserve its purpose, accepted decisions, and graph behavior unless the Current Request explicitly changes them.',
+    '',
     'Current Workflow Edit View:',
     JSON.stringify(buildWorkflowEditView(workflow)),
     '',

@@ -47,11 +47,13 @@ export default function WorkflowAIAssistant({ workflow, onBeforeSend, initialPro
                 versionWorkflow={previewProposal}
                 confirmText="Apply Changes"
                 loadingText="Applying…"
+                title="Review workflow changes"
+                description="Compare the current workflow with the proposed changes."
                 isRestoring={!!assistant.acceptingProposalId}
                 onRestore={async () => {
                     // When the user clicks apply in the preview, we apply the changes
                     if (previewProposal) {
-                        const message = assistant.messages.find(m => m.proposal?.nodes === previewProposal.nodes || m.payload?.nodes === previewProposal.nodes);
+                        const message = assistant.messages.find(m => m.id === previewProposal.messageId);
                         if (message) {
                             // The handleApply call will set assistant.acceptingProposalId
                             await assistant.handleApply(message);

@@ -11,9 +11,6 @@ export const AI_TASKS = Object.freeze({
     FORM_VERIFY: 'form.verify',
     FORM_VERIFY_REPAIR: 'form.verifyRepair',
 
-    WORKFLOW_CLASSIFY: 'workflow.classify',
-    WORKFLOW_ASSEMBLE: 'workflow.assemble',
-    WORKFLOW_PATCH: 'workflow.patch',
     WORKFLOW_PLAN: 'workflow.plan',
     WORKFLOW_PLAN_REPAIR: 'workflow.planRepair',
     WORKFLOW_BUILD: 'workflow.build',

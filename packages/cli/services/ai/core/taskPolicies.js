@@ -84,27 +84,6 @@ const TASK_POLICIES = Object.freeze({
         maxAttempts: 4,
         allowTools: false
     },
-    [AI_TASKS.WORKFLOW_CLASSIFY]: {
-        profiles: ['fast', 'quality', 'default'],
-        responseFormat: 'json',
-        maxCompletionTokens: 1200,
-        maxAttempts: 3,
-        allowTools: false
-    },
-    [AI_TASKS.WORKFLOW_ASSEMBLE]: {
-        profiles: ['quality', 'default', 'fast'],
-        responseFormat: 'json',
-        maxCompletionTokens: 1200,
-        maxAttempts: 3,
-        allowTools: false
-    },
-    [AI_TASKS.WORKFLOW_PATCH]: {
-        profiles: ['quality', 'default', 'fast'],
-        responseFormat: 'json',
-        maxCompletionTokens: 1200,
-        maxAttempts: 3,
-        allowTools: false
-    },
     [AI_TASKS.WORKFLOW_PLAN]: {
         profiles: ['fast', 'quality', 'default'],
         responseFormat: 'json',

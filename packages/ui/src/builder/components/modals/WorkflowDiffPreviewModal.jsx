@@ -21,7 +21,7 @@ const edgeTypes = {
     deletable: DeletableEdge,
 };
 
-export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkflow, versionWorkflow, onRestore, isRestoring = false, isRestoringSuccess = false, confirmText = "Restore This Version", loadingText = "Restoring…" }) {
+export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkflow, versionWorkflow, onRestore, isRestoring = false, isRestoringSuccess = false, confirmText = "Restore This Version", loadingText = "Restoring…", title = null, description = null }) {
     // Prevent background scrolling when open
     useEffect(() => {
         if (isOpen) {
@@ -164,8 +164,8 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between shrink-0">
                     <div>
-                        <h2 className="text-lg font-bold text-slate-800">Preview Version {versionWorkflow.versionNumber}</h2>
-                        <p className="text-xs text-slate-500 font-medium mt-0.5">Review what will change if you restore this version.</p>
+                        <h2 className="text-lg font-bold text-slate-800">{title || `Preview Version ${versionWorkflow.versionNumber}`}</h2>
+                        <p className="text-xs text-slate-500 font-medium mt-0.5">{description || 'Review what will change if you restore this version.'}</p>
                     </div>
                     <Button
                         variant="ghost"

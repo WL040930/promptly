@@ -596,12 +596,14 @@ export default function ApprovalsPage() {
               </Button>
             </div>
           ) : approvals.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/70 p-12 text-center">
-              <ShieldCheck className="h-9 w-9 text-indigo-300" />
-              <p className="mt-4 font-semibold text-slate-700">
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 p-12 text-center">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+                <ShieldCheck className="h-6 w-6 text-slate-400" />
+              </div>
+              <h3 className="text-sm font-semibold text-slate-900">
                 {tab === "pending" ? "No approvals waiting" : "No decisions found"}
-              </p>
-              <p className="mt-1 text-sm text-slate-400">
+              </h3>
+              <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">
                 {tab === "pending"
                   ? "New approval requests will appear here when a workflow pauses."
                   : "Resolved workflow decisions will appear here."}

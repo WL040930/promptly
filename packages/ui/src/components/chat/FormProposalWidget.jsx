@@ -314,6 +314,11 @@ export default function FormProposalWidget({
                         ? 'A newer proposal replaced this suggestion.'
                         : 'This suggestion is outdated. Generate a new one.'}
                 </div>
+            ) : isUnverified ? (
+                <div className="flex gap-2">
+                    <Button variant="outline" size="sm" className="flex-1" onClick={handlePreviewClick}>Preview changes</Button>
+                    <Button variant="secondary" size="sm" className="flex-1" onClick={onIgnore} isLoading={rejecting} loadingText="Ignoring...">Ignore</Button>
+                </div>
             ) : (
                 <div className="flex gap-2">
                     <Button 

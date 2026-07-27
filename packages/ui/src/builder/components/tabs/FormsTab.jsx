@@ -398,9 +398,9 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
             <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-transparent">
                 {!activeForm ? (
                     <div className="flex-1 flex items-center justify-center p-8">
-                        <div className="p-12 text-center border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center bg-white/50 max-w-md w-full mx-auto">
-                            <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center mb-4">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <div className="mx-auto flex w-full max-w-lg flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white p-12 text-center">
+                            <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50">
+                                <svg className="h-8 w-8 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                                     <polyline points="14 2 14 8 20 8"></polyline>
                                     <line x1="16" y1="13" x2="8" y2="13"></line>
@@ -408,12 +408,12 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                                     <polyline points="10 9 9 9 8 9"></polyline>
                                 </svg>
                             </div>
-                            <div className="text-slate-600 font-semibold mb-1">No forms found</div>
-                            <div className="text-slate-400 text-sm mb-6">Create a new form to get started.</div>
+                            <h3 className="text-lg font-bold tracking-tight text-slate-900">No forms found</h3>
+                            <p className="mx-auto mb-6 mt-2 max-w-sm text-sm text-slate-500">Create a new form to get started.</p>
                             <button
                                 onClick={handleCreateForm}
                                 disabled={isCreatingForm}
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                                className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:opacity-50"
                             >
                                 {isCreatingForm ? (
                                     <>
@@ -421,7 +421,13 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                                         Creating...
                                     </>
                                 ) : (
-                                    '+ Create New Form'
+                                    <>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                            <line x1="12" y1="5" x2="12" y2="19" />
+                                            <line x1="5" y1="12" x2="19" y2="12" />
+                                        </svg>
+                                        Create New Form
+                                    </>
                                 )}
                             </button>
                         </div>

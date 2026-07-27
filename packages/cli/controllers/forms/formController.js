@@ -6,6 +6,7 @@ import { validateFormSchema } from '../../services/ai/form/domain/formSchemaVali
 import asyncHandler from '../../utils/asyncHandler.js';
 import { executeWorkflow } from '../../services/engine/executionEngine.js';
 import { formAssistant } from '../../services/ai/form/formAssistant.js';
+import { publicStateForThread } from '../../services/assistant/assistantStore.js';
 
 export const getForms = asyncHandler(async (req, res) => {
     const forms = await Form.findAll({ where: { userId: req.user.id } });
@@ -27,37 +28,63 @@ export const createForm = asyncHandler(async (req, res) => {
 export const submitFormAITurn = asyncHandler(async (req, res) => {
     const { formId } = req.params;
     const { command, text, clarificationMode, requestId, expectedStateVersion } = req.body || {};
-    const useSSE = req.headers.accept === 'text/event-stream';
+    const useSSE = String(req.headers.accept || '').includes('text/event-stream');
+    let heartbeat = null;
 
     if (useSSE) {
         res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.flushHeaders?.();
+        heartbeat = setInterval(() => {
+            if (!res.writableEnded) res.write(': keepalive\n\n');
+        }, 15000);
     }
 
-    const onProgress = data => {
-        if (useSSE) res.write(`data: ${JSON.stringify({ type: 'progress', ...data })}\n\n`);
+    const emit = data => {
+        if (useSSE && !res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
-    const result = await formAssistant.submitTurn({
-        userId: req.user.id,
-        formId,
-        command,
-        text,
-        clarificationMode,
-        expectedStateVersion,
-        requestId,
-        onProgress
-    });
+    try {
+        const result = await formAssistant.submitTurn({
+            userId: req.user.id,
+            formId,
+            command,
+            text,
+            clarificationMode,
+            expectedStateVersion,
+            requestId,
+            onProgress: progress => emit({ type: 'progress', ...progress })
+        });
 
-    if (useSSE) {
-        res.write(`data: ${JSON.stringify({ type: 'complete', result })}\n\n`);
-        return res.end();
+        if (useSSE) {
+            emit({ type: 'complete', result });
+            return res.end();
+        }
+        res.status(201).json(result);
+    } catch (error) {
+        if (useSSE && !res.writableEnded) {
+            emit({
+                type: 'error',
+                code: error.code || 'FORM_AI_FAILED',
+                message: error.message || 'Form AI turn failed.',
+                issues: error.issues || []
+            });
+            return res.end();
+        }
+        throw error;
+    } finally {
+        if (heartbeat) clearInterval(heartbeat);
     }
-    res.status(201).json(result);
 });
 
 export const clearFormAIChat = asyncHandler(async (req, res) => {
     const result = await formAssistant.clearChat({ userId: req.user.id, formId: req.params.formId });
+    res.json(result);
+});
+
+export const resetFormAIContext = asyncHandler(async (req, res) => {
+    const result = await formAssistant.resetContext({ userId: req.user.id, formId: req.params.formId });
     res.json(result);
 });
 
@@ -240,7 +267,7 @@ export const getFormChatHistory = asyncHandler(async (req, res) => {
     if (!form) return res.status(404).json({ message: 'Form not found' });
 
     const thread = await AssistantThread.findOne({ where: { surface: 'form', formId, userId: req.user.id } });
-    if (!thread) return res.json([]);
+    if (!thread) return res.json({ messages: [], state: null });
     const messages = await AssistantMessage.findAll({
         where: { threadId: thread.id },
         order: [['createdAt', 'DESC']],
@@ -249,5 +276,8 @@ export const getFormChatHistory = asyncHandler(async (req, res) => {
     });
 
     // Return messages in chronological order for the frontend
-    res.json(messages.reverse().map(message => ({ ...message.toJSON(), formId })));
+    res.json({
+        messages: messages.reverse().map(message => ({ ...message.toJSON(), formId })),
+        state: publicStateForThread(thread)
+    });
 });

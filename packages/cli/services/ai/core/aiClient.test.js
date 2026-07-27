@@ -97,7 +97,7 @@ test('AI client parses JSON tasks and exposes invalid output without retrying do
     });
 
     const result = await ai.run({
-        task: 'workflow.classify',
+        task: 'workflow.plan',
         messages: [{ role: 'user', parts: [{ text: 'Create a workflow.' }] }]
     });
 

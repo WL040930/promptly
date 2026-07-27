@@ -305,17 +305,17 @@ const FormResponses = ({ form }) => {
                 </div>
             ) : (
                 /* Empty State */
-                <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200/80 bg-white p-10 text-center shadow-[0_12px_28px_rgba(23,24,39,0.04)] sm:p-16">
-                    <div className="w-20 h-20 rounded-full bg-gray-50 flex items-center justify-center mb-6 shadow-inner border border-gray-100">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <div className="mx-auto flex w-full max-w-lg flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white p-12 text-center">
+                    <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50">
+                        <svg className="h-8 w-8 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                             <polyline points="14 2 14 8 20 8" />
                             <line x1="16" y1="13" x2="8" y2="13" />
                             <line x1="16" y1="17" x2="8" y2="17" />
                         </svg>
                     </div>
-                    <h3 className="text-xl font-extrabold text-gray-900 mb-2 tracking-tight">No responses yet</h3>
-                    <p className="text-[15px] font-medium text-gray-500 max-w-sm mx-auto">Share your form to start collecting responses. They will appear here automatically.</p>
+                    <h3 className="text-lg font-bold tracking-tight text-slate-900">No responses yet</h3>
+                    <p className="mx-auto mt-2 max-w-sm text-sm text-slate-500">Share your form to start collecting responses. They will appear here automatically.</p>
                 </div>
             )}
         </div>

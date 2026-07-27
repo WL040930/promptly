@@ -6,11 +6,19 @@ import { createAssistantStateView, ensureAssistantThread } from '../../assistant
 import { saveAutomationDraft } from '../../automations/automationService.js';
 import { runWorkflowTurn } from '../workflowAIService.js';
 import { normalizeWorkflowCommand, resolveWorkflowTurnContext } from './domain/workflowTurnContext.js';
+import { applyResourceContextDelta, buildResourceIdentity, resourceContextForPrompt } from '../../assistant/resourceContext.js';
+import { buildWorkflowPresentation } from '../../assistant/proposalPresentation.js';
 
 const DEFAULT_MODE = 'important_only';
 const MAX_HISTORY = 100;
 const AI_CONTEXT_HISTORY = 30;
 const IN_FLIGHT_TIMEOUT_MS = 10 * 60 * 1000;
+
+const progressSnapshot = progress => ({
+    status: String(progress?.status || 'working').trim() || 'working',
+    message: String(progress?.message || 'Working on your workflow…').trim() || 'Working on your workflow…',
+    updatedAt: new Date().toISOString()
+});
 
 const errorWith = (code, message, status = 400, details = {}) => {
     const error = new Error(message);
@@ -29,7 +37,9 @@ const publicState = state => state ? {
     openClarification: state.openClarification || null,
     activeProposalMessageId: state.activeProposalMessageId || null,
     inFlightRequestId: state.inFlightRequestId || null,
-    inFlightStartedAt: state.inFlightStartedAt || null
+    inFlightStartedAt: state.inFlightStartedAt || null,
+    progress: state.progress || null,
+    resourceBrief: state.context?.resourceBrief || null
 } : null;
 
 const publicMessage = message => {
@@ -86,7 +96,7 @@ const attachedForm = async (workflow, userId, transaction) => {
 
 const messageFromResult = ({ result, workflow }) => {
     if (result.kind === 'proposal') {
-        return replyFor(result.message, {
+        const proposal = {
             workflowId: workflow.id,
             baseWorkflowRevision: workflow.revision,
             requirements: result.requirements,
@@ -98,8 +108,11 @@ const messageFromResult = ({ result, workflow }) => {
             readiness: result.readiness,
             verification: result.verification,
             warnings: result.warnings || [],
-            plan: result.plan || []
-        }, 'workflow_proposal');
+            plan: result.plan || [],
+            contextDelta: result.contextDelta || null
+        };
+        const presentation = buildWorkflowPresentation({ workflow: toWorkflowJson(workflow), proposal });
+        return replyFor(presentation.outcome, { ...proposal, presentation }, 'workflow_proposal');
     }
     if (result.kind === 'clarification') {
         return replyFor(result.message, {
@@ -161,6 +174,16 @@ export const workflowAssistant = {
         const runId = requestId || `wturn_${crypto.randomUUID().replace(/-/g, '')}`;
         let started = false;
         let reservation = null;
+        let progressChain = Promise.resolve();
+        const reportProgress = progress => {
+            const snapshot = progressSnapshot(progress);
+            onProgress?.(snapshot);
+            progressChain = progressChain.then(() => sequelize.transaction(async transaction => {
+                const freshState = await ensureState({ workflow, transaction });
+                if (freshState.inFlightRequestId !== runId) return;
+                await freshState.update({ phase: 'processing', progress: snapshot }, { transaction });
+            }));
+        };
 
         try {
             await sequelize.transaction(async transaction => {
@@ -198,6 +221,7 @@ export const workflowAssistant = {
                     mode: clarificationMode || state.mode || DEFAULT_MODE,
                     inFlightRequestId: runId,
                     inFlightStartedAt: new Date(),
+                    progress: progressSnapshot({ status: 'starting', message: 'Preparing workflow changes…' }),
                     openClarification: null
                 }, { transaction });
                 started = true;
@@ -228,13 +252,18 @@ export const workflowAssistant = {
                 turnContext: reservation.context.intent,
                 userId,
                 userContext: { forms: compactOwnedForms(ownedForms) },
+                assistantContext: resourceContextForPrompt({
+                    identity: buildResourceIdentity({ surface: 'workflow', resource: toWorkflowJson(workflow) }),
+                    context: reservation.state.context
+                }),
                 formSchema: form?.toJSON?.() || null,
                 formLoader: async ({ formId }) => {
                     const selected = await Form.findOne({ where: { id: formId, userId } });
                     return selected?.toJSON?.() || null;
                 },
-                onProgress
+                onProgress: reportProgress
             });
+            await progressChain;
             const reply = messageFromResult({ result, workflow });
             reply.tokenUsage = result.tokenUsage || null;
             return sequelize.transaction(async transaction => {
@@ -265,6 +294,7 @@ export const workflowAssistant = {
                         : null,
                     inFlightRequestId: null,
                     inFlightStartedAt: null,
+                    progress: null,
                     activeProposalMessageId,
                     openClarification: reply.kind === 'clarification' ? reply.payload || null : null
                 }, { transaction });
@@ -294,7 +324,8 @@ export const workflowAssistant = {
                     phase: 'idle',
                     activeWork: null,
                     inFlightRequestId: null,
-                    inFlightStartedAt: null
+                    inFlightStartedAt: null,
+                    progress: null
                 }, { transaction });
                 error.workflowAssistantMessage = botMessage;
             });
@@ -320,12 +351,25 @@ export const workflowAssistant = {
                 activeProposalMessageId: null,
                 inFlightRequestId: null,
                 inFlightStartedAt: null,
+                progress: null,
             }, { transaction });
             return {
                 cleared: true,
                 deletedMessages,
                 state: publicState(state)
             };
+        });
+    },
+
+    async resetContext({ workflowId, userId }) {
+        return sequelize.transaction(async transaction => {
+            const workflow = await findWorkflow(workflowId, userId, { transaction, lock: transaction.LOCK.UPDATE });
+            const state = await ensureState({ workflow, transaction });
+            if (state.inFlightRequestId) throw errorWith('WORKFLOW_AI_TURN_IN_PROGRESS', 'The workflow AI is still processing a request.', 409);
+            const { resourceBrief, ...context } = state.context || {};
+            await state.updateContext(context, { transaction });
+            await state.update({ version: state.version + 1 }, { transaction });
+            return { reset: true, state: publicState(state) };
         });
     },
 
@@ -342,7 +386,7 @@ export const workflowAssistant = {
                 if (Number.isInteger(expectedStateVersion) && expectedStateVersion !== state.version) {
                     throw errorWith('WORKFLOW_AI_STATE_CONFLICT', 'The workflow assistant changed in another tab. Refresh and try again.', 409, { currentStateVersion: state.version });
                 }
-                await message.update({ proposalStatus: 'ignored' }, { transaction });
+                await message.update({ proposalStatus: 'rejected' }, { transaction });
                 await state.update({ version: state.version + 1, activeProposalMessageId: state.activeProposalMessageId === message.id ? null : state.activeProposalMessageId }, { transaction });
                 return { message: publicMessage(message), state: publicState(state) };
             });
@@ -378,6 +422,11 @@ export const workflowAssistant = {
                     transaction
                 });
                 await lockedMessage.update({ proposalStatus: 'applied' }, { transaction });
+                await state.updateContext(applyResourceContextDelta({
+                    context: state.context,
+                    delta: payload.contextDelta,
+                    identity: buildResourceIdentity({ surface: 'workflow', resource: toWorkflowJson(saved.automation) })
+                }), { transaction });
                 await state.update({ version: state.version + 1, activeProposalMessageId: state.activeProposalMessageId === lockedMessage.id ? null : state.activeProposalMessageId }, { transaction });
                 return { workflow: toWorkflowJson(saved.automation), message: publicMessage(lockedMessage), state: publicState(state) };
             });

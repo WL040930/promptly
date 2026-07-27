@@ -216,7 +216,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                         status={status}
                         onAccept={() => onApply?.(message)}
                         onIgnore={() => onIgnore?.(message)}
-                        onPreview={() => onOption?.({ type: 'preview_workflow', proposal: payload, workflowId: payload.workflowId })}
+                        onPreview={() => onOption?.({ type: 'preview_workflow', proposal: { ...payload, messageId: message.id }, workflowId: payload.workflowId })}
                         accepting={isAccepting}
                         rejecting={isRejecting}
                     />

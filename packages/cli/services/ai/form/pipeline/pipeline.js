@@ -70,6 +70,7 @@ export const generateFormFromPrompt = async (
                 clarificationMode: normalizeClarificationMode(options.clarificationMode),
                 cardinality,
                 turnContext: options.turnContext || null,
+                resourceContext: options.resourceContext || null,
                 forceDecision
             }) }]
         }];
@@ -148,7 +149,7 @@ export const generateFormFromPrompt = async (
         }
 
         if (plannerResult.type === 'direct_proposal' || plannerResult.type === 'plan_complete') {
-            if (onProgress) onProgress({ status: 'building', message: 'Generating form schema...' });
+            if (onProgress) onProgress({ status: 'building', message: 'Preparing form changes…' });
             const sourceSchema = currentSchema || {};
             const needsTitlePatch = !hasUsableFormTitle(sourceSchema);
             // New-form turns start with an empty schema. Give the patch engine a
@@ -193,7 +194,8 @@ export const generateFormFromPrompt = async (
                 requirements: plannerResult.requirements,
                 verification,
                 warnings: workerResult.warnings || [],
-                cardinality
+                cardinality,
+                contextDelta: plannerResult.contextDelta || null
             };
         }
 

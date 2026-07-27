@@ -2,7 +2,18 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { workflowAssistantInternals } from './workflowAssistant.js';
 
-const { normalizeWorkflowCommand, resolveWorkflowTurnContext } = workflowAssistantInternals;
+const { normalizeWorkflowCommand, resolveWorkflowTurnContext, publicState } = workflowAssistantInternals;
+
+test('workflow history state includes the latest progress after a refresh', () => {
+    const result = publicState({
+        workflowId: 'workflow_1',
+        version: 2,
+        phase: 'processing',
+        progress: { status: 'checking', message: 'Checking the workflow proposal…', updatedAt: '2026-07-27T10:00:00.000Z' }
+    });
+
+    assert.equal(result.progress.message, 'Checking the workflow proposal…');
+});
 
 // ---------------------------------------------------------------------------
 // normalizeWorkflowCommand

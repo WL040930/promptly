@@ -195,12 +195,16 @@ const compactPendingProposal = (messages = []) => {
     };
 };
 
-export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarificationMode, cardinality = null, turnContext = null, forceDecision = false }) => {
+export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarificationMode, cardinality = null, turnContext = null, resourceContext = null, forceDecision = false }) => {
     const memory = readFormMemory(schema);
     const recentConversation = selectRecentMessages(chatHistory);
     const pendingProposal = compactPendingProposal(chatHistory);
 
     return [
+        'Resource Identity and Continuity:',
+        resourceContext ? JSON.stringify(resourceContext) : '(none)',
+        'You are editing this existing form. Preserve its purpose, audience, accepted decisions, and current schema unless the Current Request explicitly changes them.',
+        '',
         'Persistent Form Memory:',
         memory?.summary || '(none)',
         '',

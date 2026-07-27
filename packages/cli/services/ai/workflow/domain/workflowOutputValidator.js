@@ -66,6 +66,26 @@ const validateInputs = inputs => {
     return issues;
 };
 
+const validateContextDelta = value => {
+    if (value === undefined || value === null) return [];
+    if (!isObject(value)) return [issue('INVALID_CONTEXT_DELTA', 'contextDelta', 'Context delta must be an object.')];
+    const issues = [];
+    if (value.set !== undefined && !isObject(value.set)) issues.push(issue('INVALID_CONTEXT_SET', 'contextDelta.set', 'Context set must be an object.'));
+    for (const key of ['purpose', 'audience', 'tone']) {
+        if (value.set?.[key] !== undefined) issues.push(...textIssues(value.set[key], `contextDelta.set.${key}`, { max: 200 }));
+    }
+    for (const key of ['addInvariants', 'removeInvariants', 'addDecisions', 'removeDecisions']) {
+        if (value[key] === undefined) continue;
+        if (!Array.isArray(value[key])) {
+            issues.push(issue('INVALID_CONTEXT_LIST', `contextDelta.${key}`, 'Context entries must be an array.'));
+            continue;
+        }
+        if (value[key].length > 12) issues.push(issue('TOO_MANY_CONTEXT_ENTRIES', `contextDelta.${key}`, 'At most 12 context entries are allowed.'));
+        value[key].forEach((entry, index) => issues.push(...textIssues(entry, `contextDelta.${key}[${index}]`, { required: true, max: 200 })));
+    }
+    return issues;
+};
+
 export const validateWorkflowPlannerResult = result => {
     if (!isObject(result)) return [issue('INVALID_PLANNER_RESPONSE', '', 'Planner response must be an object.')];
     const issues = [];
@@ -87,6 +107,7 @@ export const validateWorkflowPlannerResult = result => {
             });
         }
         if (result.type === 'direct_plan') issues.push(...validateWorkflowWorkerResult(result));
+        issues.push(...validateContextDelta(result.contextDelta));
     }
     return issues;
 };
@@ -127,4 +148,3 @@ export const validateWorkflowVerifierResult = result => {
 export const summarizeWorkflowOutputIssues = issues => (issues || [])
     .map(item => `${item.code || 'INVALID_OUTPUT'} at ${item.path || 'response'}: ${item.message || 'Invalid output.'}`)
     .join('\n');
-

@@ -63,7 +63,7 @@ AssistantMessage.prototype.toJSON = function toJSON() {
     const value = baseToJSON.call(this);
     return {
         ...value,
-        ...(this.kind === 'form_proposal' ? { proposal: this.payload } : {}),
+        ...(this.kind === 'form_proposal' ? { proposal: { ...(this.payload || {}), status: this.proposalStatus || null } } : {}),
         ...(this.kind === 'clarification' ? { options: this.payload } : {})
     };
 };
@@ -71,7 +71,7 @@ AssistantMessage.prototype.toJSON = function toJSON() {
 Object.defineProperties(AssistantMessage.prototype, {
     proposal: {
         get() {
-            return this.kind === 'form_proposal' ? this.payload : null;
+            return this.kind === 'form_proposal' ? { ...(this.payload || {}), status: this.proposalStatus || null } : null;
         }
     },
     options: {

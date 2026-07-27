@@ -18,14 +18,23 @@ export const clearWorkflowAIChat = asyncHandler(async (req, res) => {
     res.json(result);
 });
 
+export const resetWorkflowAIContext = asyncHandler(async (req, res) => {
+    const result = await workflowAssistant.resetContext({ workflowId: req.params.id, userId: req.user.id });
+    res.json(result);
+});
+
 export const submitWorkflowAITurn = asyncHandler(async (req, res) => {
     const useSSE = acceptsSSE(req);
     if (useSSE) {
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
         res.flushHeaders?.();
     }
+    const heartbeat = useSSE ? setInterval(() => {
+        if (!res.writableEnded) res.write(': keepalive\n\n');
+    }, 15000) : null;
     const emit = data => {
         if (useSSE && !res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
@@ -57,6 +66,8 @@ export const submitWorkflowAITurn = asyncHandler(async (req, res) => {
             return res.end();
         }
         throw error;
+    } finally {
+        if (heartbeat) clearInterval(heartbeat);
     }
 });
 

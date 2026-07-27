@@ -5,7 +5,7 @@ import {
     getWorkflows, getWorkflow, createWorkflow, updateWorkflow, deleteWorkflow, triggerWorkflow, triggerProductionWorkflow,
     getWorkflowVersions, saveWorkflowVersion, restoreWorkflowVersion, publishWorkflow, pauseWorkflow
 } from '../../controllers/builder/workflowController.js';
-import { getWorkflowAIChat, clearWorkflowAIChat, submitWorkflowAITurn, decideWorkflowAIProposal } from '../../controllers/builder/workflowAIController.js';
+import { getWorkflowAIChat, clearWorkflowAIChat, resetWorkflowAIContext, submitWorkflowAITurn, decideWorkflowAIProposal } from '../../controllers/builder/workflowAIController.js';
 
 const router = Router();
 
@@ -22,6 +22,7 @@ router.post('/:id/publish', asyncHandler(publishWorkflow));
 router.post('/:id/pause', asyncHandler(pauseWorkflow));
 router.get('/:id/ai-chat', getWorkflowAIChat);
 router.delete('/:id/ai-chat', clearWorkflowAIChat);
+router.delete('/:id/ai-context', resetWorkflowAIContext);
 router.post('/:id/ai-turns', submitWorkflowAITurn);
 router.post('/:id/ai-proposals/:messageId/decision', decideWorkflowAIProposal);
 

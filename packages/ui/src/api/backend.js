@@ -18,6 +18,7 @@ export const getWorkflowAIChat = (id, limit = 50, before = null) => {
     return apiRequest(`/api/automations/${id}/ai-chat?${params.toString()}`);
 };
 export const clearWorkflowAIChat = (id) => apiRequest(`/api/automations/${id}/ai-chat`, { method: 'DELETE' });
+export const resetWorkflowAIContext = (id) => apiRequest(`/api/automations/${id}/ai-context`, { method: 'DELETE' });
 export const decideWorkflowAIProposal = (workflowId, messageId, action = 'accept', expectedStateVersion = null) => apiRequest(`/api/automations/${workflowId}/ai-proposals/${messageId}/decision`, {
     method: 'POST',
     body: JSON.stringify({ action, ...(Number.isInteger(expectedStateVersion) ? { expectedStateVersion } : {}) })
@@ -39,6 +40,7 @@ export const getFormResponses = (formId) => apiRequest(`/api/forms/${formId}/res
 export const getPublicForm = (id) => apiRequest(`/api/forms/public/${id}`);
 export const getFormChatHistory = (formId, limit = 50, offset = 0) => apiRequest(`/api/forms/${formId}/chat?limit=${limit}&offset=${offset}`);
 export const clearFormAIChat = (formId) => apiRequest(`/api/forms/${formId}/chat`, { method: 'DELETE' });
+export const resetFormAIContext = (formId) => apiRequest(`/api/forms/${formId}/ai-context`, { method: 'DELETE' });
 
 // --- Logs ---
 export const getExecutionLogs = ({ search = '', status = 'All', workflowId = '', page = 1, pageSize = 10 } = {}) => {

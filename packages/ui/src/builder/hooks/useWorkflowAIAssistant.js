@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
 import { getClarificationModePreference, setClarificationModePreference } from '../../utils/storage.js';
-import { clearWorkflowAIChat, decideWorkflowAIProposal, getWorkflowAIChat } from '../../api/backend.js';
+import { clearWorkflowAIChat, decideWorkflowAIProposal, getWorkflowAIChat, resetWorkflowAIContext } from '../../api/backend.js';
 import { submitWorkflowAITurnStream } from '../../api/aiStream.js';
 import { useAIStream } from '../../context/AIStreamContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
@@ -95,12 +95,13 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
     // state with the server-owned lifecycle when the assistant is remounted.
     useEffect(() => {
         const processing = historyQuery.data?.state?.phase === 'processing';
-        if (processing && !sharedIsTyping) {
-            setStreamState({ isTyping: true, progressLabel: sharedProgressLabel || 'Thinking…' });
-        } else if (!processing && sharedIsTyping) {
+        const persistedProgress = historyQuery.data?.state?.progress?.message || 'Working on your workflow…';
+        if (processing && (!sharedIsTyping || sharedProgressLabel !== persistedProgress)) {
+            setStreamState({ isTyping: true, progressLabel: persistedProgress });
+        } else if (!processing && sharedIsTyping && !isTyping) {
             clearStreamState();
         }
-    }, [historyQuery.data?.state?.phase, sharedIsTyping, sharedProgressLabel, setStreamState, clearStreamState]);
+    }, [historyQuery.data?.state?.phase, historyQuery.data?.state?.progress?.message, isTyping, sharedIsTyping, sharedProgressLabel, setStreamState, clearStreamState]);
 
     useEffect(() => {
         setInputState(readDraft(workflowId) || initialPrompt || '');
@@ -141,8 +142,8 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
             const { command, text } = normalizeInput(sendInput);
             const optimisticText = displayTextFor({ command, text });
             setIsTyping(true);
-            setProgressLabel('Reading this workflow');
-            setStreamState({ isTyping: true, progressLabel: 'Reading this workflow', requestId });
+            setProgressLabel('Preparing workflow changes…');
+            setStreamState({ isTyping: true, progressLabel: 'Preparing workflow changes…', requestId });
             setInput('');
             await queryClient.cancelQueries({ queryKey });
             const previous = queryClient.getQueryData(queryKey);
@@ -203,6 +204,15 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         onError: error => {
             toast.error(error.message || 'The workflow AI chat could not be cleared.');
         }
+    });
+
+    const resetContextMutation = useMutation({
+        mutationFn: () => resetWorkflowAIContext(workflowId),
+        onSuccess: result => {
+            queryClient.setQueryData(queryKey, old => old ? { ...old, state: result.state } : old);
+            toast.success('Remembered workflow context reset.');
+        },
+        onError: error => toast.error(error.message || 'The remembered workflow context could not be reset.')
     });
 
     /**
@@ -295,7 +305,11 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         input,
         setInput,
         isTyping: isTyping || sharedIsTyping || historyQuery.data?.state?.phase === 'processing',
-        progressLabel: sharedProgressLabel || progressLabel,
+        progressLabel: sharedIsTyping
+            ? sharedProgressLabel
+            : (historyQuery.data?.state?.phase === 'processing'
+                ? historyQuery.data.state.progress?.message || 'Working on your workflow…'
+                : progressLabel),
         clarificationMode,
         updateClarificationMode,
         handleSend,
@@ -310,6 +324,8 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         isLoadingMore,
         error: historyQuery.error,
         clearChat,
-        isClearingChat: clearChatMutation.isPending
+        isClearingChat: clearChatMutation.isPending,
+        resetContext: () => workflowId ? resetContextMutation.mutateAsync() : Promise.resolve(),
+        isResettingContext: resetContextMutation.isPending
     };
 };

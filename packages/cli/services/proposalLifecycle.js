@@ -14,11 +14,7 @@ export const supersedePendingFormChatProposals = async ({ threadId, supersededBy
 
     for (const message of messages) {
         await message.update({
-            payload: {
-                ...message.payload,
-                status: 'superseded',
-                ...(supersededBy ? { supersededBy } : {})
-            },
+            payload: { ...message.payload, ...(supersededBy ? { supersededBy } : {}) },
             proposalStatus: 'superseded'
         }, transaction ? { transaction } : undefined);
         supersededMessageIds.push(message.id);

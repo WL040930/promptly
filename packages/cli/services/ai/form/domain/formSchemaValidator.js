@@ -272,6 +272,27 @@ const validatePlannerRequirements = (result, issues) => {
     });
 };
 
+const validateContextDelta = (value, issues) => {
+    if (value === undefined || value === null) return;
+    if (!isPlainObject(value)) {
+        issues.push(issue('INVALID_CONTEXT_DELTA', 'contextDelta', 'Context delta must be an object.'));
+        return;
+    }
+    if (value.set !== undefined && !isPlainObject(value.set)) issues.push(issue('INVALID_CONTEXT_SET', 'contextDelta.set', 'Context set must be an object.'));
+    for (const key of ['purpose', 'audience', 'tone']) {
+        if (value.set?.[key] !== undefined) issues.push(...validateText(value.set[key], `contextDelta.set.${key}`, { max: 200 }));
+    }
+    for (const key of ['addInvariants', 'removeInvariants', 'addDecisions', 'removeDecisions']) {
+        if (value[key] === undefined) continue;
+        if (!Array.isArray(value[key])) {
+            issues.push(issue('INVALID_CONTEXT_LIST', `contextDelta.${key}`, 'Context entries must be an array.'));
+            continue;
+        }
+        if (value[key].length > 12) issues.push(issue('TOO_MANY_CONTEXT_ENTRIES', `contextDelta.${key}`, 'At most 12 context entries are allowed.'));
+        value[key].forEach((entry, index) => issues.push(...validateText(entry, `contextDelta.${key}[${index}]`, { required: true, max: 200 })));
+    }
+};
+
 export const validatePlannerResult = (result = {}) => {
     const issues = [];
     if (!isPlainObject(result)) return [issue('INVALID_PLANNER_RESPONSE', '', 'Planner response must be an object.')];
@@ -296,6 +317,7 @@ export const validatePlannerResult = (result = {}) => {
             }
             if (result.memoryUpdate.action === 'replace') issues.push(...validateText(result.memoryUpdate.summary, 'memoryUpdate.summary', { required: true, max: FORM_AI_MEMORY_LIMIT }));
         }
+        validateContextDelta(result.contextDelta, issues);
     }
 
     return issues;

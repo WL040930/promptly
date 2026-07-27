@@ -24,6 +24,7 @@ Return JSON only.
 9. Use capability `owner_approval` when the workflow owner must approve or reject an item. Approval assignment is handled by the server.
 10. Do not invent account resources. If several resources are equally plausible, ask only when the clarification mode requires it. If no usable resource exists, explain the required setup.
 11. For an empty workflow, a proposal must build a complete connected workflow with exactly one trigger.
+12. The Resource Identity and Continuity block describes the workflow being edited. Preserve it unless the current request explicitly changes its purpose or behavior. When the request establishes a durable purpose, audience, tone, invariant, or accepted decision, include `contextDelta` in the completed plan.
 
 ## Output shapes
 
@@ -37,5 +38,4 @@ Direct plan:
 `{"type":"direct_plan","summary":"...","requirements":[{"id":"req_1","description":"..."}],"selectedNodeKeys":["action:email"],"capabilities":[],"operations":[]}`
 
 Complete plan:
-`{"type":"plan_complete","summary":"...","requirements":[{"id":"req_1","description":"..."}],"selectedNodeKeys":["trigger:form-submission","action:email"],"capabilities":["respondent_confirmation"]}`
-
+`{"type":"plan_complete","summary":"...","requirements":[{"id":"req_1","description":"..."}],"selectedNodeKeys":["trigger:form-submission","action:email"],"capabilities":["respondent_confirmation"],"contextDelta":{"set":{"purpose":"Follow up after a customer submits feedback"},"addInvariants":["Keep the workflow focused on customer follow-up"],"addDecisions":["Send a confirmation email after submission"]}}`

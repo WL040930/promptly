@@ -165,6 +165,7 @@ export const generateWorkflowTurn = async ({
     turnContext = null,
     userId,
     userContext = null,
+    assistantContext = null,
     formSchema = null,
     formLoader = null,
     onProgress = null,
@@ -186,6 +187,7 @@ export const generateWorkflowTurn = async ({
         clarificationMode,
         turnContext,
         userContext,
+        resourceContext: assistantContext,
         forceDecision
     });
     let plannerResult = await requestAndValidate({
@@ -230,6 +232,7 @@ export const generateWorkflowTurn = async ({
         throw createPipelineError('The workflow plan did not identify any supported nodes.', 'WORKFLOW_AI_NODE_SELECTION_REQUIRED');
     }
     const capabilities = unique(plan.capabilities || []);
+    onProgress?.({ status: 'loading_resources', message: 'Loading workflow resources…' });
     const resourceContext = await resourceLoader({ userId, specs });
     let previousResponse = null;
     let repairIssues = [];
@@ -237,7 +240,7 @@ export const generateWorkflowTurn = async ({
     for (let attempt = 0; attempt < MAX_BUILD_ATTEMPTS; attempt += 1) {
         onProgress?.({
             status: attempt === 0 ? 'building' : 'repairing',
-            message: attempt === 0 ? 'Building a safe workflow proposal' : `Correcting the workflow proposal (${attempt + 1}/${MAX_BUILD_ATTEMPTS})`
+            message: attempt === 0 ? 'Building workflow changes…' : `Correcting the workflow proposal (${attempt + 1}/${MAX_BUILD_ATTEMPTS})`
         });
 
         let workerCall;
@@ -356,7 +359,8 @@ export const generateWorkflowTurn = async ({
                 fulfilledRequirements: plan.requirements.map(requirement => requirement.id)
             },
             warnings: compiled.repairs,
-            tokenUsage: { ...usage, requestCalls: budget.calls }
+            tokenUsage: { ...usage, requestCalls: budget.calls },
+            contextDelta: plan.contextDelta || null
         };
     }
 

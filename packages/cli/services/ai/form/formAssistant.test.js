@@ -113,9 +113,10 @@ test('form assistant accepts a proposal through the same state boundary', async 
         threadId: state.id,
         sender: 'bot',
         kind: 'form_proposal',
+        proposalStatus: 'pending',
         text: 'Added a section heading.',
         payload: {
-            status: 'pending',
+            verification: { status: 'pass' },
             patches: [{ op: 'add', field: { id: 'heading_contact', type: 'heading', label: 'Contact Information' } }]
         }
     });
@@ -130,7 +131,7 @@ test('form assistant accepts a proposal through the same state boundary', async 
         proposalMessageId: 'proposal_1'
     });
 
-    assert.equal(result.proposal.status, 'accepted');
+    assert.equal(result.proposal.status, 'applied');
     assert.equal(result.form.fields[0].type, 'heading');
     assert.equal(memory.threads[0].state.phase, 'idle');
     assert.equal(memory.threads[0].state.activeProposalMessageId, null);
@@ -147,9 +148,9 @@ test('form assistant rejects a proposal without letting the client alter its pat
         threadId: state.id,
         sender: 'bot',
         kind: 'form_proposal',
+        proposalStatus: 'pending',
         text: 'Add a field.',
         payload: {
-            status: 'pending',
             patches: [{ op: 'add', field: { id: 'email', type: 'email', label: 'Email' } }]
         }
     });
@@ -200,7 +201,33 @@ test('form assistant keeps section intent and excludes the prior proposal on cor
     await assistant.submitTurn({ userId: 'user_1', formId: 'form_1', text: 'I mean section heading', clarificationMode: 'important_only' });
 
     assert.equal(calls[1].turnContext.scope, 'heading_only');
+    assert.equal(calls[0].resourceContext.identity.name, 'Event');
+    assert.equal(calls[0].resourceContext.brief.purpose, 'Event');
     assert.equal(calls[2].turnContext.scope, 'heading_only');
     assert.equal(calls[2].turnContext.relationToPending, 'replace');
     assert.equal(calls[2].pendingProposal, null);
+});
+
+test('form assistant persists processing progress while a turn is running', async () => {
+    const memory = createMemoryModels();
+    let release;
+    const pendingTurn = new Promise(resolve => { release = resolve; });
+    const assistant = createFormAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async ({ onProgress }) => {
+            onProgress({ status: 'building', message: 'Preparing form changes…' });
+            await pendingTurn;
+            return { kind: 'reply', type: 'reply', message: 'Done.' };
+        }
+    });
+
+    const turn = assistant.submitTurn({ userId: 'user_1', formId: 'form_1', text: 'Add an email field' });
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(memory.threads[0].state.phase, 'processing');
+    assert.equal(memory.threads[0].state.progress.message, 'Preparing form changes…');
+
+    release();
+    await turn;
 });

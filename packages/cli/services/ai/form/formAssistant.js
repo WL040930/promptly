@@ -8,12 +8,20 @@ import { applyFormPatches } from './domain/formPatchEngine.js';
 import { normalizeClarificationMode } from '../../../../shared/agentContract.js';
 import { resolveFormTurnContext, detectFormIntentScope } from './domain/formTurnContext.js';
 import { supersedePendingFormChatProposals } from '../../proposalLifecycle.js';
+import { applyResourceContextDelta, buildResourceIdentity, resourceContextForPrompt } from '../../assistant/resourceContext.js';
+import { buildFormPresentation } from '../../assistant/proposalPresentation.js';
 
 const IN_FLIGHT_TIMEOUT_MS = 10 * 60 * 1000;
 
 const makeId = prefix => `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`;
 
 const asJson = value => (value && typeof value.toJSON === 'function' ? value.toJSON() : value);
+
+const progressSnapshot = (progress, now = () => new Date()) => ({
+    status: String(progress?.status || 'working').trim() || 'working',
+    message: String(progress?.message || 'Working on your form…').trim() || 'Working on your form…',
+    updatedAt: now().toISOString()
+});
 
 const toCommand = ({ command, text } = {}) => {
     if (command && typeof command === 'object' && command.type === 'decide_for_me') {
@@ -28,22 +36,21 @@ const toCommand = ({ command, text } = {}) => {
     return { type: 'submit_text', text: typeof text === 'string' ? text.trim() : '' };
 };
 
-const messageFromResult = result => {
+const messageFromResult = (result, form = {}) => {
     const text = result?.message || result?.text || 'I could not find a safe change to make.';
     if (result?.kind === 'proposal' || result?.type === 'proposal') {
-        return {
-            text,
-            proposal: {
-                schema: result.schema,
-                patches: result.patches,
-                requirements: result.requirements,
-                verification: result.verification,
-                warnings: result.warnings || [],
-                cardinality: result.cardinality,
-                baseFormUpdatedAt: result.baseFormUpdatedAt,
-                status: 'pending'
-            }
+        const proposal = {
+            schema: result.schema,
+            patches: result.patches,
+            requirements: result.requirements,
+            verification: result.verification,
+            warnings: result.warnings || [],
+            cardinality: result.cardinality,
+            contextDelta: result.contextDelta || null,
+            baseFormUpdatedAt: result.baseFormUpdatedAt
         };
+        const presentation = buildFormPresentation({ form, proposal });
+        return { text: presentation.outcome, proposal: { ...proposal, presentation } };
     }
 
     if (result?.kind === 'clarification' || result?.type === 'message') {
@@ -177,15 +184,30 @@ export const createFormAssistant = ({
 
             await state.update({
                 version: state.version + 1,
+                phase: 'processing',
                 mode,
                 inFlightRequestId: requestId,
-                inFlightStartedAt: now()
+                inFlightStartedAt: now(),
+                progress: progressSnapshot({ status: 'starting', message: 'Preparing form changes…' }, now)
             }, { transaction });
 
-            reservation = { form, state, pending, context, userMessage };
+            reservation = { form, state, pending, context, userMessage, resourceContext: resourceContextForPrompt({
+                identity: buildResourceIdentity({ surface: 'form', resource: asJson(form) }),
+                context: state.context
+            }) };
         });
 
-        const { form, state, pending, context, userMessage } = reservation;
+        const { form, state, pending, context, userMessage, resourceContext } = reservation;
+        let progressChain = Promise.resolve();
+        const reportProgress = progress => {
+            const snapshot = progressSnapshot(progress, now);
+            onProgress?.(snapshot);
+            progressChain = progressChain.then(() => db.transaction(async transaction => {
+                const freshState = await loadState(formId, transaction, userId);
+                if (freshState.inFlightRequestId !== requestId) return;
+                await freshState.update({ phase: 'processing', progress: snapshot }, { transaction });
+            }));
+        };
         try {
             const rawHistory = await models.AssistantMessage.findAll({
                 where: { threadId: state.threadId },
@@ -209,17 +231,19 @@ export const createFormAssistant = ({
                 pendingProposal: pendingForAI,
                 clarificationMode: mode,
                 turnContext: context.intent,
-                onProgress,
+                resourceContext,
+                onProgress: reportProgress,
                 provider
             });
-            const messageData = messageFromResult(result);
+            await progressChain;
+            const messageData = messageFromResult(result, asJson(form));
             messageData.tokenUsage = result?.tokenUsage || null;
             if (messageData.proposal) messageData.proposal.baseFormUpdatedAt ||= form.updatedAt;
 
             let response;
             await db.transaction(async transaction => {
                 let supersededMessageIds = [];
-                if (messageData.proposal?.status === 'pending') {
+                if (messageData.proposal) {
                     supersededMessageIds = await supersedePendingFormChatProposals({
                         formId,
                         transaction,
@@ -245,7 +269,8 @@ export const createFormAssistant = ({
                     version: freshState.version + 1,
                     mode,
                     inFlightRequestId: null,
-                    inFlightStartedAt: null
+                    inFlightStartedAt: null,
+                    progress: null
                 }, { transaction });
                 response = {
                     userMsg: asJson(userMessage),
@@ -278,7 +303,8 @@ export const createFormAssistant = ({
                     activeProposalMessageId: null,
                     version: freshState.version + 1,
                     inFlightRequestId: null,
-                    inFlightStartedAt: null
+                    inFlightStartedAt: null,
+                    progress: null
                 }, { transaction });
                 response = { userMsg: asJson(userMessage), botMsg: asJson(assistantMessage), error: { code: error.code, message: safeMessage } };
             });
@@ -309,11 +335,32 @@ export const createFormAssistant = ({
                 openClarification: null,
                 activeProposalMessageId: null,
                 inFlightRequestId: null,
-                inFlightStartedAt: null
+                inFlightStartedAt: null,
+                progress: null
             }, { transaction });
             return { cleared: true, deletedMessages, state: asJson(state) };
         });
     };
+
+    const resetContext = async ({ userId, formId } = {}) => db.transaction(async transaction => {
+        const form = await models.Form.findOne({ where: { id: formId, userId }, transaction, lock: transaction.LOCK.UPDATE });
+        if (!form) {
+            const error = new Error('Form not found');
+            error.status = 404;
+            throw error;
+        }
+        const state = await loadState(formId, transaction, userId);
+        if (state.inFlightRequestId) {
+            const error = new Error('The form AI is still processing a request.');
+            error.code = 'FORM_AI_TURN_IN_PROGRESS';
+            error.status = 409;
+            throw error;
+        }
+        const { resourceBrief, ...context } = state.context || {};
+        await state.updateContext(context, { transaction });
+        await state.update({ version: state.version + 1 }, { transaction });
+        return { reset: true, state: asJson(state) };
+    });
 
     const decideProposal = async ({
         userId,
@@ -340,7 +387,7 @@ export const createFormAssistant = ({
                 error.status = 404;
                 throw error;
             }
-            if (message.sender !== 'bot' || message.payload?.status !== 'pending') {
+            if (message.sender !== 'bot' || message.proposalStatus !== 'pending') {
                 const error = new Error('This proposal is no longer pending.');
                 error.status = 409;
                 error.code = 'FORM_PROPOSAL_NOT_PENDING';
@@ -349,7 +396,7 @@ export const createFormAssistant = ({
 
             const proposal = message.payload || {};
             if (action === 'reject' || action === 'ignore') {
-                await message.update({ payload: { ...proposal, status: 'rejected' }, proposalStatus: 'rejected' }, { transaction });
+                await message.update({ payload: proposal, proposalStatus: 'rejected' }, { transaction });
                 if (state?.activeProposalMessageId === message.id) {
                     await state.update({
                         phase: 'idle',
@@ -360,8 +407,15 @@ export const createFormAssistant = ({
                     }, { transaction });
                     nextState = asJson(state);
                 }
-                response = { form: asJson(form), proposal: asJson(message).proposal, state: nextState };
+                response = { form: asJson(form), proposal: { ...(asJson(message).proposal || {}), status: message.proposalStatus }, state: nextState };
                 return;
+            }
+
+            if (proposal.verification?.status !== 'pass') {
+                const error = new Error('This proposal still needs verification before it can be applied.');
+                error.status = 409;
+                error.code = 'FORM_PROPOSAL_UNVERIFIED';
+                throw error;
             }
 
             const proposalPatches = Array.isArray(proposal.patches) ? proposal.patches : [];
@@ -386,7 +440,7 @@ export const createFormAssistant = ({
 
             const expectedRevision = baseFormUpdatedAt || proposal.baseFormUpdatedAt;
             if (expectedRevision && new Date(form.updatedAt).getTime() !== new Date(expectedRevision).getTime()) {
-                await message.update({ payload: { ...proposal, status: 'stale', staleReason: 'FORM_VERSION_CHANGED' }, proposalStatus: 'stale' }, { transaction });
+                await message.update({ payload: { ...proposal, staleReason: 'FORM_VERSION_CHANGED' }, proposalStatus: 'stale' }, { transaction });
                 if (state?.activeProposalMessageId === message.id) {
                     await state.update({
                         phase: 'idle',
@@ -430,12 +484,16 @@ export const createFormAssistant = ({
                     ...proposal,
                     schema: applied.schema,
                     patches: applied.patches,
-                    selectedPatchIds: requestedPatchIds,
-                    status: 'accepted'
+                    selectedPatchIds: requestedPatchIds
                 },
-                proposalStatus: 'accepted'
+                proposalStatus: 'applied'
             }, { transaction });
             if (state) {
+                await state.updateContext(applyResourceContextDelta({
+                    context: state.context,
+                    delta: proposal.contextDelta,
+                    identity: buildResourceIdentity({ surface: 'form', resource: asJson(form) })
+                }), { transaction });
                 await state.update({
                     phase: 'idle',
                     activeProposalMessageId: null,
@@ -445,13 +503,13 @@ export const createFormAssistant = ({
                 }, { transaction });
                 nextState = asJson(state);
             }
-            response = { form: asJson(form), proposal: asJson(message).proposal, state: nextState };
+            response = { form: asJson(form), proposal: { ...(asJson(message).proposal || {}), status: message.proposalStatus }, state: nextState };
         });
         if (deferredError) throw deferredError;
         return response;
     };
 
-    return { submitTurn, clearChat, decideProposal };
+    return { submitTurn, clearChat, resetContext, decideProposal };
 };
 
 export const formAssistant = createFormAssistant();
