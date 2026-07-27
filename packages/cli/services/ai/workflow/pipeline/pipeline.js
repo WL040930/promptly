@@ -70,6 +70,23 @@ const buildPlanSteps = diff => [
     ...((diff.edges || []).length ? [{ title: 'Update workflow connections' }] : [])
 ];
 
+const buildProposalResult = ({ plan, capabilities, operations, compiled, verification, usage }) => ({
+    type: 'proposal',
+    message: plan.summary || 'Workflow changes are ready for review.',
+    requirements: plan.requirements,
+    capabilities,
+    operations,
+    nodes: compiled.finalWorkflow.nodes,
+    edges: compiled.finalWorkflow.edges,
+    diff: compiled.diff,
+    plan: buildPlanSteps(compiled.diff),
+    readiness: compiled.readiness,
+    verification,
+    warnings: compiled.repairs,
+    tokenUsage: { ...usage, requestCalls: usage.requestCalls },
+    contextDelta: plan.contextDelta || null
+});
+
 const applyAndValidate = async ({
     workflow,
     operations,
@@ -236,8 +253,10 @@ export const generateWorkflowTurn = async ({
     const resourceContext = await resourceLoader({ userId, specs });
     let previousResponse = null;
     let repairIssues = [];
+    let unverifiedProposal = null;
 
     for (let attempt = 0; attempt < MAX_BUILD_ATTEMPTS; attempt += 1) {
+        unverifiedProposal = null;
         onProgress?.({
             status: attempt === 0 ? 'building' : 'repairing',
             message: attempt === 0 ? 'Building workflow changes…' : `Correcting the workflow proposal (${attempt + 1}/${MAX_BUILD_ATTEMPTS})`
@@ -298,6 +317,14 @@ export const generateWorkflowTurn = async ({
             continue;
         }
 
+        const proposal = {
+            plan,
+            capabilities,
+            operations: workerCall.value.operations,
+            compiled,
+            usage
+        };
+
         onProgress?.({ status: 'checking', message: 'Checking the proposal against your request' });
         let verifier;
         try {
@@ -316,8 +343,17 @@ export const generateWorkflowTurn = async ({
                 usage
             });
         } catch (error) {
+            if (!['WORKFLOW_AI_INVALID_VERIFIER', 'WORKFLOW_AI_BUDGET_EXCEEDED'].includes(error.code)) throw error;
             previousResponse = workerCall.value;
             repairIssues = error.issues || [{ code: error.code, message: error.message }];
+            unverifiedProposal = {
+                ...proposal,
+                verification: {
+                    status: 'unverified',
+                    skippedReason: error.code === 'WORKFLOW_AI_BUDGET_EXCEEDED' ? 'AI_CALL_BUDGET_EXCEEDED' : 'VERIFIER_RESPONSE_INVALID',
+                    issues: repairIssues
+                }
+            };
             continue;
         }
         usage = verifier.usage;
@@ -333,6 +369,15 @@ export const generateWorkflowTurn = async ({
                 attempt: attempt + 1,
                 issues: repairIssues.slice(0, 3).map(item => ({ code: item.code, path: item.path }))
             });
+            unverifiedProposal = {
+                ...proposal,
+                usage,
+                verification: {
+                    status: 'unverified',
+                    skippedReason: 'VERIFICATION_REJECTED',
+                    issues: repairIssues
+                }
+            };
             continue;
         }
 
@@ -342,26 +387,22 @@ export const generateWorkflowTurn = async ({
                 repairs: compiled.repairs.map(item => ({ code: item.code, nodeId: item.nodeId }))
             });
         }
-        return {
-            type: 'proposal',
-            message: plan.summary || 'Workflow changes are ready for review.',
-            requirements: plan.requirements,
-            capabilities,
-            operations: workerCall.value.operations,
-            nodes: compiled.finalWorkflow.nodes,
-            edges: compiled.finalWorkflow.edges,
-            diff: compiled.diff,
-            plan: buildPlanSteps(compiled.diff),
-            readiness: compiled.readiness,
+        return buildProposalResult({
+            ...proposal,
+            usage: { ...usage, requestCalls: budget.calls },
             verification: {
                 status: 'pass',
                 issues: [],
                 fulfilledRequirements: plan.requirements.map(requirement => requirement.id)
-            },
-            warnings: compiled.repairs,
-            tokenUsage: { ...usage, requestCalls: budget.calls },
-            contextDelta: plan.contextDelta || null
-        };
+            }
+        });
+    }
+
+    if (unverifiedProposal) {
+        return buildProposalResult({
+            ...unverifiedProposal,
+            usage: { ...unverifiedProposal.usage, requestCalls: budget.calls }
+        });
     }
 
     throw createPipelineError(

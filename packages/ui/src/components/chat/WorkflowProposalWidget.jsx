@@ -14,6 +14,8 @@ export default function WorkflowProposalWidget({ proposal, status, onAccept, onI
     const isAccepted = isAcceptedProposalStatus(status);
     const isRejected = isRejectedProposalStatus(status);
     const isStale = isStaleProposalStatus(status);
+    const isUnverified = proposal?.verification?.status === 'unverified';
+    const verificationIssues = (proposal?.verification?.issues || []).map(issue => issue?.message).filter(Boolean);
     const presentation = proposal?.presentation || {};
     const changes = presentation.changes || [];
     const setupRequirements = presentation.setupRequirements || [];
@@ -37,6 +39,14 @@ export default function WorkflowProposalWidget({ proposal, status, onAccept, onI
 
             <div className="flex flex-col gap-4 p-4">
                 <p className="text-sm leading-6 text-slate-700">{presentation.outcome || 'Review the proposed workflow changes.'}</p>
+
+                {isUnverified && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-900">
+                        <p className="font-bold">Review required</p>
+                        <p className="mt-1">This proposal passed local workflow validation, but final AI verification was unavailable or did not pass. Review the changes carefully before applying them.</p>
+                        {verificationIssues.length > 0 && <ul className="mt-2 list-disc pl-4">{verificationIssues.map((message, index) => <li key={`${message}-${index}`}>{message}</li>)}</ul>}
+                    </div>
+                )}
 
                 {flow.length > 0 && (
                     <div>

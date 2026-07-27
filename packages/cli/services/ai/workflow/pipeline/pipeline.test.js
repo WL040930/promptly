@@ -309,6 +309,42 @@ test('pipeline retries the worker when the verifier requests repair, then passes
     assert.ok(buildAttempt >= 2, `Expected ≥2 build attempts for verifier repair, got ${buildAttempt}`);
 });
 
+test('pipeline returns a locally valid proposal as unverified when verifier output remains invalid', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Set the email recipient.',
+                    requirements: [{ id: 'req_1', description: 'Set the email recipient.' }],
+                    selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                    capabilities: []
+                }) };
+            }
+            if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
+                return { text: JSON.stringify({
+                    operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { to: 'team@example.com' } } }]
+                }) };
+            }
+            return { text: 'null' };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'Set the email recipient to team@example.com',
+        currentWorkflow: existingWorkflow,
+        provider,
+        registry: makeRegistry(),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.verification?.status, 'unverified');
+    assert.equal(result.verification?.skippedReason, 'VERIFIER_RESPONSE_INVALID');
+    assert.equal(result.nodes.find(node => node.id === 'email_1')?.config?.to, 'team@example.com');
+});
+
 // ---------------------------------------------------------------------------
 // Empty workflow — builds a complete connected graph
 // ---------------------------------------------------------------------------
