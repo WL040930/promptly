@@ -1,17 +1,17 @@
 import React, { Suspense, useEffect, useRef } from 'react';
-import DashboardTab from '../builder/components/tabs/DashboardTab.jsx';
-import FormsTab from '../builder/components/tabs/FormsTab.jsx';
-import AutomationCenter from '../chat/components/AutomationCenter.jsx';
-import ChatTab from '../chat/components/ChatTab.jsx';
-import WorkflowBuilderView from '../builder/WorkflowBuilderView.jsx';
-import WorkflowAIAssistant from '../builder/components/sidebars/WorkflowAIAssistant.jsx';
 import { useWorkflow } from '../api/hooks/useWorkflows.js';
 import { navigateTo } from '../utils/router.js';
 import { useCreateWorkflow } from '../api/hooks/useWorkflows.js';
-import AutomationVersionsPage from './AutomationVersionsPage.jsx';
-import AutomationSettingsPage from './AutomationSettingsPage.jsx';
-import ApprovalsPage from './ApprovalsPage.jsx';
 
+const DashboardTab = React.lazy(() => import('../builder/components/tabs/DashboardTab.jsx'));
+const FormsTab = React.lazy(() => import('../builder/components/tabs/FormsTab.jsx'));
+const AutomationCenter = React.lazy(() => import('../chat/components/AutomationCenter.jsx'));
+const ChatTab = React.lazy(() => import('../chat/components/ChatTab.jsx'));
+const WorkflowBuilderView = React.lazy(() => import('../builder/WorkflowBuilderView.jsx'));
+const WorkflowAIAssistant = React.lazy(() => import('../builder/components/sidebars/WorkflowAIAssistant.jsx'));
+const AutomationVersionsPage = React.lazy(() => import('./AutomationVersionsPage.jsx'));
+const AutomationSettingsPage = React.lazy(() => import('./AutomationSettingsPage.jsx'));
+const ApprovalsPage = React.lazy(() => import('./ApprovalsPage.jsx'));
 const LogsTab = React.lazy(() => import('../chat/components/LogsTab.jsx'));
 
 function PageFrame({ children }) {
@@ -59,37 +59,52 @@ function NewAutomationPage({ method = 'ai' }) {
 }
 
 export default function WorkspacePageRouter({ route, isSidebarCollapsed, setSidebarCollapsed }) {
+    let page;
     switch (route.page) {
         case 'home':
-            return <PageFrame><DashboardTab /></PageFrame>;
+            page = <PageFrame><DashboardTab /></PageFrame>;
+            break;
         case 'automations':
-            return <PageFrame><AutomationCenter /></PageFrame>;
+            page = <PageFrame><AutomationCenter /></PageFrame>;
+            break;
         case 'automation-new':
-            return <NewAutomationPage method={route.method} />;
+            page = <NewAutomationPage method={route.method} />;
+            break;
         case 'automation-detail':
-            return <AutomationDetailPage automationId={route.automationId} />;
+            page = <AutomationDetailPage automationId={route.automationId} />;
+            break;
         case 'automation-build':
-            return route.editor === 'ai'
+            page = route.editor === 'ai'
                 ? <WorkflowAIEditorPage automationId={route.automationId} />
                 : <PageFrame><WorkflowBuilderView route={route} isSidebarCollapsed={isSidebarCollapsed} setSidebarCollapsed={setSidebarCollapsed} /></PageFrame>;
+            break;
         case 'automation-runs':
-            return <PageFrame><Suspense fallback={<div className="p-8 text-sm text-slate-500">Loading runs…</div>}><LogsTab workflowId={route.automationId} /></Suspense></PageFrame>;
+            page = <PageFrame><LogsTab workflowId={route.automationId} /></PageFrame>;
+            break;
         case 'automation-versions':
-            return <PageFrame><AutomationVersionsPage automationId={route.automationId} /></PageFrame>;
+            page = <PageFrame><AutomationVersionsPage automationId={route.automationId} /></PageFrame>;
+            break;
         case 'automation-settings':
-            return <PageFrame><AutomationSettingsPage automationId={route.automationId} /></PageFrame>;
+            page = <PageFrame><AutomationSettingsPage automationId={route.automationId} /></PageFrame>;
+            break;
         case 'forms':
-            return <PageFrame><FormsTab /></PageFrame>;
+            page = <PageFrame><FormsTab /></PageFrame>;
+            break;
         case 'form-detail':
-            return <PageFrame><FormsTab formId={route.formId} section={route.section} /></PageFrame>;
+            page = <PageFrame><FormsTab formId={route.formId} section={route.section} /></PageFrame>;
+            break;
         case 'runs':
         case 'run-detail':
-            return <PageFrame><Suspense fallback={<div className="p-8 text-sm text-slate-500">Loading runs…</div>}><LogsTab runId={route.runId} /></Suspense></PageFrame>;
+            page = <PageFrame><LogsTab runId={route.runId} /></PageFrame>;
+            break;
         case 'approvals':
-            return <PageFrame><ApprovalsPage /></PageFrame>;
+            page = <PageFrame><ApprovalsPage /></PageFrame>;
+            break;
         case 'assistant':
-            return <PageFrame><ChatTab conversationId={route.conversationId} /></PageFrame>;
+            page = <PageFrame><ChatTab conversationId={route.conversationId} /></PageFrame>;
+            break;
         default:
-            return <PageFrame><DashboardTab /></PageFrame>;
+            page = <PageFrame><DashboardTab /></PageFrame>;
     }
+    return <Suspense fallback={<PageFrame><div className="p-8 text-sm text-slate-500">Loading workspace…</div></PageFrame>}>{page}</Suspense>;
 }

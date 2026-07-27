@@ -1,4 +1,4 @@
-import { Op } from 'sequelize';
+import { Op, where as sqlWhere, fn, cast, json } from 'sequelize';
 import { User, WorkflowContinuation, AutomationRun, Workflow, FormResponse, Form } from '../../models/index.js';
 import { resumeWorkflowRun } from './executionEngine.js';
 
@@ -176,10 +176,20 @@ export const listApprovals = async ({ userId, status = 'pending', search = '', w
     if (workflowId) where.workflowId = workflowId;
     if (normalizedStatus === 'pending') where.status = { [Op.in]: ['pending', 'resuming'] };
     if (normalizedStatus === 'history') where.status = { [Op.in]: ['resolved', 'failed', 'discarded'] };
-    const rows = await WorkflowContinuation.findAll({ where, order: [['createdAt', 'DESC']] });
     const needle = search.trim().toLowerCase();
-    const filtered = needle ? rows.filter(row => `${row.payload?.title || ''} ${row.payload?.instructions || ''} ${row.workflowId || ''}`.toLowerCase().includes(needle)) : rows;
-    return filtered.slice(Number(offset) || 0, (Number(offset) || 0) + Math.min(Math.max(Number(limit) || 50, 1), 100));
+    if (needle) {
+        where[Op.or] = [
+            { workflowId: { [Op.iLike]: `%${needle}%` } },
+            sqlWhere(fn('LOWER', cast(json('payload.title'), 'text')), { [Op.like]: `%${needle}%` }),
+            sqlWhere(fn('LOWER', cast(json('payload.instructions'), 'text')), { [Op.like]: `%${needle}%` })
+        ];
+    }
+    return WorkflowContinuation.findAll({
+        where,
+        order: [['createdAt', 'DESC']],
+        offset: Math.max(Number(offset) || 0, 0),
+        limit: Math.min(Math.max(Number(limit) || 50, 1), 100)
+    });
 };
 
 export const getApprovalSummary = async userId => ({

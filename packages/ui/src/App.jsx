@@ -13,7 +13,7 @@ const LoginPage = React.lazy(() => import('./auth/LoginPage.jsx'));
 const RegisterPage = React.lazy(() => import('./auth/RegisterPage.jsx'));
 const ForgotPasswordPage = React.lazy(() => import('./auth/ForgotPasswordPage.jsx'));
 const ResetPasswordPage = React.lazy(() => import('./auth/ResetPasswordPage.jsx'));
-const OnboardingPage = React.lazy(() => import('./onboarding/OnboardingPage.jsx'));
+const WorkspaceTour = React.lazy(() => import('./onboarding/WorkspaceTour.jsx'));
 const SecurityPage = React.lazy(() => import('./landing/SecurityPage.jsx'));
 const PublicFormView = React.lazy(() => import('./forms/public/PublicFormView.jsx'));
 
@@ -65,8 +65,14 @@ function App() {
     if (routeState.isPublicForm) return <PublicFormView />;
     if (isLoading) return <AppLoadingFallback />;
 
-    if (routeState.isOnboarding && user) {
-        return <OnboardingPage user={user} onOnboardingComplete={handleUserUpdate} />;
+    if (user && !user.onboardingCompletedAt && (routeState.isOnboarding || routeState.isDashboard)) {
+        const onboardingRoute = routeState.isOnboarding ? { page: 'home' } : route;
+        return (
+            <WorkspaceShell user={user} route={onboardingRoute} onLogout={handleLogout}>
+                <WorkspacePageRouter route={onboardingRoute} />
+                <WorkspaceTour user={user} onOnboardingComplete={handleUserUpdate} />
+            </WorkspaceShell>
+        );
     }
 
     if (routeState.isDashboard && user) {

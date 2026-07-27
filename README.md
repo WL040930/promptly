@@ -96,7 +96,17 @@ AI_DEFAULT_MODEL=nvidia/nemotron-3-super-120b-a12b:free
 OPENAI_API_KEY=your_openai_api_key
 ```
 
-### 3. Running the Application
+### 3. Bootstrap a Reset Database
+
+`npm run dev` automatically checks whether the Promptly tables exist and bootstraps a fresh database when they do not. You can also run the bootstrap directly:
+
+```bash
+npm run db:bootstrap
+```
+
+It creates the Sequelize model tables and indexes, then provisions the PostgreSQL-only pieces that models cannot express (pgvector, database-change triggers, and storage buckets/policy). It is intentionally separate from server startup.
+
+### 4. Running the Application
 
 You can start both the backend server and frontend Vite development server concurrently using a single command from the root directory:
 
@@ -107,6 +117,8 @@ npm run dev
 This uses `concurrently` to run:
 - Backend API (nodemon watching `packages/cli/server.js`) on `http://localhost:3000`
 - Frontend UI (vite dev server) on `http://localhost:5173`
+
+Normal startup does not alter the database schema. The development command only invokes bootstrap when one or more Promptly tables are missing.
 
 ## 📁 Project Structure
 

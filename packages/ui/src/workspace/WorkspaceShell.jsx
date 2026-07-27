@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { navigateTo } from '../utils/router.js';
 import { apiRequest } from '../api/client.js';
-import SettingsModal from '../dashboard/SettingsModal.jsx';
 import Button from '../components/ui/Button.jsx';
+
+const SettingsModal = lazy(() => import('../dashboard/SettingsModal.jsx'));
 
 const PanelLeftIcon = () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -55,6 +56,8 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
         if (route?.page === 'settings') {
             setSettingsTab(route.section || 'general');
             setSettingsOpen(true);
+        } else {
+            setSettingsOpen(false);
         }
     }, [route?.page, route?.section]);
 
@@ -91,25 +94,25 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
                 </div>
 
                 <div className="workspace-sidebar-body flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
-                    <Button variant="primary" onClick={() => navigateTo({ page: 'automation-new', method: 'ai' })} className={`workspace-new-button mb-5 rounded-xl shadow-none ${collapsed ? 'mx-auto h-10 w-10 p-0' : 'w-full'}`} title="Create automation">
+                    <Button data-tour="create-automation" variant="primary" onClick={() => navigateTo({ page: 'automation-new', method: 'ai' })} className={`workspace-new-button mb-5 rounded-xl shadow-none ${collapsed ? 'mx-auto h-10 w-10 p-0' : 'w-full'}`} title="Create automation">
                         <span className="text-xl leading-none">+</span>{!collapsed && <span className="ml-2">New automation</span>}
                     </Button>
 
                     <div className="mb-1 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{!collapsed && 'Workspace'}</div>
                     {navigation.map(item => (
-                        <button key={item.page} type="button" onClick={() => go(item.page)} title={item.label} aria-label={item.page === 'approvals' && pendingApprovalCount > 0 ? `${item.label}, ${pendingApprovalCount} pending` : item.label} className={`workspace-nav-item group relative flex items-center gap-3 rounded-xl border p-2.5 text-left font-semibold transition-colors ${activePage === item.page ? 'is-active border-white/10 bg-white text-[#5143cc] shadow-sm' : 'border-transparent text-slate-400 hover:bg-white/10 hover:text-white'} ${collapsed ? 'justify-center' : ''}`}>
+                        <button key={item.page} data-tour={item.page === 'automations' ? 'automations' : item.page === 'forms' ? 'forms' : item.page === 'runs' ? 'monitoring' : undefined} type="button" onClick={() => go(item.page)} title={item.label} aria-label={item.page === 'approvals' && pendingApprovalCount > 0 ? `${item.label}, ${pendingApprovalCount} pending` : item.label} className={`workspace-nav-item group relative flex items-center gap-3 rounded-xl border p-2.5 text-left font-semibold transition-colors ${activePage === item.page ? 'is-active border-white/10 bg-white text-[#5143cc] shadow-sm' : 'border-transparent text-slate-400 hover:bg-white/10 hover:text-white'} ${collapsed ? 'justify-center' : ''}`}>
                             {activePage === item.page && <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-[#c8f17b]" />}
                             <span className="shrink-0">{item.icon}</span>{!collapsed && <span className="truncate">{item.label}</span>}
                             {item.page === 'approvals' && pendingApprovalCount > 0 && <span className={`${collapsed ? 'absolute right-1.5 top-1.5 h-2.5 w-2.5' : 'ml-auto min-w-5 px-1.5'} flex items-center justify-center rounded-full bg-amber-400 text-[10px] font-bold leading-5 text-[#171827]`}>{!collapsed && pendingApprovalCount > 99 ? '99+' : !collapsed ? pendingApprovalCount : null}</span>}
                         </button>
                     ))}
 
-                    <button type="button" onClick={() => go('assistant')} title="Ask Promptly" className={`workspace-assistant-link mt-2 flex items-center gap-3 rounded-xl border border-transparent p-2.5 text-left font-semibold transition-colors hover:bg-[#2a2840] hover:text-white ${collapsed ? 'justify-center' : ''}`}>
+                    <button data-tour="assistant" type="button" onClick={() => go('assistant')} title="Ask Promptly" className={`workspace-assistant-link mt-2 flex items-center gap-3 rounded-xl border border-transparent p-2.5 text-left font-semibold transition-colors hover:bg-[#2a2840] hover:text-white ${collapsed ? 'justify-center' : ''}`}>
                         <span className="shrink-0">{icons.assistant}</span>{!collapsed && <span>Ask Promptly</span>}
                     </button>
 
                     <div className="mt-auto pt-6">
-                        <button type="button" onClick={() => { setSettingsTab('general'); setSettingsOpen(true); }} title="Settings" className={`workspace-settings-link flex w-full items-center gap-3 rounded-xl border border-transparent p-2.5 text-left font-medium transition-colors hover:bg-white/10 hover:text-white ${collapsed ? 'justify-center' : ''}`}>
+                        <button data-tour="settings" type="button" onClick={() => { setSettingsTab('general'); setSettingsOpen(true); }} title="Settings" className={`workspace-settings-link flex w-full items-center gap-3 rounded-xl border border-transparent p-2.5 text-left font-medium transition-colors hover:bg-white/10 hover:text-white ${collapsed ? 'justify-center' : ''}`}>
                             <span className="shrink-0">{icons.settings}</span>{!collapsed && <span>Settings</span>}
                         </button>
                     </div>
@@ -123,7 +126,7 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
 
             <main className="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#f5f6fb]">{content}</main>
 
-            {settingsOpen && <SettingsModal user={user} onClose={() => setSettingsOpen(false)} onLogout={onLogout} initialTab={settingsTab} />}
+            {settingsOpen && <Suspense fallback={null}><SettingsModal user={user} onClose={() => setSettingsOpen(false)} onLogout={onLogout} initialTab={settingsTab} /></Suspense>}
         </div>
     );
 }

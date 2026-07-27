@@ -21,7 +21,8 @@ const WorkflowContinuation = sequelize.define('WorkflowContinuation', {
     timestamps: true,
     indexes: [
         { fields: ['status', 'availableAt', 'createdAt'] },
-        { fields: ['runId', 'status'] }
+        { fields: ['runId', 'status'] },
+        { fields: ['userId', 'kind', 'status', 'createdAt'], name: 'workflow_continuations_user_kind_status_created' }
     ]
 });
 
