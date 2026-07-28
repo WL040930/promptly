@@ -237,9 +237,14 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
     const handleApply = useCallback(async message => {
         if (message.kind !== 'workflow_proposal' && message.kind !== 'workflow_diff') return;
         setAcceptingProposalId(message.id);
-        try { await decideMutation.mutateAsync({ messageId: message.id, action: 'accept' }); }
+        try {
+            await decideMutation.mutateAsync({ messageId: message.id, action: 'accept' });
+            toast.success('Workflow updated successfully!');
+        } catch (error) {
+            toast.error(error.message || 'Failed to apply changes.');
+        }
         finally { setAcceptingProposalId(null); }
-    }, [decideMutation]);
+    }, [decideMutation, toast]);
 
     const handleIgnore = useCallback(async message => {
         if (message.kind !== 'workflow_proposal' && message.kind !== 'workflow_diff') return;
