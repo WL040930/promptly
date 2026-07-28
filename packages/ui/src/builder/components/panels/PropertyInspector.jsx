@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Button from '../../../components/ui/Button.jsx';
-import { useForms } from '../../../api/hooks/useForms.js';
 import {
     getNodeDefaultConfig,
     isNodeInputRequired,
@@ -16,6 +15,7 @@ import { DataGridInput, JsonInput, KeyValueInput, NodeSelectInput, StringListInp
 import { getUpstreamOutputs } from '../../utils/getUpstreamOutputs.js';
 import { buildNodeInspectorModel } from '../../utils/nodeInspectorModel.js';
 import CustomCodeInput from '../inputs/CustomCodeInput.jsx';
+import { useWorkflowForms } from '../../hooks/useWorkflowForms.js';
 
 const labelClassName = 'text-[11px] font-bold text-slate-600';
 const inputClassName = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#776bf2] focus:ring-2 focus:ring-[#5b4ee8]/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400';
@@ -88,7 +88,6 @@ const PropertyInspector = ({ activeNode, onUpdateNode, onTestWorkflow, nodes = [
     const [localConfig, setLocalConfig] = useState(activeNode?.config || {});
     const updateTimeoutRef = useRef(null);
     const configSnapshot = JSON.stringify(activeNode?.config || {});
-    const { data: forms = [], isLoading: formsLoading } = useForms();
 
     useEffect(() => {
         setTitle(activeNode?.title || '');
@@ -121,18 +120,20 @@ const PropertyInspector = ({ activeNode, onUpdateNode, onTestWorkflow, nodes = [
         return nodes.filter(node => upstreamIds.has(node.id));
     }, [activeNode?.id, nodes, edges]);
 
+    const { formsById, isLoading: formsLoading } = useWorkflowForms(upstreamNodes);
+
     const resolvedFormFields = useMemo(() => Object.fromEntries(
         upstreamNodes
             .filter(node => node.subType === 'form-submission' && node.config?.formId)
             .map(node => {
-                const form = forms.find(item => item.id === node.config.formId) || null;
+                const form = formsById[node.config.formId] || null;
                 return [node.id, {
                     form,
                     fields: (form?.fields || []).filter(field => !field.deleted && field.type !== 'heading'),
                     isLoading: formsLoading
                 }];
             })
-    ), [upstreamNodes, forms, formsLoading]);
+    ), [upstreamNodes, formsById, formsLoading]);
 
     const availableVars = activeNode ? getUpstreamOutputs(activeNode.id, nodes, edges, resolvedFormFields) : [];
     const schema = activeNode?.schema || { inputs: [], outputs: [] };

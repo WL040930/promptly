@@ -10,6 +10,8 @@ import Button from '../../../components/ui/Button.jsx';
 import { getIconByName, resolveNodeUi } from '../../utils/iconMap.jsx';
 import { WORKFLOW_MODAL_LAYERS } from '../../modalLayers.js';
 import { buildWorkflowPreviewDiffNodes } from '../../utils/workflowPreviewDiff.js';
+import VariableTokenPreview from '../inputs/VariableTokenPreview.jsx';
+import { useWorkflowForms } from '../../hooks/useWorkflowForms.js';
 
 const nodeTypes = {
     trigger: DynamicNode,
@@ -22,7 +24,7 @@ const edgeTypes = {
     deletable: DeletableEdge,
 };
 
-export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkflow, versionWorkflow, onRestore, isRestoring = false, isRestoringSuccess = false, confirmText = "Restore This Version", loadingText = "Restoring…", title = null, description = null }) {
+export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkflow, versionWorkflow, onRestore, isRestoring = false, isRestoringSuccess = false, confirmText = "Restore This Version", loadingText = "Restoring…", title = null, description = null, mode = 'version' }) {
     // Prevent background scrolling when open
     useEffect(() => {
         if (isOpen) {
@@ -98,6 +100,19 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
             proposedNodes: versionWorkflow.nodes || []
         });
     }, [currentWorkflow, versionWorkflow]);
+
+    const previewNodes = useMemo(() => {
+        const nodes = new Map((currentWorkflow?.nodes || []).map(node => [node.id, node]));
+        (versionWorkflow?.nodes || []).forEach(node => nodes.set(node.id, node));
+        return [...nodes.values()];
+    }, [currentWorkflow?.nodes, versionWorkflow?.nodes]);
+    const { formsById } = useWorkflowForms(previewNodes);
+    const isProposal = mode === 'proposal';
+    const previewName = isProposal
+        ? currentWorkflow?.name || versionWorkflow?.name || 'Automation'
+        : versionWorkflow?.name || currentWorkflow?.name || 'Automation';
+    const createdAt = new Date(versionWorkflow?.createdAt || '');
+    const hasCreatedAt = !isProposal && Number.isFinite(createdAt.getTime());
 
     const rfNodes = useMemo(() => {
         return diffNodes.map((n, i) => ({
@@ -208,8 +223,8 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
                     {/* Right Pane: Vertical List */}
                     <div className="w-[450px] shrink-0 bg-white overflow-y-auto p-6 sm:p-8">
                         <div className="mb-8 pb-6 border-b border-slate-100 p-4 rounded-xl -mx-4 -mt-4">
-                            <h1 className="text-2xl font-black text-slate-900 tracking-tight">{versionWorkflow.name || 'Untitled Workflow'}</h1>
-                            <p className="text-sm text-slate-500 mt-2 font-medium">Created at {new Date(versionWorkflow.createdAt).toLocaleString()}</p>
+                            <h1 className="text-2xl font-black text-slate-900 tracking-tight">{previewName}</h1>
+                            <p className="mt-2 text-sm font-medium text-slate-500">{isProposal ? 'Proposed workflow changes' : hasCreatedAt ? `Created at ${createdAt.toLocaleString()}` : 'Saved workflow version'}</p>
                         </div>
 
                         {/* Nodes List */}
@@ -234,7 +249,7 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
                                 return (
                                     <div key={node.id} className={wrapperClass}>
                                         {tag}
-                                        <div className={node._diffStatus === 'removed' ? 'pointer-events-none grayscale opacity-60 line-through' : 'pointer-events-none'}>
+                                        <div className={node._diffStatus === 'removed' ? 'grayscale opacity-60 line-through' : ''}>
                                             <div className="flex items-center gap-4">
                                                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-slate-200/50 ${nodeUi.bgColor} ${nodeUi.color}`}>
                                                     {getIconByName(nodeUi.icon, { size: 24, strokeWidth: 2.5 })}
@@ -255,8 +270,8 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
                                                             <div key={change.key} className="px-3 py-3">
                                                                 <p className="mb-2 text-[11px] font-bold text-slate-700">{change.label}</p>
                                                                 <div className="grid gap-2 text-[11px] leading-5 sm:grid-cols-2">
-                                                                    <div className="min-w-0 rounded-lg border border-red-100 bg-red-50/70 px-2 py-1.5 text-red-800"><span className="mb-0.5 block text-[9px] font-extrabold uppercase tracking-wide text-red-500">Before</span><span className="block break-words line-through decoration-red-300">{change.before}</span></div>
-                                                                    <div className="min-w-0 rounded-lg border border-emerald-100 bg-emerald-50/70 px-2 py-1.5 text-emerald-800"><span className="mb-0.5 block text-[9px] font-extrabold uppercase tracking-wide text-emerald-600">After</span><span className="block break-words font-semibold">{change.after}</span></div>
+                                                                    <div className="min-w-0 rounded-lg border border-red-100 bg-red-50/70 px-2 py-1.5 text-red-800"><span className="mb-0.5 block text-[9px] font-extrabold uppercase tracking-wide text-red-500">Before</span><VariableTokenPreview value={change.before} nodes={previewNodes} formsById={formsById} tone="red" className="break-words line-through decoration-red-300" /></div>
+                                                                    <div className="min-w-0 rounded-lg border border-emerald-100 bg-emerald-50/70 px-2 py-1.5 text-emerald-800"><span className="mb-0.5 block text-[9px] font-extrabold uppercase tracking-wide text-emerald-600">After</span><VariableTokenPreview value={change.after} nodes={previewNodes} formsById={formsById} tone="emerald" className="break-words font-semibold" /></div>
                                                                 </div>
                                                             </div>
                                                         ))}
@@ -276,7 +291,7 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
                                                         {node._parameterSnapshot.map(parameter => (
                                                             <div key={parameter.key} className="grid grid-cols-[minmax(92px,0.42fr)_minmax(0,1fr)] gap-3 px-3 py-2.5 text-[11px] leading-5">
                                                                 <dt className="font-bold text-slate-600">{parameter.label}</dt>
-                                                                <dd className={`min-w-0 break-words font-medium ${node._diffStatus === 'added' ? 'text-emerald-900' : 'text-red-800 line-through decoration-red-300'}`}>{parameter.value}</dd>
+                                                                <dd className={`min-w-0 break-words font-medium ${node._diffStatus === 'added' ? 'text-emerald-900' : 'text-red-800 line-through decoration-red-300'}`}><VariableTokenPreview value={parameter.value} nodes={previewNodes} formsById={formsById} tone={node._diffStatus === 'added' ? 'emerald' : 'red'} /></dd>
                                                             </div>
                                                         ))}
                                                     </dl>

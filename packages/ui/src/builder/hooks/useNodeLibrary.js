@@ -8,8 +8,11 @@ import { apiRequest } from '../../api/client.js';
 export function useNodeLibrary() {
     return useQuery({
         queryKey: ['nodeLibrary'],
-        staleTime: 0,
-        refetchOnWindowFocus: true,
+        // Node definitions change only when the server is redeployed. Keeping
+        // them for the session avoids a needless request every time the
+        // workflow editor gains focus.
+        staleTime: Infinity,
+        refetchOnWindowFocus: false,
         queryFn: () => apiRequest('/api/nodes/library')
     });
 }

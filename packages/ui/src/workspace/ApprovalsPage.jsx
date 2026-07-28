@@ -22,6 +22,7 @@ import { apiRequest } from "../api/client.js";
 import { useToast } from "../context/ToastContext.jsx";
 import ConfirmModal from "../components/modals/ConfirmModal.jsx";
 import Button from "../components/ui/Button.jsx";
+import PagePagination from "../components/ui/PagePagination.jsx";
 
 gsap.registerPlugin(useGSAP);
 
@@ -401,6 +402,7 @@ export default function ApprovalsPage() {
   const [selectedId, setSelectedId] = useState(null);
   const [searchInput, setSearchInput] = useState("");
   const [workflowFilter, setWorkflowFilter] = useState("all");
+  const [page, setPage] = useState(1);
   const [decisionModal, setDecisionModal] = useState(null);
   const [decisionNote, setDecisionNote] = useState("");
   const [isResolving, setIsResolving] = useState(false);
@@ -422,27 +424,19 @@ export default function ApprovalsPage() {
   );
 
   const listQuery = useQuery({
-    queryKey: ["approvals", tab],
-    queryFn: () => apiRequest(`/api/continuations/approvals?status=${tab}`),
-    refetchInterval: 10000,
+    queryKey: ["approvals", { tab, search: searchInput, workflowFilter, page }],
+    queryFn: () => {
+      const params = new URLSearchParams({ status: tab, page: String(page), pageSize: "25" });
+      if (searchInput.trim()) params.set("search", searchInput.trim());
+      if (workflowFilter !== "all") params.set("workflowId", workflowFilter);
+      return apiRequest(`/api/continuations/approvals?${params.toString()}`);
+    },
+    refetchInterval: () => (document.hidden ? false : 10_000),
     refetchOnWindowFocus: true,
   });
-  const rawApprovals = Array.isArray(listQuery.data)
-    ? listQuery.data
-    : listQuery.data?.items || [];
-  const search = searchInput.trim().toLowerCase();
-  const approvals = useMemo(
-    () =>
-      rawApprovals.filter((item) => {
-        const haystack =
-          `${item.approval?.title || item.payload?.title || ""} ${item.approval?.instructions || item.payload?.instructions || ""} ${item.workflow?.name || ""}`.toLowerCase();
-        return (
-          (!search || haystack.includes(search)) &&
-          (workflowFilter === "all" || item.workflow?.id === workflowFilter)
-        );
-      }),
-    [rawApprovals, search, workflowFilter],
-  );
+  const rawApprovals = listQuery.data?.data || [];
+  const pagination = listQuery.data?.pagination || { page, pageSize: 25, total: 0, totalPages: 1 };
+  const approvals = rawApprovals;
   const workflows = useMemo(
     () =>
       Array.from(
@@ -502,6 +496,7 @@ export default function ApprovalsPage() {
   const clearFilters = () => {
     setSearchInput("");
     setWorkflowFilter("all");
+    setPage(1);
     closeInspector();
   };
   const openDecision = (decision) => {
@@ -564,14 +559,17 @@ export default function ApprovalsPage() {
             tab={tab}
             onSearch={(value) => {
               setSearchInput(value);
+              setPage(1);
               closeInspector();
             }}
             onWorkflow={(value) => {
               setWorkflowFilter(value);
+              setPage(1);
               closeInspector();
             }}
             onTab={(value) => {
               setTab(value);
+              setPage(1);
               closeInspector();
             }}
             onClear={clearFilters}
@@ -613,7 +611,7 @@ export default function ApprovalsPage() {
             <>
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
-                  {approvals.length}{" "}
+                  {pagination.total}{" "}
                   {tab === "pending" ? "waiting" : "past decisions"}
                 </p>
                 <span className="text-xs text-slate-400">Newest first</span>
@@ -624,6 +622,7 @@ export default function ApprovalsPage() {
                 tab={tab}
                 onSelect={openInspector}
               />
+              <PagePagination pagination={pagination} itemLabel={tab === "pending" ? "approvals waiting" : "past decisions"} onPageChange={setPage} />
             </>
           )}
         </div>

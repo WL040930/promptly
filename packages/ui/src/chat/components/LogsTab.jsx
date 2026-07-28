@@ -20,13 +20,15 @@ const LogsTab = ({ workflowId: initialWorkflowId = '' } = {}) => {
     const [status, setStatus] = useState('All');
     const [workflowId, setWorkflowId] = useState(initialWorkflowId);
     const [page, setPage] = useState(1);
+    const [cursor, setCursor] = useState(null);
+    const [cursorHistory, setCursorHistory] = useState([]);
     const [selectedLogId, setSelectedLogId] = useState(null);
     const [inspectorLogId, setInspectorLogId] = useState(null);
     const [isInspectorOpen, setIsInspectorOpen] = useState(false);
     const inspectorOpenFrame = useRef(null);
 
     const { data: workflows = [] } = useWorkflows();
-    const logsQuery = useExecutionLogs({ search, status, workflowId, page, pageSize: PAGE_SIZE });
+    const logsQuery = useExecutionLogs({ search, status, workflowId, cursor, pageSize: PAGE_SIZE });
     const { data: response, isFetching, isError, refetch } = logsQuery;
     const logs = response?.data || [];
     const pagination = response?.pagination;
@@ -57,17 +59,23 @@ const LogsTab = ({ workflowId: initialWorkflowId = '' } = {}) => {
     const updateSearch = (value) => {
         setSearchInput(value);
         setPage(1);
+        setCursor(null);
+        setCursorHistory([]);
     };
 
     const updateStatus = (value) => {
         setStatus(value);
         setPage(1);
+        setCursor(null);
+        setCursorHistory([]);
         closeInspector();
     };
 
     const updateWorkflow = (value) => {
         setWorkflowId(value);
         setPage(1);
+        setCursor(null);
+        setCursorHistory([]);
         closeInspector();
     };
 
@@ -77,10 +85,21 @@ const LogsTab = ({ workflowId: initialWorkflowId = '' } = {}) => {
         setStatus('All');
         setWorkflowId('');
         setPage(1);
+        setCursor(null);
+        setCursorHistory([]);
         closeInspector();
     };
 
     const changePage = (nextPage) => {
+        if (nextPage > page) {
+            if (!pagination?.nextCursor) return;
+            setCursorHistory(history => [...history, cursor]);
+            setCursor(pagination.nextCursor);
+        } else if (nextPage < page) {
+            const previousCursor = cursorHistory.at(-1) ?? null;
+            setCursorHistory(history => history.slice(0, -1));
+            setCursor(previousCursor);
+        }
         setPage(nextPage);
         closeInspector();
     };
@@ -152,7 +171,7 @@ const LogsTab = ({ workflowId: initialWorkflowId = '' } = {}) => {
                     ) : (
                         <>
                             <LogList logs={logs} selectedLogId={selectedLogId} onSelect={openInspector} />
-                            <LogPagination pagination={pagination} onPageChange={changePage} />
+                            <LogPagination pagination={{ ...pagination, page, hasPreviousPage: page > 1 }} onPageChange={changePage} />
                         </>
                     )}
                 </div>

@@ -20,6 +20,7 @@ import {
 } from './agentPlanCompiler.js';
 import { DEFAULT_CLARIFICATION_MODE, getClarificationModeInstruction, normalizeClarificationMode } from '../../../shared/agentContract.js';
 import { supersedePendingChatFormProposals } from '../proposalLifecycle.js';
+import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 import {
     completeStep,
     createArtifact,
@@ -357,7 +358,7 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
         const content = {
             action,
             workflowId: workflow?.id || null,
-            name: action === 'create_workflow' ? 'New Workflow' : workflow?.name,
+            name: action === 'create_workflow' ? DEFAULT_AUTOMATION_NAME : workflow?.name,
             message: result.message,
             nodes: result.nodes,
             edges: result.edges,

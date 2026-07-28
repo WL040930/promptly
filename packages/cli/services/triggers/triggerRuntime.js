@@ -8,6 +8,7 @@ import { externalTriggerForNode, hashConfig, normalizeEvent } from './triggerCon
 import databaseAdapter from './databaseAdapter.js';
 import gmailAdapter from './gmailTriggerAdapter.js';
 import sheetsAdapter from './googleSheetsTriggerAdapter.js';
+import { syncLiveTriggerBindings } from './workflowTriggerBindingService.js';
 
 const MAX_ATTEMPTS = 5;
 const MAX_TRIGGER_DEPTH = 10;
@@ -95,6 +96,9 @@ export const reconcileWorkflow = async workflow => {
         ? await WorkflowVersion.findOne({ where: { id: workflow.publishedRevisionId, workflowId: workflow.id } })
         : null;
     if (!release) throw new Error('An active automation requires a published release.');
+    // Rehydrate local form/webhook routes on process restart. This is
+    // idempotent and keeps dispatch independent of scanning workflow JSON.
+    await syncLiveTriggerBindings({ workflow, revision: release });
     const liveWorkflow = { ...workflow.toJSON(), nodes: release.nodes || [], edges: release.edges || [] };
     const externalTrigger = (liveWorkflow.nodes || []).map(externalTriggerForNode).find(Boolean);
     if (!externalTrigger) {

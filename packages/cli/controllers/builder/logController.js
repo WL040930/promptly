@@ -5,14 +5,28 @@ import asyncHandler from '../../utils/asyncHandler.js';
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 100;
 
-const parsePagination = (pageValue, pageSizeValue) => {
-    const page = Math.max(Number.parseInt(pageValue, 10) || 1, 1);
-    const pageSize = Math.min(
+const parsePageSize = pageSizeValue => (
+    Math.min(
         Math.max(Number.parseInt(pageSizeValue, 10) || DEFAULT_PAGE_SIZE, 1),
         MAX_PAGE_SIZE
-    );
+    )
+);
 
-    return { page, pageSize, offset: (page - 1) * pageSize };
+export const encodeLogCursor = log => Buffer.from(JSON.stringify({
+    createdAt: new Date(log.createdAt).toISOString(),
+    id: log.id
+})).toString('base64url');
+
+export const decodeLogCursor = value => {
+    if (!value) return null;
+    try {
+        const parsed = JSON.parse(Buffer.from(String(value), 'base64url').toString('utf8'));
+        const createdAt = new Date(parsed.createdAt);
+        if (!parsed.id || Number.isNaN(createdAt.getTime())) return null;
+        return { createdAt, id: String(parsed.id) };
+    } catch {
+        return null;
+    }
 };
 
 const buildLogWhereClause = async ({ userId, search, status, workflowId }) => {
@@ -56,15 +70,30 @@ const buildLogWhereClause = async ({ userId, search, status, workflowId }) => {
 
 export const getExecutionLogs = asyncHandler(async (req, res) => {
     const { search = '', status = 'All', workflowId = '' } = req.query;
-    const { page, pageSize, offset } = parsePagination(req.query.page, req.query.pageSize);
+    const pageSize = parsePageSize(req.query.pageSize);
     const whereClause = await buildLogWhereClause({
         userId: req.user.id,
         search: search.trim(),
         status,
         workflowId
     });
+    const cursor = decodeLogCursor(req.query.cursor);
+    if (req.query.cursor && !cursor) {
+        return res.status(400).json({ message: 'Invalid run-history cursor.' });
+    }
+    if (cursor) {
+        whereClause[Op.and] = [
+            ...(whereClause[Op.and] || []),
+            {
+                [Op.or]: [
+                    { createdAt: { [Op.lt]: cursor.createdAt } },
+                    { createdAt: cursor.createdAt, id: { [Op.lt]: cursor.id } }
+                ]
+            }
+        ];
+    }
 
-    const { rows, count } = await AutomationRun.findAndCountAll({
+    const rows = await AutomationRun.findAll({
         where: whereClause,
         attributes: { exclude: ['steps'] },
         include: [{
@@ -74,22 +103,18 @@ export const getExecutionLogs = asyncHandler(async (req, res) => {
             required: false
         }],
         order: [['createdAt', 'DESC'], ['id', 'DESC']],
-        limit: pageSize,
-        offset,
-        distinct: true
+        limit: pageSize + 1
     });
-
-    const totalPages = Math.ceil(count / pageSize);
+    const hasNextPage = rows.length > pageSize;
+    const data = hasNextPage ? rows.slice(0, pageSize) : rows;
+    const last = data.at(-1);
 
     res.json({
-        data: rows,
+        data,
         pagination: {
-            page,
             pageSize,
-            total: count,
-            totalPages,
-            hasNextPage: page < totalPages,
-            hasPreviousPage: page > 1
+            hasNextPage,
+            nextCursor: hasNextPage && last ? encodeLogCursor(last) : null
         }
     });
 });

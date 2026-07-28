@@ -20,7 +20,7 @@ import { useAIActivity, useAIStream } from '../../context/AIStreamContext.jsx';
 
 const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I can build automations and forms from a description. What would you like to automate?' };
 
-export default function ChatTab({ conversationId = null, startNewAutomation = false }) {
+export default function ChatTab({ conversationId = null }) {
     const toast = useToast();
     const container = useRef(null);
     const [messages, setMessages] = useState([welcome]);
@@ -66,9 +66,7 @@ export default function ChatTab({ conversationId = null, startNewAutomation = fa
         const params = new URLSearchParams(window.location.search);
         const prompt = params.get('prompt');
         if (prompt) setInput(prompt);
-        if (!prompt && !startNewAutomation) return;
-        if (startNewAutomation) navigateTo({ page: 'assistant', conversationId: sessionId || undefined });
-    }, [startNewAutomation, sessionId]);
+    }, []);
 
     useEffect(() => {
         if (!session || loadedSessionIdRef.current === sessionId) return;

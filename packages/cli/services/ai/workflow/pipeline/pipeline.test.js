@@ -35,6 +35,20 @@ const emailSpec = {
     ui: {}
 };
 
+const formSubmissionSpec = {
+    nodeKey: 'trigger:form-submission',
+    type: 'trigger',
+    subType: 'form-submission',
+    title: 'Promptly Form',
+    description: 'Starts when a Promptly form is submitted',
+    implementationStatus: 'experimental',
+    schema: {
+        inputs: [{ name: 'formId', type: 'text' }],
+        outputs: [{ name: 'event', isConnection: true }]
+    },
+    ui: {}
+};
+
 const makeRegistry = (specs = [triggerSpec, emailSpec]) => ({
     getCompactCatalogue: () => specs.map(spec => ({
         nodeKey: spec.nodeKey,
@@ -174,6 +188,51 @@ test('pipeline performs one safe lookup for another owned form before replying',
     assert.equal(loadCount, 1);
     assert.equal(prompts.length, 2);
     assert.match(prompts[1], /Inspected Form Context:[\s\S]*Work email/);
+});
+
+test('pipeline carries an inspected form into the worker that creates its trigger', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let workerPrompt = '';
+    const provider = {
+        async generateContent(contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return { text: JSON.stringify(
+                    contents[0].parts[0].text.includes('"label":"Email address"')
+                        ? {
+                            type: 'plan_complete',
+                            summary: 'Send a thank-you email after form submission.',
+                            requirements: [{ id: 'req_1', description: 'Send a thank-you email to the respondent.' }],
+                            selectedNodeKeys: ['trigger:form-submission', 'action:email'],
+                            capabilities: ['respondent_confirmation']
+                        }
+                        : { type: 'inspect_form', formId: 'form_1' }
+                ) };
+            }
+            if (options.operation === 'workflow:worker') {
+                workerPrompt = contents[0].parts[0].text;
+                return { text: JSON.stringify({ operations: [
+                    { op: 'create_node', node: { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Promptly Form', config: { formId: 'form_1' } } },
+                    { op: 'create_node', node: { ref: 'email', nodeKey: 'action:email', title: 'Send thank-you email', config: { to: '{{formField:email}}', subject: 'Thank you' }, afterNodeRef: 'form_trigger' } },
+                    { op: 'connect', from: { nodeRef: 'form_trigger', handle: 'event' }, to: { nodeRef: 'email', handle: 'event' } }
+                ] }) };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'After my form receives a response, send a thank-you email.',
+        currentWorkflow: { nodes: [], edges: [] },
+        userContext: { forms: [{ id: 'form_1', title: 'Contact form', updatedAt: '2026-07-28' }] },
+        formLoader: async () => ({ id: 'form_1', title: 'Contact form', fields: [{ id: 'email', label: 'Email address', type: 'email', required: true }] }),
+        provider,
+        registry: makeRegistry([formSubmissionSpec, emailSpec]),
+        resourceLoader
+    });
+
+    assert.match(workerPrompt, /"semanticToken":"\{\{formField:email\}\}"/);
+    assert.equal(result.type, 'proposal');
+    assert.match(result.nodes.find(node => node.subType === 'email')?.config?.to, /^\{\{[^.]+\.fields\.email\}\}$/);
 });
 
 test('pipeline does not expose a form when the ownership-checked lookup fails', async () => {

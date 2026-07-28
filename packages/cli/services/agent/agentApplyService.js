@@ -7,6 +7,7 @@ import NodeRegistry from '../../utils/NodeRegistry.js';
 import { reconcileWorkflow } from '../triggers/triggerRuntime.js';
 import { createApproval, getRunArtifacts, getRunForUser, serializeRun } from './agentRunStore.js';
 import { makeError } from './agentContracts.js';
+import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 
 const revisionMatches = (current, expected) => !expected || new Date(current).getTime() === new Date(expected).getTime();
 const workflowRevisionMatches = (current, expected) => expected === undefined || expected === null || Number(current) === Number(expected);
@@ -75,7 +76,7 @@ const applyWorkflowArtifact = async ({ artifact, userId, form, transaction }) =>
     if (!validation.valid) throw Object.assign(new Error('The workflow proposal failed validation.'), { code: 'AGENT_INVALID_PROPOSAL', issues: validation.issues });
 
     const workflow = source || await Workflow.create({
-        name: content.name || 'New Automation',
+        name: content.name || DEFAULT_AUTOMATION_NAME,
         status: 'Draft',
         isActive: false,
         iconColor: 'text-indigo-600',

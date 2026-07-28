@@ -1,5 +1,5 @@
 import sequelize from '../../db/index.js';
-import { AssistantMessage, AssistantThread, Form, FormResponse, Workflow } from '../../models/index.js';
+import { AssistantMessage, AssistantThread, Form, FormResponse, WorkflowTriggerBinding } from '../../models/index.js';
 import { validateQuestionCardinality } from '../../services/ai/form/context/formContext.js';
 import { applyFormPatches } from '../../services/ai/form/domain/formPatchEngine.js';
 import { validateFormSchema } from '../../services/ai/form/domain/formSchemaValidator.js';
@@ -9,8 +9,20 @@ import { formAssistant } from '../../services/ai/form/formAssistant.js';
 import { publicStateForThread } from '../../services/assistant/assistantStore.js';
 
 export const getForms = asyncHandler(async (req, res) => {
-    const forms = await Form.findAll({ where: { userId: req.user.id } });
+    const forms = await Form.findAll({
+        where: { userId: req.user.id },
+        // The sidebar only needs identity, visual settings, and recency. Field
+        // schemas are loaded by the detail endpoint for the active form.
+        attributes: ['id', 'title', 'description', 'settings', 'responseCount', 'createdAt', 'updatedAt'],
+        order: [['updatedAt', 'DESC']]
+    });
     res.json(forms);
+});
+
+export const getForm = asyncHandler(async (req, res) => {
+    const form = await Form.findOne({ where: { id: req.params.id, userId: req.user.id } });
+    if (!form) return res.status(404).json({ message: 'Form not found' });
+    res.json(form);
 });
 
 export const createForm = asyncHandler(async (req, res) => {
@@ -192,29 +204,38 @@ export const getPublicForm = asyncHandler(async (req, res) => {
 export const submitFormResponse = asyncHandler(async (req, res) => {
     const { formId } = req.params;
     const { responseData } = req.body;
-    
-    // We don't check for req.user here because responses are likely anonymous/public
-    const form = await Form.findByPk(formId);
-    if (!form) return res.status(404).json({ message: 'Form not found' });
-
-    // Check acceptingResponses
-    if (form.settings && form.settings.acceptingResponses === false) {
-        return res.status(400).json({ message: 'This form is no longer accepting responses' });
-    }
-
-    if (form.settings && form.settings.hasResponseLimit && form.settings.responseLimit) {
-        if (form.responseCount >= parseInt(form.settings.responseLimit, 10)) {
-            return res.status(400).json({ message: 'This form has reached its response limit' });
+    const { response, formUserId } = await sequelize.transaction(async transaction => {
+        // Responses are public, but submissions for the same form must be
+        // serialized so a response limit and its denormalized counter remain
+        // correct under concurrent requests.
+        const form = await Form.findByPk(formId, { transaction, lock: transaction.LOCK.UPDATE });
+        if (!form) {
+            const error = new Error('Form not found');
+            error.status = 404;
+            throw error;
         }
-    }
 
-    // Save a snapshot of the current fields to prevent schema drift issues
-    const snapshot = form.fields;
+        if (form.settings?.acceptingResponses === false) {
+            const error = new Error('This form is no longer accepting responses');
+            error.status = 400;
+            throw error;
+        }
 
-    const response = await FormResponse.create({ formId, responseData, snapshot });
-    
-    // Increment the denormalized response count
-    await form.increment('responseCount');
+        if (form.settings?.hasResponseLimit && form.settings.responseLimit
+            && form.responseCount >= parseInt(form.settings.responseLimit, 10)) {
+            const error = new Error('This form has reached its response limit');
+            error.status = 400;
+            throw error;
+        }
+
+        const response = await FormResponse.create({
+            formId,
+            responseData,
+            snapshot: form.fields
+        }, { transaction });
+        await form.increment('responseCount', { transaction });
+        return { response, formUserId: form.userId };
+    });
 
     // ── Fire-and-forget: dispatch any workflows bound to this form ──────────
     const initialPayload = {
@@ -222,20 +243,20 @@ export const submitFormResponse = asyncHandler(async (req, res) => {
         responseId:  response.id,
         submittedAt: response.createdAt,
     };
-    // Find all active workflows for this form's owner
-    Workflow.findAll({ where: { userId: form.userId, isActive: true } })
-        .then(workflows => {
-            for (const workflow of workflows) {
-                const triggerNode = (workflow.nodes || []).find(
-                    n => n.subType === 'form-submission' && n.config?.formId === formId
-                );
-                if (triggerNode) {
-                    executeWorkflow(workflow.id, form.userId, initialPayload, { runType: 'production', trigger: 'form-submission' })
-                        .catch(err => console.error(`[FormTrigger] Dispatch failed for workflow ${workflow.id}:`, err.message));
-                }
+    WorkflowTriggerBinding.findAll({
+        where: { kind: 'form-submission', resourceId: formId, status: 'active' },
+        attributes: ['workflowId', 'revisionId', 'userId']
+    })
+        .then(bindings => {
+            for (const binding of bindings) {
+                executeWorkflow(binding.workflowId, binding.userId || formUserId, initialPayload, {
+                    runType: 'production',
+                    revisionId: binding.revisionId,
+                    trigger: 'form-submission'
+                }).catch(err => console.error(`[FormTrigger] Dispatch failed for workflow ${binding.workflowId}:`, err.message));
             }
         })
-        .catch(err => console.error('[FormTrigger] Failed to load workflows for dispatch:', err.message));
+        .catch(err => console.error('[FormTrigger] Failed to load trigger bindings for dispatch:', err.message));
     // ────────────────────────────────────────────────────────────────────────
     
     res.status(201).json(response);
@@ -243,19 +264,20 @@ export const submitFormResponse = asyncHandler(async (req, res) => {
 
 export const getFormResponses = asyncHandler(async (req, res) => {
     const { formId } = req.params;
-    const { limit = 50, offset = 0 } = req.query;
+    const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
+    const pageSize = Math.min(Math.max(Number.parseInt(req.query.pageSize || req.query.limit, 10) || 25, 1), 100);
 
     // Check form belongs to user
     const form = await Form.findOne({ where: { id: formId, userId: req.user.id } });
     if (!form) return res.status(404).json({ message: 'Form not found' });
 
-    const responses = await FormResponse.findAll({ 
+    const { rows, count } = await FormResponse.findAndCountAll({ 
         where: { formId },
         order: [['createdAt', 'DESC']],
-        limit: parseInt(limit, 10),
-        offset: parseInt(offset, 10)
+        limit: pageSize,
+        offset: (page - 1) * pageSize
     });
-    res.json(responses);
+    res.json({ data: rows, pagination: { page, pageSize, total: count, totalPages: Math.max(Math.ceil(count / pageSize), 1) } });
 });
 
 // Form Chat History

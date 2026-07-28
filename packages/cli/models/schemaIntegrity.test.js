@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as models from './index.js';
 
-test('clean schema exposes exactly the 19 product tables', () => {
+test('clean schema exposes exactly the 21 product tables', () => {
     const tables = Object.values(models)
         .filter(model => typeof model?.getTableName === 'function')
         .map(model => model.getTableName())
@@ -15,6 +15,7 @@ test('clean schema exposes exactly the 19 product tables', () => {
         'automation_runs',
         'automations',
         'connections',
+        'dashboard_run_metrics',
         'database_change_events',
         'email_deliveries',
         'form_responses',
@@ -26,6 +27,7 @@ test('clean schema exposes exactly the 19 product tables', () => {
         'trigger_subscriptions',
         'users',
         'workflow_assets',
-        'workflow_continuations'
+        'workflow_continuations',
+        'workflow_trigger_bindings'
     ]);
 });

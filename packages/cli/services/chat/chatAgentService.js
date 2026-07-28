@@ -16,6 +16,7 @@ import { supersedePendingChatFormProposals } from '../proposalLifecycle.js';
 import { applyFormPatches } from '../ai/form/domain/formPatchEngine.js';
 import { validateFormSchema } from '../ai/form/domain/formSchemaValidator.js';
 import { validateWorkflow } from '../engine/workflowValidator.js';
+import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 
 const messagePayload = (message) => {
     const json = message.toJSON();
@@ -277,7 +278,7 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
                 throw error;
             }
             const saved = workflow || await Workflow.create({
-                name: proposal.name || 'New Automation',
+                name: proposal.name || DEFAULT_AUTOMATION_NAME,
                 status: 'Draft',
                 isActive: false,
                 iconColor: 'text-indigo-600',

@@ -1,3 +1,4 @@
+import { Op, QueryTypes } from 'sequelize';
 import { Workflow, WorkflowVersion } from '../../models/index.js';
 import { executeWorkflow } from '../../services/engine/executionEngine.js';
 import asyncHandler from '../../utils/asyncHandler.js';
@@ -6,22 +7,28 @@ import NodeRegistry from '../../utils/NodeRegistry.js';
 import { validateWorkflow } from '../../services/engine/workflowValidator.js';
 import { reconcileWorkflow, removeWorkflow } from '../../services/triggers/triggerRuntime.js';
 import { saveAutomationDraft, publishAutomation, pauseAutomation } from '../../services/automations/automationService.js';
+import { deactivateWorkflowTriggerBindings } from '../../services/triggers/workflowTriggerBindingService.js';
+import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 
 const graphsMatch = (leftNodes = [], leftEdges = [], rightNodes = [], rightEdges = []) => (
     JSON.stringify(leftNodes || []) === JSON.stringify(rightNodes || [])
     && JSON.stringify(leftEdges || []) === JSON.stringify(rightEdges || [])
 );
 
-const releaseSummary = async workflow => {
-    const published = workflow.publishedRevisionId
-        ? await WorkflowVersion.findOne({ where: { id: workflow.publishedRevisionId, workflowId: workflow.id } })
-        : null;
+const releaseSummaryFrom = (workflow, published = null) => {
     return {
         publishedVersionId: published?.id || null,
         publishedVersionNumber: published?.versionNumber || null,
         isLive: Boolean(workflow.isActive && published),
         hasDraftChanges: Boolean(published && !graphsMatch(workflow.nodes, workflow.edges, published.nodes, published.edges))
     };
+};
+
+const releaseSummary = async workflow => {
+    const published = workflow.publishedRevisionId
+        ? await WorkflowVersion.findOne({ where: { id: workflow.publishedRevisionId, workflowId: workflow.id } })
+        : null;
+    return releaseSummaryFrom(workflow, published);
 };
 
 const workflowValidationResponse = (res, workflow) => {
@@ -45,9 +52,114 @@ const syncSchedule = (workflowId, userId, nodes, isActive) => {
     }
 };
 
+const parsePage = (value, fallback = 1) => Math.max(Number.parseInt(value, 10) || fallback, 1);
+const parsePageSize = (value, fallback = 10) => Math.min(Math.max(Number.parseInt(value, 10) || fallback, 1), 50);
+
+const workflowWhere = ({ userId, search = '', status = 'All' }) => {
+    const where = { userId };
+    if (search.trim()) where.name = { [Op.iLike]: `%${search.trim()}%` };
+    if (status === 'Active') where.isActive = true;
+    if (status === 'Paused') {
+        where.isActive = false;
+        where.status = 'Paused';
+    }
+    if (status === 'Draft') {
+        where.isActive = false;
+        where.status = { [Op.ne]: 'Paused' };
+    }
+    return where;
+};
+
+export const workflowHealthSql = `
+    SELECT "workflowId", status, "createdAt", rank
+    FROM (
+        SELECT "workflowId", status, "createdAt",
+            ROW_NUMBER() OVER (PARTITION BY "workflowId" ORDER BY "createdAt" DESC, id DESC) AS rank
+        FROM "automation_runs"
+        WHERE "userId" = :userId AND "workflowId" IN (:workflowIds)
+    ) recent
+    WHERE rank <= 5
+`;
+
+const healthForWorkflows = async ({ userId, workflowIds }) => {
+    if (workflowIds.length === 0) return new Map();
+    const rows = await Workflow.sequelize.query(workflowHealthSql, { replacements: { userId, workflowIds }, type: QueryTypes.SELECT });
+    const statusesByWorkflow = new Map();
+    for (const row of rows) {
+        const statuses = statusesByWorkflow.get(row.workflowId) || [];
+        statuses.push(row);
+        statusesByWorkflow.set(row.workflowId, statuses);
+    }
+    return new Map(workflowIds.map(id => {
+        const runs = statusesByWorkflow.get(id) || [];
+        const health = runs.length === 0 ? 'No runs' : runs.some(run => String(run.status || '').toLowerCase() === 'failed') ? 'Needs attention' : 'Healthy';
+        const latest = runs.find(run => Number(run.rank) === 1) || null;
+        return [id, { health, latestRun: latest ? { status: latest.status, time: latest.createdAt } : null }];
+    }));
+};
+
+export const getWorkflowListPage = asyncHandler(async (req, res) => {
+    const page = parsePage(req.query.page);
+    const pageSize = parsePageSize(req.query.pageSize);
+    const status = ['All', 'Active', 'Draft', 'Paused'].includes(req.query.status) ? req.query.status : 'All';
+    const health = ['All', 'Healthy', 'Needs attention', 'No runs'].includes(req.query.health) ? req.query.health : 'All';
+    const candidates = await Workflow.findAll({
+        where: workflowWhere({ userId: req.user.id, search: String(req.query.search || ''), status }),
+        attributes: ['id', 'isActive', 'status', 'updatedAt'],
+        order: [['updatedAt', 'DESC'], ['id', 'DESC']]
+    });
+    const healthById = await healthForWorkflows({ userId: req.user.id, workflowIds: candidates.map(item => item.id) });
+    const filtered = health === 'All' ? candidates : candidates.filter(item => healthById.get(item.id)?.health === health);
+    const total = filtered.length;
+    const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
+    const pageIds = pageItems.map(item => item.id);
+    const workflows = pageIds.length > 0
+        ? await Workflow.findAll({ where: { id: pageIds, userId: req.user.id }, order: [['updatedAt', 'DESC'], ['id', 'DESC']] })
+        : [];
+    const publishedIds = [...new Set(workflows.map(workflow => workflow.publishedRevisionId).filter(Boolean))];
+    const publishedVersions = publishedIds.length > 0
+        ? await WorkflowVersion.findAll({ where: { id: publishedIds }, attributes: ['id', 'workflowId', 'versionNumber', 'nodes', 'edges'] })
+        : [];
+    const publishedById = new Map(publishedVersions.map(version => [version.id, version]));
+    const workflowById = new Map(workflows.map(workflow => [workflow.id, workflow]));
+    const items = pageIds.map(id => workflowById.get(id)).filter(Boolean).map(workflow => {
+        const value = workflow.toJSON();
+        const nodes = Array.isArray(value.nodes) ? value.nodes : [];
+        const edges = Array.isArray(value.edges) ? value.edges : [];
+        const triggerNodes = nodes.filter(node => node?.type === 'trigger');
+        const trigger = triggerNodes[0] || null;
+        delete value.nodes;
+        delete value.edges;
+        return {
+            ...value,
+            health: healthById.get(workflow.id)?.health || 'No runs',
+            latestRun: healthById.get(workflow.id)?.latestRun || null,
+            triggerType: trigger?.subType || null,
+            triggerTitle: trigger?.title || null,
+            triggerCount: triggerNodes.length,
+            nodeCount: nodes.length,
+            edgeCount: edges.length,
+            hasPublishedVersion: Boolean(value.publishedRevisionId),
+            release: releaseSummaryFrom(workflow, publishedById.get(value.publishedRevisionId) || null)
+        };
+    });
+    const summary = filtered.reduce((value, workflow) => ({
+        active: value.active + (workflow.isActive ? 1 : 0),
+        draft: value.draft + (workflow.isActive ? 0 : 1),
+        needsAttention: value.needsAttention + (healthById.get(workflow.id)?.health === 'Needs attention' ? 1 : 0)
+    }), { active: 0, draft: 0, needsAttention: 0 });
+    res.json({ items, pagination: { page, pageSize, total, totalPages: Math.max(Math.ceil(total / pageSize), 1) }, summary });
+});
+
 export const getWorkflows = asyncHandler(async (req, res) => {
     const workflows = await Workflow.findAll({ where: { userId: req.user.id } });
-    res.json(await Promise.all(workflows.map(async workflow => {
+    const publishedIds = [...new Set(workflows.map(workflow => workflow.publishedRevisionId).filter(Boolean))];
+    const publishedVersions = publishedIds.length > 0
+        ? await WorkflowVersion.findAll({ where: { id: publishedIds }, attributes: ['id', 'workflowId', 'versionNumber', 'nodes', 'edges'] })
+        : [];
+    const publishedById = new Map(publishedVersions.map(version => [version.id, version]));
+
+    res.json(workflows.map(workflow => {
         const value = workflow.toJSON();
         const nodes = Array.isArray(value.nodes) ? value.nodes : [];
         const edges = Array.isArray(value.edges) ? value.edges : [];
@@ -65,9 +177,9 @@ export const getWorkflows = asyncHandler(async (req, res) => {
             nodeCount: nodes.length,
             edgeCount: edges.length,
             hasPublishedVersion: Boolean(value.publishedRevisionId),
-            release: await releaseSummary(workflow)
+            release: releaseSummaryFrom(workflow, publishedById.get(value.publishedRevisionId) || null)
         };
-    })));
+    }));
 });
 
 export const getWorkflow = asyncHandler(async (req, res) => {
@@ -84,7 +196,7 @@ export const createWorkflow = asyncHandler(async (req, res) => {
     const validationResponse = workflowValidationResponse(res, { nodes, edges, isActive: false });
     if (validationResponse) return validationResponse;
     const workflow = await Workflow.create({
-        name, description, isActive: false, status: status || lifecycleStatus || 'Draft', icon, iconColor, iconBg, nodes, edges, revision: 1,
+        name: String(name || '').trim() || DEFAULT_AUTOMATION_NAME, description, isActive: false, status: status || lifecycleStatus || 'Draft', icon, iconColor, iconBg, nodes, edges, revision: 1,
         userId: req.user.id
     });
     res.status(201).json({ ...workflow.toJSON(), release: await releaseSummary(workflow) });
@@ -173,6 +285,7 @@ export const publishWorkflow = asyncHandler(async (req, res) => {
         await reconcileWorkflow(workflow);
     } catch (error) {
         await workflow.update({ isActive: false, status: 'Trigger setup failed' });
+        await deactivateWorkflowTriggerBindings({ workflowId: workflow.id });
         return res.status(503).json({ message: 'Automation trigger could not be connected.', error: error.message });
     }
     syncSchedule(workflow.id, req.user.id, workflow.nodes, true);
@@ -190,11 +303,37 @@ export const pauseWorkflow = asyncHandler(async (req, res) => {
 
 export const getWorkflowVersions = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const versions = await WorkflowVersion.findAll({
-        where: { workflowId: id },
-        order: [['versionNumber', 'DESC']]
+    const workflow = await Workflow.findOne({ where: { id, userId: req.user.id }, attributes: ['id'] });
+    if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
+    const page = parsePage(req.query.page);
+    const pageSize = parsePageSize(req.query.pageSize, 20);
+    const where = { workflowId: id };
+    if (req.query.source) where.source = String(req.query.source);
+    const { rows, count } = await WorkflowVersion.findAndCountAll({
+        where,
+        order: [['versionNumber', 'DESC']],
+        limit: pageSize,
+        offset: (page - 1) * pageSize
     });
-    res.json(versions);
+    res.json({
+        data: rows.map(version => {
+            const value = version.toJSON();
+            const nodes = Array.isArray(value.nodes) ? value.nodes : [];
+            const edges = Array.isArray(value.edges) ? value.edges : [];
+            delete value.nodes;
+            delete value.edges;
+            return { ...value, nodeCount: nodes.length, edgeCount: edges.length };
+        }),
+        pagination: { page, pageSize, total: count, totalPages: Math.max(Math.ceil(count / pageSize), 1) }
+    });
+});
+
+export const getWorkflowVersion = asyncHandler(async (req, res) => {
+    const workflow = await Workflow.findOne({ where: { id: req.params.id, userId: req.user.id }, attributes: ['id'] });
+    if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
+    const version = await WorkflowVersion.findOne({ where: { id: req.params.versionId, workflowId: workflow.id } });
+    if (!version) return res.status(404).json({ message: 'Workflow version not found' });
+    res.json(version);
 });
 
 export const restoreWorkflowVersion = asyncHandler(async (req, res) => {

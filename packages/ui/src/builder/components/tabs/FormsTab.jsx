@@ -9,7 +9,7 @@ import FormSettings from '../../../forms/settings/FormSettings';
 import FormShareModal from '../../../forms/settings/FormShareModal';
 import Button from '../../../components/ui/Button.jsx';
 import { createField } from '../../../forms/editor/fields/fieldTypes';
-import { useForms, useCreateForm, useUpdateForm, useDeleteForm } from '../../../api/hooks/useForms.js';
+import { useForms, useForm, useCreateForm, useUpdateForm, useDeleteForm } from '../../../api/hooks/useForms.js';
 import { useToast } from '../../../context/ToastContext.jsx';
 import { parsePath, buildPath, replacePath } from '../../../utils/router.js';
 import { formatCompactRelativeTime } from '../../../utils/time.js';
@@ -24,11 +24,12 @@ import { createDebouncedSaveQueue } from '../../../utils/formAutosave.js';
 
 const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'build' } = {}) => {
     const { data: forms = [], isLoading: isFormsLoading } = useForms();
+    const initialRoute = parsePath(window.location.href);
+    const [activeFormId, setActiveFormId] = useState(() => initialFormId || initialRoute.formId || null);
+    const { data: activeFormData, isLoading: isActiveFormLoading } = useForm(activeFormId);
     const createFormMutation = useCreateForm();
     const updateFormMutation = useUpdateForm();
     const deleteFormMutation = useDeleteForm();
-    const initialRoute = parsePath(window.location.href);
-    const [activeFormId, setActiveFormId] = useState(() => initialFormId || initialRoute.formId || null);
     const [activeSubTab, setActiveSubTab] = useState(() => {
         const urlSubTab = initialSection !== 'build' ? initialSection : initialRoute.section;
         return urlSubTab === 'ai' || urlSubTab === 'responses' || urlSubTab === 'settings' ? urlSubTab : 'questions';
@@ -114,7 +115,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
         gsap.from(container.current, { opacity: 0, y: 15, duration: 0.3, ease: 'power2.out' });
     });
 
-    const remoteActiveForm = forms.find(f => f.id === activeFormId) || forms[0];
+    const remoteActiveForm = activeFormData || null;
     const activeForm = remoteActiveForm ? { ...remoteActiveForm, ...(draftUpdates[remoteActiveForm.id] || {}) } : null;
     const accentColor = activeForm?.settings?.accentColor || '#5b4ee8';
 
@@ -317,7 +318,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                 {/* Forms List */}
                 <div className="flex-1 overflow-y-auto px-3 pb-4 flex flex-col gap-1.5">
                     {filteredForms.map(form => {
-                        const isActive = activeForm.id === form.id;
+                        const isActive = activeForm?.id === form.id;
                         const formAccent = form.settings?.accentColor || '#5b4ee8';
                         const timeAgo = formatCompactRelativeTime(form.updatedAt);
                         
@@ -397,10 +398,11 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                                     <polyline points="10 9 9 9 8 9"></polyline>
                                 </svg>
                             </div>
-                            <h3 className="text-lg font-bold tracking-tight text-slate-900">No forms found</h3>
-                            <p className="mx-auto mb-6 mt-2 max-w-sm text-sm text-slate-500">Create a new form to get started.</p>
+                            <h3 className="text-lg font-bold tracking-tight text-slate-900">{isActiveFormLoading ? 'Loading form…' : 'No forms found'}</h3>
+                            <p className="mx-auto mb-6 mt-2 max-w-sm text-sm text-slate-500">{isActiveFormLoading ? 'Loading the selected form schema.' : 'Create a new form to get started.'}</p>
                             <button
                                 onClick={handleCreateForm}
+                                hidden={isActiveFormLoading}
                                 disabled={isCreatingForm}
                                 className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:opacity-50"
                             >

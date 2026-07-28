@@ -2,6 +2,7 @@ import sequelize from '../../db/index.js';
 import { Workflow, WorkflowVersion } from '../../models/index.js';
 import { validateWorkflow } from '../engine/workflowValidator.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
+import { deactivateWorkflowTriggerBindings, syncLiveTriggerBindings } from '../triggers/workflowTriggerBindingService.js';
 
 const revisionConflict = (expected, current) => {
     const error = new Error('This automation changed while you were editing it. Refresh and try again.');
@@ -84,6 +85,7 @@ export const publishAutomation = async ({ automationId, userId }) => sequelize.t
         }, { transaction });
     }
     await automation.update({ isActive: true, status: 'Live', publishedRevisionId: release.id, draftRevisionId: release.id }, { transaction });
+    await syncLiveTriggerBindings({ workflow: automation, revision: release, transaction });
     return automation;
 });
 
@@ -94,6 +96,9 @@ export const pauseAutomation = async ({ automationId, userId }) => {
         error.status = 404;
         throw error;
     }
-    await automation.update({ isActive: false, status: 'Paused' });
+    await sequelize.transaction(async transaction => {
+        await automation.update({ isActive: false, status: 'Paused' }, { transaction });
+        await deactivateWorkflowTriggerBindings({ workflowId: automation.id, transaction });
+    });
     return automation;
 };

@@ -65,12 +65,22 @@ export function parsePath(path = window.location.pathname) {
             return makeRoute('home');
         case 'automations':
             if (parts[2] === 'new') {
-                return makeRoute('automation-new', { method: getQuery(path).get('method') || 'ai' });
+                const method = getQuery(path).get('method') || 'ai';
+                const prompt = getQuery(path).get('prompt');
+                return makeRoute('automation-new', {
+                    method,
+                    ...(prompt ? { prompt } : {})
+                });
             }
             if (parts[2]) {
                 if (parts[3] === 'build') {
                     const editor = getQuery(path).get('editor') === 'visual' ? 'visual' : 'ai';
-                    return makeRoute('automation-build', { automationId: parts[2], editor });
+                    const prompt = getQuery(path).get('prompt');
+                    return makeRoute('automation-build', {
+                        automationId: parts[2],
+                        editor,
+                        ...(prompt ? { prompt } : {})
+                    });
                 }
                 if (parts[3] === 'runs') return makeRoute('automation-runs', { automationId: parts[2] });
                 if (parts[3] === 'versions') return makeRoute('automation-versions', { automationId: parts[2] });
@@ -98,11 +108,16 @@ export function buildPath(route = {}) {
     switch (route.page) {
         case 'home': return '/app/home';
         case 'automations': return '/app/automations';
-        case 'automation-new': return `/app/automations/new?method=${encodeURIComponent(route.method || 'ai')}`;
+        case 'automation-new': {
+            const params = new URLSearchParams({ method: route.method || 'ai' });
+            if (route.prompt) params.set('prompt', route.prompt);
+            return `/app/automations/new?${params.toString()}`;
+        }
         case 'automation-detail': return `/app/automations/${route.automationId}`;
         case 'automation-build': {
-            const editor = route.editor === 'visual' ? 'visual' : 'ai';
-            return `/app/automations/${route.automationId}/build?editor=${editor}`;
+            const params = new URLSearchParams({ editor: route.editor === 'visual' ? 'visual' : 'ai' });
+            if (route.prompt) params.set('prompt', route.prompt);
+            return `/app/automations/${route.automationId}/build?${params.toString()}`;
         }
         case 'automation-runs': return `/app/automations/${route.automationId}/runs`;
         case 'automation-versions': return `/app/automations/${route.automationId}/versions`;

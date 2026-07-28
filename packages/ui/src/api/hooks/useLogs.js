@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { getExecutionLog, getExecutionLogs } from '../backend.js';
 
-export function useExecutionLogs({ search = '', status = 'All', workflowId = '', page = 1, pageSize = 10 } = {}) {
+export function useExecutionLogs({ search = '', status = 'All', workflowId = '', cursor = null, pageSize = 10 } = {}) {
     return useQuery({
-        queryKey: ['executionLogs', { search, status, workflowId, page, pageSize }],
-        queryFn: () => getExecutionLogs({ search, status, workflowId, page, pageSize }),
+        queryKey: ['executionLogs', { search, status, workflowId, cursor, pageSize }],
+        queryFn: () => getExecutionLogs({ search, status, workflowId, cursor, pageSize }),
         staleTime: 5 * 1000
     });
 }

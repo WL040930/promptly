@@ -1,7 +1,9 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useFormResponses } from '../../api/hooks/useForms.js';
+import { getFormResponses } from '../../api/backend.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import FormResponsesSkeleton from './FormResponsesSkeleton.jsx';
+import PagePagination from '../../components/ui/PagePagination.jsx';
 
 const renderValue = (val, toast) => {
     if (val === undefined || val === null || val === '') return <span className="text-gray-300">—</span>;
@@ -52,75 +54,53 @@ const renderValue = (val, toast) => {
     return String(val);
 };
 
-const FormResponses = ({ form }) => {
-    const { data: responses = [], isLoading: loading, error } = useFormResponses(form?.id);
-    const toast = useToast();
-
-    /**
-     * Option A — Snapshot-aware column union.
-     *
-     * Columns = current active fields  UNION  any fields that appear in
-     * old response snapshots (or responseData keys) but have since been
-     * removed from the form.
-     * Each entry: { id, label, removed: bool }
-     *
-     * Layer 1: snapshot array (preferred — has real labels).
-     * Layer 2: responseData keys fallback when snapshot is null/sparse
-     *          (handles responses submitted before snapshot was introduced,
-     *           or any edge case where snapshot is missing).
-     */
-    const allColumns = useMemo(() => {
-        // Start from current active (non-deleted) fields, preserving their order
-        const seenIds = new Set();
-        const columns = [];
-
-        // Build a lookup of ALL form.fields (including soft-deleted) for label recovery
-        const allFormFieldsById = Object.fromEntries((form?.fields || []).map(f => [f.id, f]));
-
-        (form?.fields || [])
-            .filter(f => !f.deleted && f.type !== 'heading' && f.type !== 'hidden')
-            .forEach(f => {
+const buildColumns = (form, responses) => {
+    const seenIds = new Set();
+    const columns = [];
+    const allFormFieldsById = Object.fromEntries((form?.fields || []).map(f => [f.id, f]));
+    (form?.fields || []).filter(f => !f.deleted && f.type !== 'heading' && f.type !== 'hidden').forEach(f => {
+        seenIds.add(f.id);
+        columns.push({ id: f.id, label: f.label, removed: false });
+    });
+    responses.forEach(response => {
+        const snapshot = response.snapshot;
+        if (!Array.isArray(snapshot)) return;
+        snapshot.filter(f => f.type !== 'heading' && f.type !== 'hidden' && !f.deleted).forEach(f => {
+            if (!seenIds.has(f.id)) {
                 seenIds.add(f.id);
-                columns.push({ id: f.id, label: f.label, removed: false });
-            });
-
-        // Layer 1: walk each response's snapshot for removed fields (best label source)
-        responses.forEach(response => {
-            const snapshot = response.snapshot;
-            if (Array.isArray(snapshot)) {
-                snapshot
-                    .filter(f => f.type !== 'heading' && f.type !== 'hidden' && !f.deleted)
-                    .forEach(f => {
-                        if (!seenIds.has(f.id)) {
-                            seenIds.add(f.id);
-                            columns.push({ id: f.id, label: f.label || allFormFieldsById[f.id]?.label || f.id, removed: true });
-                        }
-                    });
+                columns.push({ id: f.id, label: f.label || allFormFieldsById[f.id]?.label || f.id, removed: true });
             }
         });
-
-        // Layer 2: scan responseData keys as fallback for responses with null snapshots.
-        // Cross-reference with form.fields (soft-deleted entries still live there with deleted:true)
-        // so we can recover the label.
-        responses.forEach(response => {
-            if (!response.responseData) return;
-            Object.keys(response.responseData).forEach(id => {
-                if (!seenIds.has(id)) {
-                    seenIds.add(id);
-                    const label = allFormFieldsById[id]?.label || `Removed question (${id.slice(0, 6)})`;
-                    columns.push({ id, label, removed: true });
-                }
-            });
+    });
+    responses.forEach(response => {
+        Object.keys(response.responseData || {}).forEach(id => {
+            if (!seenIds.has(id)) {
+                seenIds.add(id);
+                columns.push({ id, label: allFormFieldsById[id]?.label || `Removed question (${id.slice(0, 6)})`, removed: true });
+            }
         });
+    });
+    return columns;
+};
 
-        return columns;
-    }, [form?.fields, responses]);
+const FormResponses = ({ form }) => {
+    const [page, setPage] = useState(1);
+    const pageSize = 25;
+    const { data: responsePage, isLoading: loading, error } = useFormResponses(form?.id, { page, pageSize });
+    const responses = responsePage?.data || [];
+    const pagination = responsePage?.pagination || { page, pageSize, total: 0, totalPages: 1 };
+    const toast = useToast();
+    const [exportProgress, setExportProgress] = useState(null);
+
+    useEffect(() => setPage(1), [form?.id]);
+
+    const allColumns = useMemo(() => buildColumns(form, responses), [form, responses]);
 
     // Keep activeFields as a subset (used for the stat card count)
     const activeFields = useMemo(() => allColumns.filter(c => !c.removed), [allColumns]);
     const removedColumnCount = allColumns.filter(c => c.removed).length;
 
-    const responseCount = responses.length;
+    const responseCount = pagination.total;
     
     // Calculate latest submission date
     let latestSubmission = '—';
@@ -147,24 +127,33 @@ const FormResponses = ({ form }) => {
 
     const questionCount = activeFields.length;
 
-    const handleExportCsv = () => {
-        if (!responses.length) return;
+    const handleExportCsv = async () => {
+        if (!form?.id || pagination.total === 0 || exportProgress) return;
+        const exportPageSize = 100;
+        const allResponses = [];
+        let exportPage = 1;
+        try {
+            while (true) {
+                const result = await getFormResponses(form.id, { page: exportPage, pageSize: exportPageSize });
+                const batch = result?.data || [];
+                allResponses.push(...batch);
+                const total = result?.pagination?.total || allResponses.length;
+                setExportProgress({ loaded: allResponses.length, total });
+                if (allResponses.length >= total || batch.length === 0) break;
+                exportPage += 1;
+            }
+            const exportColumns = buildColumns(form, allResponses);
 
-        // Headers: prefix removed columns with [removed] so analysts immediately know
-        const headers = [
-            'Response ID',
-            'Submitted At',
-            ...allColumns.map(col => {
+            const headers = ['Response ID', 'Submitted At', ...exportColumns.map(col => {
                 const label = col.label.replace(/"/g, '""');
                 return col.removed ? `[removed] ${label}` : label;
-            }),
-        ];
+            })];
         
         // Rows: iterate allColumns so removed-field data is included
-        const rows = responses.map(response => {
+            const rows = allResponses.map(response => {
             const submitted = new Date(response.createdAt || response.submittedAt).toLocaleString();
             
-            const fieldValues = allColumns.map(col => {
+                const fieldValues = exportColumns.map(col => {
                 let val = response.responseData ? response.responseData[col.id] : '';
                 if (val === undefined || val === null) val = '';
                 if (Array.isArray(val)) val = val.join(', ');
@@ -176,19 +165,25 @@ const FormResponses = ({ form }) => {
                 return `"${stringVal}"`;
             });
             
-            return [`"${response.id}"`, `"${submitted}"`, ...fieldValues].join(',');
-        });
+                return [`"${response.id}"`, `"${submitted}"`, ...fieldValues].join(',');
+            });
         
-        const csvContent = [headers.map(h => `"${h}"`).join(','), ...rows].join('\n');
+            const csvContent = [headers.map(h => `"${h}"`).join(','), ...rows].join('\n');
         
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.setAttribute('href', url);
-        link.setAttribute('download', `${form.title || 'Form_Responses'}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `${form.title || 'Form_Responses'}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (exportError) {
+            toast.error(exportError.message || 'Could not export all responses.');
+        } finally {
+            setExportProgress(null);
+        }
     };
 
     if (loading) {
@@ -238,12 +233,13 @@ const FormResponses = ({ form }) => {
                         </div>
                         <button 
                             onClick={handleExportCsv}
+                            disabled={Boolean(exportProgress)}
                             className="flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-[13px] font-bold text-gray-600 shadow-sm transition-all hover:border-gray-300 hover:bg-white hover:text-gray-900"
                         >
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
                             </svg>
-                            Export CSV
+                            {exportProgress ? `Exporting ${exportProgress.loaded}/${exportProgress.total}…` : 'Export all responses'}
                         </button>
                     </div>
 
@@ -275,7 +271,7 @@ const FormResponses = ({ form }) => {
                             <tbody>
                                 {responses.map((response, rIdx) => (
                                     <tr key={response.id} className="border-b border-gray-50 hover:bg-gray-50/80 transition-colors group">
-                                        <td className="px-6 py-4 text-gray-400 text-[13px] font-medium">{rIdx + 1}</td>
+                                        <td className="px-6 py-4 text-gray-400 text-[13px] font-medium">{(pagination.page - 1) * pagination.pageSize + rIdx + 1}</td>
                                         <td className="px-6 py-4 text-gray-500 text-[13px] font-medium whitespace-nowrap">
                                             {new Date(response.createdAt || response.submittedAt).toLocaleString(undefined, { 
                                                 year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
@@ -302,6 +298,7 @@ const FormResponses = ({ form }) => {
                             </tbody>
                         </table>
                     </div>
+                    {pagination.totalPages > 1 && <div className="m-4 mt-0"><PagePagination pagination={pagination} itemLabel="responses" onPageChange={setPage} /></div>}
                 </div>
             ) : (
                 /* Empty State */

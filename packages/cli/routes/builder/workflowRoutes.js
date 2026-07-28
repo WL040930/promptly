@@ -2,7 +2,7 @@ import { Router } from 'express';
 import asyncHandler from '../../utils/asyncHandler.js';
 import { requireAuth } from '../../middleware/authMiddleware.js';
 import { 
-    getWorkflows, getWorkflow, createWorkflow, updateWorkflow, deleteWorkflow, triggerWorkflow, triggerProductionWorkflow,
+    getWorkflows, getWorkflowListPage, getWorkflow, createWorkflow, updateWorkflow, deleteWorkflow, triggerWorkflow, triggerProductionWorkflow, getWorkflowVersion,
     getWorkflowVersions, restoreWorkflowVersion, publishWorkflow, pauseWorkflow
 } from '../../controllers/builder/workflowController.js';
 import { getWorkflowAIChat, clearWorkflowAIChat, resetWorkflowAIContext, submitWorkflowAITurn, decideWorkflowAIProposal } from '../../controllers/builder/workflowAIController.js';
@@ -12,6 +12,7 @@ const router = Router();
 router.use(requireAuth);
 
 router.get('/', asyncHandler(getWorkflows));
+router.get('/list', asyncHandler(getWorkflowListPage));
 router.get('/:id', asyncHandler(getWorkflow));
 router.post('/', asyncHandler(createWorkflow));
 router.put('/:id', asyncHandler(updateWorkflow));
@@ -28,6 +29,7 @@ router.post('/:id/ai-proposals/:messageId/decision', decideWorkflowAIProposal);
 
 // Versioning routes
 router.get('/:id/versions', asyncHandler(getWorkflowVersions));
+router.get('/:id/versions/:versionId', asyncHandler(getWorkflowVersion));
 router.post('/:id/versions/:versionId/restore', asyncHandler(restoreWorkflowVersion));
 
 export default router;

@@ -1,11 +1,10 @@
-import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { Suspense, lazy, useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { X, Sliders } from 'lucide-react';
-import WorkflowCanvas from './components/canvas/WorkflowCanvas';
 import PropertyInspector from './components/panels/PropertyInspector';
-import WorkflowAIAssistant from './components/sidebars/WorkflowAIAssistant.jsx';
 import NodeLibrarySidebar from './components/sidebars/NodeLibrarySidebar';
 import BuilderToolbar from './components/layout/BuilderToolbar';
 import OverviewModal from './overview/OverviewModal';
@@ -22,6 +21,10 @@ import { useToast } from '../context/ToastContext.jsx';
 import ConfirmModal from '../components/modals/ConfirmModal.jsx';
 import { cloneWorkflowNodeForPaste } from './utils/nodeClipboard.js';
 import { WORKFLOW_MODAL_LAYERS } from './modalLayers.js';
+import { createDebouncedSaveQueue } from '../utils/formAutosave.js';
+
+const WorkflowCanvas = lazy(() => import('./components/canvas/WorkflowCanvas'));
+const WorkflowAIAssistant = lazy(() => import('./components/sidebars/WorkflowAIAssistant.jsx'));
 
 function NodeConfigModal({ isOpen, onClose, activeNode, onUpdateNode, onTestWorkflow, nodes, edges }) {
     const modalRef = useRef(null);
@@ -86,8 +89,14 @@ function NodeConfigModal({ isOpen, onClose, activeNode, onUpdateNode, onTestWork
 function HistoryDrawer({ isOpen, onClose, workflowId, currentWorkflow }) {
     const drawerRef = useRef(null);
     const backdropRef = useRef(null);
+    const [isMounted, setIsMounted] = useState(isOpen);
+
+    useEffect(() => {
+        if (isOpen) setIsMounted(true);
+    }, [isOpen]);
 
     useGSAP(() => {
+        if (!isMounted) return;
         const drawer = drawerRef.current;
         const backdrop = backdropRef.current;
         if (!drawer || !backdrop) return;
@@ -104,10 +113,12 @@ function HistoryDrawer({ isOpen, onClose, workflowId, currentWorkflow }) {
                 .to(drawer, { xPercent: 0, duration, ease }, 0);
         } else {
             gsap.timeline({ defaults: { overwrite: 'auto' } })
-                .to(drawer, { xPercent: 100, autoAlpha: 0, duration, ease: 'power2.in' })
+                .to(drawer, { xPercent: 100, autoAlpha: 0, duration, ease: 'power2.in', onComplete: () => setIsMounted(false) })
                 .to(backdrop, { autoAlpha: 0, duration: duration * 0.8, ease: 'power2.in' }, 0);
         }
-    }, { dependencies: [isOpen], revertOnUpdate: true });
+    }, { dependencies: [isOpen, isMounted], revertOnUpdate: true });
+
+    if (!isMounted) return null;
 
     return (
         <>
@@ -154,6 +165,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     const publishWorkflowMutation = usePublishWorkflow();
     const pauseWorkflowMutation = usePauseWorkflow();
     const toast = useToast();
+    const queryClient = useQueryClient();
 
     // Only show skeleton on initial load (no data yet), not on background refetches
     const loading = isActiveWorkflowPending && !activeWorkflowData;
@@ -172,7 +184,12 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     const wasBuilderRoute = useRef(false);
     const workflowRevisionRef = useRef(null);
     const workflowRevisionIdRef = useRef(null);
-    const pendingWorkflowSaveRef = useRef(Promise.resolve(null));
+    const workflowSaveQueueRef = useRef(null);
+    const updateWorkflowMutationRef = useRef(updateWorkflowMutation.mutateAsync);
+
+    useEffect(() => {
+        updateWorkflowMutationRef.current = updateWorkflowMutation.mutateAsync;
+    }, [updateWorkflowMutation.mutateAsync]);
 
     useEffect(() => {
         setViewMode(route?.editor === 'ai' ? 'ai' : 'canvas');
@@ -182,7 +199,6 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
         if (!activeWorkflowId) {
             workflowRevisionIdRef.current = null;
             workflowRevisionRef.current = null;
-            pendingWorkflowSaveRef.current = Promise.resolve(null);
             return;
         }
         if (workflowRevisionIdRef.current !== activeWorkflowId) {
@@ -196,6 +212,35 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
             workflowRevisionRef.current = serverRevision;
         }
     }, [activeWorkflowId, activeWorkflowData?.revision]);
+
+    useEffect(() => {
+        if (!activeWorkflowId) {
+            workflowSaveQueueRef.current = null;
+            return undefined;
+        }
+
+        const queue = createDebouncedSaveQueue({
+            delay: 650,
+            save: async updatedFields => {
+                const data = { ...updatedFields };
+                if ((updatedFields.nodes || updatedFields.edges)
+                    && workflowRevisionRef.current !== null
+                    && workflowRevisionRef.current !== undefined) {
+                    data.expectedRevision = workflowRevisionRef.current;
+                }
+                const result = await updateWorkflowMutationRef.current({ id: activeWorkflowId, data });
+                if (result?.revision !== undefined && result?.revision !== null) {
+                    workflowRevisionRef.current = result.revision;
+                }
+                return result;
+            }
+        });
+        workflowSaveQueueRef.current = queue;
+        return () => {
+            void queue.flush();
+            if (workflowSaveQueueRef.current === queue) workflowSaveQueueRef.current = null;
+        };
+    }, [activeWorkflowId]);
 
     // The builder temporarily collapses the global sidebar, then restores the
     // state the user had before entering it.
@@ -279,25 +324,17 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
             takeSnapshot({ nodes, edges });
         }
 
-        const save = async () => {
-            const data = { ...updatedFields };
-            if ((updatedFields.nodes || updatedFields.edges)
-                && workflowRevisionRef.current !== null
-                && workflowRevisionRef.current !== undefined) {
-                data.expectedRevision = workflowRevisionRef.current;
-            }
-            const result = await updateWorkflowMutation.mutateAsync({ id: activeWorkflowId, data });
-            if (result?.revision !== undefined && result?.revision !== null) {
-                workflowRevisionRef.current = result.revision;
-            }
-            return result;
-        };
-        const request = pendingWorkflowSaveRef.current.catch(() => null).then(save);
-        pendingWorkflowSaveRef.current = request.catch(() => null);
-        return request;
-    }, [activeWorkflowId, updateWorkflowMutation, nodes, edges, takeSnapshot]);
+        // Keep the editor responsive immediately, then persist one latest
+        // graph snapshot after the user pauses. The queue is single-flight so
+        // a high-latency database cannot reorder writes or build a backlog.
+        queryClient.setQueryData(['workflows', activeWorkflowId], current =>
+            current ? { ...current, ...updatedFields } : current
+        );
+        workflowSaveQueueRef.current?.schedule(updatedFields);
+        return Promise.resolve(null);
+    }, [activeWorkflowId, queryClient, nodes, edges, takeSnapshot]);
 
-    const flushPendingWorkflowSave = useCallback(() => pendingWorkflowSaveRef.current, []);
+    const flushPendingWorkflowSave = useCallback(() => workflowSaveQueueRef.current?.flush() || Promise.resolve(null), []);
 
     const publishWorkflow = useCallback(async ({ closeConfirmOnSuccess = false } = {}) => {
         if (!activeWorkflowId) return;
@@ -587,7 +624,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     }, []);
 
     if (loading) {
-        return <BuilderLoadingSkeleton />;
+        return <BuilderLoadingSkeleton mode={viewMode} />;
     }
 
     // ── Builder view ─────────────────────────────────────────────────────────
@@ -641,20 +678,24 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
 
                 <div className="flex-1 p-0 overflow-hidden flex flex-col bg-slate-50 relative">
                     {viewMode === 'canvas' ? (
-                        <WorkflowCanvas
-                            initialNodes={nodes}
-                            initialEdges={edges}
-                            activeNodeId={activeNodeId}
-                            onNodeClick={handleNodeClick}
-                            onAddNode={handleAddNode}
-                            onPasteNode={handlePasteNode}
-                            onNodesChangeCallback={handleNodesChange}
-                            onEdgesChangeCallback={handleEdgesChange}
-                            onEdgeDelete={handleEdgeDelete}
-                            draggedNode={draggedNode}
-                        />
+                        <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-slate-500">Loading visual editor…</div>}>
+                            <WorkflowCanvas
+                                initialNodes={nodes}
+                                initialEdges={edges}
+                                activeNodeId={activeNodeId}
+                                onNodeClick={handleNodeClick}
+                                onAddNode={handleAddNode}
+                                onPasteNode={handlePasteNode}
+                                onNodesChangeCallback={handleNodesChange}
+                                onEdgesChangeCallback={handleEdgesChange}
+                                onEdgeDelete={handleEdgeDelete}
+                                draggedNode={draggedNode}
+                            />
+                        </Suspense>
                     ) : (
-                        <WorkflowAIAssistant workflow={activeWorkflow} onBeforeSend={flushPendingWorkflowSave} initialPrompt={initialAIPrompt} />
+                        <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-slate-500">Loading AI editor…</div>}>
+                            <WorkflowAIAssistant workflow={activeWorkflow} onBeforeSend={flushPendingWorkflowSave} initialPrompt={initialAIPrompt} />
+                        </Suspense>
                     )}
                 </div>
             </main>

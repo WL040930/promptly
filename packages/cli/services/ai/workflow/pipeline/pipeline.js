@@ -223,6 +223,7 @@ export const generateWorkflowTurn = async ({
     usage = plannerResult.usage;
     let plan = plannerResult.call.value;
     let inspectedFormSchema = null;
+    let resolvedFormSchema = formSchema;
     let formLookupUsed = false;
 
     if (plan.type === 'inspect_form') {
@@ -249,6 +250,11 @@ export const generateWorkflowTurn = async ({
                 tokenUsage: { ...usage, requestCalls: budget.calls }
             };
         }
+
+        // A lookup can select the form that the worker is about to attach to
+        // a new workflow. Keep that trusted schema for the rest of this turn,
+        // so it can use semantic field tokens before the trigger has an ID.
+        resolvedFormSchema = inspectedFormSchema;
 
         await recordAiDiagnostic({
             event: 'workflow_form_context_loaded',
@@ -342,7 +348,7 @@ export const generateWorkflowTurn = async ({
                     requirements: plan.requirements,
                     capabilities,
                     resourceContext,
-                    formSchema,
+                    formSchema: resolvedFormSchema,
                     priorResponse: previousResponse,
                     repairIssues
                 }),
@@ -367,7 +373,7 @@ export const generateWorkflowTurn = async ({
                 operations: workerCall.value.operations,
                 specs,
                 capabilities,
-                formSchema,
+                formSchema: resolvedFormSchema,
                 formLoader,
                 userId,
                 resourceContext,

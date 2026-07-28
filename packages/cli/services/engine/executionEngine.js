@@ -5,6 +5,7 @@ import NodeRegistry from '../../utils/NodeRegistry.js';
 import { NodeFactory } from '../../../nodes/NodeFactory.js';
 import { validateWorkflow } from './workflowValidator.js';
 import { buildExecutionGraph, mergeExecutionResult, selectOutgoingEdges } from './executionGraph.js';
+import { recordTerminalRunMetric } from './dashboardMetricsService.js';
 
 const validationError = issues => new Error(
     `Workflow validation failed: ${issues.map(issue => `${issue.path}: ${issue.message}`).join('; ')}`
@@ -71,9 +72,12 @@ const persistLog = async ({ run, ...data }) => {
             ...payload,
             completedAt: ['succeeded', 'failed'].includes(payload.status) ? new Date() : null
         });
+        if (['succeeded', 'failed'].includes(payload.status)) await recordTerminalRunMetric(run.id);
         return run;
     }
-    return AutomationRun.create(payload);
+    const created = await AutomationRun.create(payload);
+    if (['succeeded', 'failed'].includes(payload.status)) await recordTerminalRunMetric(created.id);
+    return created;
 };
 
 const createContinuation = async ({ run, node, suspension }) => {

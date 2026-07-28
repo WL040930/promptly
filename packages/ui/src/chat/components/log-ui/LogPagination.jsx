@@ -1,16 +1,14 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 const LogPagination = ({ pagination, onPageChange }) => {
-    if (!pagination || pagination.totalPages <= 1) return null;
+    if (!pagination || (!pagination.hasNextPage && !pagination.hasPreviousPage)) return null;
 
-    const { page, pageSize, total, totalPages, hasNextPage, hasPreviousPage } = pagination;
-    const firstResult = (page - 1) * pageSize + 1;
-    const lastResult = Math.min(page * pageSize, total);
+    const { page, hasNextPage, hasPreviousPage } = pagination;
 
     return (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
             <span className="text-xs font-medium text-slate-500">
-                Showing {firstResult}-{lastResult} of {total} runs
+                Showing run history page {page}
             </span>
             <div className="flex items-center gap-2">
                 <button
@@ -24,7 +22,7 @@ const LogPagination = ({ pagination, onPageChange }) => {
                     <ChevronLeft size={16} aria-hidden="true" />
                 </button>
                 <span className="text-sm font-medium text-slate-700 min-w-24 text-center">
-                    Page {page} of {totalPages}
+                    Page {page}
                 </span>
                 <button
                     type="button"

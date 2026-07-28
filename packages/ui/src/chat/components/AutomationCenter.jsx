@@ -27,13 +27,15 @@ import {
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../../context/ToastContext.jsx';
-import { useCreateWorkflow, useDeleteWorkflow, usePauseWorkflow, usePublishWorkflow, useRestoreWorkflowVersion, useWorkflow, useWorkflowVersions, useWorkflows } from '../../api/hooks/useWorkflows.js';
+import { useCreateWorkflow, useDeleteWorkflow, usePauseWorkflow, usePublishWorkflow, useRestoreWorkflowVersion, useWorkflow, useWorkflowListPage, useWorkflowVersions } from '../../api/hooks/useWorkflows.js';
+import { DEFAULT_AUTOMATION_NAME } from '../../../../shared/automationDefaults.js';
 import { useRunWorkflow } from '../../api/hooks/useRunWorkflow.js';
 import { useExecutionLogs } from '../../api/hooks/useLogs.js';
 import { useDashboardMetrics } from '../../api/hooks/useDashboard.js';
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
+import PagePagination from '../../components/ui/PagePagination.jsx';
 import TestRunModal from '../../builder/components/modals/TestRunModal.jsx';
-import { navigate } from '../../utils/router.js';
+import { navigate, navigateTo } from '../../utils/router.js';
 import { getIconByName } from '../../builder/utils/iconMap.jsx';
 
 const STATUS_FILTERS = ['All', 'Active', 'Draft', 'Paused'];
@@ -100,19 +102,6 @@ const getHealthStyles = (health) => {
     return 'bg-slate-50 text-slate-500 border-slate-200';
 };
 
-const buildChatUrl = (workflowId, prompt = '') => {
-    if (workflowId) {
-        const params = new URLSearchParams({ editor: 'ai' });
-        if (prompt) params.set('prompt', prompt);
-        return `/app/automations/${workflowId}/build?${params.toString()}`;
-    }
-    const params = new URLSearchParams();
-    if (workflowId) params.set('automationId', workflowId);
-    if (prompt) params.set('prompt', prompt);
-    const query = params.toString();
-    return `/app/assistant${query ? `?${query}` : ''}`;
-};
-
 function StatCard({ label, value, detail, icon: Icon, tone = 'slate' }) {
     const tones = {
         slate: 'bg-slate-50 text-slate-600',
@@ -134,7 +123,7 @@ function StatCard({ label, value, detail, icon: Icon, tone = 'slate' }) {
     );
 }
 
-function EmptyState({ onCreateWithAI, onBuildManually }) {
+function EmptyState({ onCreateWithAI, onBuildManually, isCreating = false }) {
     const starters = [
         'Follow up after a form submission',
         'Send a notification when something happens',
@@ -150,12 +139,12 @@ function EmptyState({ onCreateWithAI, onBuildManually }) {
             <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-slate-500">Describe the result you want. Promptly will prepare a workflow for your review before anything is changed.</p>
             <div className="mx-auto mt-6 grid max-w-3xl gap-2 text-left sm:grid-cols-2">
                 {starters.map(starter => (
-                    <button key={starter} type="button" onClick={() => onCreateWithAI(starter)} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:text-indigo-700">
+                    <button key={starter} type="button" onClick={() => onCreateWithAI(starter)} disabled={isCreating} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:text-indigo-700 disabled:cursor-wait disabled:opacity-60">
                         <span>{starter}</span><ChevronRight size={16} className="shrink-0 text-slate-400" />
                     </button>
                 ))}
             </div>
-            <button type="button" onClick={onBuildManually} className="mt-6 text-sm font-semibold text-slate-500 underline decoration-slate-300 underline-offset-4 hover:text-slate-800">Prefer building visually? Open the workflow builder.</button>
+            <button type="button" onClick={onBuildManually} disabled={isCreating} className="mt-6 text-sm font-semibold text-slate-500 underline decoration-slate-300 underline-offset-4 hover:text-slate-800 disabled:cursor-wait disabled:opacity-60">Prefer building visually? Open the workflow builder.</button>
         </div>
     );
 }
@@ -167,7 +156,8 @@ function WorkflowDetailDrawer({ workflowId, onClose, onClosed, isClosing = false
     const [versionToRestore, setVersionToRestore] = useState(null);
     const { data: workflow, isPending } = useWorkflow(workflowId);
     const { data: logResponse, isFetching: isLogsFetching } = useExecutionLogs({ workflowId, page: 1, pageSize: 5 });
-    const { data: versions = [], isFetching: isVersionsFetching } = useWorkflowVersions(workflowId);
+    const { data: versionPage, isFetching: isVersionsFetching } = useWorkflowVersions(workflowId, { source: 'release', pageSize: 8 });
+    const versions = versionPage?.data || [];
     const restoreVersionMutation = useRestoreWorkflowVersion();
     const logs = logResponse?.data || [];
     const latestFailure = logs.find(log => String(log.status || '').toLowerCase() === 'failed');
@@ -260,7 +250,7 @@ function WorkflowDetailDrawer({ workflowId, onClose, onClosed, isClosing = false
 
                         <div className="rounded-2xl border border-slate-200 bg-white">
                             <button type="button" onClick={() => setShowVersions(value => !value)} className="flex w-full items-center justify-between p-4 text-left"><span className="flex items-center gap-2 text-sm font-bold text-slate-900"><HistoryIcon />Version history</span><ChevronRight size={16} className={`text-slate-400 transition-transform ${showVersions ? 'rotate-90' : ''}`} /></button>
-                            {showVersions && <div className="border-t border-slate-100 px-4 pb-4 pt-2">{isVersionsFetching ? <p className="py-3 text-xs text-slate-500">Loading releases…</p> : versions.filter(version => version.source === 'release').length === 0 ? <p className="py-3 text-xs text-slate-500">No published releases yet.</p> : versions.filter(version => version.source === 'release').slice(0, 8).map(version => <div key={version.id} className="flex items-center justify-between gap-3 border-b border-slate-100 py-3 last:border-0"><div><p className="text-xs font-bold text-slate-700">Release {version.versionNumber}</p><p className="mt-0.5 text-[11px] text-slate-400">Published {formatRelative(version.createdAt)}</p></div><button type="button" onClick={() => setVersionToRestore(version)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-bold text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700">Restore to draft</button></div>)} </div>}
+                            {showVersions && <div className="border-t border-slate-100 px-4 pb-4 pt-2">{isVersionsFetching ? <p className="py-3 text-xs text-slate-500">Loading releases…</p> : versions.length === 0 ? <p className="py-3 text-xs text-slate-500">No published releases yet.</p> : versions.map(version => <div key={version.id} className="flex items-center justify-between gap-3 border-b border-slate-100 py-3 last:border-0"><div><p className="text-xs font-bold text-slate-700">Release {version.versionNumber}</p><p className="mt-0.5 text-[11px] text-slate-400">Published {formatRelative(version.createdAt)}</p></div><button type="button" onClick={() => setVersionToRestore(version)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-bold text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700">Restore to draft</button></div>)} </div>}
                         </div>
                     </div>
                 )}
@@ -306,6 +296,7 @@ export default function AutomationCenter() {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('All');
     const [healthFilter, setHealthFilter] = useState('All');
+    const [page, setPage] = useState(1);
     const [selectedWorkflowId, setSelectedWorkflowId] = useState(null);
     const [isClosingWorkflow, setIsClosingWorkflow] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -314,11 +305,13 @@ export default function AutomationCenter() {
     const [runWorkflow, setRunWorkflow] = useState(null);
     const [runType, setRunType] = useState('test');
 
-    const { data: workflows = [], isPending, isFetching, isError, refetch } = useWorkflows();
+    const workflowListQuery = useWorkflowListPage({ page, pageSize: 10, search, status: statusFilter, health: healthFilter });
+    const { data: workflowList = {}, isPending, isFetching, isError, refetch } = workflowListQuery;
+    const workflows = workflowList.items || [];
+    const pagination = workflowList.pagination || { page, pageSize: 10, total: 0, totalPages: 1 };
+    const summary = workflowList.summary || { active: 0, draft: 0, needsAttention: 0 };
     const { data: metrics } = useDashboardMetrics();
     const { data: runWorkflowDetails } = useWorkflow(runWorkflow?.id);
-    const { data: logsResponse } = useExecutionLogs({ page: 1, pageSize: 100 });
-    const allLogs = logsResponse?.data || [];
     const createWorkflowMutation = useCreateWorkflow();
     const publishWorkflowMutation = usePublishWorkflow();
     const pauseWorkflowMutation = usePauseWorkflow();
@@ -348,25 +341,37 @@ export default function AutomationCenter() {
         );
     }, { scope: drawerOverlayRef, dependencies: [selectedWorkflowId, isClosingWorkflow], revertOnUpdate: true });
 
-    const rows = useMemo(() => workflows.map(workflow => ({
-        ...workflow,
-        health: getHealth(workflow, allLogs),
-        latestLog: getLatestLog(workflow, allLogs)
-    })), [workflows, allLogs]);
-    const filteredRows = useMemo(() => rows.filter(workflow => {
-        const matchesSearch = !search.trim() || workflow.name?.toLowerCase().includes(search.trim().toLowerCase());
-        const lifecycle = workflow.isActive ? 'Active' : (workflow.status === 'Paused' ? 'Paused' : 'Draft');
-        return matchesSearch && (statusFilter === 'All' || lifecycle === statusFilter) && (healthFilter === 'All' || workflow.health === healthFilter);
-    }), [rows, search, statusFilter, healthFilter]);
+    const rows = workflows;
+    const filteredRows = rows;
+    const activeCount = summary.active;
+    const draftCount = summary.draft;
+    const attentionCount = summary.needsAttention;
 
-    const activeCount = workflows.filter(workflow => workflow.isActive).length;
-    const draftCount = workflows.length - activeCount;
-    const attentionCount = rows.filter(workflow => workflow.health === 'Needs attention').length;
-
-    const openCreateAI = (prompt = '') => navigate(buildChatUrl(null, prompt));
-    const openWorkflowAI = (workflowId, prompt) => navigate(buildChatUrl(workflowId, prompt));
+    const openCreateAI = async (prompt = '') => {
+        if (createWorkflowMutation.isPending) return;
+        try {
+            const workflow = await createWorkflowMutation.mutateAsync({
+                name: DEFAULT_AUTOMATION_NAME,
+                lifecycleStatus: 'draft',
+                status: 'Draft',
+                isActive: false,
+                nodes: [],
+                edges: []
+            });
+            toast.success('Automation created. Opening AI editor…');
+            navigateTo({
+                page: 'automation-build',
+                automationId: workflow.id,
+                editor: 'ai',
+                ...(prompt ? { prompt } : {})
+            });
+        } catch (error) {
+            toast.error(error.message || 'Failed to create automation.');
+        }
+    };
+    const openWorkflowAI = (workflowId, prompt = '') => navigateTo({ page: 'automation-build', automationId: workflowId, editor: 'ai', ...(prompt ? { prompt } : {}) });
     const createManually = () => {
-        createWorkflowMutation.mutate({ name: 'New Automation', status: 'Saved', isActive: false, iconColor: 'text-indigo-600', iconBg: 'bg-indigo-100', nodes: [], edges: [] }, {
+        createWorkflowMutation.mutate({ name: DEFAULT_AUTOMATION_NAME, status: 'Saved', isActive: false, iconColor: 'text-indigo-600', iconBg: 'bg-indigo-100', nodes: [], edges: [] }, {
             onSuccess: workflow => {
                 toast.success('Automation created. Opening builder…');
                 navigate(`/app/automations/${workflow.id}/build?editor=visual`);
@@ -397,6 +402,7 @@ export default function AutomationCenter() {
         publishWorkflowMutation.mutate(workflow.id, {
             onSuccess: () => {
                 toast.success('Automation published and activated.');
+                void refetch();
                 if (closeConfirmOnSuccess) setWorkflowToPublish(null);
             },
             onError: error => toast.error(getWorkflowErrorMessage(error))
@@ -413,14 +419,14 @@ export default function AutomationCenter() {
             return;
         }
         pauseWorkflowMutation.mutate(workflow.id, {
-            onSuccess: () => toast.success('Automation paused.'),
+            onSuccess: () => { toast.success('Automation paused.'); void refetch(); },
             onError: error => toast.error(getWorkflowErrorMessage(error))
         });
     };
     const confirmDelete = () => {
         if (!workflowToDelete) return;
         deleteWorkflowMutation.mutate(workflowToDelete.id, {
-            onSuccess: () => { setWorkflowToDelete(null); setSelectedWorkflowId(null); toast.success('Automation deleted.'); },
+            onSuccess: () => { setWorkflowToDelete(null); setSelectedWorkflowId(null); toast.success('Automation deleted.'); void refetch(); },
             onError: error => toast.error(error.message || 'Could not delete automation.')
         });
     };
@@ -448,7 +454,7 @@ export default function AutomationCenter() {
                     <div className="mx-auto flex max-w-7xl flex-col gap-6">
                         <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                             <div><p className="eyebrow">Automation center</p><h1 className="mt-1 font-display text-3xl font-bold tracking-tight text-slate-900">Your automations</h1><p className="mt-2 max-w-2xl text-sm text-slate-500">Create, monitor and improve the processes that run your work.</p></div>
-                            <div className="flex flex-wrap gap-2"><button type="button" onClick={() => openCreateAI()} className="inline-flex items-center gap-2 rounded-xl bg-[#5b4ee8] px-4 py-2.5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(91,78,232,0.2)] hover:bg-[#4e42d0]"><Sparkles size={16} />Create with AI</button><button type="button" onClick={createManually} disabled={createWorkflowMutation.isPending} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm hover:border-[#c9c4ff] hover:bg-white disabled:opacity-60"><Plus size={16} />Build manually</button></div>
+                            <div className="flex flex-wrap gap-2"><button type="button" onClick={() => openCreateAI()} disabled={createWorkflowMutation.isPending} className="inline-flex items-center gap-2 rounded-xl bg-[#5b4ee8] px-4 py-2.5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(91,78,232,0.2)] hover:bg-[#4e42d0] disabled:cursor-wait disabled:opacity-60">{createWorkflowMutation.isPending ? <RefreshCw size={16} className="animate-spin" /> : <Sparkles size={16} />}{createWorkflowMutation.isPending ? 'Creating…' : 'Create with AI'}</button><button type="button" onClick={createManually} disabled={createWorkflowMutation.isPending} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm hover:border-[#c9c4ff] hover:bg-white disabled:opacity-60"><Plus size={16} />Build manually</button></div>
                         </header>
 
                         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -460,8 +466,8 @@ export default function AutomationCenter() {
 
                         <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                             <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-                                <div className="relative min-w-0 flex-1"><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search automations…" className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-slate-800 outline-none transition-colors focus:border-indigo-400" /></div>
-                                <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 sm:flex sm:flex-wrap sm:items-center"><Filter size={15} className="row-span-3 self-center text-slate-400 sm:row-span-1" /><FilterSelect value={statusFilter} onChange={setStatusFilter} options={STATUS_FILTERS} /><FilterSelect value={healthFilter} onChange={setHealthFilter} options={HEALTH_FILTERS} /><button type="button" onClick={refreshAutomationList} disabled={isRefreshing || isFetching} aria-label="Refresh automations" aria-busy={isRefreshing || isFetching} className="group inline-flex h-11 w-full items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition duration-200 hover:bg-slate-50 hover:text-indigo-600 active:scale-95 disabled:cursor-wait disabled:opacity-70 sm:w-11" title="Refresh automations"><RefreshCw size={16} className={`transition-transform duration-500 ${isRefreshing || isFetching ? 'animate-spin' : 'group-hover:rotate-180'}`} /></button></div>
+                                <div className="relative min-w-0 flex-1"><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} placeholder="Search automations…" className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-slate-800 outline-none transition-colors focus:border-indigo-400" /></div>
+                                <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 sm:flex sm:flex-wrap sm:items-center"><Filter size={15} className="row-span-3 self-center text-slate-400 sm:row-span-1" /><FilterSelect value={statusFilter} onChange={value => { setStatusFilter(value); setPage(1); }} options={STATUS_FILTERS} /><FilterSelect value={healthFilter} onChange={value => { setHealthFilter(value); setPage(1); }} options={HEALTH_FILTERS} /><button type="button" onClick={refreshAutomationList} disabled={isRefreshing || isFetching} aria-label="Refresh automations" aria-busy={isRefreshing || isFetching} className="group inline-flex h-11 w-full items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition duration-200 hover:bg-slate-50 hover:text-indigo-600 active:scale-95 disabled:cursor-wait disabled:opacity-70 sm:w-11" title="Refresh automations"><RefreshCw size={16} className={`transition-transform duration-500 ${isRefreshing || isFetching ? 'animate-spin' : 'group-hover:rotate-180'}`} /></button></div>
                             </div>
                         </section>
 
@@ -473,17 +479,17 @@ export default function AutomationCenter() {
                         ) : isPending ? (
                             <div className="space-y-3">{[1, 2, 3].map(item => <div key={item} className="h-20 animate-pulse rounded-2xl bg-white" />)}</div>
                         ) : workflows.length === 0 ? (
-                            <EmptyState onCreateWithAI={openCreateAI} onBuildManually={createManually} />
+                            <EmptyState onCreateWithAI={openCreateAI} onBuildManually={createManually} isCreating={createWorkflowMutation.isPending} />
                         ) : filteredRows.length === 0 ? (
                             <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 p-12 text-center">
                                 <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
                                     <Search className="h-6 w-6 text-slate-400" />
                                 </div>
                                 <h3 className="text-sm font-semibold text-slate-900">No automations match these filters.</h3>
-                                <button type="button" onClick={() => { setSearch(''); setStatusFilter('All'); setHealthFilter('All'); }} className="mt-4 text-sm font-semibold text-indigo-600 hover:text-indigo-700">Clear filters</button>
+                                <button type="button" onClick={() => { setSearch(''); setStatusFilter('All'); setHealthFilter('All'); setPage(1); }} className="mt-4 text-sm font-semibold text-indigo-600 hover:text-indigo-700">Clear filters</button>
                             </div>
                         ) : (
-                            <WorkflowTable rows={filteredRows} onSelect={openWorkflowDetails} onRun={workflow => openRun(workflow, 'test')} onRunLive={workflow => openRun(workflow, 'production')} onOpenBuilder={id => navigate(`/app/automations/${id}/build?editor=visual`)} onAskAI={openWorkflowAI} onDelete={setWorkflowToDelete} onToggle={toggleWorkflow} />
+                            <><WorkflowTable rows={filteredRows} onSelect={openWorkflowDetails} onRun={workflow => openRun(workflow, 'test')} onRunLive={workflow => openRun(workflow, 'production')} onOpenBuilder={id => navigate(`/app/automations/${id}/build?editor=visual`)} onAskAI={openWorkflowAI} onDelete={setWorkflowToDelete} onToggle={toggleWorkflow} /><PagePagination pagination={pagination} itemLabel="automations" onPageChange={setPage} /></>
                         )}
                     </div>
                 </main>
@@ -520,7 +526,7 @@ function WorkflowTable({ rows, onSelect, onRun, onRunLive, onOpenBuilder, onAskA
 }
 
 function WorkflowRow({ workflow, onSelect, onRun, onRunLive, onOpenBuilder, onAskAI, onDelete, onToggle }) {
-    const latestLog = workflow.latestLog;
+    const latestLog = workflow.latestRun || workflow.latestLog;
     const status = workflow.isActive ? 'Active' : (workflow.status === 'Paused' ? 'Paused' : 'Draft');
     const productionIssue = getProductionIssue(workflow);
     const activationIssue = getActivationIssue(workflow);

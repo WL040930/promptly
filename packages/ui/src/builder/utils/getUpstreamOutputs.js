@@ -55,16 +55,18 @@ function nestedDescription(parentLabel, schema) {
   return schema?.description || `Nested field from ${parentLabel}`;
 }
 
-function addNestedProperties(vars, { schema, basePath, baseLabel, nodeId, nodeTitle, depth = 0, parentPath = null, source, allowPlainObject = false }) {
+function addNestedProperties(vars, { schema, basePath, runtimeBasePath, baseLabel, nodeId, nodeTitle, depth = 0, parentPath = null, source, allowPlainObject = false }) {
   const entries = getPropertyEntries(schema, allowPlainObject);
 
   for (const [key, childSchema] of entries) {
     const label = childSchema?.label || childSchema?.title || key;
     const path = `${basePath}.${key}`;
+    const runtimePath = `${runtimeBasePath}.${key}`;
     const type = inferSchemaType(childSchema);
 
     vars.push({
       path,
+      runtimePath,
       label,
       type,
       description: nestedDescription(baseLabel, childSchema),
@@ -79,6 +81,7 @@ function addNestedProperties(vars, { schema, basePath, baseLabel, nodeId, nodeTi
     addNestedProperties(vars, {
       schema: childSchema,
       basePath: path,
+      runtimeBasePath: runtimePath,
       baseLabel: label,
       nodeId,
       nodeTitle,
@@ -92,10 +95,12 @@ function addNestedProperties(vars, { schema, basePath, baseLabel, nodeId, nodeTi
 
 function addOutputVariable(vars, { nodeId, nodeTitle, output, source }) {
   const path = `${nodeTitle}.${output.name}`;
+  const runtimePath = `${nodeId}.${output.name}`;
   const label = output.label || output.name;
 
   vars.push({
     path,
+    runtimePath,
     label,
     type: output.type || 'any',
     description: output.description,
@@ -108,6 +113,7 @@ function addOutputVariable(vars, { nodeId, nodeTitle, output, source }) {
   addNestedProperties(vars, {
     schema: output,
     basePath: path,
+    runtimeBasePath: runtimePath,
     baseLabel: label,
     nodeId,
     nodeTitle,
@@ -126,6 +132,7 @@ function addAiExtractionFields(vars, node, nodeTitle, output) {
   addNestedProperties(vars, {
     schema: extractionSchema,
     basePath: `${nodeTitle}.${output.name}`,
+    runtimeBasePath: `${node.id}.${output.name}`,
     baseLabel: output.label || output.name,
     nodeId: node.id,
     nodeTitle,
@@ -190,6 +197,7 @@ export function getUpstreamOutputs(nodeId, nodes, edges, resolvedFormFields = {}
     // Always expose a `success` field — every node returns it
     vars.push({
       path: `${nodeTitle}.success`,
+      runtimePath: `${id}.success`,
       label: 'Success',
       type: 'boolean',
       nodeId: id,
@@ -211,6 +219,7 @@ export function getUpstreamOutputs(nodeId, nodes, edges, resolvedFormFields = {}
           for (const field of resolved.fields) {
             vars.push({
               path: `${nodeTitle}.fields.${field.id}`,
+              runtimePath: `${id}.fields.${field.id}`,
               label: field.label || field.id,
               type: varTypeForField(field.type),
               description: `"${field.label}" field from "${resolved.form?.title ?? 'form'}"`,
@@ -242,6 +251,7 @@ export function getUpstreamOutputs(nodeId, nodes, edges, resolvedFormFields = {}
     if (schemaOutputs.length === 0) {
       vars.push({
         path: `${nodeTitle}.data`,
+        runtimePath: `${id}.data`,
         label: 'Output Data',
         type: 'object',
         nodeId: id,

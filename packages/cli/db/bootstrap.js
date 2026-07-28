@@ -3,6 +3,7 @@ import '../models/index.js';
 import { ensureDatabaseSchema } from './schema.js';
 import { ensureStorageResources } from './storageProvisioning.js';
 import { ensureDatabaseChangeTriggers } from '../services/triggers/databaseTriggerService.js';
+import { fileURLToPath } from 'node:url';
 
 const removeDuplicateAssetConstraint = async () => {
     await sequelize.query(`
@@ -43,6 +44,7 @@ const needsPostgresSetup = async () => {
                   AND conrelid = 'assistant_threads'::regclass
             ) AS assistant_scope_ready,
             to_regprocedure('promptly_record_database_change()') IS NOT NULL AS change_function_ready,
+            EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') AS trigram_ready,
             (SELECT COUNT(*) FROM pg_trigger
                 WHERE tgname IN (
                     'promptly_forms_change',
@@ -50,6 +52,10 @@ const needsPostgresSetup = async () => {
                     'promptly_automation_runs_change'
                 )
                 AND NOT tgisinternal) = 3 AS change_triggers_ready,
+            to_regclass('public.automations_name_trgm') IS NOT NULL
+                AND to_regclass('public.automation_runs_trigger_trgm') IS NOT NULL
+                AND to_regclass('public.automation_runs_error_trgm') IS NOT NULL
+                AS trigram_indexes_ready,
             NOT EXISTS (
                 SELECT 1 FROM pg_constraint
                 WHERE conname = 'workflow_assets_storageKey_key1'
@@ -60,7 +66,7 @@ const needsPostgresSetup = async () => {
     return !Object.values(state).every(Boolean);
 };
 
-const bootstrap = async () => {
+export const ensureDatabaseReady = async () => {
     await sequelize.authenticate();
     const modelTablesMissing = await hasMissingModelTables();
     const postgresSetupMissing = modelTablesMissing || await needsPostgresSetup();
@@ -81,11 +87,15 @@ const bootstrap = async () => {
     console.log('[DB] Bootstrap complete.');
 };
 
-bootstrap()
-    .catch(error => {
-        console.error('[DB] Bootstrap failed:', error.message);
-        process.exitCode = 1;
-    })
-    .finally(async () => {
-        await sequelize.close();
-    });
+const isDirectInvocation = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+
+if (isDirectInvocation) {
+    ensureDatabaseReady()
+        .catch(error => {
+            console.error('[DB] Bootstrap failed:', error.message);
+            process.exitCode = 1;
+        })
+        .finally(async () => {
+            await sequelize.close();
+        });
+}

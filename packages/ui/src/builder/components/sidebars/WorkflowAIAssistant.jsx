@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import GenericChatWidget from '../../../components/chat/GenericChatWidget.jsx';
 import ClarificationModeSelect from '../../../components/chat/ClarificationModeSelect.jsx';
 import { getAgentProgressLabel } from '../../../../../shared/agentProgress.js';
 import { useWorkflowAIAssistant } from '../../hooks/useWorkflowAIAssistant.js';
-import WorkflowDiffPreviewModal from '../modals/WorkflowDiffPreviewModal.jsx';
+
+const WorkflowDiffPreviewModal = lazy(() => import('../modals/WorkflowDiffPreviewModal.jsx'));
 
 const SUGGESTIONS = ['Add an approval step', 'Send an email after submission', 'Add a Slack notification step', 'Change a node configuration'];
 
@@ -41,28 +42,27 @@ export default function WorkflowAIAssistant({ workflow, onBeforeSend, initialPro
                 isClearingChat={assistant.isClearingChat}
                 clearChatLabel="Clear workflow chat"
             />
-            <WorkflowDiffPreviewModal
-                isOpen={!!previewProposal}
-                onClose={() => setPreviewProposal(null)}
-                currentWorkflow={workflow}
-                versionWorkflow={previewProposal}
-                confirmText="Apply Changes"
-                loadingText="Applying…"
-                title="Review workflow changes"
-                description="Compare the current workflow with the proposed changes."
-                isRestoring={!!assistant.acceptingProposalId}
-                onRestore={async () => {
-                    // When the user clicks apply in the preview, we apply the changes
-                    if (previewProposal) {
-                        const message = assistant.messages.find(m => m.id === previewProposal.messageId);
-                        if (message) {
-                            // The handleApply call will set assistant.acceptingProposalId
-                            await assistant.handleApply(message);
-                        }
-                    }
-                    setPreviewProposal(null);
-                }}
-            />
+            {previewProposal && (
+                <Suspense fallback={null}>
+                    <WorkflowDiffPreviewModal
+                        isOpen
+                        onClose={() => setPreviewProposal(null)}
+                        currentWorkflow={workflow}
+                        versionWorkflow={previewProposal}
+                        confirmText="Apply Changes"
+                        loadingText="Applying…"
+                        title="Review workflow changes"
+                        description="Compare the current workflow with the proposed changes."
+                        mode="proposal"
+                        isRestoring={!!assistant.acceptingProposalId}
+                        onRestore={async () => {
+                            const message = assistant.messages.find(m => m.id === previewProposal.messageId);
+                            if (message) await assistant.handleApply(message);
+                            setPreviewProposal(null);
+                        }}
+                    />
+                </Suspense>
+            )}
         </div>
     );
 }

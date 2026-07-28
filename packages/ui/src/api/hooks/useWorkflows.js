@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getWorkflows, getWorkflow, createWorkflow, updateWorkflow, publishWorkflow, pauseWorkflow, deleteWorkflow } from '../backend.js';
+import { getWorkflows, getWorkflowListPage, getWorkflow, createWorkflow, updateWorkflow, publishWorkflow, pauseWorkflow, deleteWorkflow } from '../backend.js';
 
 export const useWorkflows = () => {
     return useQuery({
@@ -7,6 +7,12 @@ export const useWorkflows = () => {
         queryFn: getWorkflows,
     });
 };
+
+export const useWorkflowListPage = ({ page = 1, pageSize = 10, search = '', status = 'All', health = 'All' } = {}) => useQuery({
+    queryKey: ['workflowListPage', { page, pageSize, search, status, health }],
+    queryFn: () => getWorkflowListPage({ page, pageSize, search, status, health }),
+    staleTime: 5 * 1000
+});
 
 export const useWorkflow = (id) => {
     return useQuery({
@@ -68,12 +74,10 @@ export const useUpdateWorkflow = () => {
                 queryClient.setQueryData(['workflows', context.id], context.previousSingle);
             }
         },
-        onSettled: (data, error, variables) => {
-            queryClient.invalidateQueries({ queryKey: ['workflows'] });
-            if (variables?.id) {
-                queryClient.invalidateQueries({ queryKey: ['workflows', variables.id] });
-            }
-        },
+        // The update endpoint returns the complete authoritative workflow.
+        // Refetching here turned every autosave into an extra read (and, for
+        // the list route, an N+1 release-summary query). Cache updates above
+        // already keep active views in sync; conflicts/errors roll back.
     });
 };
 
@@ -115,13 +119,20 @@ export const useDeleteWorkflow = () => {
     });
 };
 
-export const useWorkflowVersions = (workflowId) => {
+export const useWorkflowVersions = (workflowId, { page = 1, pageSize = 20, source = null } = {}) => {
     return useQuery({
-        queryKey: ['workflows', workflowId, 'versions'],
-        queryFn: () => import('../backend.js').then(m => m.getWorkflowVersions(workflowId)),
+        queryKey: ['workflows', workflowId, 'versions', { page, pageSize, source }],
+        queryFn: () => import('../backend.js').then(m => m.getWorkflowVersions(workflowId, { page, pageSize, source })),
         enabled: !!workflowId,
     });
 };
+
+export const useWorkflowVersion = (workflowId, versionId) => useQuery({
+    queryKey: ['workflows', workflowId, 'versions', versionId],
+    queryFn: () => import('../backend.js').then(m => m.getWorkflowVersion(workflowId, versionId)),
+    enabled: Boolean(workflowId && versionId),
+    staleTime: 30 * 1000
+});
 
 
 export const useRestoreWorkflowVersion = () => {

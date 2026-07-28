@@ -16,14 +16,23 @@ const AutomationRun = sequelize.define('AutomationRun', {
     error: { type: DataTypes.TEXT, allowNull: true },
     steps: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
     output: { type: DataTypes.JSONB, allowNull: true },
-    completedAt: { type: DataTypes.DATE, allowNull: true }
+    completedAt: { type: DataTypes.DATE, allowNull: true },
+    metricsRecordedAt: { type: DataTypes.DATE, allowNull: true }
 }, {
     tableName: 'automation_runs',
     timestamps: true,
     indexes: [
         { fields: ['workflowId', 'createdAt'], name: 'automation_runs_workflow_created' },
         { fields: ['status', 'updatedAt'], name: 'automation_runs_status_updated' },
-        { fields: ['userId', 'createdAt'], name: 'automation_runs_user_created' }
+        { fields: ['userId', 'createdAt'], name: 'automation_runs_user_created' },
+        {
+            name: 'automation_runs_user_status_created_id',
+            fields: ['userId', 'status', { name: 'createdAt', order: 'DESC' }, { name: 'id', order: 'DESC' }]
+        },
+        {
+            name: 'automation_runs_user_workflow_created_id',
+            fields: ['userId', 'workflowId', { name: 'createdAt', order: 'DESC' }, { name: 'id', order: 'DESC' }]
+        }
     ]
 });
 

@@ -1,47 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import VariablePickerModal from '../modals/VariablePickerModal';
+import VariableTokenPreview from './VariableTokenPreview.jsx';
 
-/* ─── Token preview — renders {{...}} as colored pills ─────────────────── */
-function TokenPreview({ value, availableVars = [], className, onClick }) {
-  if (!value || typeof value !== 'string') return null;
-  const parts = value.split(/({{[^}]+}})/g);
-  return (
-    <div
-      className={`flex flex-wrap gap-1 items-center min-h-[38px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg cursor-text ${className || ''}`}
-      onClick={onClick}
-    >
-      {parts.length === 1 && parts[0] === '' && (
-        <span className="text-sm text-slate-400 select-none">Click to type or insert variables...</span>
-      )}
-      {parts.map((part, i) => {
-        const match = part.match(/^{{([^}]+)}}$/);
-        if (match) {
-          const path = match[1];
-          const v = availableVars.find(v => v.path === path);
-          const displayLabel = v ? v.label : path;
-
-          return (
-            <span
-              key={i}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 select-none shadow-sm"
-              title={`Raw ID: {{${path}}}`}
-            >
-              <span className="opacity-50 text-[9px]">{'{{'}</span>
-              {displayLabel}
-              <span className="opacity-50 text-[9px]">{'}}'}</span>
-            </span>
-          );
-        }
-        return part ? (
-          <span key={i} className="text-sm text-slate-800 whitespace-pre-wrap">
-            {part}
-          </span>
-        ) : null;
-      })}
-    </div>
-  );
-}
+const TokenPreview = ({ value, availableVars = [], className, onClick }) => (
+  <div
+    className={`flex min-h-[38px] cursor-text flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 ${className || ''}`}
+    onClick={onClick}
+  >
+    {value ? <VariableTokenPreview value={value} availableVars={availableVars} className="text-sm text-slate-800" /> : <span className="select-none text-sm text-slate-400">Click to type or insert variables...</span>}
+  </div>
+);
 
 /* ─── VariableInput ──────────────────────────────────────────────────────── */
 /**

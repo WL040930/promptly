@@ -152,12 +152,12 @@ export default function VariablePickerModal({ isOpen, onClose, onSelect, availab
     if (!customPathTarget) return;
     const cleanPath = customPath.trim();
     if (!/^[\w-]+(\.[\w-]+)*$/.test(cleanPath)) return;
-    onSelect(`${customPathTarget.path}.${cleanPath}`);
+    onSelect(`${customPathTarget.runtimePath || customPathTarget.path}.${cleanPath}`);
     requestClose();
   };
 
-  const handleSelect = (path) => {
-    onSelect(path);
+  const handleSelect = (variable) => {
+    onSelect(variable?.runtimePath || variable?.path || variable);
     requestClose();
   };
 
@@ -203,7 +203,7 @@ export default function VariablePickerModal({ isOpen, onClose, onSelect, availab
 
             <button
               type="button"
-              onClick={() => childExpandable ? toggleExpanded(child.path) : handleSelect(child.path)}
+              onClick={() => childExpandable ? toggleExpanded(child.path) : handleSelect(child)}
               className="flex-1 min-w-0 text-left flex flex-col"
             >
               <div className="text-sm font-semibold text-slate-800 truncate group-hover:text-indigo-700">
@@ -217,7 +217,7 @@ export default function VariablePickerModal({ isOpen, onClose, onSelect, availab
             {childExpandable ? (
               <button
                 type="button"
-                onClick={() => handleSelect(child.path)}
+                onClick={() => handleSelect(child)}
                 className="shrink-0 text-xs font-bold text-slate-500 hover:text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition-colors border border-transparent hover:border-indigo-100"
               >
                 Use value
@@ -225,7 +225,7 @@ export default function VariablePickerModal({ isOpen, onClose, onSelect, availab
             ) : (
               <button 
                 type="button"
-                onClick={() => handleSelect(child.path)}
+                onClick={() => handleSelect(child)}
                 className="shrink-0 opacity-0 group-hover:opacity-100 text-xs font-bold text-indigo-600 px-3 py-1.5 rounded-lg bg-indigo-50 transition-all border border-indigo-100"
               >
                 Insert
@@ -424,7 +424,7 @@ export default function VariablePickerModal({ isOpen, onClose, onSelect, availab
 
                           <button
                             type="button"
-                            onClick={() => showAsExpandable ? toggleExpanded(v.path) : handleSelect(v.path)}
+                            onClick={() => showAsExpandable ? toggleExpanded(v.path) : handleSelect(v)}
                             className="flex-1 min-w-0 text-left flex flex-col"
                           >
                             <div className="text-sm font-bold text-slate-800 truncate group-hover:text-indigo-700">
@@ -439,7 +439,7 @@ export default function VariablePickerModal({ isOpen, onClose, onSelect, availab
                           {showAsExpandable ? (
                             <button
                               type="button"
-                              onClick={() => handleSelect(v.path)}
+                              onClick={() => handleSelect(v)}
                               className="shrink-0 text-xs font-bold text-slate-500 hover:text-indigo-600 px-3 py-2 rounded-lg hover:bg-indigo-50 transition-colors border border-transparent hover:border-indigo-100"
                             >
                               Use object
@@ -447,7 +447,7 @@ export default function VariablePickerModal({ isOpen, onClose, onSelect, availab
                           ) : (
                             <button 
                               type="button"
-                              onClick={() => handleSelect(v.path)}
+                              onClick={() => handleSelect(v)}
                               className="shrink-0 opacity-0 group-hover:opacity-100 text-xs font-bold text-indigo-600 px-4 py-2 rounded-lg bg-indigo-50 transition-all border border-indigo-100 shadow-sm"
                             >
                               Insert
@@ -459,7 +459,7 @@ export default function VariablePickerModal({ isOpen, onClose, onSelect, availab
                           <div className="border-l-2 border-slate-100 ml-7 my-2">
                             <button
                               type="button"
-                              onClick={() => handleSelect(v.path)}
+                              onClick={() => handleSelect(v)}
                               className="w-full pl-6 pr-4 py-2 flex items-center gap-3 text-left hover:bg-indigo-50/60 transition-colors group border-b border-slate-50"
                             >
                               <span className={`shrink-0 text-[10px] font-bold uppercase px-2 py-0.5 rounded border tracking-wide ${typeColor(v.type)}`}>

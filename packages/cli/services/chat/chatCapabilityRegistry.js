@@ -7,6 +7,7 @@ import {
 import { generateWorkflowTurn } from '../ai/workflow/pipeline/pipeline.js';
 import { createAgentCapabilityRegistry } from '../agent/agentCapabilityRegistry.js';
 import { projectFormResourceContext } from '../ai/form/context/formResourceContext.js';
+import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 
 const completed = output => ({ status: 'completed', output });
 
@@ -514,7 +515,7 @@ export const createChatCapabilityRegistry = ({
                     payload: {
                         action,
                         ...(workflow ? { workflowId: workflow.id, baseWorkflowRevision: workflow.revision } : {}),
-                        name: action === 'create_workflow' ? 'New Workflow' : workflow?.name,
+                        name: action === 'create_workflow' ? DEFAULT_AUTOMATION_NAME : workflow?.name,
                         message: result.message,
                         nodes: result.nodes,
                         edges: result.edges,

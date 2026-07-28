@@ -1,6 +1,7 @@
 import React, { Suspense, useEffect, useRef } from 'react';
 import { navigateTo } from '../utils/router.js';
 import { useCreateWorkflow } from '../api/hooks/useWorkflows.js';
+import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 
 const DashboardTab = React.lazy(() => import('../builder/components/tabs/DashboardTab.jsx'));
 const FormsTab = React.lazy(() => import('../builder/components/tabs/FormsTab.jsx'));
@@ -35,18 +36,56 @@ function AutomationDetailPage({ automationId }) {
     );
 }
 
-function NewAutomationPage({ method = 'ai' }) {
+function NewAutomationPage({ method = 'ai', prompt = '' }) {
     const createAutomationMutation = useCreateWorkflow();
     const started = useRef(false);
+
     useEffect(() => {
-        if (method !== 'visual' || started.current) return;
+        if (started.current) return;
         started.current = true;
-        createAutomationMutation.mutate({ name: 'Untitled automation', lifecycleStatus: 'draft', status: 'Draft', isActive: false, nodes: [], edges: [] }, {
-            onSuccess: automation => navigateTo({ page: 'automation-build', automationId: automation.id, editor: 'visual' })
+        createAutomationMutation.mutate({
+            name: DEFAULT_AUTOMATION_NAME,
+            lifecycleStatus: 'draft',
+            status: 'Draft',
+            isActive: false,
+            nodes: [],
+            edges: []
         });
-    }, [method]);
-    if (method === 'visual') return <PageFrame><div className="flex h-full items-center justify-center text-sm text-slate-500">Preparing the visual editor…</div></PageFrame>;
-    return <PageFrame><ChatTab startNewAutomation method={method} /></PageFrame>;
+
+    }, []);
+
+    // Mutation callbacks passed to mutate() can be detached while React Strict
+    // Mode replays effects in development. The mutation state survives that
+    // replay, so navigate from the successful result instead.
+    useEffect(() => {
+        const automationId = createAutomationMutation.data?.id;
+        if (!automationId) return;
+        navigateTo({
+            page: 'automation-build',
+            automationId,
+            editor: method === 'visual' ? 'visual' : 'ai',
+            ...(prompt ? { prompt } : {})
+        });
+    }, [createAutomationMutation.data?.id, method, prompt]);
+
+    if (createAutomationMutation.isError) {
+        return (
+            <PageFrame>
+                <div className="flex h-full items-center justify-center p-6">
+                    <div className="w-full max-w-md rounded-2xl border border-red-200 bg-white p-6 text-center shadow-sm">
+                        <h1 className="text-lg font-bold text-slate-900">Could not create the automation</h1>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">{createAutomationMutation.error?.message || 'The request failed before the editor could open.'}</p>
+                        <div className="mt-5 flex flex-wrap justify-center gap-3">
+                            <button type="button" onClick={() => navigateTo({ page: 'automations' })} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Back to automations</button>
+                            <button type="button" onClick={() => createAutomationMutation.mutate({ name: DEFAULT_AUTOMATION_NAME, lifecycleStatus: 'draft', status: 'Draft', isActive: false, nodes: [], edges: [] })} disabled={createAutomationMutation.isPending} className="rounded-xl bg-[#5b4ee8] px-4 py-2 text-sm font-bold text-white hover:bg-[#4e42d0] disabled:opacity-60">Try again</button>
+                        </div>
+                    </div>
+                </div>
+            </PageFrame>
+        );
+    }
+
+    return <PageFrame><div className="flex h-full items-center justify-center text-sm text-slate-500">Preparing your {method === 'visual' ? 'visual' : 'AI'} editor…</div></PageFrame>;
 }
 
 export default function WorkspacePageRouter({ route, isSidebarCollapsed, setSidebarCollapsed }) {
@@ -59,7 +98,7 @@ export default function WorkspacePageRouter({ route, isSidebarCollapsed, setSide
             page = <PageFrame><AutomationCenter /></PageFrame>;
             break;
         case 'automation-new':
-            page = <NewAutomationPage method={route.method} />;
+            page = <NewAutomationPage method={route.method} prompt={route.prompt} />;
             break;
         case 'automation-detail':
             page = <AutomationDetailPage automationId={route.automationId} />;

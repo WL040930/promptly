@@ -1,12 +1,13 @@
 /**
- * Apply database extensions and constraints that are not expressed by
- * Sequelize's model sync. The application owns a clean, resettable schema;
- * this function must not recreate retired tables.
+ * Apply PostgreSQL-only schema pieces that Sequelize model sync cannot
+ * express. Ordinary columns and B-tree indexes belong to their models, so a
+ * fresh `sequelize.sync()` creates them as part of the clean schema.
  */
 export const ensureDatabaseSchema = async (sequelize) => {
     await sequelize.query(`CREATE EXTENSION IF NOT EXISTS vector;`).catch(error => {
         console.warn('[DB] pgvector extension is unavailable; knowledge-base search will remain disabled.', error.message);
     });
+    await sequelize.query(`CREATE EXTENSION IF NOT EXISTS pg_trgm;`);
     await sequelize.query(`
         ALTER TABLE "knowledge_chunks"
         ADD COLUMN IF NOT EXISTS "embedding" vector(1536);
@@ -27,5 +28,19 @@ export const ensureDatabaseSchema = async (sequelize) => {
             END IF;
         END
         $$;
+    `);
+    // The logs search endpoint supports substring matching. Sequelize cannot
+    // define a PostgreSQL GIN/trigram index, so those stay here.
+    await sequelize.query(`
+        CREATE INDEX IF NOT EXISTS "automations_name_trgm"
+        ON "automations" USING gin (name gin_trgm_ops);
+    `);
+    await sequelize.query(`
+        CREATE INDEX IF NOT EXISTS "automation_runs_trigger_trgm"
+        ON "automation_runs" USING gin (trigger gin_trgm_ops);
+    `);
+    await sequelize.query(`
+        CREATE INDEX IF NOT EXISTS "automation_runs_error_trgm"
+        ON "automation_runs" USING gin (error gin_trgm_ops);
     `);
 };

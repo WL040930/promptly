@@ -1,22 +1,24 @@
-import { useState } from 'react';
-import { useWorkflowVersions, useRestoreWorkflowVersion } from '../../../api/hooks/useWorkflows.js';
-import WorkflowDiffPreviewModal from '../modals/WorkflowDiffPreviewModal.jsx';
+import { lazy, Suspense, useState } from 'react';
+import { useWorkflowVersions, useWorkflowVersion, useRestoreWorkflowVersion } from '../../../api/hooks/useWorkflows.js';
 import { useToast } from '../../../context/ToastContext.jsx';
 import Button from '../../../components/ui/Button.jsx';
 import ConfirmModal from '../../../components/modals/ConfirmModal.jsx';
 import VersionHistorySkeleton from './VersionHistorySkeleton.jsx';
 
+const WorkflowDiffPreviewModal = lazy(() => import('../modals/WorkflowDiffPreviewModal.jsx'));
+
 export default function VersionHistorySidebar({ workflowId, currentWorkflow }) {
-    const { data: versions = [], isLoading } = useWorkflowVersions(workflowId);
+    const { data: versionPage, isLoading } = useWorkflowVersions(workflowId, { source: 'release' });
+    const versions = versionPage?.data || [];
     const restoreMutation = useRestoreWorkflowVersion();
-    const [previewVersion, setPreviewVersion] = useState(null);
+    const [previewVersionId, setPreviewVersionId] = useState(null);
     const [isRestoringSuccess, setIsRestoringSuccess] = useState(false);
     const toast = useToast();
 
     const [versionToRestore, setVersionToRestore] = useState(null);
+    const { data: previewVersion } = useWorkflowVersion(workflowId, previewVersionId);
 
-    const releases = versions.filter(version => version.source === 'release');
-    const earlierSnapshots = versions.filter(version => version.source !== 'release');
+    const releases = versions;
 
     return (
         <div className="flex flex-col h-full bg-slate-50">
@@ -49,14 +51,14 @@ export default function VersionHistorySidebar({ workflowId, currentWorkflow }) {
                             </span>
                         </div>
                         <div className="text-xs text-slate-500">
-                            {v.nodes?.length || 0} nodes, {v.edges?.length || 0} edges
+                            {v.nodeCount || 0} nodes, {v.edgeCount || 0} edges
                         </div>
                         <div className="flex items-center gap-2 mt-2">
                             <Button
                                 variant="outline"
                                 size="xs"
                                 className="flex-1 py-1.5"
-                                onClick={() => setPreviewVersion(v)}
+                                onClick={() => setPreviewVersionId(v.id)}
                             >
                                 Preview
                             </Button>
@@ -71,7 +73,7 @@ export default function VersionHistorySidebar({ workflowId, currentWorkflow }) {
                         </div>
                     </div>
                 ))}
-                {!isLoading && earlierSnapshots.length > 0 && <details className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-500"><summary className="cursor-pointer font-semibold text-slate-700">Earlier snapshots ({earlierSnapshots.length})</summary><p className="mt-2">Saved before the release workflow. They are kept in storage but do not appear in the release timeline.</p></details>}
+                {!isLoading && versionPage?.pagination?.totalPages > 1 && <p className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-500">Showing the latest {releases.length} releases. Older releases remain available on the version history page.</p>}
             </div>
 
             <ConfirmModal
@@ -95,28 +97,30 @@ export default function VersionHistorySidebar({ workflowId, currentWorkflow }) {
                 isLoading={restoreMutation.isPending}
             />
 
-            <WorkflowDiffPreviewModal 
-                isOpen={!!previewVersion}
-                currentWorkflow={currentWorkflow}
-                versionWorkflow={previewVersion}
-                onRestore={() => {
-                    if (previewVersion) {
-                        restoreMutation.mutate({ id: workflowId, versionId: previewVersion.id }, {
-                            onSuccess: () => {
-                                toast.success(`Restored Version ${previewVersion.versionNumber}!`);
-                                setIsRestoringSuccess(true);
-                            },
-                            onError: () => toast.error('Failed to restore version.')
-                        });
-                    }
-                }}
-                isRestoring={restoreMutation.isPending}
-                isRestoringSuccess={isRestoringSuccess}
-                onClose={() => {
-                    setPreviewVersion(null);
-                    setIsRestoringSuccess(false);
-                }}
-            />
+            {previewVersionId && previewVersion && (
+                <Suspense fallback={null}>
+                    <WorkflowDiffPreviewModal 
+                        isOpen
+                        currentWorkflow={currentWorkflow}
+                        versionWorkflow={previewVersion}
+                        onRestore={() => {
+                            restoreMutation.mutate({ id: workflowId, versionId: previewVersion.id }, {
+                                onSuccess: () => {
+                                    toast.success(`Restored Version ${previewVersion.versionNumber}!`);
+                                    setIsRestoringSuccess(true);
+                                },
+                                onError: () => toast.error('Failed to restore version.')
+                            });
+                        }}
+                        isRestoring={restoreMutation.isPending}
+                        isRestoringSuccess={isRestoringSuccess}
+                        onClose={() => {
+                            setPreviewVersionId(null);
+                            setIsRestoringSuccess(false);
+                        }}
+                    />
+                </Suspense>
+            )}
         </div>
     );
 }

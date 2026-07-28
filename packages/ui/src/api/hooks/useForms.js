@@ -1,10 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getForms, getForm, createForm, updateForm, deleteForm, getFormResponses } from '../backend.js';
 
-export const useFormResponses = (formId) => {
+export const useFormResponses = (formId, { page = 1, pageSize = 25 } = {}) => {
     return useQuery({
-        queryKey: ['formResponses', formId],
-        queryFn: () => getFormResponses(formId),
+        queryKey: ['formResponses', formId, { page, pageSize }],
+        queryFn: () => getFormResponses(formId, { page, pageSize }),
         enabled: !!formId,
         staleTime: 1000 * 30, // 30 seconds
     });
@@ -51,17 +51,20 @@ export const useUpdateForm = () => {
             }
             return { previousForms };
         },
+        onSuccess: form => {
+            if (!form?.id) return;
+            queryClient.setQueryData(['forms'], old => old
+                ? old.map(item => item.id === form.id ? form : item)
+                : old);
+            queryClient.setQueryData(['forms', form.id], form);
+        },
         onError: (err, variables, context) => {
             if (context?.previousForms) {
                 queryClient.setQueryData(['forms'], context.previousForms);
             }
         },
-        onSettled: (data, error, variables) => {
-            queryClient.invalidateQueries({ queryKey: ['forms'] });
-            if (variables?.id) {
-                queryClient.invalidateQueries({ queryKey: ['forms', variables.id] });
-            }
-        },
+        // The mutation response is authoritative. Avoid immediately
+        // refetching the forms list after each debounced autosave.
     });
 };
 

@@ -3,8 +3,8 @@ import { AssistantThread, AssistantMessage } from './assistant/index.js';
 import { AgentRun } from './agent/index.js';
 import { Form, FormResponse } from './forms/index.js';
 import { Workflow, WorkflowVersion } from './workflows/index.js';
-import { AutomationRun, EmailDelivery, WorkflowContinuation, Asset } from './execution/index.js';
-import { TriggerSubscription, TriggerEvent, DatabaseChangeEvent } from './triggers/index.js';
+import { AutomationRun, EmailDelivery, WorkflowContinuation, Asset, DashboardRunMetric } from './execution/index.js';
+import { TriggerSubscription, TriggerEvent, DatabaseChangeEvent, WorkflowTriggerBinding } from './triggers/index.js';
 import { KnowledgeBase, KnowledgeDocument, KnowledgeChunk } from './knowledge/index.js';
 
 Connection.belongsTo(User, { foreignKey: 'userId', as: 'user', onDelete: 'CASCADE' });
@@ -15,6 +15,8 @@ User.hasMany(Workflow, { foreignKey: 'userId', as: 'workflows' });
 
 Workflow.hasMany(WorkflowVersion, { foreignKey: 'workflowId', as: 'versions', onDelete: 'CASCADE' });
 WorkflowVersion.belongsTo(Workflow, { foreignKey: 'workflowId', as: 'workflow' });
+Workflow.hasMany(WorkflowTriggerBinding, { foreignKey: 'workflowId', as: 'triggerBindings', onDelete: 'CASCADE' });
+WorkflowTriggerBinding.belongsTo(Workflow, { foreignKey: 'workflowId', as: 'workflow', onDelete: 'CASCADE' });
 
 // --- Form Associations ---
 Form.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -38,6 +40,8 @@ AutomationRun.belongsTo(Workflow, { foreignKey: 'workflowId', as: 'workflow', on
 Workflow.hasMany(AutomationRun, { foreignKey: 'workflowId', as: 'runs', onDelete: 'CASCADE' });
 AutomationRun.hasMany(WorkflowContinuation, { foreignKey: 'runId', as: 'continuations', onDelete: 'CASCADE' });
 WorkflowContinuation.belongsTo(AutomationRun, { foreignKey: 'runId', as: 'run', onDelete: 'CASCADE' });
+WorkflowContinuation.belongsTo(Workflow, { foreignKey: 'workflowId', as: 'workflow', onDelete: 'CASCADE' });
+WorkflowContinuation.belongsTo(User, { foreignKey: 'resolvedBy', as: 'resolver', onDelete: 'SET NULL' });
 Asset.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 User.hasMany(Asset, { foreignKey: 'userId', as: 'assets', onDelete: 'CASCADE' });
 KnowledgeBase.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -71,6 +75,7 @@ export {
     Form,
     FormResponse,
     AutomationRun,
+    DashboardRunMetric,
     WorkflowContinuation,
     Asset,
     KnowledgeBase,
@@ -81,6 +86,7 @@ export {
     WorkflowVersion,
     EmailDelivery,
     TriggerSubscription,
+    WorkflowTriggerBinding,
     TriggerEvent,
     DatabaseChangeEvent,
     AgentRun

@@ -16,11 +16,11 @@ const safeReviewValue = (value, key = '') => {
     return value;
 };
 
-const normalizeReviewData = async input => {
+const normalizeReviewData = async (input, responseRecord = null) => {
     const source = input && typeof input === 'object' ? input : {};
     const responseId = source.responseId || null;
     if (responseId) {
-        const response = await FormResponse.findByPk(responseId, { include: [{ model: Form, as: 'form', attributes: ['id', 'title'] }] }).catch(() => null);
+        const response = responseRecord || await FormResponse.findByPk(responseId, { include: [{ model: Form, as: 'form', attributes: ['id', 'title'] }] }).catch(() => null);
         const fields = response?.snapshot || [];
         const values = response?.responseData || source.fields || {};
         const entries = Object.entries(values).map(([id, value]) => {
@@ -51,12 +51,13 @@ const displayStatusFor = continuation => {
     return continuation.status;
 };
 
-export const serializeApproval = async continuation => {
+export const serializeApproval = async (continuation, { responsesById = null } = {}) => {
     const value = continuation?.toJSON ? continuation.toJSON() : { ...continuation };
     const run = value.run || await AutomationRun.findByPk(value.runId, { include: [{ model: Workflow, as: 'workflow', attributes: ['id', 'name', 'description'] }] }).catch(() => null);
     const workflow = value.workflow || run?.workflow || (value.workflowId ? await Workflow.findByPk(value.workflowId, { attributes: ['id', 'name', 'description'] }).catch(() => null) : null);
-    const reviewData = await normalizeReviewData(value.payload?.input || {});
-    const resolver = value.resolvedBy ? await User.findByPk(value.resolvedBy, { attributes: ['id', 'email'] }).catch(() => null) : null;
+    const responseId = value.payload?.input?.responseId || null;
+    const reviewData = await normalizeReviewData(value.payload?.input || {}, responseId ? responsesById?.get(responseId) : null);
+    const resolver = value.resolver || (value.resolvedBy ? await User.findByPk(value.resolvedBy, { attributes: ['id', 'email'] }).catch(() => null) : null);
     const safeInput = reviewData.kind === 'form_submission'
         ? { fields: Object.fromEntries(reviewData.entries.map(entry => [entry.label, entry.value])), responseId: reviewData.responseId, submittedAt: reviewData.submittedAt }
         : safeReviewValue(value.payload?.input || {});
@@ -184,11 +185,16 @@ export const listApprovals = async ({ userId, status = 'pending', search = '', w
             sqlWhere(fn('LOWER', cast(json('payload.instructions'), 'text')), { [Op.like]: `%${needle}%` })
         ];
     }
-    return WorkflowContinuation.findAll({
+    return WorkflowContinuation.findAndCountAll({
         where,
         order: [['createdAt', 'DESC']],
         offset: Math.max(Number(offset) || 0, 0),
-        limit: Math.min(Math.max(Number(limit) || 50, 1), 100)
+        limit: Math.min(Math.max(Number(limit) || 25, 1), 100),
+        include: [
+            { model: Workflow, as: 'workflow', attributes: ['id', 'name', 'description'] },
+            { model: User, as: 'resolver', attributes: ['id', 'email'] },
+            { model: AutomationRun, as: 'run', attributes: ['id', 'status', 'trigger', 'createdAt', 'completedAt', 'error'], include: [{ model: Workflow, as: 'workflow', attributes: ['id', 'name', 'description'] }] }
+        ]
     });
 };
 

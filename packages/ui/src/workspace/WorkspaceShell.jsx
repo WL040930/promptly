@@ -47,7 +47,11 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
     const approvalSummaryQuery = useQuery({
         queryKey: ['approval-summary'],
         queryFn: () => apiRequest('/api/continuations/approvals/summary'),
-        refetchInterval: 10000,
+        // The approvals page owns the detailed poll while it is open. Avoid a
+        // duplicate summary request and stop all polling in hidden tabs.
+        refetchInterval: () => (
+            activePage === 'approvals' || document.hidden ? false : 30_000
+        ),
         refetchOnWindowFocus: true
     });
     const pendingApprovalCount = Number(approvalSummaryQuery.data?.pendingCount || 0);

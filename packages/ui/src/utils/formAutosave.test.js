@@ -11,3 +11,26 @@ test('form autosave coalesces rapid edits into one latest save', async () => {
     await queue.flush();
     assert.deepEqual(saved, [{ title: 'Hello' }]);
 });
+
+test('form autosave serializes a later edit behind an in-flight save', async () => {
+    const saved = [];
+    let resolveFirst;
+    const firstSave = new Promise(resolve => { resolveFirst = resolve; });
+    const queue = createDebouncedSaveQueue({
+        delay: 5,
+        save: async update => {
+            saved.push(update);
+            if (saved.length === 1) await firstSave;
+        }
+    });
+
+    queue.schedule({ title: 'First' });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    queue.schedule({ title: 'Second' });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.deepEqual(saved, [{ title: 'First' }]);
+
+    resolveFirst();
+    await queue.flush();
+    assert.deepEqual(saved, [{ title: 'First' }, { title: 'Second' }]);
+});

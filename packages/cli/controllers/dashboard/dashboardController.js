@@ -1,10 +1,17 @@
-import { AutomationRun, Workflow } from '../../models/index.js';
+import { AutomationRun, DashboardRunMetric, Workflow } from '../../models/index.js';
 import sequelize from '../../db/index.js';
 import { QueryTypes } from 'sequelize';
 import asyncHandler from '../../utils/asyncHandler.js';
 
+const METRICS_CACHE_TTL_MS = 30_000;
+const metricsCache = new Map();
+
 export const getDashboardMetrics = asyncHandler(async (req, res) => {
     const userId = req.user.id;
+    const cached = metricsCache.get(userId);
+    if (cached && cached.expiresAt > Date.now()) {
+        return res.json(cached.value);
+    }
     
     // Run queries concurrently for better performance
     const [
@@ -15,27 +22,25 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
     ] = await Promise.all([
         Workflow.count({ where: { userId, status: 'Active' } }),
 
-        // Single aggregate query replaces two separate COUNT queries
-        sequelize.query(
-            `SELECT
-                COUNT(*) AS "totalRuns",
-                COUNT(*) FILTER (WHERE status = 'succeeded') AS "successRuns",
-                COUNT(*) FILTER (WHERE status IN ('succeeded', 'failed')) AS "completedRuns"
-             FROM automation_runs
-             WHERE "userId" = :userId`,
-            { replacements: { userId }, type: QueryTypes.SELECT }
-        ),
+        DashboardRunMetric.findAll({
+            where: { userId },
+            attributes: [
+                [sequelize.fn('COALESCE', sequelize.fn('SUM', sequelize.col('totalRuns')), 0), 'totalRuns'],
+                [sequelize.fn('COALESCE', sequelize.fn('SUM', sequelize.col('successRuns')), 0), 'successRuns'],
+                [sequelize.fn('COALESCE', sequelize.fn('SUM', sequelize.col('completedRuns')), 0), 'completedRuns']
+            ],
+            raw: true
+        }),
 
         // Real GROUP BY date query for the last 7 days
         sequelize.query(
             `SELECT
-                TO_CHAR(DATE_TRUNC('day', "createdAt"), 'Dy') AS day,
-                COUNT(*) AS runs
-             FROM automation_runs
+                TO_CHAR(day::date, 'Dy') AS day,
+                "totalRuns" AS runs
+             FROM dashboard_run_metrics
              WHERE "userId" = :userId
-               AND "createdAt" >= NOW() - INTERVAL '7 days'
-             GROUP BY DATE_TRUNC('day', "createdAt")
-             ORDER BY DATE_TRUNC('day', "createdAt") ASC`,
+               AND day >= (CURRENT_DATE - INTERVAL '6 days')::date
+             ORDER BY day ASC`,
             { replacements: { userId }, type: QueryTypes.SELECT }
         ),
 
@@ -67,7 +72,7 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
         runs: weeklyMap[day] || 0
     }));
 
-    res.json({
+    const metrics = {
         activeWorkflowCount,
         totalRuns: totalRunsNum,
         successRate,
@@ -80,5 +85,7 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
             type: ['success', 'succeeded'].includes(String(log.status || '').toLowerCase()) ? 'success' : ['waiting', 'running', 'resuming', 'pending'].includes(String(log.status || '').toLowerCase()) ? 'pending' : 'error',
             latency: `${log.durationMs}ms`
         }))
-    });
+    };
+    metricsCache.set(userId, { value: metrics, expiresAt: Date.now() + METRICS_CACHE_TTL_MS });
+    res.json(metrics);
 });

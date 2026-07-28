@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import {
   ReactFlow,
   MiniMap,
@@ -36,6 +36,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
   const pendingConnectionRef = useRef(null);
   const makeEdgeRef = useRef(null);
   const onHandleClickRef = useRef(null);
+  const onEdgeDeleteRef = useRef(onEdgeDelete);
 
   // Translate simple internal nodes array into React Flow nodes and edges
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
@@ -43,12 +44,20 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
   const copiedNodeRef = useRef(null);
   const pasteOffsetRef = useRef(40);
   const [hasCopiedNode, setHasCopiedNode] = useState(false);
+  const initialNodeById = useMemo(
+    () => new Map(initialNodes.map(node => [node.id, node])),
+    [initialNodes]
+  );
+
+  useEffect(() => {
+    onEdgeDeleteRef.current = onEdgeDelete;
+  }, [onEdgeDelete]);
 
   const selectedSourceNode = useCallback(() => {
     const selectedNode = nodes.find(node => node.selected) || nodes.find(node => node.id === activeNodeId);
     if (!selectedNode) return null;
-    return initialNodes.find(node => node.id === selectedNode.id) || selectedNode;
-  }, [nodes, initialNodes, activeNodeId]);
+    return initialNodeById.get(selectedNode.id) || selectedNode;
+  }, [nodes, initialNodeById, activeNodeId]);
 
   const copySelectedNode = useCallback(() => {
     const sourceNode = selectedSourceNode();
@@ -98,23 +107,22 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
       style: { stroke: '#818cf8', strokeWidth: 2, filter: 'drop-shadow(0px 4px 6px rgba(99, 102, 241, 0.3))' },
       data: {
         ...e.data,
-        onDelete: onEdgeDelete ? () => onEdgeDelete(e.id) : undefined
+        onDelete: () => onEdgeDeleteRef.current?.(e.id)
       }
     }));
 
     setNodes(rfNodes);
     setEdges(rfEdges);
   }, [
-    initialNodes.map(n => `${n.id}:${n.position?.x || 0}:${n.position?.y || 0}`).join(','),
-    initialEdges.map(e => `${e.id}:${e.source}:${e.target}:${e.sourceHandle || ''}:${e.targetHandle || ''}`).join(','),
-    onEdgeDelete
+    initialNodes,
+    initialEdges
   ]);
 
   // Sync active node visual state, title, and description from props
   useEffect(() => {
     setNodes((nds) =>
       nds.map((node) => {
-        const matchingInitialNode = initialNodes.find((n) => n.id === node.id);
+        const matchingInitialNode = initialNodeById.get(node.id);
         if (!matchingInitialNode) return node;
         return {
           ...node,
@@ -132,7 +140,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
         };
       })
     );
-  }, [initialNodes, activeNodeId, setNodes]);
+  }, [initialNodeById, activeNodeId, setNodes]);
 
   const triggerAutoLayout = useCallback(() => {
     const laidOutNodes = calculateAutoLayout(nodes, edges);

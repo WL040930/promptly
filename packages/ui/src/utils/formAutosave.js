@@ -2,12 +2,20 @@ export function createDebouncedSaveQueue({ save, delay = 600 }) {
     let pending = null;
     let timer = null;
     let inFlight = Promise.resolve();
+    let isSaving = false;
 
     const run = () => {
-        if (!pending) return inFlight;
+        if (isSaving || !pending) return inFlight;
         const update = pending;
         pending = null;
-        inFlight = Promise.resolve(save(update));
+        isSaving = true;
+        inFlight = Promise.resolve(save(update))
+            .finally(() => {
+                isSaving = false;
+                // Keep at most one newest update behind the active request.
+                // This prevents a slow connection from reordering writes.
+                if (pending && !timer) void run();
+            });
         return inFlight;
     };
 
@@ -25,7 +33,11 @@ export function createDebouncedSaveQueue({ save, delay = 600 }) {
             clearTimeout(timer);
             timer = null;
         }
-        await run();
+        // A save can schedule another latest update while the previous request
+        // is in flight. Drain both before callers cross a save boundary.
+        while (pending || isSaving) {
+            await run();
+        }
         return inFlight;
     };
 

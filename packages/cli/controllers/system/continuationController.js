@@ -1,16 +1,27 @@
 import asyncHandler from '../../utils/asyncHandler.js';
 import { getApprovalSummary as getApprovalSummaryForUser, listApprovals, resolveApprovalForUser, serializeApproval } from '../../services/engine/continuationService.js';
+import { Form, FormResponse } from '../../models/index.js';
 
 export const getApprovals = asyncHandler(async (req, res) => {
-    const approvals = await listApprovals({
+    const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
+    const pageSize = Math.min(Math.max(Number.parseInt(req.query.pageSize, 10) || 25, 1), 100);
+    const { rows, count } = await listApprovals({
         userId: req.user.id,
         status: req.query.status || 'pending',
         search: req.query.search || '',
         workflowId: req.query.workflowId || null,
-        limit: req.query.limit,
-        offset: req.query.offset
+        limit: pageSize,
+        offset: (page - 1) * pageSize
     });
-    res.json(await Promise.all(approvals.map(serializeApproval)));
+    const responseIds = [...new Set(rows.map(item => item.payload?.input?.responseId).filter(Boolean))];
+    const responses = responseIds.length > 0
+        ? await FormResponse.findAll({ where: { id: responseIds }, include: [{ model: Form, as: 'form', attributes: ['id', 'title'] }] })
+        : [];
+    const responsesById = new Map(responses.map(response => [response.id, response]));
+    res.json({
+        data: await Promise.all(rows.map(approval => serializeApproval(approval, { responsesById }))),
+        pagination: { page, pageSize, total: count, totalPages: Math.max(Math.ceil(count / pageSize), 1) }
+    });
 });
 
 export const getApprovalSummary = asyncHandler(async (req, res) => {

@@ -4,8 +4,10 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import compression from 'compression';
 import routes from './routes/routes.js';
 import errorHandler from './middleware/errorHandler.js';
+import requestTiming from './middleware/requestTiming.js';
 import env from './config/env.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -19,6 +21,14 @@ app.use(helmet({
 app.use(cors({ origin: env.app.clientOrigin }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(requestTiming);
+app.use(compression({
+    filter: (req, res) => {
+        // Streaming AI responses must not be buffered by compression.
+        if (String(req.headers.accept || '').includes('text/event-stream')) return false;
+        return compression.filter(req, res);
+    }
+}));
 
 // Rate limiters
 const generalLimiter = rateLimit({
@@ -40,9 +50,14 @@ app.get('/api', (req, res) => {
 app.use('/api', routes);
 
 const frontendDir = join(__dirname, '../ui/dist');
-app.use(express.static(frontendDir));
+app.use(express.static(frontendDir, {
+    index: false,
+    maxAge: '1y',
+    immutable: true
+}));
 
 app.get('*', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(join(frontendDir, 'index.html'));
 });
 

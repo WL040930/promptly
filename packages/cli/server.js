@@ -8,6 +8,7 @@ import { startDatabaseChangePublisher } from './services/triggers/databaseTrigge
 import { reconcileActiveWorkflows, startTriggerRuntime } from './services/triggers/triggerRuntime.js';
 import { assertAIConfig } from './services/ai/core/configValidator.js';
 import { startContinuationRuntime } from './services/engine/continuationService.js';
+import { ensureDatabaseReady } from './db/bootstrap.js';
 
 const startBackgroundRuntimes = async () => {
   try {
@@ -25,8 +26,12 @@ const startBackgroundRuntimes = async () => {
 const startServer = async () => {
   try {
     assertAIConfig();
-    await sequelize.authenticate();
-    await NodeRegistry.init();
+    // Keep automatic empty/reset-database setup, but share the API process's
+    // connection lifecycle instead of paying for a separate bootstrap process.
+    await Promise.all([
+      ensureDatabaseReady(),
+      NodeRegistry.init()
+    ]);
 
     app.listen(env.app.port, () => {
       console.log(`🚀 Server running on http://localhost:${env.app.port}`);
