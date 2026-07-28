@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import Button from '../ui/Button.jsx';
+import ProposalCard from './ProposalCard.jsx';
 import { isEmptyFormMemorySummary } from '../../../../shared/formContract.js';
 import { formatFormSettingValue, getFormSettingLabel } from '../../forms/settings/formSettingPresentation.js';
-import { isAcceptedProposalStatus, isRejectedProposalStatus, isStaleProposalStatus, normalizeProposalStatus } from './proposalStatus.js';
+import { isAcceptedProposalStatus, isRejectedProposalStatus, isStaleProposalStatus } from './proposalStatus.js';
 
 const isMeaningfulPatch = patch => {
     if (patch?.op !== 'update_memory') return true;
@@ -14,22 +15,14 @@ const isMeaningfulPatch = patch => {
 export default function FormProposalWidget({ 
     proposal, 
     status, 
-    onAccept, 
     onIgnore, 
     onPreview,
     onPreviewUpdate, 
-    accepting, 
     rejecting 
 }) {
     const isAccepted = isAcceptedProposalStatus(status);
     const isRejected = isRejectedProposalStatus(status);
     const isStale = isStaleProposalStatus(status);
-    const isUnverified = proposal?.verification?.status === 'unverified';
-    const verificationSkippedDueToBudget = proposal?.verification?.skippedReason === 'AI_CALL_BUDGET_EXCEEDED';
-    const verificationWasRejected = proposal?.verification?.skippedReason === 'VERIFICATION_REJECTED';
-    const verificationIssues = (proposal?.verification?.issues || [])
-        .map(issue => issue?.message)
-        .filter(Boolean);
 
     // Track which patches are checked by the user
     const [selectedPatches, setSelectedPatches] = useState({});
@@ -110,7 +103,6 @@ export default function FormProposalWidget({
         }
 
         return {
-            filteredSchema,
             unselectedIndices,
             // Create a new proposal object that has the updated schema and patches
             filteredProposal: {
@@ -121,13 +113,6 @@ export default function FormProposalWidget({
                 unselectedIndices
             }
         };
-    };
-
-    const handleAcceptClick = () => {
-        if (!proposal?.schema) return onAccept();
-
-        const { filteredSchema, unselectedIndices } = getFilteredProposal();
-        onAccept(filteredSchema, unselectedIndices);
     };
 
     const handlePreviewClick = () => {
@@ -146,14 +131,18 @@ export default function FormProposalWidget({
     }, [selectedPatches]); // Re-fire whenever selected patches change
 
     return (
-        <div className="mt-2 w-full border border-slate-200 rounded-xl bg-slate-50 p-3 shadow-md flex flex-col gap-3">
-            <div className="flex items-center justify-between border-b border-slate-200/70 pb-2">
-                <span className="text-xs font-semibold tracking-wide text-slate-500">Suggested changes</span>
-                <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">
-                    {hasFormChanges ? 'Form' : 'Settings'}
-                </span>
-            </div>
-
+        <ProposalCard
+            type="form"
+            title={proposal?.schema?.title || (hasSettingsOnlyChanges ? 'Form settings' : 'Form changes')}
+            status={status}
+            verification={proposal?.verification}
+            actions={(!isAccepted && !isRejected && !isStale) ? (
+                <div className="flex items-center gap-2">
+                    <Button variant="primary" size="sm" className="flex-1" onClick={handlePreviewClick}>Preview changes</Button>
+                    <Button variant="ghost" size="sm" className="flex-1" onClick={onIgnore} isLoading={rejecting} loadingText="Ignoring…">Ignore</Button>
+                </div>
+            ) : null}
+        >
             <div>
                 <h4 className="text-sm font-semibold text-slate-800">{proposal?.schema?.title || "Form Update"}</h4>
 
@@ -181,19 +170,6 @@ export default function FormProposalWidget({
                     );
                 })()}
             </div>
-
-            {isUnverified && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
-                    {verificationWasRejected ? (
-                        <>
-                            <span className="font-semibold">Review required:</span> the latest locally valid proposal is available, but the verifier still found an unresolved requirement.
-                            {verificationIssues.length > 0 && <ul className="mt-1 list-disc pl-4">{verificationIssues.map((message, index) => <li key={`${message}-${index}`}>{message}</li>)}</ul>}
-                        </>
-                    ) : (
-                        <><span className="font-semibold">Review required:</span> local form validation passed, but final AI verification was unavailable{verificationSkippedDueToBudget ? ' because the request limit was reached' : ' after the verifier retry'}.</>
-                    )}
-                </div>
-            )}
 
             {proposalPatches.length > 0 && (
                 <div className="flex flex-col gap-1.5 mt-1 border border-slate-100 rounded-lg p-2 bg-white">
@@ -298,59 +274,6 @@ export default function FormProposalWidget({
                 </div>
             )}
 
-            {isAccepted ? (
-                <div className="flex items-center gap-1.5 justify-center py-1.5 px-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-xs font-semibold">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                    Added to Canvas
-                </div>
-            ) : isRejected ? (
-                <div className="flex items-center gap-1.5 justify-center py-1.5 px-3 bg-slate-100 border border-slate-200 text-slate-500 rounded-lg text-xs font-semibold">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                    Proposal Ignored
-                </div>
-            ) : isStale ? (
-                <div className="flex items-center justify-center py-1.5 px-3 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-xs font-semibold">
-                    {isStaleProposalStatus(status) && normalizeProposalStatus(status) === 'superseded'
-                        ? 'A newer proposal replaced this suggestion.'
-                        : 'This suggestion is outdated. Generate a new one.'}
-                </div>
-            ) : isUnverified ? (
-                <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="flex-1" onClick={handlePreviewClick}>Preview changes</Button>
-                    <Button variant="secondary" size="sm" className="flex-1" onClick={onIgnore} isLoading={rejecting} loadingText="Ignoring...">Ignore</Button>
-                </div>
-            ) : (
-                <div className="flex gap-2">
-                    <Button 
-                        variant="primary" 
-                        size="sm" 
-                        className="flex-1" 
-                        onClick={handleAcceptClick}
-                        isLoading={accepting}
-                        loadingText="Adding..."
-                    >
-                        Accept
-                    </Button>
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="flex-1" 
-                        onClick={handlePreviewClick}
-                    >
-                        Preview
-                    </Button>
-                    <Button 
-                        variant="secondary" 
-                        size="sm" 
-                        className="flex-1" 
-                        onClick={onIgnore}
-                        isLoading={rejecting}
-                        loadingText="Ignoring..."
-                    >
-                        Ignore
-                    </Button>
-                </div>
-            )}
-        </div>
+        </ProposalCard>
     );
 }

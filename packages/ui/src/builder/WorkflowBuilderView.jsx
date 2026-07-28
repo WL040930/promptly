@@ -19,6 +19,7 @@ import ExecutionPanel from './components/panels/ExecutionPanel';
 import BuilderLoadingSkeleton from './components/layout/BuilderLoadingSkeleton.jsx';
 import { useUndoRedo } from '../hooks/useUndoRedo';
 import { useToast } from '../context/ToastContext.jsx';
+import ConfirmModal from '../components/modals/ConfirmModal.jsx';
 import { cloneWorkflowNodeForPaste } from './utils/nodeClipboard.js';
 import { WORKFLOW_MODAL_LAYERS } from './modalLayers.js';
 
@@ -163,6 +164,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(() => !window.matchMedia?.('(max-width: 767px)').matches);
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [isHistorySidebarOpen, setIsHistorySidebarOpen] = useState(false);
+    const [isPublishConfirmOpen, setIsPublishConfirmOpen] = useState(false);
     const [draggedNode, setDraggedNode] = useState(null);
     const [modal, setModal] = useState({ isOpen: false, type: null, data: null, inputValue: '', formData: {} });
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -297,19 +299,24 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
 
     const flushPendingWorkflowSave = useCallback(() => pendingWorkflowSaveRef.current, []);
 
-    const handlePublishWorkflow = useCallback(async () => {
+    const publishWorkflow = useCallback(async ({ closeConfirmOnSuccess = false } = {}) => {
         if (!activeWorkflowId) return;
-        if (!activeWorkflow?.publishedRevisionId && !window.confirm('Publishing will activate this automation and may run real integrations. Continue?')) return;
         try {
             // Finish any in-flight draft save before checking the publish
             // boundary. Publishing itself never creates a history entry.
             await flushPendingWorkflowSave();
             await publishWorkflowMutation.mutateAsync(activeWorkflowId);
             toast.success('Automation published. Live runs now use this release.');
+            if (closeConfirmOnSuccess) setIsPublishConfirmOpen(false);
         } catch (error) {
             toast.error(error.message || 'Could not publish automation. Save a version first.');
         }
     }, [activeWorkflow?.publishedRevisionId, activeWorkflowId, flushPendingWorkflowSave, publishWorkflowMutation, toast]);
+
+    const handlePublishWorkflow = useCallback(() => {
+        if (!activeWorkflowId) return;
+        setIsPublishConfirmOpen(true);
+    }, [activeWorkflowId]);
 
     const handlePauseWorkflow = useCallback(async () => {
         if (!activeWorkflowId) return;
@@ -679,6 +686,17 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                 workflowId={activeWorkflowId}
                 nodes={nodes}
                 runType={runMode}
+            />
+
+            <ConfirmModal
+                isOpen={isPublishConfirmOpen}
+                onClose={() => setIsPublishConfirmOpen(false)}
+                onConfirm={() => void publishWorkflow({ closeConfirmOnSuccess: true })}
+                title="Publish and activate automation?"
+                message="Publishing makes this automation live and may run real integrations."
+                confirmText="Publish and activate"
+                confirmVariant="primary"
+                isLoading={publishWorkflowMutation.isPending}
             />
 
             {/* Execution results panel */}

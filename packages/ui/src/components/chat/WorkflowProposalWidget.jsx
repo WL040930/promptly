@@ -1,4 +1,5 @@
 import Button from '../ui/Button.jsx';
+import ProposalCard from './ProposalCard.jsx';
 import { isAcceptedProposalStatus, isRejectedProposalStatus, isStaleProposalStatus, normalizeProposalStatus } from './proposalStatus.js';
 
 const toneFor = type => ({
@@ -10,12 +11,10 @@ const toneFor = type => ({
 
 const markerFor = type => ({ add: '+', remove: '−', update: '~', connect: '→' }[type] || '•');
 
-export default function WorkflowProposalWidget({ proposal, status, onAccept, onIgnore, onPreview, accepting, rejecting }) {
+export default function WorkflowProposalWidget({ proposal, status, onIgnore, onPreview, rejecting }) {
     const isAccepted = isAcceptedProposalStatus(status);
     const isRejected = isRejectedProposalStatus(status);
     const isStale = isStaleProposalStatus(status);
-    const isUnverified = proposal?.verification?.status === 'unverified';
-    const verificationIssues = (proposal?.verification?.issues || []).map(issue => issue?.message).filter(Boolean);
     const presentation = proposal?.presentation || {};
     const changes = presentation.changes || [];
     const setupRequirements = presentation.setupRequirements || [];
@@ -23,30 +22,13 @@ export default function WorkflowProposalWidget({ proposal, status, onAccept, onI
     const flow = presentation.flow || [];
 
     return (
-        <section className="mt-2 w-full overflow-hidden rounded-2xl border border-indigo-100 bg-white shadow-sm shadow-slate-900/5">
-            <header className="flex items-start gap-3 border-b border-indigo-100 bg-indigo-50/60 px-4 py-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-100 text-indigo-600">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6h5a5 5 0 0 1 5 5v5"/><path d="m13 16 5 2-2-5"/></svg>
-                </div>
-                <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-indigo-700">Workflow changes</p>
-                    <h4 className="mt-1 text-sm font-bold text-slate-800">{presentation.title || 'Workflow changes'}</h4>
-                </div>
-                <span className="shrink-0 rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-[10px] font-bold text-indigo-700">
-                    {isAccepted ? 'Applied' : isRejected ? 'Ignored' : isStale ? (normalizeProposalStatus(status) === 'superseded' ? 'Replaced' : 'Outdated') : 'Awaiting approval'}
-                </span>
-            </header>
-
-            <div className="flex flex-col gap-4 p-4">
+        <ProposalCard type="workflow" title={presentation.title || 'Workflow changes'} status={status} verification={proposal?.verification} actions={
+            isAccepted ? <Status text="Changes applied" tone="success" />
+                : isRejected ? <Status text="Proposal ignored" />
+                    : isStale ? <Status text={normalizeProposalStatus(status) === 'superseded' ? 'A newer proposal replaced this one.' : 'This proposal is outdated. Generate a new one.'} tone="warning" />
+                        : <div className="flex items-center gap-2"><Button variant="primary" size="sm" className="flex-1" onClick={onPreview}>Preview changes</Button><Button variant="ghost" size="sm" className="flex-1" onClick={onIgnore} isLoading={rejecting} loadingText="Ignoring…">Ignore</Button></div>
+        }>
                 <p className="text-sm leading-6 text-slate-700">{presentation.outcome || 'Review the proposed workflow changes.'}</p>
-
-                {isUnverified && (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-900">
-                        <p className="font-bold">Review required</p>
-                        <p className="mt-1">This proposal passed local workflow validation, but final AI verification was unavailable or did not pass. Review the changes carefully before applying them.</p>
-                        {verificationIssues.length > 0 && <ul className="mt-2 list-disc pl-4">{verificationIssues.map((message, index) => <li key={`${message}-${index}`}>{message}</li>)}</ul>}
-                    </div>
-                )}
 
                 {flow.length > 0 && (
                     <div>
@@ -72,15 +54,7 @@ export default function WorkflowProposalWidget({ proposal, status, onAccept, onI
                 {assumptions.length > 0 && <div className="rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-900"><p className="font-bold">Assumptions</p>{assumptions.map(item => <p key={item} className="mt-1">• {item}</p>)}</div>}
                 {setupRequirements.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900"><p className="font-bold">Setup required</p>{setupRequirements.map(item => <p key={item} className="mt-1">• {item}</p>)}</div>}
 
-                {isAccepted ? <Status text="Changes applied" tone="success" />
-                    : isRejected ? <Status text="Proposal ignored" />
-                        : isStale ? <Status text={normalizeProposalStatus(status) === 'superseded' ? 'A newer proposal replaced this one.' : 'This proposal is outdated. Generate a new one.'} tone="warning" />
-                            : <div className="flex items-center gap-2 border-t border-slate-100 pt-3">
-                                <Button variant="ghost" size="sm" onClick={onIgnore} isLoading={rejecting} loadingText="Ignoring…">Ignore</Button>
-                                <div className="ml-auto flex gap-2"><Button variant="outline" size="sm" onClick={onPreview}>Preview changes</Button><Button variant="primary" size="sm" onClick={onAccept} isLoading={accepting} loadingText="Applying…">Apply changes</Button></div>
-                            </div>}
-            </div>
-        </section>
+        </ProposalCard>
     );
 }
 

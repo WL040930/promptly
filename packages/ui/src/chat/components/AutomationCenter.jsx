@@ -310,6 +310,7 @@ export default function AutomationCenter() {
     const [isClosingWorkflow, setIsClosingWorkflow] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [workflowToDelete, setWorkflowToDelete] = useState(null);
+    const [workflowToPublish, setWorkflowToPublish] = useState(null);
     const [runWorkflow, setRunWorkflow] = useState(null);
     const [runType, setRunType] = useState('test');
 
@@ -392,16 +393,27 @@ export default function AutomationCenter() {
             onError: error => toast.error(error.message || 'Automation run failed.')
         });
     };
+    const publishWorkflow = (workflow, { closeConfirmOnSuccess = false } = {}) => {
+        publishWorkflowMutation.mutate(workflow.id, {
+            onSuccess: () => {
+                toast.success('Automation published and activated.');
+                if (closeConfirmOnSuccess) setWorkflowToPublish(null);
+            },
+            onError: error => toast.error(getWorkflowErrorMessage(error))
+        });
+    };
     const toggleWorkflow = workflow => {
         const activationIssue = getActivationIssue(workflow);
         if (activationIssue) {
             toast.error(activationIssue);
             return;
         }
-        if (!workflow.isActive && !workflow.publishedRevisionId && !window.confirm('Publishing will activate this automation and may run real integrations. Continue?')) return;
-        const mutation = workflow.isActive ? pauseWorkflowMutation : publishWorkflowMutation;
-        mutation.mutate(workflow.id, {
-            onSuccess: () => toast.success(workflow.isActive ? 'Automation paused.' : 'Automation published and activated.'),
+        if (!workflow.isActive) {
+            setWorkflowToPublish(workflow);
+            return;
+        }
+        pauseWorkflowMutation.mutate(workflow.id, {
+            onSuccess: () => toast.success('Automation paused.'),
             onError: error => toast.error(getWorkflowErrorMessage(error))
         });
     };
@@ -480,6 +492,7 @@ export default function AutomationCenter() {
             {selectedWorkflowId && <><button ref={drawerOverlayRef} type="button" aria-label="Close workflow details" onClick={closeWorkflowDetails} className="fixed inset-0 z-[60] cursor-default bg-slate-900/20 backdrop-blur-[1px]" /><WorkflowDetailDrawer workflowId={selectedWorkflowId} isClosing={isClosingWorkflow} onClose={closeWorkflowDetails} onClosed={finishClosingWorkflow} onRun={() => { const workflow = workflows.find(item => item.id === selectedWorkflowId); openRun(workflow, 'test'); }} onRunLive={() => { const workflow = workflows.find(item => item.id === selectedWorkflowId); if (!getProductionIssue(workflow)) openRun(workflow, 'production'); }} onOpenBuilder={() => navigate(`/app/automations/${selectedWorkflowId}/build?editor=visual`)} onAskAI={prompt => openWorkflowAI(selectedWorkflowId, prompt)} onDiagnose={log => openWorkflowAI(selectedWorkflowId, `Diagnose this failed execution (${log.id}). Explain the root cause and propose a safe fix.`)} onToggleActive={toggleWorkflow} /></>}
 
             <ConfirmModal isOpen={!!workflowToDelete} onClose={() => setWorkflowToDelete(null)} onConfirm={confirmDelete} title="Delete automation?" message={`This permanently deletes “${workflowToDelete?.name || 'this automation'}” and its configuration.`} confirmText="Delete" confirmVariant="danger" isLoading={deleteWorkflowMutation.isPending} />
+            <ConfirmModal isOpen={!!workflowToPublish} onClose={() => setWorkflowToPublish(null)} onConfirm={() => { if (workflowToPublish) publishWorkflow(workflowToPublish, { closeConfirmOnSuccess: true }); }} title="Publish and activate automation?" message="Publishing makes this automation live and may run real integrations." confirmText="Publish and activate" confirmVariant="primary" isLoading={publishWorkflowMutation.isPending} />
             {runWorkflow && <TestRunModal isOpen={true} onClose={() => setRunWorkflow(null)} onConfirm={runSelectedWorkflow} isLoading={runWorkflowMutation.isPending} workflowId={runWorkflow.id} runType={runType} nodes={runWorkflowDetails?.nodes || runWorkflow.nodes || []} />}
         </>
     );
