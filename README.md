@@ -80,6 +80,12 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 OPENROUTER_API_KEY=your_openrouter_api_key
 AI_DEFAULT_PROVIDER=openrouter
 AI_DEFAULT_MODEL=nvidia/nemotron-3-super-120b-a12b:free
+# Direct NVIDIA endpoint (optional):
+# NVIDIA_API_KEY=your_nvidia_api_key
+# AI_DEFAULT_PROVIDER=nvidia
+# AI_DEFAULT_MODEL=nvidia/nemotron-3-super-120b-a12b
+# NVIDIA_ENABLE_THINKING=true
+# NVIDIA_REASONING_BUDGET=16384
 # Optional tier overrides and failover providers:
 # AI_FAST_PROVIDER=openrouter
 # AI_FAST_MODEL=nvidia/nemotron-3-super-120b-a12b:free

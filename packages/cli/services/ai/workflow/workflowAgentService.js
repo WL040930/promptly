@@ -3,6 +3,7 @@ import NodeRegistry from '../../../utils/NodeRegistry.js';
 import { validateWorkflow } from '../../engine/workflowValidator.js';
 import nodeResourceService from '../../nodes/nodeResourceService.js';
 import { normalizeNodeInputOptions, resolveNodeResourceParams } from '../../../../shared/nodeConfigContract.js';
+import { formFieldRuntimeToken, normalizeFormFieldBindings } from './domain/formFieldBindings.js';
 
 
 const resourceVariantKey = params => JSON.stringify(Object.fromEntries(Object.entries(params || {}).sort(([left], [right]) => left.localeCompare(right))));
@@ -221,7 +222,7 @@ const reachableFrom = (sources, edges) => {
     return reachable;
 };
 
-const recipientPathFor = (trigger, field) => `{{${trigger.id}.fields.${field.id}}}`;
+const recipientPathFor = (trigger, field) => formFieldRuntimeToken(trigger.id, field.id);
 
 /**
  * Compile only machine-level capability bindings. The model remains free to
@@ -234,13 +235,16 @@ export const compileWorkflowDraft = ({
     nodes = [],
     edges = []
 } = {}) => {
-    const nextNodes = nodes.map(node => ({ ...node, config: { ...(node.config || {}) } }));
+    const copiedNodes = nodes.map(node => ({ ...node, config: { ...(node.config || {}) } }));
+    const normalizedBindings = normalizeFormFieldBindings({ nodes: copiedNodes, formSchema });
+    const nextNodes = normalizedBindings.nodes;
     const nextEdges = edges.map(edge => ({ ...edge }));
-    const repairs = [];
+    const repairs = [...normalizedBindings.repairs];
+    const bindingIssues = normalizedBindings.issues;
     const wantsRespondentConfirmation = requiredCapabilities.includes('respondent_confirmation');
     const wantsLegacyApplicationReview = requiredCapabilities.includes('application_review_decision');
     const wantsOwnerApproval = wantsLegacyApplicationReview || requiredCapabilities.includes('owner_approval');
-    if (!wantsRespondentConfirmation && !wantsOwnerApproval) return { nodes: nextNodes, edges: nextEdges, repairs };
+    if (!wantsRespondentConfirmation && !wantsOwnerApproval) return { nodes: nextNodes, edges: nextEdges, repairs, bindingIssues };
 
     const formTriggers = nextNodes.filter(node => node?.subType === 'form-submission');
     const emailActions = nextNodes.filter(isEmailAction);
@@ -269,7 +273,7 @@ export const compileWorkflowDraft = ({
         }
     }
 
-    return { nodes: nextNodes, edges: nextEdges, repairs };
+    return { nodes: nextNodes, edges: nextEdges, repairs, bindingIssues };
 };
 
 /**

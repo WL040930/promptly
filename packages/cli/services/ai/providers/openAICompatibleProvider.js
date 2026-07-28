@@ -9,13 +9,14 @@ import env from '../../../config/env.js';
 export class OpenAICompatibleProvider extends BaseAIProvider {
     supportsToolCalls = true;
 
-    constructor({ apiKey, baseUrl, displayName, defaultModel, timeoutMs = env.aiTimeoutMs }) {
+    constructor({ apiKey, baseUrl, displayName, defaultModel, timeoutMs = env.aiTimeoutMs, requestBodyExtras = null }) {
         super();
         this.apiKey = apiKey;
         this.baseUrl = baseUrl;
         this.displayName = displayName;
         this.defaultModel = defaultModel;
         this.timeoutMs = timeoutMs;
+        this.requestBodyExtras = requestBodyExtras;
 
         if (!this.apiKey) {
             console.warn(`${this.displayName} API key is missing.`);
@@ -32,7 +33,8 @@ export class OpenAICompatibleProvider extends BaseAIProvider {
 
         const body = {
             model,
-            messages: toChatCompletionMessages(contents, systemInstruction)
+            messages: toChatCompletionMessages(contents, systemInstruction),
+            ...(typeof this.requestBodyExtras === 'function' ? this.requestBodyExtras(options) : this.requestBodyExtras || {})
         };
 
         if (responseMimeType === 'application/json') {

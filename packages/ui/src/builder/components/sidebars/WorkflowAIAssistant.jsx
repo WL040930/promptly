@@ -29,6 +29,7 @@ export default function WorkflowAIAssistant({ workflow, onBeforeSend, initialPro
                         assistant.handleOption(option);
                     }
                 }}
+                onRecoveryAction={assistant.handleRecoveryAction}
                 acceptingProposalId={assistant.acceptingProposalId}
                 rejectingProposalId={assistant.rejectingProposalId}
                 progressLabel={progressLabel}

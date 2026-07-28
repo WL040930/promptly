@@ -86,3 +86,21 @@ export function deepResolve(config, contextData) {
 
     return config; // numbers, booleans, etc.
 }
+
+/** Returns unresolved template references with their configuration paths. */
+export function findUnresolvedVariables(value, path = 'config', results = []) {
+    if (typeof value === 'string') {
+        for (const match of value.matchAll(/\{\{([^{}]+)\}\}/g)) {
+            results.push({ path, token: match[0], reference: match[1].trim() });
+        }
+        return results;
+    }
+    if (Array.isArray(value)) {
+        value.forEach((item, index) => findUnresolvedVariables(item, `${path}[${index}]`, results));
+        return results;
+    }
+    if (value && typeof value === 'object') {
+        Object.entries(value).forEach(([key, item]) => findUnresolvedVariables(item, `${path}.${key}`, results));
+    }
+    return results;
+}

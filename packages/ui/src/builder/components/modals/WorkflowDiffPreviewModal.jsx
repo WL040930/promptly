@@ -9,6 +9,7 @@ import DeletableEdge from '../canvas/edges/DeletableEdge';
 import Button from '../../../components/ui/Button.jsx';
 import { getIconByName, resolveNodeUi } from '../../utils/iconMap.jsx';
 import { WORKFLOW_MODAL_LAYERS } from '../../modalLayers.js';
+import { buildWorkflowPreviewDiffNodes } from '../../utils/workflowPreviewDiff.js';
 
 const nodeTypes = {
     trigger: DynamicNode,
@@ -92,31 +93,10 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
 
     const diffNodes = useMemo(() => {
         if (!currentWorkflow || !versionWorkflow) return [];
-        const currentNodes = currentWorkflow.nodes || [];
-        const versionNodes = versionWorkflow.nodes || [];
-
-        const list = [];
-
-        // 1. Added or Modified
-        for (const vNode of versionNodes) {
-            const cNode = currentNodes.find(n => n.id === vNode.id);
-            if (!cNode) {
-                list.push({ ...vNode, _diffStatus: 'added' });
-            } else {
-                const isModified = JSON.stringify(vNode) !== JSON.stringify(cNode);
-                list.push({ ...vNode, _diffStatus: isModified ? 'updated' : 'unchanged' });
-            }
-        }
-
-        // 2. Removed (exists in current but not in version)
-        for (const cNode of currentNodes) {
-            const vNode = versionNodes.find(n => n.id === cNode.id);
-            if (!vNode) {
-                list.push({ ...cNode, _diffStatus: 'removed' });
-            }
-        }
-
-        return list;
+        return buildWorkflowPreviewDiffNodes({
+            currentNodes: currentWorkflow.nodes || [],
+            proposedNodes: versionWorkflow.nodes || []
+        });
     }, [currentWorkflow, versionWorkflow]);
 
     const rfNodes = useMemo(() => {
@@ -235,17 +215,17 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
                         {/* Nodes List */}
                         <div className="flex flex-col gap-6">
                             {diffNodes.map((node) => {
-                                let wrapperClass = "relative p-4 -mx-4 rounded-xl border border-transparent transition-colors flex items-center gap-4";
+                                let wrapperClass = "relative p-4 -mx-4 rounded-xl border border-transparent transition-colors";
                                 let tag = null;
 
                                 if (node._diffStatus === 'added') {
-                                    wrapperClass = "relative p-4 -mx-4 rounded-xl bg-emerald-50 border-2 border-emerald-400 shadow-sm flex items-center gap-4";
+                                    wrapperClass = "relative p-4 -mx-4 rounded-xl bg-emerald-50 border-2 border-emerald-400 shadow-sm";
                                     tag = <span className="absolute -top-3 left-4 bg-emerald-100 text-emerald-800 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border border-emerald-300">+ Added</span>;
                                 } else if (node._diffStatus === 'updated') {
-                                    wrapperClass = "relative p-4 -mx-4 rounded-xl bg-amber-50 border-2 border-amber-400 shadow-sm flex items-center gap-4";
+                                    wrapperClass = "relative p-4 -mx-4 rounded-xl bg-amber-50 border-2 border-amber-400 shadow-sm";
                                     tag = <span className="absolute -top-3 left-4 bg-amber-100 text-amber-800 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border border-amber-300">~ Modified</span>;
                                 } else if (node._diffStatus === 'removed') {
-                                    wrapperClass = "relative p-4 -mx-4 rounded-xl bg-red-50 border-2 border-red-400 opacity-80 shadow-sm flex items-center gap-4";
+                                    wrapperClass = "relative p-4 -mx-4 rounded-xl bg-red-50 border-2 border-red-400 opacity-80 shadow-sm";
                                     tag = <span className="absolute -top-3 left-4 bg-red-100 text-red-800 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border border-red-300">- Removed</span>;
                                 }
 
@@ -254,14 +234,55 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
                                 return (
                                     <div key={node.id} className={wrapperClass}>
                                         {tag}
-                                        <div className={node._diffStatus === 'removed' ? 'pointer-events-none grayscale opacity-60 line-through w-full flex items-center gap-4' : 'pointer-events-none w-full flex items-center gap-4'}>
-                                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-slate-200/50 ${nodeUi.bgColor} ${nodeUi.color}`}>
-                                                {getIconByName(nodeUi.icon, { size: 24, strokeWidth: 2.5 })}
+                                        <div className={node._diffStatus === 'removed' ? 'pointer-events-none grayscale opacity-60 line-through' : 'pointer-events-none'}>
+                                            <div className="flex items-center gap-4">
+                                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-slate-200/50 ${nodeUi.bgColor} ${nodeUi.color}`}>
+                                                    {getIconByName(nodeUi.icon, { size: 24, strokeWidth: 2.5 })}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <span className="block font-bold text-slate-800 text-[15px]">{node.title || node.type}</span>
+                                                    <span className="mt-0.5 block text-sm leading-snug text-slate-500 line-clamp-2">{node.description || 'No description provided.'}</span>
+                                                </div>
                                             </div>
-                                            <div className="flex flex-col">
-                                                <span className="font-bold text-slate-800 text-[15px]">{node.title || node.type}</span>
-                                                <span className="text-sm text-slate-500 line-clamp-2 mt-0.5 leading-snug">{node.description || 'No description provided.'}</span>
-                                            </div>
+                                            {node._diffStatus === 'updated' && node._parameterChanges?.length > 0 && (
+                                                <div className="mt-4 w-full overflow-hidden rounded-xl border border-amber-200 bg-white/80">
+                                                    <div className="flex items-center justify-between border-b border-amber-100 bg-amber-50/70 px-3 py-2">
+                                                        <p className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-amber-800">Parameter changes</p>
+                                                        <span className="text-[10px] font-bold text-amber-700">{node._parameterChanges.length}{node._hiddenParameterChanges ? '+' : ''}</span>
+                                                    </div>
+                                                    <div className="divide-y divide-slate-100">
+                                                        {node._parameterChanges.map(change => (
+                                                            <div key={change.key} className="px-3 py-3">
+                                                                <p className="mb-2 text-[11px] font-bold text-slate-700">{change.label}</p>
+                                                                <div className="grid gap-2 text-[11px] leading-5 sm:grid-cols-2">
+                                                                    <div className="min-w-0 rounded-lg border border-red-100 bg-red-50/70 px-2 py-1.5 text-red-800"><span className="mb-0.5 block text-[9px] font-extrabold uppercase tracking-wide text-red-500">Before</span><span className="block break-words line-through decoration-red-300">{change.before}</span></div>
+                                                                    <div className="min-w-0 rounded-lg border border-emerald-100 bg-emerald-50/70 px-2 py-1.5 text-emerald-800"><span className="mb-0.5 block text-[9px] font-extrabold uppercase tracking-wide text-emerald-600">After</span><span className="block break-words font-semibold">{change.after}</span></div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    {node._hiddenParameterChanges > 0 && <p className="border-t border-slate-100 px-3 py-2 text-[11px] font-medium text-slate-500">Plus {node._hiddenParameterChanges} more parameter change{node._hiddenParameterChanges === 1 ? '' : 's'}.</p>}
+                                                </div>
+                                            )}
+                                            {['added', 'removed'].includes(node._diffStatus) && node._parameterSnapshot?.length > 0 && (
+                                                <div className={`mt-4 w-full overflow-hidden rounded-xl border bg-white/80 ${node._diffStatus === 'added' ? 'border-emerald-200' : 'border-red-200'}`}>
+                                                    <div className={`flex items-center justify-between border-b px-3 py-2 ${node._diffStatus === 'added' ? 'border-emerald-100 bg-emerald-50/70' : 'border-red-100 bg-red-50/70'}`}>
+                                                        <p className={`text-[10px] font-extrabold uppercase tracking-[0.12em] ${node._diffStatus === 'added' ? 'text-emerald-800' : 'text-red-800'}`}>
+                                                            {node._diffStatus === 'added' ? 'This new step will use' : 'Configuration being removed'}
+                                                        </p>
+                                                        <span className={`text-[10px] font-bold ${node._diffStatus === 'added' ? 'text-emerald-700' : 'text-red-700'}`}>{node._parameterSnapshot.length}{node._hiddenParameters ? '+' : ''}</span>
+                                                    </div>
+                                                    <dl className="divide-y divide-slate-100">
+                                                        {node._parameterSnapshot.map(parameter => (
+                                                            <div key={parameter.key} className="grid grid-cols-[minmax(92px,0.42fr)_minmax(0,1fr)] gap-3 px-3 py-2.5 text-[11px] leading-5">
+                                                                <dt className="font-bold text-slate-600">{parameter.label}</dt>
+                                                                <dd className={`min-w-0 break-words font-medium ${node._diffStatus === 'added' ? 'text-emerald-900' : 'text-red-800 line-through decoration-red-300'}`}>{parameter.value}</dd>
+                                                            </div>
+                                                        ))}
+                                                    </dl>
+                                                    {node._hiddenParameters > 0 && <p className="border-t border-slate-100 px-3 py-2 text-[11px] font-medium text-slate-500">Plus {node._hiddenParameters} more setting{node._hiddenParameters === 1 ? '' : 's'}.</p>}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 );

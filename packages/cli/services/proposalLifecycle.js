@@ -1,18 +1,13 @@
 import { AssistantMessage } from '../models/index.js';
 
-/**
- * Move older proposals for the same form out of the acceptance state before a
- * replacement proposal is created. This is intentionally server-side so an
- * old browser tab cannot accept a superseded proposal.
- */
-export const supersedePendingFormChatProposals = async ({ threadId, supersededBy = null, transaction, messageModel = AssistantMessage } = {}) => {
+const supersedePendingProposals = async ({ threadId, kind, supersededBy = null, transaction, messageModel = AssistantMessage } = {}) => {
     const messages = await messageModel.findAll({
-        where: { threadId, sender: 'bot', kind: 'form_proposal', proposalStatus: 'pending' },
+        where: { threadId, sender: 'bot', kind, proposalStatus: 'pending' },
         ...(transaction ? { transaction } : {})
     });
     const supersededMessageIds = [];
 
-    for (const message of messages) {
+    for (const message of messages.filter(message => message?.kind === kind && message?.proposalStatus === 'pending')) {
         await message.update({
             payload: { ...message.payload, ...(supersededBy ? { supersededBy } : {}) },
             proposalStatus: 'superseded'
@@ -21,6 +16,20 @@ export const supersedePendingFormChatProposals = async ({ threadId, supersededBy
     }
 
     return supersededMessageIds;
+};
+
+/**
+ * Move older proposals for the same form out of the acceptance state before a
+ * replacement proposal is created. This is intentionally server-side so an
+ * old browser tab cannot accept a superseded proposal.
+ */
+export const supersedePendingFormChatProposals = async ({ threadId, supersededBy = null, transaction, messageModel = AssistantMessage } = {}) => {
+    return supersedePendingProposals({ threadId, kind: 'form_proposal', supersededBy, transaction, messageModel });
+};
+
+/** Move every older pending workflow proposal out of the acceptance state. */
+export const supersedePendingWorkflowProposals = async ({ threadId, supersededBy = null, transaction, messageModel = AssistantMessage } = {}) => {
+    return supersedePendingProposals({ threadId, kind: 'workflow_proposal', supersededBy, transaction, messageModel });
 };
 
 /**

@@ -8,6 +8,10 @@ import { runWorkflowTurn } from '../workflowAIService.js';
 import { normalizeWorkflowCommand, resolveWorkflowTurnContext } from './domain/workflowTurnContext.js';
 import { applyResourceContextDelta, buildResourceIdentity, resourceContextForPrompt } from '../../assistant/resourceContext.js';
 import { buildWorkflowPresentation } from '../../assistant/proposalPresentation.js';
+import { buildAssistantRecovery } from '../../../../shared/assistantRecovery.js';
+import { supersedePendingWorkflowProposals } from '../../proposalLifecycle.js';
+import { projectFormResourceSummary } from '../form/context/formResourceContext.js';
+import { normalizeFormFieldBindings } from './domain/formFieldBindings.js';
 
 const DEFAULT_MODE = 'important_only';
 const MAX_HISTORY = 100;
@@ -124,17 +128,7 @@ const messageFromResult = ({ result, workflow }) => {
     return replyFor(result.message || result.text || 'I could not find a safe workflow change to make.');
 };
 
-const compactOwnedForms = forms => forms.map(form => ({
-    id: form.id,
-    title: form.title,
-    respondentEmailFieldId: form.respondentEmailFieldId || form.settings?.respondentEmailFieldId || null,
-    fields: (form.fields || []).slice(0, 30).map(field => ({
-        id: field.id,
-        label: field.label,
-        type: field.type,
-        required: field.required === true
-    }))
-}));
+const compactOwnedForms = forms => forms.map(projectFormResourceSummary).filter(Boolean);
 
 const toWorkflowJson = workflow => workflow?.toJSON ? workflow.toJSON() : workflow;
 
@@ -237,7 +231,11 @@ export const workflowAssistant = {
                 .filter(message => message.id !== reservation.userMessage.id)
                 .map(publicMessage);
             const form = await attachedForm(workflow, userId);
-            const ownedForms = await Form.findAll({ where: { userId }, order: [['updatedAt', 'DESC']] });
+            const ownedForms = await Form.findAll({
+                where: { userId },
+                attributes: ['id', 'title', 'updatedAt'],
+                order: [['updatedAt', 'DESC']]
+            });
             const request = reservation.context.command.type === 'decide_for_me'
                 ? `Resolve the active workflow request using sensible defaults. Active request: ${reservation.context.intent.sourceText || 'the current workflow request'}`
                 : reservation.context.command.text;
@@ -270,17 +268,18 @@ export const workflowAssistant = {
                 const state = await ensureState({ workflow, transaction });
                 let activeProposalMessageId = null;
                 if (reply.kind === 'workflow_proposal') activeProposalMessageId = reply.id;
+                const supersededMessageIds = activeProposalMessageId
+                    ? await supersedePendingWorkflowProposals({
+                        threadId: state.threadId,
+                        transaction,
+                        messageModel: AssistantMessage
+                    })
+                    : [];
                 const botMessage = await AssistantMessage.create({
                     ...reply,
                     threadId: state.threadId,
                     proposalStatus: reply.kind === 'workflow_proposal' ? 'pending' : null
                 }, { transaction });
-                if (activeProposalMessageId && state.activeProposalMessageId) {
-                    await AssistantMessage.update(
-                        { proposalStatus: 'superseded' },
-                        { where: { id: state.activeProposalMessageId, threadId: state.threadId }, transaction }
-                    );
-                }
                 await state.update({
                     version: state.version + 1,
                     phase: reply.kind === 'clarification' ? 'awaiting_clarification' : reply.kind === 'workflow_proposal' ? 'awaiting_proposal' : 'idle',
@@ -300,15 +299,24 @@ export const workflowAssistant = {
                 }, { transaction });
                 return {
                     userMsg: publicMessage(reservation.userMessage),
-                    botMsg: publicMessage(botMessage),
+                    botMsg: { ...publicMessage(botMessage), supersededMessageIds },
                     state: publicState(state)
                 };
             });
         } catch (error) {
             if (!started) throw error;
-            const errorMessage = replyFor(error.message || 'I could not prepare a safe workflow proposal.', {
+            const formId = (workflow.nodes || []).find(node => node?.subType === 'form-submission')?.config?.formId || null;
+            const recovery = buildAssistantRecovery({
+                surface: 'workflow',
                 code: error.code || 'WORKFLOW_AI_FAILED',
-                retryable: error.status >= 500 || error.code === 'AI_PROVIDER_TIMEOUT'
+                issues: error.issues || [],
+                context: { formId, retryText: displayText }
+            });
+            error.recovery = recovery;
+            const errorMessage = replyFor(recovery.summary, {
+                code: error.code || 'WORKFLOW_AI_FAILED',
+                retryable: recovery.retryable,
+                recovery
             }, 'error');
             await sequelize.transaction(async transaction => {
                 const state = await ensureState({ workflow, transaction });
@@ -411,17 +419,39 @@ export const workflowAssistant = {
                 if (Number(payload.baseWorkflowRevision) !== Number(lockedWorkflow.revision)) {
                     throw errorWith('WORKFLOW_PROPOSAL_STALE', 'This workflow changed after the proposal was prepared. Generate a new proposal.', 409);
                 }
+                const form = await attachedForm(lockedWorkflow, userId, transaction);
+                const normalizedBindings = normalizeFormFieldBindings({
+                    nodes: payload.nodes || [],
+                    formSchema: form?.toJSON?.() || null
+                });
+                if (normalizedBindings.issues.length > 0) {
+                    throw errorWith(
+                        'WORKFLOW_PROPOSAL_VARIABLE_INVALID',
+                        normalizedBindings.issues.map(issue => issue.message).join(' '),
+                        409,
+                        { issues: normalizedBindings.issues }
+                    );
+                }
                 const saved = await saveAutomationDraft({
                     automationId: lockedWorkflow.id,
                     userId,
-                    nodes: payload.nodes,
+                    nodes: normalizedBindings.nodes,
                     edges: payload.edges,
                     expectedRevision: payload.baseWorkflowRevision,
                     source: 'ai',
                     summary: 'Applied workflow AI proposal',
                     transaction
                 });
-                await lockedMessage.update({ proposalStatus: 'applied' }, { transaction });
+                await lockedMessage.update({
+                    proposalStatus: 'applied',
+                    ...(normalizedBindings.repairs.length > 0 ? {
+                        payload: {
+                            ...payload,
+                            nodes: normalizedBindings.nodes,
+                            warnings: [...(payload.warnings || []), ...normalizedBindings.repairs]
+                        }
+                    } : {})
+                }, { transaction });
                 await state.updateContext(applyResourceContextDelta({
                     context: state.context,
                     delta: payload.contextDelta,

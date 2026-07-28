@@ -21,6 +21,5 @@ Build semantic operations for the supplied workflow plan. Return JSON only:
 4. Preserve existing configuration unless a requirement changes it.
 5. Use only exact account resource values supplied by the server. Leave an unavailable optional value empty; never invent an ID.
 6. Produce one connected acyclic graph with exactly one trigger. Use explicit branch handles.
-7. For form respondent delivery, use the submitted field path shown by the form context. The server validates and may repair only an unambiguous binding.
+7. For a submitted form field, copy its exact `semanticToken` from Attached Form Context (for example `{{formField:f_email}}`). Never write `{{fields...}}`. The server converts the semantic token to the real form-trigger path after it creates the final graph.
 8. For owner approval, add an approval node and use its exact `approved` and `rejected` outputs when the requirements describe both outcomes. Do not configure an external approver.
-

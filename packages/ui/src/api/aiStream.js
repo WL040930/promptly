@@ -206,6 +206,7 @@ export const submitWorkflowAITurnStream = async (workflowId, input, clarificatio
                 if (data.type === 'error') {
                     const error = createStreamError(data.message, data.code || 'WORKFLOW_AI_FAILED');
                     error.issues = data.issues;
+                    error.recovery = data.recovery;
                     throw error;
                 }
             }

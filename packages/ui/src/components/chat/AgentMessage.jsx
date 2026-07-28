@@ -3,6 +3,7 @@ import FormProposalWidget from './FormProposalWidget.jsx';
 import WorkflowProposalWidget from './WorkflowProposalWidget.jsx';
 import MarkdownRenderer from '../ui/MarkdownRenderer.jsx';
 import MessageOptionsWidget from './MessageOptionsWidget.jsx';
+import AssistantFailureCard from './AssistantFailureCard.jsx';
 import { proposalStatusLabel, shouldShowProposalActions } from './proposalStatus.js';
 import { AlertTriangle, CheckCircle2, Copy, GitBranch, ShieldAlert, Trash2, Zap } from 'lucide-react';
 
@@ -50,7 +51,7 @@ const TokenUsageBreakdown = ({ tokenUsage }) => {
     );
 };
 
-export default function AgentMessage({ message, onApply, onIgnore, onOption, isTyping, isAccepting, isRejecting, isLatest = true }) {
+export default function AgentMessage({ message, onApply, onIgnore, onOption, onRecoveryAction, isTyping, isAccepting, isRejecting, isLatest = true }) {
     const payload = message.payload || message.proposal || {};
     const isProposal = message.proposal != null || ['solution_proposal', 'workflow_proposal', 'workflow_diff', 'form_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind);
     const rawStatus = message.proposalStatus || payload.status;
@@ -116,16 +117,20 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, isT
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
                     {message.sender === 'user' ? 'You' : 'Promptly AI'}
                 </span>
-                <div className={`relative w-full min-w-0 rounded-2xl ${message.sender === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'}`}>
-                    <div className="w-full min-w-0 overflow-x-auto p-3.5 text-sm leading-relaxed">
-                        {message.sender === 'user' ? (
-                            <div className="whitespace-pre-wrap text-white/90">{message.text}</div>
-                        ) : (
-                            <MarkdownRenderer content={message.text} />
-                        )}
+                {message.sender !== 'user' && (message.isError || kind === 'error') ? (
+                    <AssistantFailureCard message={message} onAction={onRecoveryAction} isWorking={isTyping} />
+                ) : (
+                    <div className={`relative w-full min-w-0 rounded-2xl ${message.sender === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'}`}>
+                        <div className="w-full min-w-0 overflow-x-auto p-3.5 text-sm leading-relaxed">
+                            {message.sender === 'user' ? (
+                                <div className="whitespace-pre-wrap text-white/90">{message.text}</div>
+                            ) : (
+                                <MarkdownRenderer content={message.text} />
+                            )}
+                        </div>
+                        {message.tokenUsage && <TokenUsageBreakdown tokenUsage={message.tokenUsage} />}
                     </div>
-                    {message.tokenUsage && <TokenUsageBreakdown tokenUsage={message.tokenUsage} />}
-                </div>
+                )}
 
                 {message.sender !== 'user' && kind === 'form_proposal' && planSteps.length > 0 && (
                     <div className="w-full rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2.5 text-xs text-slate-600">

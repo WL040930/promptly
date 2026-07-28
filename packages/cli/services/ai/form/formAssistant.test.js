@@ -8,7 +8,7 @@ const createMemoryModels = () => {
     const threads = [];
     const instance = value => ({
         ...value,
-        toJSON() { return { ...this, ...(this.kind === 'form_proposal' ? { proposal: this.payload } : {}), ...(this.kind === 'clarification' ? { options: this.payload } : {}) }; },
+        toJSON() { return { ...this }; },
         async update(patch) { Object.assign(value, patch); Object.assign(this, patch); return this; }
     });
     const findBy = (rows, where) => rows.find(row => Object.entries(where || {}).every(([key, value]) => row[key] === value));
@@ -59,7 +59,7 @@ test('form assistant persists a clarification and opens explicit decision state'
     });
 
     assert.equal(result.userMsg.sender, 'user');
-    assert.equal(result.botMsg.options.allowDecide, true);
+    assert.equal(result.botMsg.payload.allowDecide, true);
     assert.equal(result.state.phase, 'awaiting_clarification');
     assert.equal(memory.messages.length, 2);
 });
@@ -81,7 +81,7 @@ test('form assistant preserves non-fatal form AI warnings in the reviewable prop
 
     const result = await assistant.submitTurn({ userId: 'user_1', formId: 'form_1', text: 'Create an application form' });
 
-    assert.deepEqual(result.botMsg.proposal.warnings, [{ code: 'UNSUPPORTED_SETTINGS_IGNORED', message: 'Ignored an unsupported optional setting.' }]);
+    assert.deepEqual(result.botMsg.payload.warnings, [{ code: 'UNSUPPORTED_SETTINGS_IGNORED', message: 'Ignored an unsupported optional setting.' }]);
 });
 
 test('form assistant clears chat messages without changing the form', async () => {
@@ -131,7 +131,7 @@ test('form assistant accepts a proposal through the same state boundary', async 
         proposalMessageId: 'proposal_1'
     });
 
-    assert.equal(result.proposal.status, 'applied');
+    assert.equal(result.message.proposalStatus, 'applied');
     assert.equal(result.form.fields[0].type, 'heading');
     assert.equal(memory.threads[0].state.phase, 'idle');
     assert.equal(memory.threads[0].state.activeProposalMessageId, null);
@@ -166,7 +166,7 @@ test('form assistant rejects a proposal without letting the client alter its pat
         action: 'reject'
     });
 
-    assert.equal(result.proposal.status, 'rejected');
+    assert.equal(result.message.proposalStatus, 'rejected');
     assert.equal(memory.forms[0].fields.length, 0);
     assert.equal(memory.messages[0].payload.patches[0].field.id, 'email');
 });

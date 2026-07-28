@@ -226,6 +226,24 @@ export default function ChatTab({ conversationId = null, startNewAutomation = fa
         }
     };
 
+    const handleRecoveryAction = (action, message, previousRequest = '') => {
+        const recovery = message?.errorMetadata?.recovery || message?.payload?.recovery || {};
+        if (action?.type === 'open_form' && action.formId) {
+            navigateTo({ page: 'form-detail', formId: action.formId, section: action.section || 'build' });
+            return;
+        }
+        if (action?.type === 'open_connections') {
+            navigateTo({ page: 'settings', section: 'connections' });
+            return;
+        }
+        if (action?.type === 'retry') {
+            const retryText = recovery.retryText || previousRequest;
+            if (retryText) void send(retryText);
+            return;
+        }
+        setInput(recovery.suggestedPrompt || previousRequest || '');
+    };
+
     const handleOption = (option) => {
         if (option?.type === 'agent_plan_approved' || option?.type === 'agent_plan_rejected') {
             return send(null, { type: option.type, runId: option.runId });
@@ -431,6 +449,7 @@ export default function ChatTab({ conversationId = null, startNewAutomation = fa
                         setPreviewProposal(null);
                     }}
                     handleOption={handleOption}
+                    onRecoveryAction={handleRecoveryAction}
                     acceptingProposalId={acceptingProposalId}
                     rejectingProposalId={rejectingProposalId}
                     progressLabel={sharedProgressLabel || progressLabel}

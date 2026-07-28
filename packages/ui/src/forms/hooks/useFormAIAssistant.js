@@ -6,6 +6,7 @@ import { useToast } from '../../context/ToastContext.jsx';
 import { useAIStream } from '../../context/AIStreamContext.jsx';
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
 import { getClarificationModePreference, setClarificationModePreference } from '../../utils/storage.js';
+import { navigateTo } from '../../utils/router.js';
 
 const LIMIT = 50;
 const RETRYABLE_ERROR_CODES = new Set([
@@ -188,8 +189,6 @@ export const useFormAIAssistant = (form) => {
                     currentMessages = currentMessages.map(message => supersededMessageIds.has(message.id)
                         ? { 
                             ...message, 
-                            proposal: { ...message.proposal, status: 'superseded' },
-                            payload: { ...message.payload, status: 'superseded' },
                             proposalStatus: 'superseded'
                           }
                         : message);
@@ -248,11 +247,29 @@ export const useFormAIAssistant = (form) => {
         sendMessageMutation.mutate({ text, command: nextCommand });
     }, [form?.id, isTyping, isSubmittingTurn, serverProcessing, sendMessageMutation]);
 
+    const handleRecoveryAction = useCallback((action, message, previousRequest = '') => {
+        const recovery = message?.errorMetadata?.recovery || message?.payload?.recovery || {};
+        if (action?.type === 'open_form' && action.formId) {
+            navigateTo({ page: 'form-detail', formId: action.formId, section: action.section || 'build' });
+            return;
+        }
+        if (action?.type === 'open_connections') {
+            navigateTo({ page: 'settings', section: 'connections' });
+            return;
+        }
+        if (action?.type === 'retry') {
+            const retryText = recovery.retryText || previousRequest;
+            if (retryText) handleSend(retryText);
+            return;
+        }
+        setInput(recovery.suggestedPrompt || previousRequest || '');
+    }, [handleSend]);
+
     const handleAcceptProposal = useCallback(async (msgId, unselectedIndices = []) => {
         setAcceptingProposalId(msgId);
         try {
             const msg = rawMessages.find(m => m.id === msgId);
-            const originalProposal = msg?.proposal || {};
+            const originalProposal = msg?.payload || {};
             const patches = originalProposal.patches || [];
             const selectedPatchIds = patches
                 .map((patch, index) => ({ patch, index, patchId: patch.patchId || `patch_${index + 1}` }))
@@ -275,7 +292,7 @@ export const useFormAIAssistant = (form) => {
                     pages: old.pages.map(page => ({
                         ...page,
                         messages: page.messages.map(message => message.id === msgId
-                            ? { ...message, proposal: result.proposal, payload: result.proposal, proposalStatus: result.proposal.status }
+                            ? { ...message, payload: result.message?.payload || message.payload, proposalStatus: result.message?.proposalStatus || 'applied' }
                             : message)
                     }))
                 };
@@ -291,8 +308,8 @@ export const useFormAIAssistant = (form) => {
                         ...old,
                         pages: old.pages.map(page => ({
                             ...page,
-                            messages: page.messages.map(message => message.id === msgId
-                                ? { ...message, proposal: { ...message.proposal, status: 'stale' }, proposalStatus: 'stale' }
+                        messages: page.messages.map(message => message.id === msgId
+                                ? { ...message, proposalStatus: 'stale' }
                                 : message)
                         }))
                     };
@@ -319,7 +336,7 @@ export const useFormAIAssistant = (form) => {
                     pages: old.pages.map(page => ({
                         ...page,
                         messages: page.messages.map(message => message.id === msgId
-                            ? { ...message, proposal: result.proposal, payload: result.proposal, proposalStatus: result.proposal.status }
+                            ? { ...message, payload: result.message?.payload || message.payload, proposalStatus: result.message?.proposalStatus || 'rejected' }
                             : message)
                     }))
                 };
@@ -350,6 +367,7 @@ export const useFormAIAssistant = (form) => {
         handleSend,
         handleAcceptProposal,
         handleRejectProposal,
+        handleRecoveryAction,
         acceptingProposalId,
         rejectingProposalId,
         progressLabel: isTyping ? progressLabel : (serverProcessing ? recoveredProgressLabel : progressLabel),

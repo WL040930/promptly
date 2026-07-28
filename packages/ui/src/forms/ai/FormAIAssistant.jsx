@@ -25,6 +25,7 @@ const FormAIAssistant = ({ form }) => {
         handleSend,
         handleAcceptProposal,
         handleRejectProposal,
+        handleRecoveryAction,
         acceptingProposalId,
         rejectingProposalId,
         progressLabel,
@@ -80,6 +81,7 @@ const FormAIAssistant = ({ form }) => {
                         }
                     }
                 }}
+                onRecoveryAction={handleRecoveryAction}
                 acceptingProposalId={acceptingProposalId}
                 rejectingProposalId={rejectingProposalId}
                 progressLabel={progressLabel}

@@ -4,6 +4,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 
 export const DEFAULT_AI_MODELS = Object.freeze({
     gemini: 'gemini-3.5-flash',
+    nvidia: 'nvidia/nemotron-3-super-120b-a12b',
     openrouter: 'nvidia/nemotron-3-super-120b-a12b:free',
     groq: 'openai/gpt-oss-120b',
     cerebras: 'gpt-oss-120b'
@@ -88,6 +89,8 @@ export const createAIConfig = (source = process.env) => {
             fallbackProviders: readFallbackProviders(source)
         }),
         aiThinkingLevel: readThinkingLevel(source),
+        aiNvidiaReasoningBudget: readPositiveInteger(source, 'NVIDIA_REASONING_BUDGET', 16_384),
+        aiNvidiaEnableThinking: readBoolean(source, 'NVIDIA_ENABLE_THINKING', true),
         aiTimeoutMs: readPositiveInteger(source, 'AI_TIMEOUT_MS', DEFAULT_TIMEOUT_MS),
         // Completion controls are intentionally global so every AI task follows
         // the same policy. `null` means the provider adapter omits its own

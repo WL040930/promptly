@@ -174,10 +174,10 @@ const selectRecentMessages = (messages = []) => {
 const compactPendingProposal = (messages = []) => {
     const pending = [...messages]
         .reverse()
-        .find(message => message?.sender === 'bot' && message?.proposal?.status === 'pending');
-    if (!pending?.proposal) return null;
+        .find(message => message?.sender === 'bot' && message?.kind === 'form_proposal' && message?.proposalStatus === 'pending');
+    if (!pending?.payload) return null;
 
-    const proposal = pending.proposal;
+    const proposal = pending.payload;
     return {
         status: 'pending',
         message: clampText(pending.text, 600),

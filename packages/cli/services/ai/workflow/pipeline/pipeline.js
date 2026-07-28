@@ -127,7 +127,7 @@ const applyAndValidate = async ({
         requireConnected: true,
         registry
     });
-    const issues = [...resourceIssues, ...capabilityIssues, ...(validation.issues || [])];
+    const issues = [...(compiled.bindingIssues || []), ...resourceIssues, ...capabilityIssues, ...(validation.issues || [])];
     if (issues.length > 0) {
         throw createPipelineError(
             issues.map(item => item.message).join('; '),
@@ -195,7 +195,7 @@ export const generateWorkflowTurn = async ({
     let usage = {};
 
     onProgress?.({ status: 'planning', message: 'Understanding your request' });
-    const plannerPrompt = forceDecision => buildWorkflowPlannerContext({
+    const buildPlannerContext = ({ inspectedFormSchema = null, formLookupUsed = false, forceDecision = false } = {}) => buildWorkflowPlannerContext({
         workflow: currentWorkflow,
         catalogue,
         history,
@@ -205,11 +205,15 @@ export const generateWorkflowTurn = async ({
         turnContext,
         userContext,
         resourceContext: assistantContext,
+        formSchema,
+        inspectedFormSchema,
+        formLookupUsed,
         forceDecision
     });
+    let plannerContext = buildPlannerContext();
     let plannerResult = await requestAndValidate({
         label: 'planner',
-        prompt: plannerPrompt(false),
+        prompt: plannerContext.prompt,
         instruction: workflowPlannerInstruction,
         validate: validateWorkflowPlannerResult,
         provider,
@@ -218,11 +222,66 @@ export const generateWorkflowTurn = async ({
     });
     usage = plannerResult.usage;
     let plan = plannerResult.call.value;
+    let inspectedFormSchema = null;
+    let formLookupUsed = false;
 
-    if (plan.type === 'message' && turnContext?.authority === 'assistant') {
+    if (plan.type === 'inspect_form') {
+        const availableFormIds = new Set((userContext?.forms || []).map(form => form?.id).filter(Boolean));
+        if (!availableFormIds.has(plan.formId)) {
+            return {
+                type: 'reply',
+                message: 'Please choose one of your available forms before I inspect its fields.',
+                tokenUsage: { ...usage, requestCalls: budget.calls }
+            };
+        }
+        if (!formLoader) {
+            return {
+                type: 'reply',
+                message: 'I cannot load another form in this workflow right now. Please select the form in the workflow first, then try again.',
+                tokenUsage: { ...usage, requestCalls: budget.calls }
+            };
+        }
+        inspectedFormSchema = await formLoader({ formId: plan.formId, userId });
+        if (!inspectedFormSchema) {
+            return {
+                type: 'reply',
+                message: 'I could not access that form. Please choose one of your available forms and try again.',
+                tokenUsage: { ...usage, requestCalls: budget.calls }
+            };
+        }
+
+        await recordAiDiagnostic({
+            event: 'workflow_form_context_loaded',
+            source: 'lookup',
+            fieldCount: inspectedFormSchema.fields?.length || 0
+        });
+        formLookupUsed = true;
+        plannerContext = buildPlannerContext({ inspectedFormSchema, formLookupUsed });
         plannerResult = await requestAndValidate({
             label: 'planner',
-            prompt: plannerPrompt(true),
+            prompt: plannerContext.prompt,
+            instruction: workflowPlannerInstruction,
+            validate: validateWorkflowPlannerResult,
+            provider,
+            budget,
+            usage
+        });
+        usage = plannerResult.usage;
+        plan = plannerResult.call.value;
+        if (plan.type === 'inspect_form') {
+            return {
+                type: 'reply',
+                message: 'I can inspect one additional form per request. I have loaded the requested form; please ask what you would like to know or change about it.',
+                tokenUsage: { ...usage, requestCalls: budget.calls }
+            };
+        }
+    }
+
+    if (plan.type === 'message' && turnContext?.authority === 'assistant') {
+        plannerContext = buildPlannerContext({ inspectedFormSchema, formLookupUsed, forceDecision: true });
+        plannerResult = await requestAndValidate({
+            label: 'planner',
+            prompt: plannerContext.prompt,
             instruction: `${workflowPlannerInstruction}\nThe user delegated safe defaults. Resolve defaultable choices now.`,
             validate: validateWorkflowPlannerResult,
             provider,
@@ -231,18 +290,26 @@ export const generateWorkflowTurn = async ({
         });
         usage = plannerResult.usage;
         plan = plannerResult.call.value;
+        if (plan.type === 'inspect_form') {
+            return {
+                type: 'reply',
+                message: 'I need the selected form before I can continue. Please select it in the workflow, then try again.',
+                tokenUsage: { ...usage, requestCalls: budget.calls }
+            };
+        }
     }
-
-    if (plan.type === 'reply') return { type: 'reply', message: plan.message, tokenUsage: { ...usage, requestCalls: budget.calls } };
-    if (plan.type === 'message') return { type: 'message', message: plan.message, inputs: plan.inputs, tokenUsage: { ...usage, requestCalls: budget.calls } };
 
     await recordAiDiagnostic({
         event: 'workflow_planner_outcome',
+        context: plannerContext.metrics,
         planType: plan.type,
         selectedNodeCount: (plan.selectedNodeKeys || []).length,
         requirementCount: (plan.requirements || []).length,
         capabilities: plan.capabilities || []
     });
+
+    if (plan.type === 'reply') return { type: 'reply', message: plan.message, tokenUsage: { ...usage, requestCalls: budget.calls } };
+    if (plan.type === 'message') return { type: 'message', message: plan.message, inputs: plan.inputs, tokenUsage: { ...usage, requestCalls: budget.calls } };
 
     const { specs, requested } = specsForPlan({ workflow: currentWorkflow, planner: plan, registry });
     if ((currentWorkflow.nodes || []).length === 0 && requested.length === 0) {

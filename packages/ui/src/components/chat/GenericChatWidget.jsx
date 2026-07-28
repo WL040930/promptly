@@ -16,6 +16,7 @@ export default function GenericChatWidget({
     handleApply,
     handleIgnore,
     handleOption,
+    onRecoveryAction,
     acceptingProposalId,
     rejectingProposalId,
     progressLabel = "Thinking",
@@ -146,6 +147,10 @@ export default function GenericChatWidget({
                             onApply={handleApply}
                             onIgnore={handleIgnore}
                             onOption={handleOption}
+                            onRecoveryAction={action => {
+                                const previousUserMessage = [...arr.slice(0, index)].reverse().find(item => item.sender === 'user');
+                                onRecoveryAction?.(action, message, previousUserMessage?.text || '');
+                            }}
                             isTyping={isTyping}
                             isAccepting={acceptingProposalId === message.id}
                             isRejecting={rejectingProposalId === message.id}

@@ -6,6 +6,8 @@ import { clearWorkflowAIChat, decideWorkflowAIProposal, getWorkflowAIChat, reset
 import { submitWorkflowAITurnStream } from '../../api/aiStream.js';
 import { useAIStream } from '../../context/AIStreamContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
+import { navigateTo } from '../../utils/router.js';
+import { markSupersededWorkflowProposals, markWorkflowProposalStale } from '../../components/chat/proposalStatus.js';
 
 const LIMIT = 50;
 const defaultMessage = {
@@ -120,7 +122,8 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         const recent = historyQuery.data?.messages || [];
         if (!historyQuery.data) return [defaultMessage];
         const combined = [...olderMessages, ...recent];
-        return combined.length ? combined : [defaultMessage];
+        const visible = markSupersededWorkflowProposals(combined, historyQuery.data?.state?.activeProposalMessageId);
+        return visible.length ? visible : [defaultMessage];
     }, [historyQuery.data, olderMessages]);
 
     const sendMutation = useMutation({
@@ -189,6 +192,13 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
                 queryClient.setQueryData(['workflows'], old => old ? old.map(item => item.id === workflowId ? result.workflow : item) : old);
             }
             queryClient.invalidateQueries({ queryKey: ['workflows', workflowId] });
+        },
+        onError: (error, variables) => {
+            if (error?.payload?.code !== 'WORKFLOW_PROPOSAL_STALE') return;
+            queryClient.setQueryData(queryKey, old => old ? {
+                ...old,
+                messages: markWorkflowProposalStale(old.messages || [], variables.messageId)
+            } : old);
         }
     });
 
@@ -233,6 +243,24 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         const requestId = globalThis.crypto?.randomUUID?.() || `workflow_turn_${Date.now()}`;
         sendMutation.mutate({ input: normalized, requestId });
     }, [isTyping, onBeforeSend, sendMutation, workflowId]);
+
+    const handleRecoveryAction = useCallback((action, message, previousRequest = '') => {
+        const recovery = message?.errorMetadata?.recovery || message?.payload?.recovery || {};
+        if (action?.type === 'open_form' && action.formId) {
+            navigateTo({ page: 'form-detail', formId: action.formId, section: action.section || 'build' });
+            return;
+        }
+        if (action?.type === 'open_connections') {
+            navigateTo({ page: 'settings', section: 'connections' });
+            return;
+        }
+        if (action?.type === 'retry') {
+            const retryText = recovery.retryText || previousRequest;
+            if (retryText) handleSend(retryText);
+            return;
+        }
+        setInput(recovery.suggestedPrompt || previousRequest || '');
+    }, [handleSend, setInput]);
 
     const handleApply = useCallback(async message => {
         if (message.kind !== 'workflow_proposal' && message.kind !== 'workflow_diff') return;
@@ -320,6 +348,7 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         handleSend,
         handleApply,
         handleIgnore,
+        handleRecoveryAction,
         handleOption,
         acceptingProposalId,
         rejectingProposalId,

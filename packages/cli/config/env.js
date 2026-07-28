@@ -60,6 +60,9 @@ const env = {
     gemini: {
         apiKey: process.env.GEMINI_API_KEY
     },
+    nvidia: {
+        apiKey: process.env.NVIDIA_API_KEY
+    },
     openrouter: {
         apiKey: process.env.OPENROUTER_API_KEY
     },

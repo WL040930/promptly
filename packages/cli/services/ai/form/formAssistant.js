@@ -6,6 +6,7 @@ import { runFormTurn } from '../formAIService.js';
 import { FORM_AI_HISTORY_LIMIT, validateQuestionCardinality } from './context/formContext.js';
 import { applyFormPatches } from './domain/formPatchEngine.js';
 import { normalizeClarificationMode } from '../../../../shared/agentContract.js';
+import { buildAssistantRecovery } from '../../../../shared/assistantRecovery.js';
 import { resolveFormTurnContext, detectFormIntentScope } from './domain/formTurnContext.js';
 import { supersedePendingFormChatProposals } from '../../proposalLifecycle.js';
 import { applyResourceContextDelta, buildResourceIdentity, resourceContextForPrompt } from '../../assistant/resourceContext.js';
@@ -172,7 +173,7 @@ export const createFormAssistant = ({
                     ? { ...state.openClarification, id: state.openClarification.id || 'active' }
                     : null,
                 activeWork: state.activeWork,
-                pendingProposal: asJson(pending)?.proposal || null,
+                pendingProposal: asJson(pending)?.payload || null,
                 clarificationMode: mode
             });
             const userMessage = await models.AssistantMessage.create({
@@ -218,7 +219,7 @@ export const createFormAssistant = ({
                 .filter(message => message.id !== userMessage.id)
                 .map(asJson);
             const pendingForAI = context.pendingProposal.mode === 'include'
-                ? asJson(pending)?.proposal || null
+                ? asJson(pending)?.payload || null
                 : null;
             const request = context.command.type === 'decide_for_me'
                 ? `Resolve the active request using sensible defaults. Active request: ${context.intent.sourceText || 'the current form request'}`
@@ -281,7 +282,13 @@ export const createFormAssistant = ({
             });
             return response;
         } catch (error) {
-            const safeMessage = error.message || 'Form AI could not complete this request.';
+            const recovery = buildAssistantRecovery({
+                surface: 'form',
+                code: error.code || 'FORM_AI_GENERATION_FAILED',
+                issues: error.issues || [],
+                context: { formId, retryText: userMessage?.text || command.text }
+            });
+            const safeMessage = recovery.summary;
             let response;
             await db.transaction(async transaction => {
                 const assistantMessage = await models.AssistantMessage.create({
@@ -292,7 +299,8 @@ export const createFormAssistant = ({
                     isError: true,
                     errorMetadata: {
                         code: error.code || 'FORM_AI_GENERATION_FAILED',
-                        retryable: error.status !== 404
+                        retryable: recovery.retryable,
+                        recovery
                     }
                 }, { transaction });
                 const freshState = await loadState(formId, transaction, form.userId);
@@ -407,7 +415,7 @@ export const createFormAssistant = ({
                     }, { transaction });
                     nextState = asJson(state);
                 }
-                response = { form: asJson(form), proposal: { ...(asJson(message).proposal || {}), status: message.proposalStatus }, state: nextState };
+                response = { form: asJson(form), message: asJson(message), state: nextState };
                 return;
             }
 
@@ -503,7 +511,7 @@ export const createFormAssistant = ({
                 }, { transaction });
                 nextState = asJson(state);
             }
-            response = { form: asJson(form), proposal: { ...(asJson(message).proposal || {}), status: message.proposalStatus }, state: nextState };
+            response = { form: asJson(form), message: asJson(message), state: nextState };
         });
         if (deferredError) throw deferredError;
         return response;

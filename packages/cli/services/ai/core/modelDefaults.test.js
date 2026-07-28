@@ -2,17 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAIConfig, DEFAULT_AI_MODELS } from '../../../config/aiConfig.js';
 import { OpenRouterProvider } from '../providers/openRouterProvider.js';
+import { NvidiaProvider } from '../providers/nvidiaProvider.js';
 import { createProviderRegistry } from './providerRegistry.js';
 import { resolveMaxCompletionTokens, TASK_POLICIES } from './taskPolicies.js';
 import { AI_TASKS } from './aiTasks.js';
 
 test('uses the OpenRouter Nemotron free model as its default', () => {
+    assert.equal(DEFAULT_AI_MODELS.nvidia, 'nvidia/nemotron-3-super-120b-a12b');
     assert.equal(DEFAULT_AI_MODELS.openrouter, 'nvidia/nemotron-3-super-120b-a12b:free');
     assert.equal(DEFAULT_AI_MODELS.groq, 'openai/gpt-oss-120b');
     assert.equal(DEFAULT_AI_MODELS.cerebras, 'gpt-oss-120b');
 
     const provider = new OpenRouterProvider({ apiKey: 'test-key' });
     assert.equal(provider.defaultModel, DEFAULT_AI_MODELS.openrouter);
+
+    const nvidia = new NvidiaProvider({ apiKey: 'test-key' });
+    assert.equal(nvidia.defaultModel, DEFAULT_AI_MODELS.nvidia);
 });
 
 test('AI tier configuration inherits the default model only within the same provider', () => {
@@ -28,6 +33,18 @@ test('AI tier configuration inherits the default model only within the same prov
         fast: { provider: 'openrouter', model: 'nvidia/nemotron-3-super-120b-a12b:free' },
         quality: { provider: 'groq', model: 'openai/gpt-oss-120b' }
     });
+});
+
+test('NVIDIA can be selected as a direct provider with its reasoning controls', () => {
+    const config = createAIConfig({
+        AI_DEFAULT_PROVIDER: 'nvidia',
+        NVIDIA_ENABLE_THINKING: 'false',
+        NVIDIA_REASONING_BUDGET: '8192'
+    });
+
+    assert.deepEqual(config.ai.tiers.default, { provider: 'nvidia', model: 'nvidia/nemotron-3-super-120b-a12b' });
+    assert.equal(config.aiNvidiaEnableThinking, false);
+    assert.equal(config.aiNvidiaReasoningBudget, 8192);
 });
 
 test('provider registry rejects unknown providers instead of silently using Gemini', () => {

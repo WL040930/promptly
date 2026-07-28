@@ -16,6 +16,16 @@ test('planner validator accepts a valid reply result', () => {
     assert.deepEqual(issues, []);
 });
 
+test('planner validator accepts a form inspection request with an exact form ID', () => {
+    const issues = validateWorkflowPlannerResult({ type: 'inspect_form', formId: 'form_123' });
+    assert.deepEqual(issues, []);
+});
+
+test('planner validator rejects a form inspection request without a form ID', () => {
+    const issues = validateWorkflowPlannerResult({ type: 'inspect_form' });
+    assert.ok(issues.some(item => item.code === 'REQUIRED' && item.path === 'formId'));
+});
+
 test('planner validator accepts a valid message (clarification) result', () => {
     const issues = validateWorkflowPlannerResult({
         type: 'message',

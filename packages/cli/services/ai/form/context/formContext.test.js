@@ -90,8 +90,9 @@ test('buildPlannerContext exposes a compact pending proposal for conversational 
         chatHistory: [{
             sender: 'bot',
             text: 'I prepared a survey draft.',
-            proposal: {
-                status: 'pending',
+            kind: 'form_proposal',
+            proposalStatus: 'pending',
+            payload: {
                 patches: [
                     { op: 'add', field: { id: 'name', type: 'text', label: 'Name' } },
                     { op: 'update_settings', updates: { acceptingResponses: true } }

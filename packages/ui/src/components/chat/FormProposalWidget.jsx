@@ -138,8 +138,8 @@ export default function FormProposalWidget({
             verification={proposal?.verification}
             actions={(!isAccepted && !isRejected && !isStale) ? (
                 <div className="flex items-center gap-2">
-                    <Button variant="primary" size="sm" className="flex-1" onClick={handlePreviewClick}>Preview changes</Button>
                     <Button variant="ghost" size="sm" className="flex-1" onClick={onIgnore} isLoading={rejecting} loadingText="Ignoring…">Ignore</Button>
+                    <Button variant="primary" size="sm" className="flex-1" onClick={handlePreviewClick}>Preview changes</Button>
                 </div>
             ) : null}
         >

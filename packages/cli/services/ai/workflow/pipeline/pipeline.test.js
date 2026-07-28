@@ -110,6 +110,113 @@ test('pipeline returns a reply directly from the planner without calling the wor
     assert.equal(callCount, 1);
 });
 
+test('pipeline gives the planner attached form fields without an extra lookup', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const prompts = [];
+    const provider = {
+        async generateContent(contents) {
+            prompts.push(contents[0].parts[0].text);
+            return { text: JSON.stringify({ type: 'reply', message: 'Yes. The selected form has an Email address field.' }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'Can you see the fields in the selected form?',
+        currentWorkflow: existingWorkflow,
+        formSchema: {
+            id: 'form_1',
+            title: 'Customer Satisfaction Survey',
+            settings: { respondentEmailFieldId: 'field_email' },
+            fields: [{ id: 'field_email', label: 'Email address', type: 'email', required: true }]
+        },
+        provider,
+        registry: makeRegistry(),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'reply');
+    assert.equal(prompts.length, 1);
+    assert.match(prompts[0], /Attached Form Context:[\s\S]*Email address/);
+});
+
+test('pipeline performs one safe lookup for another owned form before replying', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const prompts = [];
+    let loadCount = 0;
+    const provider = {
+        async generateContent(contents) {
+            prompts.push(contents[0].parts[0].text);
+            return { text: JSON.stringify(prompts.length === 1
+                ? { type: 'inspect_form', formId: 'form_other' }
+                : { type: 'reply', message: 'The other form collects a Work email field.' }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'What fields does the other form have?',
+        currentWorkflow: existingWorkflow,
+        userContext: { forms: [{ id: 'form_other', title: 'Contact form', updatedAt: '2026-07-28' }] },
+        formLoader: async ({ formId }) => {
+            loadCount++;
+            assert.equal(formId, 'form_other');
+            return {
+                id: formId,
+                title: 'Contact form',
+                fields: [{ id: 'work_email', label: 'Work email', type: 'email', required: false }]
+            };
+        },
+        provider,
+        registry: makeRegistry(),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'reply');
+    assert.equal(loadCount, 1);
+    assert.equal(prompts.length, 2);
+    assert.match(prompts[1], /Inspected Form Context:[\s\S]*Work email/);
+});
+
+test('pipeline does not expose a form when the ownership-checked lookup fails', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const provider = makeProvider([{ type: 'inspect_form', formId: 'form_not_owned' }]);
+
+    const result = await generateWorkflowTurn({
+        request: 'Inspect that form.',
+        currentWorkflow: existingWorkflow,
+        userContext: { forms: [{ id: 'form_not_owned', title: 'Unavailable form', updatedAt: '2026-07-28' }] },
+        formLoader: async () => null,
+        provider,
+        registry: makeRegistry(),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'reply');
+    assert.match(result.message, /could not access/i);
+});
+
+test('pipeline refuses a form lookup that was not listed for the user', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let loadCount = 0;
+    const provider = makeProvider([{ type: 'inspect_form', formId: 'form_invented' }]);
+
+    const result = await generateWorkflowTurn({
+        request: 'Inspect that form.',
+        currentWorkflow: existingWorkflow,
+        userContext: { forms: [{ id: 'form_visible', title: 'Visible form', updatedAt: '2026-07-28' }] },
+        formLoader: async () => {
+            loadCount++;
+            return null;
+        },
+        provider,
+        registry: makeRegistry(),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'reply');
+    assert.equal(loadCount, 0);
+    assert.match(result.message, /available forms/i);
+});
+
 // ---------------------------------------------------------------------------
 // Planner clarification — returns structured inputs
 // ---------------------------------------------------------------------------
@@ -394,18 +501,13 @@ test('pipeline produces a complete connected workflow from an empty start', asyn
 // Decide-for-me (authority = assistant) forces the planner to pick defaults
 // ---------------------------------------------------------------------------
 
-test('pipeline re-runs planner with forceDecision when a message arrives with assistant authority', async () => {
+test('pipeline asks the planner to choose defaults on its first call when authority is assistant', async () => {
     const { generateWorkflowTurn } = await import('./pipeline.js');
     let plannerAttempt = 0;
     const provider = {
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner' || options.operation === 'workflow:planner repair') {
                 plannerAttempt++;
-                if (plannerAttempt === 1) {
-                    // First planner call returns a clarification, but authority is assistant → re-run.
-                    return { text: JSON.stringify({ type: 'message', message: 'Which provider?', inputs: [{ id: 'q1', type: 'single_choice', label: 'Provider', options: ['Gmail'] }] }) };
-                }
-                // Second planner call: forced → returns a plan
                 return { text: JSON.stringify({
                     type: 'plan_complete',
                     summary: 'Add email using default provider.',
@@ -433,5 +535,5 @@ test('pipeline re-runs planner with forceDecision when a message arrives with as
     });
 
     assert.equal(result.type, 'proposal');
-    assert.ok(plannerAttempt >= 2, `Expected planner to be called twice for decide_for_me, got ${plannerAttempt}`);
+    assert.equal(plannerAttempt, 1, `Expected one planner call for decide_for_me, got ${plannerAttempt}`);
 });

@@ -3,6 +3,7 @@ import { GeminiProvider } from '../providers/geminiProvider.js';
 import { OpenRouterProvider } from '../providers/openRouterProvider.js';
 import { GroqProvider } from '../providers/groqProvider.js';
 import { CerebrasProvider } from '../providers/cerebrasProvider.js';
+import { NvidiaProvider } from '../providers/nvidiaProvider.js';
 import { AI_PROVIDER_NAMES, DEFAULT_AI_MODELS } from '../../../config/aiConfig.js';
 import { AIError } from './aiErrors.js';
 
@@ -10,7 +11,8 @@ const providerFactories = Object.freeze({
     gemini: options => new GeminiProvider(options),
     openrouter: options => new OpenRouterProvider(options),
     groq: options => new GroqProvider(options),
-    cerebras: options => new CerebrasProvider(options)
+    cerebras: options => new CerebrasProvider(options),
+    nvidia: options => new NvidiaProvider(options)
 });
 
 export const createProviderRegistry = ({ config = env } = {}) => {
@@ -30,7 +32,9 @@ export const createProviderRegistry = ({ config = env } = {}) => {
         const provider = factory({
             apiKey: config[providerName]?.apiKey,
             timeoutMs: config.aiTimeoutMs,
-            thinkingLevel: config.aiThinkingLevel
+            thinkingLevel: config.aiThinkingLevel,
+            reasoningBudget: config.aiNvidiaReasoningBudget,
+            enableThinking: config.aiNvidiaEnableThinking
         });
         instances.set(providerName, provider);
         return provider;

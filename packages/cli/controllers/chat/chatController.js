@@ -110,7 +110,9 @@ export const getSession = asyncHandler(async (req, res) => {
             kind: json.kind || 'text',
             payload: json.payload || null,
             proposalStatus: json.proposalStatus || null,
-            tokenUsage: json.tokenUsage || null
+            tokenUsage: json.tokenUsage || null,
+            errorMetadata: json.errorMetadata || null,
+            isError: json.isError === true
         };
     };
     

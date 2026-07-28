@@ -26,7 +26,7 @@ export default function WorkflowProposalWidget({ proposal, status, onIgnore, onP
             isAccepted ? <Status text="Changes applied" tone="success" />
                 : isRejected ? <Status text="Proposal ignored" />
                     : isStale ? <Status text={normalizeProposalStatus(status) === 'superseded' ? 'A newer proposal replaced this one.' : 'This proposal is outdated. Generate a new one.'} tone="warning" />
-                        : <div className="flex items-center gap-2"><Button variant="primary" size="sm" className="flex-1" onClick={onPreview}>Preview changes</Button><Button variant="ghost" size="sm" className="flex-1" onClick={onIgnore} isLoading={rejecting} loadingText="Ignoring…">Ignore</Button></div>
+                        : <div className="flex items-center gap-2"><Button variant="ghost" size="sm" className="flex-1" onClick={onIgnore} isLoading={rejecting} loadingText="Ignoring…">Ignore</Button><Button variant="primary" size="sm" className="flex-1" onClick={onPreview}>Preview changes</Button></div>
         }>
                 <p className="text-sm leading-6 text-slate-700">{presentation.outcome || 'Review the proposed workflow changes.'}</p>
 

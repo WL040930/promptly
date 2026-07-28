@@ -3,7 +3,7 @@ const MAX_REQUIREMENTS = 30;
 const MAX_OPERATIONS = 50;
 const MAX_VERIFIER_ISSUES = 3;
 const INPUT_TYPES = new Set(['single_choice', 'multiple_choice', 'text', 'textarea']);
-const PLANNER_TYPES = new Set(['reply', 'message', 'direct_plan', 'plan_complete']);
+const PLANNER_TYPES = new Set(['reply', 'message', 'inspect_form', 'direct_plan', 'plan_complete']);
 const CAPABILITIES = new Set(['respondent_confirmation', 'owner_approval']);
 
 const issue = (code, path, message) => ({ code, path, message });
@@ -91,6 +91,7 @@ export const validateWorkflowPlannerResult = result => {
     const issues = [];
     if (!PLANNER_TYPES.has(result.type)) issues.push(issue('INVALID_PLANNER_TYPE', 'type', 'Unsupported planner outcome.'));
     if (result.type === 'reply') issues.push(...textIssues(result.message, 'message', { required: true }));
+    if (result.type === 'inspect_form') issues.push(...textIssues(result.formId, 'formId', { required: true, max: 150 }));
     if (result.type === 'message') {
         issues.push(...textIssues(result.message, 'message', { required: true }));
         issues.push(...validateInputs(result.inputs));

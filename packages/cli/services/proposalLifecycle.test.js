@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     supersedePendingChatFormProposals,
-    supersedePendingFormChatProposals
+    supersedePendingFormChatProposals,
+    supersedePendingWorkflowProposals
 } from './proposalLifecycle.js';
 
 const fakeMessage = fields => ({
@@ -26,9 +27,9 @@ test('supersedePendingFormChatProposals disables every older pending proposal fo
     });
 
     assert.deepEqual(supersededMessageIds, ['old_1', 'old_3']);
-    assert.equal(messages[0].payload.status, 'superseded');
-    assert.equal(messages[1].payload.status, 'accepted');
-    assert.equal(messages[2].payload.status, 'superseded');
+    assert.equal(messages[0].proposalStatus, 'superseded');
+    assert.equal(messages[1].proposalStatus, 'accepted');
+    assert.equal(messages[2].proposalStatus, 'superseded');
 });
 
 test('supersedePendingChatFormProposals only disables pending proposals for the same form', async () => {
@@ -48,4 +49,24 @@ test('supersedePendingChatFormProposals only disables pending proposals for the 
     assert.equal(messages[0].proposalStatus, 'superseded');
     assert.equal(messages[1].proposalStatus, 'pending');
     assert.equal(messages[2].proposalStatus, 'pending');
+});
+
+test('supersedePendingWorkflowProposals disables every older pending workflow proposal', async () => {
+    const messages = [
+        fakeMessage({ id: 'workflow_old_1', threadId: 'thread_1', kind: 'workflow_proposal', proposalStatus: 'pending', payload: {} }),
+        fakeMessage({ id: 'form_pending', threadId: 'thread_1', kind: 'form_proposal', proposalStatus: 'pending', payload: {} }),
+        fakeMessage({ id: 'workflow_old_2', threadId: 'thread_1', kind: 'workflow_proposal', proposalStatus: 'pending', payload: {} }),
+        fakeMessage({ id: 'workflow_applied', threadId: 'thread_1', kind: 'workflow_proposal', proposalStatus: 'applied', payload: {} })
+    ];
+
+    const supersededMessageIds = await supersedePendingWorkflowProposals({
+        threadId: 'thread_1',
+        messageModel: { findAll: async () => messages }
+    });
+
+    assert.deepEqual(supersededMessageIds, ['workflow_old_1', 'workflow_old_2']);
+    assert.equal(messages[0].proposalStatus, 'superseded');
+    assert.equal(messages[1].proposalStatus, 'pending');
+    assert.equal(messages[2].proposalStatus, 'superseded');
+    assert.equal(messages[3].proposalStatus, 'applied');
 });

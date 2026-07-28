@@ -6,6 +6,7 @@ import {
 } from '../ai/workflow/workflowAgentService.js';
 import { generateWorkflowTurn } from '../ai/workflow/pipeline/pipeline.js';
 import { createAgentCapabilityRegistry } from '../agent/agentCapabilityRegistry.js';
+import { projectFormResourceContext } from '../ai/form/context/formResourceContext.js';
 
 const completed = output => ({ status: 'completed', output });
 
@@ -29,22 +30,7 @@ const redactSensitive = (value, key = '', depth = 0) => {
     ]));
 };
 
-const compactFormContext = form => {
-    if (!form) return { error: 'Form not found' };
-    const value = form.toJSON ? form.toJSON() : form;
-    return {
-        id: value.id,
-        title: value.title,
-        description: value.description || '',
-        updatedAt: value.updatedAt,
-        fields: (value.fields || []).map(field => ({
-            id: field.id,
-            label: field.label || field.name || '',
-            type: field.type,
-            required: Boolean(field.required)
-        }))
-    };
-};
+const compactFormContext = form => projectFormResourceContext(form) || { error: 'Form not found' };
 
 const compactWorkflowContext = workflow => {
     if (!workflow) return { error: 'Workflow not found' };
