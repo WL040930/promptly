@@ -3,7 +3,7 @@ import NodeRegistry from '../../../utils/NodeRegistry.js';
 import { validateWorkflow } from '../../engine/workflowValidator.js';
 import nodeResourceService from '../../nodes/nodeResourceService.js';
 import { normalizeNodeInputOptions, resolveNodeResourceParams } from '../../../../shared/nodeConfigContract.js';
-import { formFieldRuntimeToken, normalizeFormFieldBindings } from './domain/formFieldBindings.js';
+import { compileWorkflowBindings, formFieldReferenceExpression, isWorkflowExpression, validateWorkflowExpressions } from '../../../../shared/workflowExpressions.js';
 
 
 const resourceVariantKey = params => JSON.stringify(Object.fromEntries(Object.entries(params || {}).sort(([left], [right]) => left.localeCompare(right))));
@@ -102,14 +102,38 @@ const resourceContextForInput = (input, node, resourceContext) => {
     return entry.variants[resourceVariantKey(params)] || null;
 };
 
-export const validateGeneratedResourceValues = ({ nodes = [], specs = [], resourceContext = {} } = {}) => {
+export const isProvisionedResourceReference = value => value !== null
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && typeof value.$provision === 'string'
+    && Object.keys(value).length === 1;
+
+export const validateGeneratedResourceValues = ({ nodes = [], specs = [], resourceContext = {}, resourceChanges = [] } = {}) => {
     const specsByKey = new Map(specs.map(spec => [spec.nodeKey || `${spec.type}:${spec.subType}`, spec]));
+    const provisionRefs = new Set((resourceChanges || [])
+        .filter(change => change?.type === 'create_google_spreadsheet')
+        .map(change => change.ref));
     const issues = [];
     nodes.forEach((node, nodeIndex) => {
         const spec = specsByKey.get(node.nodeKey || `${node.type}:${node.subType}`);
         (spec?.schema?.inputs || []).filter(input => input.type === 'resource-select' && input.resource).forEach(input => {
             const value = node.config?.[input.name];
             if (value === undefined || value === null || value === '') return;
+            if (isProvisionedResourceReference(value)) {
+                if (input.resource === 'google-spreadsheets' && provisionRefs.has(value.$provision)) return;
+                issues.push({
+                    code: 'WORKFLOW_PROVISION_REFERENCE_INVALID',
+                    path: `nodes[${nodeIndex}].config.${input.name}`,
+                    message: `${input.label || input.name} refers to a spreadsheet that is not being created by this proposal.`
+                });
+                return;
+            }
+            const dependsOnProvisionedSpreadsheet = Object.values(input.resourceParams || {}).some(binding => (
+                typeof binding === 'string'
+                && binding.startsWith('$')
+                && isProvisionedResourceReference(node.config?.[binding.slice(1)])
+            ));
+            if (dependsOnProvisionedSpreadsheet) return;
             const resource = resourceContextForInput(input, node, resourceContext);
             if (!resource || resource.error) {
                 issues.push({
@@ -199,9 +223,18 @@ export const resolveRespondentEmailField = ({ formSchema = null, preferredFieldI
     return { field: null, candidates: scored, ambiguous: true, reason: 'ambiguous' };
 };
 
-const dynamicPathsIn = value => typeof value === 'string'
-    ? [...value.matchAll(/\{\{([^{}]+)\}\}/g)].map(match => match[1].trim())
-    : [];
+const dynamicPathsIn = value => {
+    if (isWorkflowExpression(value)) {
+        if (value.$expr === 'reference') return [{ nodeId: value.nodeId, path: value.path }];
+        return (value.parts || []).flatMap(part => part.reference ? dynamicPathsIn(part.reference) : []);
+    }
+    return typeof value === 'string'
+        ? [...value.matchAll(/\{\{([^{}]+)\}\}/g)].map(match => {
+            const [nodeId, ...path] = match[1].trim().split('.');
+            return { nodeId, path };
+        })
+        : [];
+};
 
 const reachableFrom = (sources, edges) => {
     const adjacency = new Map();
@@ -222,7 +255,7 @@ const reachableFrom = (sources, edges) => {
     return reachable;
 };
 
-const recipientPathFor = (trigger, field) => formFieldRuntimeToken(trigger.id, field.id);
+const recipientPathFor = (trigger, field) => formFieldReferenceExpression(trigger.id, field.id);
 
 /**
  * Compile only machine-level capability bindings. The model remains free to
@@ -236,16 +269,14 @@ export const compileWorkflowDraft = ({
     edges = []
 } = {}) => {
     const copiedNodes = nodes.map(node => ({ ...node, config: { ...(node.config || {}) } }));
-    const normalizedBindings = normalizeFormFieldBindings({ nodes: copiedNodes, formSchema });
-    const nextNodes = normalizedBindings.nodes;
+    const compiledBindings = compileWorkflowBindings({ nodes: copiedNodes, formSchema });
+    const nextNodes = compiledBindings.nodes;
     const nextEdges = edges.map(edge => ({ ...edge }));
-    const repairs = [...normalizedBindings.repairs];
-    const bindingIssues = normalizedBindings.issues;
+    const repairs = [...compiledBindings.repairs];
+    let bindingIssues = [...compiledBindings.issues];
     const wantsRespondentConfirmation = requiredCapabilities.includes('respondent_confirmation');
     const wantsLegacyApplicationReview = requiredCapabilities.includes('application_review_decision');
     const wantsOwnerApproval = wantsLegacyApplicationReview || requiredCapabilities.includes('owner_approval');
-    if (!wantsRespondentConfirmation && !wantsOwnerApproval) return { nodes: nextNodes, edges: nextEdges, repairs, bindingIssues };
-
     const formTriggers = nextNodes.filter(node => node?.subType === 'form-submission');
     const emailActions = nextNodes.filter(isEmailAction);
     const respondentEmail = resolveRespondentEmailField({ formSchema, preferredFieldId: respondentEmailFieldId });
@@ -256,11 +287,17 @@ export const compileWorkflowDraft = ({
         && (emailActions.length === 1 || wantsOwnerApproval)) {
         const expected = recipientPathFor(formTriggers[0], respondentEmail.field);
         for (const emailAction of emailActions) {
-            if (emailAction.config.to !== expected) {
+            if (JSON.stringify(emailAction.config.to) !== JSON.stringify(expected)) {
                 emailAction.config.to = expected;
                 repairs.push({ code: 'RESPONDENT_RECIPIENT_BOUND', nodeId: emailAction.id, fieldId: respondentEmail.field.id });
             }
         }
+        // The compiler can now safely discard a bad AI binding only where the
+        // capability layer replaced it with the verified respondent address.
+        const repairedRecipientPaths = new Set(emailActions.map(action => `nodes.${action.id}.config.to`));
+        bindingIssues = bindingIssues.filter(item => !(
+            item.code === 'WORKFLOW_BINDING_UNKNOWN' && repairedRecipientPaths.has(item.path)
+        ));
     }
 
     if (wantsOwnerApproval) {
@@ -273,7 +310,8 @@ export const compileWorkflowDraft = ({
         }
     }
 
-    return { nodes: nextNodes, edges: nextEdges, repairs, bindingIssues };
+    bindingIssues.push(...validateWorkflowExpressions({ nodes: nextNodes, formSchema }));
+    return { nodes: nextNodes, edges: nextEdges, repairs, bindingIssues, bindingCatalogue: compiledBindings.catalogue };
 };
 
 /**
@@ -317,12 +355,12 @@ export const validateGeneratedWorkflowCapabilities = ({
         issues.push({ code: 'RESPONDENT_CONFIRMATION_DISCONNECTED', path: 'nodes', message: 'At least one confirmation email must be reachable from the form-submission trigger.' });
     }
 
-    const hasValidRecipient = reachableEmailActions.some(emailAction => dynamicPathsIn(emailAction.config?.to).some(path => {
-        const parts = path.split('.');
+    const hasValidRecipient = reachableEmailActions.some(emailAction => dynamicPathsIn(emailAction.config?.to).some(reference => {
+        const parts = reference.path;
         return formTriggers.some(trigger => (
-            parts[0] === trigger.id
-            && parts[1] === 'fields'
-            && contactFieldIds.has(parts[2])
+            reference.nodeId === trigger.id
+            && parts[0] === 'fields'
+            && contactFieldIds.has(parts[1])
         ));
     }));
     if (wantsRespondentConfirmation && !hasValidRecipient) {

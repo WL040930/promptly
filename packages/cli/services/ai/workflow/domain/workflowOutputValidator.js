@@ -5,6 +5,7 @@ const MAX_VERIFIER_ISSUES = 3;
 const INPUT_TYPES = new Set(['single_choice', 'multiple_choice', 'text', 'textarea']);
 const PLANNER_TYPES = new Set(['reply', 'message', 'inspect_form', 'direct_plan', 'plan_complete']);
 const CAPABILITIES = new Set(['respondent_confirmation', 'owner_approval']);
+const RESOURCE_CHANGE_TYPES = new Set(['create_google_spreadsheet']);
 
 const issue = (code, path, message) => ({ code, path, message });
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -86,6 +87,27 @@ const validateContextDelta = value => {
     return issues;
 };
 
+const validateResourceChanges = changes => {
+    if (changes === undefined) return [];
+    if (!Array.isArray(changes)) return [issue('INVALID_RESOURCE_CHANGES', 'resourceChanges', 'Resource changes must be an array.')];
+    const issues = [];
+    const refs = new Set();
+    changes.forEach((change, index) => {
+        const path = `resourceChanges[${index}]`;
+        if (!isObject(change)) {
+            issues.push(issue('INVALID_RESOURCE_CHANGE', path, 'Resource change must be an object.'));
+            return;
+        }
+        issues.push(...textIssues(change.ref, `${path}.ref`, { required: true, max: 100 }));
+        if (!RESOURCE_CHANGE_TYPES.has(change.type)) issues.push(issue('INVALID_RESOURCE_CHANGE_TYPE', `${path}.type`, 'Unsupported resource change.'));
+        issues.push(...textIssues(change.title, `${path}.title`, { required: true, max: 180 }));
+        if (change.sheetTitle !== undefined) issues.push(...textIssues(change.sheetTitle, `${path}.sheetTitle`, { max: 100 }));
+        if (change.ref && refs.has(change.ref)) issues.push(issue('DUPLICATE_RESOURCE_CHANGE_REF', `${path}.ref`, 'Resource change refs must be unique.'));
+        refs.add(change.ref);
+    });
+    return issues;
+};
+
 export const validateWorkflowPlannerResult = result => {
     if (!isObject(result)) return [issue('INVALID_PLANNER_RESPONSE', '', 'Planner response must be an object.')];
     const issues = [];
@@ -109,6 +131,7 @@ export const validateWorkflowPlannerResult = result => {
         }
         if (result.type === 'direct_plan') issues.push(...validateWorkflowWorkerResult(result));
         issues.push(...validateContextDelta(result.contextDelta));
+        issues.push(...validateResourceChanges(result.resourceChanges));
     }
     return issues;
 };

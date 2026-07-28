@@ -1,6 +1,7 @@
 /**
  * Utility to parse and resolve variables in node configurations against the execution context.
  */
+import { isWorkflowExpression, resolveWorkflowExpression } from '../../shared/workflowExpressions.js';
 
 /**
  * Resolves a dot-notation path against the context object.
@@ -68,6 +69,10 @@ export function deepResolve(config, contextData) {
         return config;
     }
 
+    if (isWorkflowExpression(config)) {
+        return resolveWorkflowExpression(config, contextData).value;
+    }
+
     if (typeof config === 'string') {
         return resolveVariables(config, contextData);
     }
@@ -89,6 +94,10 @@ export function deepResolve(config, contextData) {
 
 /** Returns unresolved template references with their configuration paths. */
 export function findUnresolvedVariables(value, path = 'config', results = []) {
+    if (isWorkflowExpression(value)) {
+        results.push({ path, token: 'workflow expression', reference: value });
+        return results;
+    }
     if (typeof value === 'string') {
         for (const match of value.matchAll(/\{\{([^{}]+)\}\}/g)) {
             results.push({ path, token: match[0], reference: match[1].trim() });

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import VariablePickerModal from '../modals/VariablePickerModal';
 import VariableTokenPreview from './VariableTokenPreview.jsx';
+import { isWorkflowExpression } from '../../../../../shared/workflowExpressions.js';
 
 const TokenPreview = ({ value, availableVars = [], className, onClick }) => (
   <div
@@ -33,6 +34,10 @@ const VariableInput = ({
   availableVars = [],
   rows = 4,
 }) => {
+  // AI expressions are read-only rich tokens until the user deliberately
+  // replaces them with manual text; native inputs cannot receive an object.
+  const textValue = typeof value === 'string' ? value : '';
+  const isExpression = isWorkflowExpression(value);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
 
@@ -55,16 +60,16 @@ const VariableInput = ({
   /* ── Track cursor position before picker opens ────────────────────────── */
   const saveCursor = useCallback(() => {
     if (inputRef.current) {
-      cursorRef.current = inputRef.current.selectionStart ?? value.length;
+      cursorRef.current = inputRef.current.selectionStart ?? textValue.length;
     }
-  }, [value]);
+  }, [textValue]);
 
   /* ── Insert token at last cursor position ─────────────────────────────── */
   const insertToken = useCallback((varPath) => {
     const token = `{{${varPath}}}`;
-    const pos = cursorRef.current ?? value.length;
-    const before = value.substring(0, pos);
-    const after = value.substring(pos);
+    const pos = cursorRef.current ?? textValue.length;
+    const before = textValue.substring(0, pos);
+    const after = textValue.substring(pos);
     const newValue = before + token + after;
 
     onChange?.(newValue);
@@ -78,13 +83,13 @@ const VariableInput = ({
         inputRef.current.setSelectionRange(cursorRef.current, cursorRef.current);
       }
     }, 0);
-  }, [value, onChange]);
+  }, [textValue, onChange]);
 
   const inputClass =
     'w-full bg-slate-50 border border-slate-200 rounded-lg text-slate-800 px-3 py-2 outline-none text-sm font-medium focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 transition-all shadow-inner resize-none pr-9';
 
   const hasVars = availableVars.length > 0;
-  const hasTokens = /{{[^}]+}}/.test(value ?? '');
+  const hasTokens = isExpression || /{{[^}]+}}/.test(textValue);
 
   // Show the real input if focused, or if there are no tokens (so empty state looks normal)
   const showRealInput = isFocused || !hasTokens;
@@ -113,7 +118,7 @@ const VariableInput = ({
           {multiline ? (
             <textarea
               ref={inputRef}
-              value={value}
+              value={textValue}
               rows={rows}
               placeholder={placeholder}
               className={inputClass}
@@ -127,7 +132,7 @@ const VariableInput = ({
             <input
               ref={inputRef}
               type="text"
-              value={value}
+              value={textValue}
               placeholder={placeholder}
               className={inputClass}
               onChange={e => onChange?.(e.target.value)}

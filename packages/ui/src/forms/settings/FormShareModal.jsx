@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
+import { Check, Code2, Copy, ExternalLink, Link2, Share2, X } from 'lucide-react';
 
 /**
  * FormShareModal — modal for sharing a form via link or embed code.
@@ -70,12 +71,17 @@ const FormShareModal = ({ form, isOpen, onClose }) => {
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [handleClose, isOpen]);
 
+    useEffect(() => {
+        if (!isOpen) return undefined;
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = previousOverflow; };
+    }, [isOpen]);
+
     if (!isOpen) return null;
 
     const formUrl = `${window.location.origin}/f/${form.id}`;
     const embedCode = `<iframe src="${formUrl}" width="100%" height="600" frameborder="0" style="border:none;border-radius:24px;"></iframe>`;
-    const accentColor = form?.settings?.accentColor || '#5b4ee8';
-
     const handleCopy = async (text) => {
         try {
             if (navigator.clipboard?.writeText) {
@@ -99,60 +105,61 @@ const FormShareModal = ({ form, isOpen, onClose }) => {
     };
 
     return createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6" style={{ zIndex: 99999 }} role="dialog" aria-modal="true" aria-labelledby="share-form-title">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" style={{ zIndex: 99999 }} role="dialog" aria-modal="true" aria-labelledby="share-form-title">
             {/* Backdrop */}
             <div
                 ref={overlayRef}
-                className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm"
+                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
                 onClick={handleClose}
             />
 
             {/* Modal */}
-            <div ref={modalRef} tabIndex="-1" className="relative flex max-h-[min(760px,calc(100vh-1.5rem))] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_28px_80px_rgba(23,24,39,0.22)] sm:max-h-[min(760px,calc(100vh-3rem))] sm:rounded-[1.75rem]">
+            <div ref={modalRef} tabIndex="-1" className="relative flex max-h-[min(680px,calc(100vh-2rem))] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:max-h-[min(680px,calc(100vh-3rem))]">
                 {/* Header */}
-                <div className="relative flex items-center justify-between border-b border-slate-100 px-5 py-5 sm:px-7 sm:py-6">
+                <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/80 px-5 py-4 sm:px-6">
                     <div className="flex min-w-0 items-center gap-3">
-                        <div className="h-10 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: accentColor }} aria-hidden="true" />
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600">
+                            <Share2 className="h-5 w-5" strokeWidth={2.25} />
+                        </div>
                         <div className="min-w-0">
-                            <span className="eyebrow">Publish surface</span>
-                            <h2 id="share-form-title" className="mt-1 truncate font-display text-xl font-bold tracking-tight text-[#171827]">Share {form.title || 'form'}</h2>
+                            <h2 id="share-form-title" className="truncate text-base font-bold text-slate-900">Share form</h2>
+                            <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{form.title || 'Untitled form'}</p>
                         </div>
                     </div>
                     <button
+                        type="button"
                         onClick={handleClose}
                         aria-label="Close share dialog"
-                        className="rounded-xl bg-slate-50 p-2 text-gray-400 transition-colors hover:bg-slate-100 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-[#5b4ee8]/40"
+                        className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                     >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
+                        <X className="h-5 w-5" strokeWidth={2.25} />
                     </button>
                 </div>
 
                 {/* Tab Buttons */}
-                <div role="tablist" aria-label="Share options" className="flex gap-1 overflow-x-auto border-b border-gray-100 px-5 pt-1 sm:px-7 sm:pt-2">
+                <div role="tablist" aria-label="Share options" className="flex items-center gap-1 border-b border-slate-200 bg-white px-5 py-2 sm:px-6">
                     {[
-                        { id: 'link', label: 'Share Link', icon: 'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71' },
-                        { id: 'embed', label: 'Embed Code', icon: 'M16 18l6-6-6-6M8 6l-6 6 6 6' },
+                        { id: 'link', label: 'Share link', Icon: Link2 },
+                        { id: 'embed', label: 'Embed code', Icon: Code2 },
                     ].map(tab => {
                         const isActive = activeShareTab === tab.id;
+                        const Icon = tab.Icon;
                         return (
                             <button
+                                type="button"
                                 key={tab.id}
                                 id={`${tab.id}-share-tab`}
                                 role="tab"
                                 aria-selected={isActive}
                                 aria-controls={`${tab.id}-share-panel`}
                                 onClick={() => { setActiveShareTab(tab.id); setCopied(false); }}
-                                className={`flex shrink-0 items-center justify-center gap-2.5 border-b-[3px] px-2 pb-3.5 pt-1 text-[14px] font-bold transition-all ${
+                                className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
                                     isActive
-                                        ? 'border-gray-900 text-gray-900'
-                                        : 'border-transparent text-gray-400 hover:text-gray-600'
+                                        ? 'bg-indigo-50 text-indigo-700'
+                                        : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
                                 }`}
                             >
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d={tab.icon} />
-                                </svg>
+                                <Icon className="h-4 w-4" strokeWidth={2.25} />
                                 {tab.label}
                             </button>
                         );
@@ -160,100 +167,83 @@ const FormShareModal = ({ form, isOpen, onClose }) => {
                 </div>
 
                 {/* Content */}
-                <div className="min-h-[260px] overflow-y-auto p-5 sm:p-7">
+                <div className="min-h-[270px] overflow-y-auto p-5 sm:p-6">
                     {activeShareTab === 'link' && (
-                        <div id="link-share-panel" role="tabpanel" aria-labelledby="link-share-tab" className="flex flex-col gap-5">
-                            <div className="rounded-2xl border border-[#d9d5ff] bg-[#fafaff] p-5 sm:p-6">
-                                <div className="mb-4 flex items-start gap-3">
-                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eeeaff] text-[#5b4ee8]" aria-hidden="true">
-                                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.71 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
-                                    </div>
-                                    <div>
-                                        <h3 className="font-display text-base font-bold text-[#171827]">Public form link</h3>
-                                        <p className="mt-1 text-sm leading-5 text-slate-500">Anyone with this link can open and submit your form.</p>
-                                    </div>
-                                </div>
-                                <label htmlFor="public-form-url" className="mb-2 block text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">URL</label>
+                        <div id="link-share-panel" role="tabpanel" aria-labelledby="link-share-tab" className="space-y-5">
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-900">Public link</h3>
+                                <p className="mt-1 text-sm leading-5 text-slate-500">Send this link to collect responses. Anyone with it can open the form.</p>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 sm:p-4">
+                                <label htmlFor="public-form-url" className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Form link</label>
                                 <div className="flex flex-col gap-2 sm:flex-row">
-                                <input
-                                    id="public-form-url"
-                                    ref={linkInputRef}
-                                    type="text"
-                                    readOnly
-                                    value={formUrl}
-                                    aria-label="Public form URL"
-                                    className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[13px] font-medium text-slate-700 shadow-inner transition-all focus:border-[#5b4ee8] focus:outline-none focus:ring-4 focus:ring-[#5b4ee8]/10"
-                                    onFocus={e => e.target.select()}
-                                    onClick={e => e.target.select()}
-                                />
-                                <button
-                                    onClick={() => handleCopy(formUrl)}
-                                    aria-live="polite"
-                                    className={`flex min-h-[48px] shrink-0 items-center justify-center gap-2 rounded-xl px-5 py-3 text-[14px] font-bold transition-all duration-300 shadow-sm ${
-                                        copied
-                                            ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 shadow-inner'
-                                            : 'text-white hover:opacity-90 hover:shadow-md'
-                                    }`}
-                                    style={!copied ? { backgroundColor: accentColor } : {}}
-                                >
-                                    {copied ? (
-                                        <span className="flex items-center gap-2">
-                                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                                <polyline points="20 6 9 17 4 12" />
-                                            </svg>
-                                            Copied
-                                        </span>
-                                    ) : 'Copy Link'}
-                                </button>
-                                </div>
-                                <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-semibold text-slate-500">
-                                    <a href={formUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[#5b4ee8] hover:text-[#4e42d0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5b4ee8]/40 rounded-md">
-                                        Open public form
-                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10" /></svg>
-                                    </a>
-                                    <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#c8f17b]" aria-hidden="true" /> No sign-in required</span>
+                                    <input
+                                        id="public-form-url"
+                                        ref={linkInputRef}
+                                        type="text"
+                                        readOnly
+                                        value={formUrl}
+                                        aria-label="Public form URL"
+                                        className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10"
+                                        onFocus={e => e.target.select()}
+                                        onClick={e => e.target.select()}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCopy(formUrl)}
+                                        aria-live="polite"
+                                        className={`inline-flex min-h-[42px] shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+                                            copied ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                                        }`}
+                                    >
+                                        {copied ? <><Check className="h-4 w-4" strokeWidth={2.75} />Copied</> : <><Copy className="h-4 w-4" strokeWidth={2.25} />Copy link</>}
+                                    </button>
                                 </div>
                             </div>
+                            <a href={formUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 transition-colors hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400">
+                                Open public form <ExternalLink className="h-3.5 w-3.5" strokeWidth={2.25} />
+                            </a>
                         </div>
                     )}
 
                     {activeShareTab === 'embed' && (
-                        <div id="embed-share-panel" role="tabpanel" aria-labelledby="embed-share-tab" className="flex flex-col gap-4">
-                            <p className="text-[15px] font-medium text-gray-500">Paste this code into your website's HTML to embed the form.</p>
-                            <div className="relative group">
-                                <pre className="max-h-40 overflow-auto rounded-2xl border border-gray-200 bg-gray-50/80 p-5 font-mono text-[12px] leading-relaxed text-gray-600 shadow-inner">
+                        <div id="embed-share-panel" role="tabpanel" aria-labelledby="embed-share-tab" className="space-y-5">
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-900">Embed on a website</h3>
+                                <p className="mt-1 text-sm leading-5 text-slate-500">Paste this snippet into your site’s HTML where the form should appear.</p>
+                            </div>
+                            <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-950">
+                                <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+                                    <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">HTML iframe</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCopy(embedCode)}
+                                        aria-label="Copy embed code"
+                                        className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+                                            copied ? 'bg-emerald-400/15 text-emerald-300' : 'bg-white/10 text-slate-200 hover:bg-white/15'
+                                        }`}
+                                    >
+                                        {copied ? <><Check className="h-3.5 w-3.5" strokeWidth={2.75} />Copied</> : <><Copy className="h-3.5 w-3.5" strokeWidth={2.25} />Copy code</>}
+                                    </button>
+                                </div>
+                                <pre className="max-h-44 overflow-auto p-4 font-mono text-xs leading-6 text-slate-200">
                                     {embedCode}
                                 </pre>
-                                <button
-                                    onClick={() => handleCopy(embedCode)}
-                                    aria-label="Copy embed code"
-                                    className={`absolute right-3 top-3 rounded-xl px-4 py-2 text-[13px] font-bold transition-all duration-300 ${
-                                        copied
-                                            ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
-                                            : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-300 shadow-sm'
-                                    }`}
-                                >
-                                    {copied ? 'Copied!' : 'Copy'}
-                                </button>
                             </div>
                         </div>
                     )}
                 </div>
 
                 {/* Footer */}
-                <div className="flex flex-col items-start justify-between gap-3 border-t border-gray-100 bg-gray-50/50 px-5 py-4 sm:flex-row sm:items-center sm:px-7">
-                    <div className="flex items-center gap-2 text-[12px] font-semibold text-gray-500">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <circle cx="12" cy="12" r="10" />
-                            <line x1="12" y1="16" x2="12" y2="12" />
-                            <line x1="12" y1="8" x2="12.01" y2="8" />
-                        </svg>
-                        Anyone with the link can respond
+                <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3 sm:px-6">
+                    <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true" />
+                        Public access is enabled
                     </div>
                     <button
+                        type="button"
                         onClick={handleClose}
-                        aria-label="Close share dialog"
-                        className="text-[14px] font-bold text-gray-600 hover:text-gray-900 transition-colors px-4 py-2 hover:bg-gray-200/50 rounded-xl"
+                        className="rounded-lg px-3 py-2 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                     >
                         Done
                     </button>

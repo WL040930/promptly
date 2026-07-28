@@ -1,5 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getWorkflows, getWorkflowListPage, getWorkflow, createWorkflow, updateWorkflow, publishWorkflow, pauseWorkflow, deleteWorkflow } from '../backend.js';
+import {
+    reconcileWorkflowMutationFailure,
+    reconcileWorkflowMutationSuccess,
+    workflowMutationFields
+} from '../../utils/workflowMutationReconciliation.js';
 
 export const useWorkflows = () => {
     return useQuery({
@@ -46,7 +51,7 @@ export const useUpdateWorkflow = () => {
             
             const previousWorkflows = queryClient.getQueryData(['workflows']);
             const previousSingle = queryClient.getQueryData(['workflows', id]);
-            const optimisticData = Object.fromEntries(Object.entries(data || {}).filter(([key]) => key !== 'expectedRevision'));
+            const optimisticData = workflowMutationFields(data);
             
             if (previousWorkflows) {
                 queryClient.setQueryData(['workflows'], old =>
@@ -59,19 +64,36 @@ export const useUpdateWorkflow = () => {
             
             return { previousWorkflows, previousSingle, id };
         },
-        onSuccess: workflow => {
+        onSuccess: (workflow, variables, context) => {
             if (!workflow?.id) return;
-            queryClient.setQueryData(['workflows', workflow.id], workflow);
+            const submitted = context?.optimisticData || workflowMutationFields(variables?.data);
+            queryClient.setQueryData(['workflows', workflow.id], current => reconcileWorkflowMutationSuccess({
+                current,
+                server: workflow,
+                submitted
+            }));
             queryClient.setQueryData(['workflows'], old => old
-                ? old.map(item => item.id === workflow.id ? { ...item, ...workflow } : item)
+                ? old.map(item => item.id === workflow.id
+                    ? reconcileWorkflowMutationSuccess({ current: item, server: workflow, submitted })
+                    : item)
                 : old);
         },
         onError: (err, variables, context) => {
+            const submitted = context?.optimisticData || workflowMutationFields(variables?.data);
             if (context?.previousWorkflows) {
-                queryClient.setQueryData(['workflows'], context.previousWorkflows);
+                queryClient.setQueryData(['workflows'], current => current?.map(item => {
+                    const previous = context.previousWorkflows.find(candidate => candidate.id === item.id);
+                    return item.id === context.id
+                        ? reconcileWorkflowMutationFailure({ current: item, previous, submitted })
+                        : item;
+                }) || context.previousWorkflows);
             }
             if (context?.previousSingle && context?.id) {
-                queryClient.setQueryData(['workflows', context.id], context.previousSingle);
+                queryClient.setQueryData(['workflows', context.id], current => reconcileWorkflowMutationFailure({
+                    current,
+                    previous: context.previousSingle,
+                    submitted
+                }));
             }
         },
         // The update endpoint returns the complete authoritative workflow.

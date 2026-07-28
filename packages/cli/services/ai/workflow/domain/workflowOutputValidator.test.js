@@ -58,6 +58,25 @@ test('planner validator accepts a valid plan_complete result', () => {
     assert.deepEqual(issues, []);
 });
 
+test('planner validator accepts a proposed Google Sheet creation', () => {
+    const issues = validateWorkflowPlannerResult({
+        type: 'plan_complete',
+        summary: 'Save approved responses.',
+        requirements: [{ id: 'req_1', description: 'Create a response spreadsheet.' }],
+        selectedNodeKeys: ['action:googleSheets'],
+        resourceChanges: [{ ref: 'responses_sheet', type: 'create_google_spreadsheet', title: 'Form responses', sheetTitle: 'Responses' }]
+    });
+    assert.deepEqual(issues, []);
+});
+
+test('planner validator rejects a spreadsheet change without a title', () => {
+    const issues = validateWorkflowPlannerResult({
+        type: 'plan_complete', summary: 'Save responses.', requirements: [{ id: 'req_1', description: 'Create a sheet.' }], selectedNodeKeys: [],
+        resourceChanges: [{ ref: 'responses_sheet', type: 'create_google_spreadsheet' }]
+    });
+    assert.ok(issues.some(item => item.path === 'resourceChanges[0].title'));
+});
+
 test('planner validator rejects an unknown type', () => {
     const issues = validateWorkflowPlannerResult({ type: 'invent_workflow' });
     assert.ok(issues.some(i => i.code === 'INVALID_PLANNER_TYPE'));

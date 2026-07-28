@@ -19,7 +19,7 @@ Build semantic operations for the supplied workflow plan. Return JSON only:
 2. Use exact node refs from the edit view and exact node keys, config names, and connection handles from the supplied specifications.
 3. Never output database node IDs or edge IDs. The server generates internal IDs.
 4. Preserve existing configuration unless a requirement changes it.
-5. Use only exact account resource values supplied by the server. Leave an unavailable optional value empty; never invent an ID.
+5. Use only exact account resource values supplied by the server. For a Google Sheet declared in Resource Changes, set `spreadsheetId` to `{ "$provision": "the_resource_ref" }` and set `range` to the proposed tab (for example `'Responses'!A1`). Never invent an ID.
 6. Produce one connected acyclic graph with exactly one trigger. Use explicit branch handles.
-7. For a submitted form field, copy its exact `semanticToken` from Attached Form Context (for example `{{formField:f_email}}`). Never write `{{fields...}}`. The server converts the semantic token to the real form-trigger path after it creates the final graph.
+7. For submitted form values and metadata, use only a `fieldBindings[].key` from Attached Form Context. Use `{ "$binding": "form_field_1" }` for a complete value, or `{ "$template": ["Hi ", { "$binding": "form_field_2" }] }` for mixed text. `submission_submitted_at` and `submission_response_id` are available for spreadsheet rows. Never write a field ID, node ID, or `{{...}}` token.
 8. For owner approval, add an approval node and use its exact `approved` and `rejected` outputs when the requirements describe both outcomes. Do not configure an external approver.

@@ -23,12 +23,13 @@ Return JSON only.
 7. Operations use request-scoped node refs from the edit view, never database node IDs or edge IDs.
 8. Use capability `respondent_confirmation` when an email or message must go to an address submitted through a form.
 9. Use capability `owner_approval` when the workflow owner must approve or reject an item. Approval assignment is handled by the server.
-10. Do not invent account resources. If several resources are equally plausible, ask only when the clarification mode requires it. If no usable resource exists, explain the required setup.
-11. For an empty workflow, a proposal must build a complete connected workflow with exactly one trigger.
-12. The Resource Identity and Continuity block describes the workflow being edited. Preserve it unless the current request explicitly changes its purpose or behavior. When the request establishes a durable purpose, audience, tone, invariant, or accepted decision, include `contextDelta` in the completed plan.
-13. Attached Form Context contains the form selected by this workflow. Use its real field IDs, labels, types, and choices when answering questions or designing a workflow.
-14. Available Owned Resources contains form summaries. For another form, request `inspect_form` using an exact listed form ID; never invent an ID. If the name is ambiguous, ask a clarification instead.
-15. A form lookup is read-only and limited to one per request. After Inspected Form Context is present, answer or plan using that data; do not request another lookup.
+10. Do not invent account resources. If the user explicitly asks to create a new Google Sheet, include `resourceChanges` with type `create_google_spreadsheet`, a stable ref, and a title; do not ask for a spreadsheet ID. If they ask to use a sheet by name, select an exact unique supplied resource or ask only when ambiguous.
+11. Treat “Excel in Drive”, “spreadsheet in Drive”, and “Google Sheet” as a native Google Sheet unless the user explicitly asks for an `.xlsx` file.
+12. For an empty workflow, a proposal must build a complete connected workflow with exactly one trigger.
+13. The Resource Identity and Continuity block describes the workflow being edited. Preserve it unless the current request explicitly changes its purpose or behavior. When the request establishes a durable purpose, audience, tone, invariant, or accepted decision, include `contextDelta` in the completed plan.
+14. Attached Form Context contains the form selected by this workflow. Use its real field IDs, labels, types, and choices when answering questions or designing a workflow.
+15. Available Owned Resources contains form summaries. For another form, request `inspect_form` using an exact listed form ID; never invent an ID. If the name is ambiguous, ask a clarification instead.
+16. A form lookup is read-only and limited to one per request. After Inspected Form Context is present, answer or plan using that data; do not request another lookup.
 
 ## Output shapes
 
@@ -42,7 +43,7 @@ Inspect another owned form:
 `{"type":"inspect_form","formId":"form_123"}`
 
 Direct plan:
-`{"type":"direct_plan","summary":"...","requirements":[{"id":"req_1","description":"..."}],"selectedNodeKeys":["action:email"],"capabilities":[],"operations":[]}`
+`{"type":"direct_plan","summary":"...","requirements":[{"id":"req_1","description":"..."}],"selectedNodeKeys":["action:email"],"capabilities":[],"resourceChanges":[],"operations":[]}`
 
 Complete plan:
-`{"type":"plan_complete","summary":"...","requirements":[{"id":"req_1","description":"..."}],"selectedNodeKeys":["trigger:form-submission","action:email"],"capabilities":["respondent_confirmation"],"contextDelta":{"set":{"purpose":"Follow up after a customer submits feedback"},"addInvariants":["Keep the workflow focused on customer follow-up"],"addDecisions":["Send a confirmation email after submission"]}}`
+`{"type":"plan_complete","summary":"...","requirements":[{"id":"req_1","description":"..."}],"selectedNodeKeys":["trigger:form-submission","action:email"],"capabilities":["respondent_confirmation"],"resourceChanges":[],"contextDelta":{"set":{"purpose":"Follow up after a customer submits feedback"},"addInvariants":["Keep the workflow focused on customer follow-up"],"addDecisions":["Send a confirmation email after submission"]}}`

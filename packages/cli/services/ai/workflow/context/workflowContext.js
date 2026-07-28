@@ -1,7 +1,7 @@
 import { getClarificationModeInstruction, normalizeClarificationMode } from '../../../../../shared/agentContract.js';
 import { buildWorkflowEditView } from '../workflowAgentService.js';
 import { projectFormResourceContext } from '../../form/context/formResourceContext.js';
-import { formFieldBindingsForWorker } from '../domain/formFieldBindings.js';
+import { buildFormBindingCatalogue } from '../../../../../shared/workflowExpressions.js';
 
 const MAX_CONTEXT_TEXT = 12000;
 const MAX_HISTORY = 10;
@@ -130,7 +130,7 @@ export const buildWorkflowPlannerContext = ({
     'Attached Form Context:',
     formSchema ? JSON.stringify({
         ...projectFormResourceContext(formSchema),
-        fieldBindings: formFieldBindingsForWorker({ workflow, formSchema })
+        fieldBindings: buildFormBindingCatalogue(formSchema).bindings
     }) : '(none)',
     '',
     'Inspected Form Context:',
@@ -170,6 +170,7 @@ export const buildWorkflowWorkerContext = ({
     specs,
     requirements,
     capabilities,
+    resourceChanges = [],
     resourceContext,
     formSchema = null,
     priorResponse = null,
@@ -193,10 +194,13 @@ export const buildWorkflowWorkerContext = ({
     'Machine Capabilities:',
     JSON.stringify(capabilities || []),
     '',
+    'Resource Changes:',
+    JSON.stringify(resourceChanges || []),
+    '',
     'Attached Form Context:',
     formSchema ? JSON.stringify({
         ...projectFormResourceContext(formSchema),
-        fieldBindings: formFieldBindingsForWorker({ workflow, formSchema })
+        fieldBindings: buildFormBindingCatalogue(formSchema).bindings
     }) : '(none)',
     '',
     'Account Resources:',
@@ -210,12 +214,15 @@ export const buildWorkflowWorkerContext = ({
     ] : [])
 ].join('\n');
 
-export const buildWorkflowVerifierContext = ({ requirements, operations, diff, workflow }) => [
+export const buildWorkflowVerifierContext = ({ requirements, operations, diff, workflow, resourceChanges = [] }) => [
     'Planner Requirements:',
     JSON.stringify(requirements || []),
     '',
     'Semantic Operations:',
     JSON.stringify(operations || []),
+    '',
+    'Proposed Resource Changes:',
+    JSON.stringify(resourceChanges || []),
     '',
     'Compiled Diff:',
     JSON.stringify(diff || {}),

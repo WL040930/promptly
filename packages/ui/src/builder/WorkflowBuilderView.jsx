@@ -11,7 +11,7 @@ import OverviewModal from './overview/OverviewModal';
 import { MODAL_TYPES, MODAL_CONFIG } from './overview/constants.js';
 import TestRunModal from './components/modals/TestRunModal';
 import VersionHistorySidebar from './components/sidebars/VersionHistorySidebar';
-import { navigate } from '../utils/router.js';
+import { navigate, navigateTo } from '../utils/router.js';
 import { useWorkflow, useUpdateWorkflow, usePublishWorkflow, usePauseWorkflow } from '../api/hooks/useWorkflows.js';
 import { useRunWorkflow } from '../api/hooks/useRunWorkflow.js';
 import ExecutionPanel from './components/panels/ExecutionPanel';
@@ -335,6 +335,18 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     }, [activeWorkflowId, queryClient, nodes, edges, takeSnapshot]);
 
     const flushPendingWorkflowSave = useCallback(() => workflowSaveQueueRef.current?.flush() || Promise.resolve(null), []);
+
+    const handleViewModeChange = useCallback(mode => {
+        if (!activeWorkflowId) return;
+        const editor = mode === 'ai' ? 'ai' : 'visual';
+        if (route?.editor === editor) return;
+        navigateTo({
+            page: 'automation-build',
+            automationId: activeWorkflowId,
+            editor,
+            ...(route?.prompt ? { prompt: route.prompt } : {})
+        });
+    }, [activeWorkflowId, route?.editor, route?.prompt]);
 
     const publishWorkflow = useCallback(async ({ closeConfirmOnSuccess = false } = {}) => {
         if (!activeWorkflowId) return;
@@ -673,7 +685,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                     onToggleHistory={() => setIsHistorySidebarOpen(!isHistorySidebarOpen)}
                     isHistorySidebarOpen={isHistorySidebarOpen}
                     viewMode={viewMode}
-                    onViewModeChange={(mode) => setViewMode(mode)}
+                    onViewModeChange={handleViewModeChange}
                 />
 
                 <div className="flex-1 p-0 overflow-hidden flex flex-col bg-slate-50 relative">

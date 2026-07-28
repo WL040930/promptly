@@ -70,7 +70,7 @@ test('planner context keeps the attached form field metadata available for inspe
     assert.equal(result.metrics.attachedFormFieldCount, 1);
 });
 
-test('worker context gives the model the form-field token it must use', () => {
+test('worker context gives the model server-issued form field bindings', () => {
     const context = buildWorkflowWorkerContext({
         workflow: {
             nodes: [{ id: 'form_trigger_1', type: 'trigger', subType: 'form-submission', config: { formId: 'form_1' } }],
@@ -86,6 +86,7 @@ test('worker context gives the model the form-field token it must use', () => {
         }
     });
 
-    assert.match(context, /"semanticToken":"\{\{formField:field_email\}\}"/);
-    assert.match(context, /"runtimeToken":"\{\{form_trigger_1\.fields\.field_email\}\}"/);
+    assert.match(context, /"key":"form_field_1"/);
+    assert.match(context, /"fieldId":"field_email"/);
+    assert.doesNotMatch(context, /semanticToken|runtimeToken|formField:/);
 });

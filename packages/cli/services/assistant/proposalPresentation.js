@@ -44,7 +44,13 @@ export const buildWorkflowPresentation = ({ workflow = {}, proposal = {} } = {})
         ...(diff.addedNodes || []).map(node => ({ id: `add_${node.id}`, type: 'add', label: titleCase(node.title || node.subType), detail: 'Added step' })),
         ...(diff.updatedNodes || []).map(node => ({ id: `update_${node.id}`, type: 'update', label: titleCase(node.title || node.subType), detail: 'Updated step' })),
         ...(diff.removedNodes || []).map(node => ({ id: `remove_${node.id}`, type: 'remove', label: titleCase(node.title || node.subType), detail: 'Removed step' })),
-        ...(diff.edges || []).map((edge, index) => ({ id: `flow_${index}`, type: 'connect', label: 'Workflow connection', detail: edge.op === 'disconnect' ? 'Removed connection' : 'Updated connection' }))
+        ...(diff.edges || []).map((edge, index) => ({ id: `flow_${index}`, type: 'connect', label: 'Workflow connection', detail: edge.op === 'disconnect' ? 'Removed connection' : 'Updated connection' })),
+        ...(proposal.resourceChanges || []).filter(change => change?.type === 'create_google_spreadsheet').map(change => ({
+            id: `resource_${change.ref}`,
+            type: 'add',
+            label: titleCase(change.title),
+            detail: `Create Google Sheet · ${change.sheetTitle || 'Responses'} tab`
+        }))
     ];
     const name = titleCase(workflow.name || 'Workflow');
     const added = changes.filter(change => change.type === 'add').length;

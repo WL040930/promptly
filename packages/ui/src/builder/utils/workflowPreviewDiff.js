@@ -1,3 +1,5 @@
+import { isWorkflowExpression } from '../../../../shared/workflowExpressions.js';
+
 const MAX_VALUE_LENGTH = 220;
 const MAX_PARAMETER_CHANGES = 12;
 
@@ -20,7 +22,7 @@ const valueText = value => {
 };
 
 const flattenConfig = (value, path = '', depth = 0, output = new Map()) => {
-    if (isObject(value) && depth < 2) {
+    if (isObject(value) && !isWorkflowExpression(value) && depth < 2) {
         Object.entries(value).forEach(([key, child]) => flattenConfig(child, path ? `${path}.${key}` : key, depth + 1, output));
         return output;
     }
@@ -35,14 +37,14 @@ const parameterChangesFor = (before = {}, after = {}) => {
     const changes = [];
 
     if (before.title !== after.title) {
-        changes.push({ key: 'title', label: 'Node name', before: valueText(before.title), after: valueText(after.title) });
+        changes.push({ key: 'title', label: 'Node name', before: valueText(before.title), after: valueText(after.title), beforeRaw: before.title, afterRaw: after.title });
     }
 
     paths.forEach(path => {
         const previous = beforeValues.get(path);
         const next = afterValues.get(path);
         if (!sameValue(previous, next)) {
-            changes.push({ key: `config.${path}`, label: labelForPath(path), before: valueText(previous), after: valueText(next) });
+            changes.push({ key: `config.${path}`, label: labelForPath(path), before: valueText(previous), after: valueText(next), beforeRaw: previous, afterRaw: next });
         }
     });
 
@@ -53,7 +55,8 @@ const parameterSnapshotFor = (node = {}) => [...flattenConfig(node.config || {})
     .map(([path, value]) => ({
         key: `config.${path}`,
         label: labelForPath(path),
-        value: valueText(value)
+        value: valueText(value),
+        rawValue: value
     }));
 
 const sameWorkflowNode = (before, after) => before.title === after.title

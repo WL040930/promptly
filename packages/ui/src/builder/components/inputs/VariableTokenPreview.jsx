@@ -1,15 +1,31 @@
 import { describeWorkflowVariable, splitWorkflowVariableTokens } from '../../utils/workflowVariableDisplay.js';
+import { describeWorkflowExpression, isWorkflowExpression } from '../../../../../shared/workflowExpressions.js';
 
 /** Read-only rich rendering for text that contains workflow {{variables}}. */
 export default function VariableTokenPreview({ value, nodes = [], formsById = {}, availableVars = [], className = '', tone = 'indigo' }) {
     if (value === undefined || value === null || value === '') return <span className="text-slate-400">Not set</span>;
-    if (typeof value !== 'string') return <span>{String(value)}</span>;
 
     const tones = tone === 'emerald'
         ? 'border-emerald-200 bg-emerald-100 text-emerald-800'
         : tone === 'red'
             ? 'border-red-200 bg-red-100 text-red-800'
             : 'border-indigo-200 bg-indigo-100 text-indigo-700';
+
+    const pill = (variable, key) => <span
+        key={key}
+        title={variable.runtimeReference ? `Runtime reference: ${variable.runtimeReference}` : undefined}
+        className={`inline-flex max-w-full items-center rounded-md border px-1.5 py-0.5 text-[10px] font-bold shadow-sm ${variable.resolved === false ? 'border-amber-200 bg-amber-50 text-amber-800' : tones}`}
+    ><span className="truncate">{variable.label}</span></span>;
+
+    if (isWorkflowExpression(value)) {
+        const description = describeWorkflowExpression(value, { nodes, formsById });
+        return <span className={`flex flex-wrap items-center gap-1 ${className}`}>
+            {description.parts.map((part, index) => part.reference
+                ? pill({ ...part.reference, runtimeReference: `${value.$expr === 'reference' ? value.nodeId : ''}` }, index)
+                : part.text ? <span key={index} className="whitespace-pre-wrap">{part.text}</span> : null)}
+        </span>;
+    }
+    if (typeof value !== 'string') return <span>{String(value)}</span>;
 
     return <span className={`flex flex-wrap items-center gap-1 ${className}`}>
         {splitWorkflowVariableTokens(value).map((part, index) => {

@@ -270,8 +270,8 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
                                                             <div key={change.key} className="px-3 py-3">
                                                                 <p className="mb-2 text-[11px] font-bold text-slate-700">{change.label}</p>
                                                                 <div className="grid gap-2 text-[11px] leading-5 sm:grid-cols-2">
-                                                                    <div className="min-w-0 rounded-lg border border-red-100 bg-red-50/70 px-2 py-1.5 text-red-800"><span className="mb-0.5 block text-[9px] font-extrabold uppercase tracking-wide text-red-500">Before</span><VariableTokenPreview value={change.before} nodes={previewNodes} formsById={formsById} tone="red" className="break-words line-through decoration-red-300" /></div>
-                                                                    <div className="min-w-0 rounded-lg border border-emerald-100 bg-emerald-50/70 px-2 py-1.5 text-emerald-800"><span className="mb-0.5 block text-[9px] font-extrabold uppercase tracking-wide text-emerald-600">After</span><VariableTokenPreview value={change.after} nodes={previewNodes} formsById={formsById} tone="emerald" className="break-words font-semibold" /></div>
+                                                                    <div className="min-w-0 rounded-lg border border-red-100 bg-red-50/70 px-2 py-1.5 text-red-800"><span className="mb-0.5 block text-[9px] font-extrabold uppercase tracking-wide text-red-500">Before</span><VariableTokenPreview value={change.beforeRaw ?? change.before} nodes={previewNodes} formsById={formsById} tone="red" className="break-words line-through decoration-red-300" /></div>
+                                                                    <div className="min-w-0 rounded-lg border border-emerald-100 bg-emerald-50/70 px-2 py-1.5 text-emerald-800"><span className="mb-0.5 block text-[9px] font-extrabold uppercase tracking-wide text-emerald-600">After</span><VariableTokenPreview value={change.afterRaw ?? change.after} nodes={previewNodes} formsById={formsById} tone="emerald" className="break-words font-semibold" /></div>
                                                                 </div>
                                                             </div>
                                                         ))}
@@ -291,7 +291,7 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
                                                         {node._parameterSnapshot.map(parameter => (
                                                             <div key={parameter.key} className="grid grid-cols-[minmax(92px,0.42fr)_minmax(0,1fr)] gap-3 px-3 py-2.5 text-[11px] leading-5">
                                                                 <dt className="font-bold text-slate-600">{parameter.label}</dt>
-                                                                <dd className={`min-w-0 break-words font-medium ${node._diffStatus === 'added' ? 'text-emerald-900' : 'text-red-800 line-through decoration-red-300'}`}><VariableTokenPreview value={parameter.value} nodes={previewNodes} formsById={formsById} tone={node._diffStatus === 'added' ? 'emerald' : 'red'} /></dd>
+                                                                <dd className={`min-w-0 break-words font-medium ${node._diffStatus === 'added' ? 'text-emerald-900' : 'text-red-800 line-through decoration-red-300'}`}><VariableTokenPreview value={parameter.rawValue ?? parameter.value} nodes={previewNodes} formsById={formsById} tone={node._diffStatus === 'added' ? 'emerald' : 'red'} /></dd>
                                                             </div>
                                                         ))}
                                                     </dl>

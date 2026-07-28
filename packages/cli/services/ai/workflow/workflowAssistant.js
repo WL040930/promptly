@@ -11,7 +11,8 @@ import { buildWorkflowPresentation } from '../../assistant/proposalPresentation.
 import { buildAssistantRecovery } from '../../../../shared/assistantRecovery.js';
 import { supersedePendingWorkflowProposals } from '../../proposalLifecycle.js';
 import { projectFormResourceSummary } from '../form/context/formResourceContext.js';
-import { normalizeFormFieldBindings } from './domain/formFieldBindings.js';
+import { compileWorkflowBindings, validateWorkflowExpressions } from '../../../../shared/workflowExpressions.js';
+import googleSpreadsheetService from '../../nodes/googleSpreadsheetService.js';
 
 const DEFAULT_MODE = 'important_only';
 const MAX_HISTORY = 100;
@@ -113,6 +114,7 @@ const messageFromResult = ({ result, workflow }) => {
             verification: result.verification,
             warnings: result.warnings || [],
             plan: result.plan || [],
+            resourceChanges: result.resourceChanges || [],
             contextDelta: result.contextDelta || null
         };
         const presentation = buildWorkflowPresentation({ workflow: toWorkflowJson(workflow), proposal });
@@ -131,6 +133,46 @@ const messageFromResult = ({ result, workflow }) => {
 const compactOwnedForms = forms => forms.map(projectFormResourceSummary).filter(Boolean);
 
 const toWorkflowJson = workflow => workflow?.toJSON ? workflow.toJSON() : workflow;
+
+const isProvisionReference = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+    && typeof value.$provision === 'string' && Object.keys(value).length === 1;
+
+const resolveProvisionReferences = (value, resources) => {
+    if (isProvisionReference(value)) {
+        const resource = resources.get(value.$provision);
+        if (!resource?.id) throw errorWith('WORKFLOW_PROVISION_REFERENCE_INVALID', 'A proposed Google Sheet could not be resolved before saving the workflow.', 409);
+        return resource.id;
+    }
+    if (Array.isArray(value)) return value.map(item => resolveProvisionReferences(item, resources));
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, resolveProvisionReferences(item, resources)]));
+    return value;
+};
+
+const spreadsheetHeadersFor = form => [
+    'Submitted At', 'Response ID',
+    ...(form?.fields || []).filter(field => field?.id && !field.deleted && field.type !== 'heading')
+        .map(field => field.label || field.name || field.id)
+];
+
+const provisionGoogleSheets = async ({ changes = [], userId, workflowId, proposalMessageId, form }) => {
+    const resources = new Map();
+    const resolvedChanges = [];
+    for (const change of changes) {
+        if (change?.type !== 'create_google_spreadsheet') {
+            resolvedChanges.push(change);
+            continue;
+        }
+        const created = await googleSpreadsheetService.createAndInitialize({
+            userId, title: change.title, sheetTitle: change.sheetTitle || 'Responses',
+            headers: change.headers?.length ? change.headers : spreadsheetHeadersFor(form),
+            provisioningKey: `workflow-proposal:${workflowId}:${proposalMessageId}:${change.ref}`,
+            folderId: change.folderId || null
+        });
+        resources.set(change.ref, created);
+        resolvedChanges.push({ ...change, status: 'ready', spreadsheetId: created.id, webViewLink: created.webViewLink, range: created.range });
+    }
+    return { resources, resolvedChanges };
+};
 
 export const workflowAssistant = {
     async getHistory({ workflowId, userId, limit = 50, before = null }) {
@@ -401,6 +443,39 @@ export const workflowAssistant = {
         }
 
         if (payload.workflowId !== workflow.id) throw errorWith('WORKFLOW_PROPOSAL_SCOPE_INVALID', 'This proposal belongs to a different workflow.', 409);
+        let resolvedPayload = payload;
+        let provisionedResources = new Map();
+        let createdResources = [];
+        if ((payload.resourceChanges || []).some(change => change?.type === 'create_google_spreadsheet')) {
+            await sequelize.transaction(async transaction => {
+                const lockedWorkflow = await findWorkflow(workflowId, userId, { transaction, lock: transaction.LOCK.UPDATE });
+                const lockedMessage = await AssistantMessage.findOne({
+                    where: { id: proposalMessageId, threadId: (await ensureState({ workflow: lockedWorkflow, transaction })).threadId, kind: 'workflow_proposal' },
+                    transaction,
+                    lock: transaction.LOCK.UPDATE
+                });
+                if (!lockedMessage || lockedMessage.proposalStatus !== 'pending') throw errorWith('WORKFLOW_PROPOSAL_NOT_PENDING', 'This workflow proposal is no longer pending.', 409);
+                if (Number(payload.baseWorkflowRevision) !== Number(lockedWorkflow.revision)) throw errorWith('WORKFLOW_PROPOSAL_STALE', 'This workflow changed after the proposal was prepared. Generate a new proposal.', 409);
+                await lockedMessage.update({ proposalStatus: 'applying' }, { transaction });
+            });
+            try {
+                const form = await attachedForm(workflow, userId);
+                const provisioned = await provisionGoogleSheets({
+                    changes: payload.resourceChanges,
+                    userId,
+                    workflowId,
+                    proposalMessageId,
+                    form: form?.toJSON?.() || form
+                });
+                provisionedResources = provisioned.resources;
+                createdResources = [...provisionedResources.values()];
+                resolvedPayload = { ...payload, resourceChanges: provisioned.resolvedChanges };
+                await message.update({ payload: resolvedPayload });
+            } catch (error) {
+                await message.update({ proposalStatus: 'pending' }).catch(() => {});
+                throw error;
+            }
+        }
         try {
             return await sequelize.transaction(async transaction => {
                 const lockedWorkflow = await findWorkflow(workflowId, userId, { transaction, lock: transaction.LOCK.UPDATE });
@@ -409,35 +484,42 @@ export const workflowAssistant = {
                     transaction,
                     lock: transaction.LOCK.UPDATE
                 });
-                if (!lockedMessage || lockedMessage.proposalStatus !== 'pending') {
+                if (!lockedMessage || !['pending', 'applying'].includes(lockedMessage.proposalStatus)) {
                     throw errorWith('WORKFLOW_PROPOSAL_NOT_PENDING', 'This workflow proposal is no longer pending.', 409);
                 }
                 const state = await ensureState({ workflow: lockedWorkflow, transaction });
                 if (Number.isInteger(expectedStateVersion) && expectedStateVersion !== state.version) {
                     throw errorWith('WORKFLOW_AI_STATE_CONFLICT', 'The workflow assistant changed in another tab. Refresh and try again.', 409, { currentStateVersion: state.version });
                 }
-                if (Number(payload.baseWorkflowRevision) !== Number(lockedWorkflow.revision)) {
+                if (Number(resolvedPayload.baseWorkflowRevision) !== Number(lockedWorkflow.revision)) {
                     throw errorWith('WORKFLOW_PROPOSAL_STALE', 'This workflow changed after the proposal was prepared. Generate a new proposal.', 409);
                 }
                 const form = await attachedForm(lockedWorkflow, userId, transaction);
-                const normalizedBindings = normalizeFormFieldBindings({
-                    nodes: payload.nodes || [],
+                const normalizedBindings = compileWorkflowBindings({
+                    nodes: resolveProvisionReferences(resolvedPayload.nodes || [], provisionedResources),
                     formSchema: form?.toJSON?.() || null
                 });
-                if (normalizedBindings.issues.length > 0) {
+                const bindingIssues = [
+                    ...normalizedBindings.issues,
+                    ...validateWorkflowExpressions({
+                        nodes: normalizedBindings.nodes,
+                        formSchema: form?.toJSON?.() || null
+                    })
+                ];
+                if (bindingIssues.length > 0) {
                     throw errorWith(
                         'WORKFLOW_PROPOSAL_VARIABLE_INVALID',
-                        normalizedBindings.issues.map(issue => issue.message).join(' '),
+                        [...new Set(bindingIssues.map(issue => issue.message))].join(' '),
                         409,
-                        { issues: normalizedBindings.issues }
+                        { issues: bindingIssues }
                     );
                 }
                 const saved = await saveAutomationDraft({
                     automationId: lockedWorkflow.id,
                     userId,
                     nodes: normalizedBindings.nodes,
-                    edges: payload.edges,
-                    expectedRevision: payload.baseWorkflowRevision,
+                    edges: resolvedPayload.edges,
+                    expectedRevision: resolvedPayload.baseWorkflowRevision,
                     source: 'ai',
                     summary: 'Applied workflow AI proposal',
                     transaction
@@ -446,23 +528,25 @@ export const workflowAssistant = {
                     proposalStatus: 'applied',
                     ...(normalizedBindings.repairs.length > 0 ? {
                         payload: {
-                            ...payload,
+                            ...resolvedPayload,
                             nodes: normalizedBindings.nodes,
-                            warnings: [...(payload.warnings || []), ...normalizedBindings.repairs]
+                            warnings: [...(resolvedPayload.warnings || []), ...normalizedBindings.repairs]
                         }
                     } : {})
                 }, { transaction });
                 await state.updateContext(applyResourceContextDelta({
                     context: state.context,
-                    delta: payload.contextDelta,
+                    delta: resolvedPayload.contextDelta,
                     identity: buildResourceIdentity({ surface: 'workflow', resource: toWorkflowJson(saved.automation) })
                 }), { transaction });
                 await state.update({ version: state.version + 1, activeProposalMessageId: state.activeProposalMessageId === lockedMessage.id ? null : state.activeProposalMessageId }, { transaction });
-                return { workflow: toWorkflowJson(saved.automation), message: publicMessage(lockedMessage), state: publicState(state) };
+                return { workflow: toWorkflowJson(saved.automation), message: publicMessage(lockedMessage), state: publicState(state), createdResources };
             });
         } catch (error) {
             if (error.code === 'WORKFLOW_PROPOSAL_STALE') {
                 await message.update({ proposalStatus: 'stale' }).catch(() => {});
+            } else if ((resolvedPayload.resourceChanges || []).length > 0) {
+                await message.update({ proposalStatus: 'pending' }).catch(() => {});
             }
             throw error;
         }

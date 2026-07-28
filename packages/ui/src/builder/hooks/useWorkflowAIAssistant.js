@@ -8,6 +8,7 @@ import { useAIStream } from '../../context/AIStreamContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
 import { navigateTo } from '../../utils/router.js';
 import { markSupersededWorkflowProposals, markWorkflowProposalStale } from '../../components/chat/proposalStatus.js';
+import { workflowAIHistoryQueryPolicy } from '../utils/workflowAIHistoryPolicy.js';
 
 const LIMIT = 50;
 const defaultMessage = {
@@ -83,7 +84,7 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         queryKey,
         queryFn: () => getWorkflowAIChat(workflowId, LIMIT),
         enabled: Boolean(workflowId),
-        staleTime: 1000 * 60 * 5,
+        ...workflowAIHistoryQueryPolicy,
         retry: false
     });
 
@@ -266,8 +267,9 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         if (message.kind !== 'workflow_proposal' && message.kind !== 'workflow_diff') return;
         setAcceptingProposalId(message.id);
         try {
-            await decideMutation.mutateAsync({ messageId: message.id, action: 'accept' });
-            toast.success('Workflow updated successfully!');
+            const result = await decideMutation.mutateAsync({ messageId: message.id, action: 'accept' });
+            const created = result?.createdResources || [];
+            toast.success(created.length ? `Workflow updated and Google Sheet “${created[0].name}” is ready.` : 'Workflow updated successfully!');
         } catch (error) {
             toast.error(error.message || 'Failed to apply changes.');
         }

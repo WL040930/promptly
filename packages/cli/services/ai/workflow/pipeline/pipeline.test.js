@@ -212,7 +212,7 @@ test('pipeline carries an inspected form into the worker that creates its trigge
                 workerPrompt = contents[0].parts[0].text;
                 return { text: JSON.stringify({ operations: [
                     { op: 'create_node', node: { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Promptly Form', config: { formId: 'form_1' } } },
-                    { op: 'create_node', node: { ref: 'email', nodeKey: 'action:email', title: 'Send thank-you email', config: { to: '{{formField:email}}', subject: 'Thank you' }, afterNodeRef: 'form_trigger' } },
+                    { op: 'create_node', node: { ref: 'email', nodeKey: 'action:email', title: 'Send thank-you email', config: { to: { $binding: 'form_field_1' }, subject: 'Thank you' }, afterNodeRef: 'form_trigger' } },
                     { op: 'connect', from: { nodeRef: 'form_trigger', handle: 'event' }, to: { nodeRef: 'email', handle: 'event' } }
                 ] }) };
             }
@@ -230,9 +230,14 @@ test('pipeline carries an inspected form into the worker that creates its trigge
         resourceLoader
     });
 
-    assert.match(workerPrompt, /"semanticToken":"\{\{formField:email\}\}"/);
+    assert.match(workerPrompt, /"key":"form_field_1"/);
     assert.equal(result.type, 'proposal');
-    assert.match(result.nodes.find(node => node.subType === 'email')?.config?.to, /^\{\{[^.]+\.fields\.email\}\}$/);
+    assert.deepEqual(result.nodes.find(node => node.subType === 'email')?.config?.to, {
+        $expr: 'reference',
+        v: 1,
+        nodeId: result.nodes.find(node => node.subType === 'form-submission')?.id,
+        path: ['fields', 'email']
+    });
 });
 
 test('pipeline does not expose a form when the ownership-checked lookup fails', async () => {

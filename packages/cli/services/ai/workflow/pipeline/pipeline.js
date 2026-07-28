@@ -83,6 +83,7 @@ const buildProposalResult = ({ plan, capabilities, operations, compiled, verific
     readiness: compiled.readiness,
     verification,
     warnings: compiled.repairs,
+    resourceChanges: plan.resourceChanges || [],
     tokenUsage: { ...usage, requestCalls: usage.requestCalls },
     contextDelta: plan.contextDelta || null
 });
@@ -96,6 +97,7 @@ const applyAndValidate = async ({
     formLoader,
     userId,
     resourceContext,
+    resourceChanges = [],
     registry
 }) => {
     const applied = compileWorkflowEdits({ currentWorkflow: workflow, operations, specs, registry });
@@ -112,7 +114,7 @@ const applyAndValidate = async ({
         nodes: applied.nodes,
         edges: applied.edges
     });
-    const resourceIssues = validateGeneratedResourceValues({ nodes: compiled.nodes, specs, resourceContext });
+    const resourceIssues = validateGeneratedResourceValues({ nodes: compiled.nodes, specs, resourceContext, resourceChanges });
     const capabilityIssues = validateGeneratedWorkflowCapabilities({
         requiredCapabilities: capabilities,
         formSchema: resolvedFormSchema,
@@ -130,7 +132,7 @@ const applyAndValidate = async ({
     const issues = [...(compiled.bindingIssues || []), ...resourceIssues, ...capabilityIssues, ...(validation.issues || [])];
     if (issues.length > 0) {
         throw createPipelineError(
-            issues.map(item => item.message).join('; '),
+            [...new Set(issues.map(item => item.message).filter(Boolean))].join('; '),
             'WORKFLOW_AI_PROPOSAL_INVALID',
             issues
         );
@@ -347,6 +349,7 @@ export const generateWorkflowTurn = async ({
                     specs,
                     requirements: plan.requirements,
                     capabilities,
+                    resourceChanges: plan.resourceChanges || [],
                     resourceContext,
                     formSchema: resolvedFormSchema,
                     priorResponse: previousResponse,
@@ -377,6 +380,7 @@ export const generateWorkflowTurn = async ({
                 formLoader,
                 userId,
                 resourceContext,
+                resourceChanges: plan.resourceChanges || [],
                 registry
             });
         } catch (error) {
@@ -407,7 +411,8 @@ export const generateWorkflowTurn = async ({
                     requirements: plan.requirements,
                     operations: workerCall.value.operations,
                     diff: compiled.diff,
-                    workflow: compiled.finalWorkflow
+                    workflow: compiled.finalWorkflow,
+                    resourceChanges: plan.resourceChanges || []
                 }),
                 instruction: workflowVerifierInstruction,
                 validate: validateWorkflowVerifierResult,

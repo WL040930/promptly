@@ -10,8 +10,8 @@ test('workflow preview exposes readable before and after parameter changes', () 
 
     assert.equal(node._diffStatus, 'updated');
     assert.deepEqual(node._parameterChanges, [
-        { key: 'config.subject', label: 'Subject', before: 'Thanks', after: 'We received your request' },
-        { key: 'config.enabled', label: 'Enabled', before: 'Yes', after: 'No' }
+        { key: 'config.subject', label: 'Subject', before: 'Thanks', after: 'We received your request', beforeRaw: 'Thanks', afterRaw: 'We received your request' },
+        { key: 'config.enabled', label: 'Enabled', before: 'Yes', after: 'No', beforeRaw: true, afterRaw: false }
     ]);
 });
 
@@ -36,8 +36,17 @@ test('workflow preview lists the configuration that a newly added node will use'
 
     assert.equal(node._diffStatus, 'added');
     assert.deepEqual(node._parameterSnapshot, [
-        { key: 'config.to', label: 'To', value: '{{form_trigger.fields.email}}' },
-        { key: 'config.subject', label: 'Subject', value: 'We received your request' },
-        { key: 'config.body', label: 'Body', value: 'Thank you for contacting us.' }
+        { key: 'config.to', label: 'To', value: '{{form_trigger.fields.email}}', rawValue: '{{form_trigger.fields.email}}' },
+        { key: 'config.subject', label: 'Subject', value: 'We received your request', rawValue: 'We received your request' },
+        { key: 'config.body', label: 'Body', value: 'Thank you for contacting us.', rawValue: 'Thank you for contacting us.' }
     ]);
+});
+
+test('workflow preview keeps a canonical expression available to the rich renderer', () => {
+    const expression = { $expr: 'reference', v: 1, nodeId: 'form_1', path: ['fields', 'f_email'] };
+    const [node] = buildWorkflowPreviewDiffNodes({
+        currentNodes: [],
+        proposedNodes: [{ id: 'email_1', config: { to: expression } }]
+    });
+    assert.deepEqual(node._parameterSnapshot[0].rawValue, expression);
 });
