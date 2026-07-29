@@ -174,6 +174,37 @@ test('AI client aborts timed out providers before failing over', async () => {
     assert.equal(timedOutSignal.aborted, true);
 });
 
+test('AI client retries a lone workflow provider after a transient failure', async () => {
+    let calls = 0;
+    const ai = createAIClient({
+        registry: createRegistry({
+            gemini: {
+                async generateContent() {
+                    calls += 1;
+                    if (calls === 1) {
+                        const error = new Error('Service temporarily unavailable.');
+                        error.status = 503;
+                        throw error;
+                    }
+                    return { text: '{"type":"reply","message":"Ready"}' };
+                }
+            }
+        }),
+        profiles: {
+            fast: { provider: 'gemini', model: 'workflow-model' },
+            quality: { provider: 'gemini', model: 'workflow-model' },
+            default: { provider: 'gemini', model: 'workflow-model' }
+        },
+        fallbackProviders: [],
+        logger: { info() {}, warn() {}, error() {} }
+    });
+
+    const result = await ai.run({ task: 'workflow.plan', messages: [] });
+
+    assert.equal(calls, 2);
+    assert.deepEqual(result.json, { type: 'reply', message: 'Ready' });
+});
+
 test('AI client enforces the caller request budget across fallback attempts', async () => {
     const calls = [];
     const ai = createAIClient({

@@ -25,7 +25,7 @@ const NODE_STYLES = {
 };
 
 const DynamicNode = ({ data, type, isConnectable = true }) => {
-    const { title, description, schema, isActive, onClick, onDelete, onHandleClick } = data;
+    const { title, description, schema, isActive, isLayoutPinned, onClick, onDelete, onHandleClick, onToggleLayoutPin } = data;
     
     const showInputHandle = type !== 'trigger';
     const showOutputHandle = true;
@@ -108,6 +108,21 @@ const DynamicNode = ({ data, type, isConnectable = true }) => {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M3 6h18"></path>
                             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                    </button>
+                )}
+                {isActive && onToggleLayoutPin && (
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleLayoutPin();
+                        }}
+                        className="absolute bottom-2 right-2 rounded p-1 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                        title={isLayoutPinned ? 'Allow automatic layout' : 'Keep this position during automatic layout'}
+                    >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            {isLayoutPinned ? <><path d="M12 17v5" /><path d="M5 9h14l-1 8H6L5 9Z" /><path d="M8 9V6a4 4 0 0 1 8 0v3" /></> : <><path d="M12 17v5" /><path d="M6 9h12l-1 8H7L6 9Z" /><path d="M8 9V6a4 4 0 0 1 7.4-2" /></>}
                         </svg>
                     </button>
                 )}

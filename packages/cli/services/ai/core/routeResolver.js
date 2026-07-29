@@ -23,12 +23,14 @@ export const resolveProviderRoutes = (task, {
 
     if (providerOverride) {
         const primaryProfile = normalizeProfile(profiles[policy.profiles[0]]);
-        routes.push({
+        const route = {
             providerName: 'override',
             model: primaryProfile.model,
             profile: policy.profiles[0],
             provider: providerOverride
-        });
+        };
+        routes.push(route);
+        while (routes.length < policy.maxAttempts) routes.push({ ...route, retry: true });
         return routes;
     }
 
@@ -68,5 +70,12 @@ export const resolveProviderRoutes = (task, {
         });
     }
 
+    // A single configured provider previously meant a transient timeout was
+    // surfaced immediately. Reuse that route once before giving up; distinct
+    // routes still provide normal provider failover.
+    if (routes.length === 1) {
+        const [route] = routes;
+        while (routes.length < policy.maxAttempts) routes.push({ ...route, retry: true });
+    }
     return routes.slice(0, policy.maxAttempts);
 };

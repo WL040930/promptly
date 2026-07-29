@@ -4,6 +4,9 @@ const safeIssueMessage = issue => {
         WORKFLOW_NODE_KEY_INVALID: 'Promptly selected a workflow step that is not available.',
         WORKFLOW_EDIT_GRAPH_INVALID: 'Promptly could not create valid connections between the workflow steps.',
         WORKFLOW_EDIT_PLAN_INVALID: 'Promptly generated workflow steps that could not be verified.',
+        WORKFLOW_CONNECTION_NOT_FOUND: 'Promptly could not match a generated step to the current workflow route.',
+        WORKFLOW_ROUTE_NOT_FOUND: 'Promptly could not find the selected workflow route.',
+        WORKFLOW_ROUTE_AMBIGUOUS: 'Promptly found more than one destination on this route.',
         WORKFLOW_AI_NODE_SELECTION_REQUIRED: 'Promptly could not select the workflow steps needed for this request.',
         INVALID_WORKER_RESPONSE: 'The AI response was incomplete before any workflow steps were generated.',
         INVALID_OPERATIONS: 'The AI response did not include a list of workflow steps.',
@@ -37,6 +40,9 @@ const workflowGenerationIssueCodes = [
 ];
 
 const workflowConnectionIssueCodes = [
+    'WORKFLOW_CONNECTION_NOT_FOUND',
+    'WORKFLOW_ROUTE_NOT_FOUND',
+    'WORKFLOW_ROUTE_AMBIGUOUS',
     'AMBIGUOUS_SOURCE_HANDLE',
     'AMBIGUOUS_TARGET_HANDLE',
     'UNKNOWN_SOURCE_HANDLE',

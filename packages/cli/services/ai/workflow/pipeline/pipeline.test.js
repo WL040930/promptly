@@ -43,8 +43,42 @@ const formSubmissionSpec = {
     description: 'Starts when a Promptly form is submitted',
     implementationStatus: 'experimental',
     schema: {
-        inputs: [{ name: 'formId', type: 'text' }],
+        inputs: [{ name: 'formId', type: 'resource-select', resource: 'forms' }],
         outputs: [{ name: 'event', isConnection: true }]
+    },
+    ui: {}
+};
+
+const googleSheetsSpec = {
+    nodeKey: 'action:googleSheets',
+    type: 'action',
+    subType: 'googleSheets',
+    title: 'Google Sheets',
+    description: 'Appends a row to a spreadsheet',
+    implementationStatus: 'experimental',
+    schema: {
+        inputs: [
+            { name: 'event', isConnection: true },
+            { name: 'operation', type: 'text' },
+            { name: 'spreadsheetId', type: 'resource-select', resource: 'google-spreadsheets' },
+            { name: 'range', type: 'resource-select', resource: 'google-sheet-ranges', resourceParams: { spreadsheetId: '$spreadsheetId' } },
+            { name: 'values', type: 'text' }
+        ],
+        outputs: [{ name: 'done', isConnection: true }]
+    },
+    ui: {}
+};
+
+const approvalSpec = {
+    nodeKey: 'logic:approval',
+    type: 'logic',
+    subType: 'approval',
+    title: 'Approval',
+    description: 'Waits for owner approval',
+    implementationStatus: 'experimental',
+    schema: {
+        inputs: [{ name: 'event', isConnection: true }],
+        outputs: [{ name: 'approved', isConnection: true }, { name: 'rejected', isConnection: true }]
     },
     ui: {}
 };
@@ -122,6 +156,52 @@ test('pipeline returns a reply directly from the planner without calling the wor
     assert.equal(result.type, 'reply');
     assert.match(result.message, /webhook/i);
     assert.equal(callCount, 1);
+});
+
+test('pipeline unwraps an exact form resource ID accidentally wrapped as provisioned', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let plannerCalls = 0;
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                plannerCalls++;
+                return { text: JSON.stringify(plannerCalls === 1
+                    ? { type: 'inspect_form', formId: 'form_1' }
+                    : {
+                        type: 'plan_complete',
+                        summary: 'Send a thank-you email after owner approval.',
+                        requirements: [{ id: 'req_1', description: 'Send a thank-you email to the respondent after approval.' }],
+                        selectedNodeKeys: ['trigger:form-submission', 'logic:approval', 'action:email'],
+                        capabilities: ['owner_approval', 'respondent_confirmation']
+                    }) };
+            }
+            if (options.operation === 'workflow:worker') {
+                return { text: JSON.stringify({ operations: [
+                    { op: 'create_node', node: { ref: 'form', nodeKey: 'trigger:form-submission', title: 'Form submitted', config: { formId: { $provision: 'form_1' } } } },
+                    { op: 'create_node', node: { ref: 'approval', nodeKey: 'logic:approval', title: 'Owner approval', config: {}, afterNodeRef: 'form' } },
+                    { op: 'create_node', node: { ref: 'email', nodeKey: 'action:email', title: 'Thank you', config: { to: { $binding: 'form_field_1' }, subject: 'Thank you' }, afterNodeRef: 'approval' } },
+                    { op: 'connect', from: { nodeRef: 'form', handle: 'event' }, to: { nodeRef: 'approval', handle: 'event' } },
+                    { op: 'connect', from: { nodeRef: 'approval', handle: 'approved' }, to: { nodeRef: 'email', handle: 'event' } }
+                ] }) };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'When form submitted, send a thank you email to the user after I approve.',
+        currentWorkflow: { nodes: [], edges: [] },
+        userContext: { forms: [{ id: 'form_1', title: 'Contact form' }] },
+        formLoader: async () => ({ id: 'form_1', title: 'Contact form', fields: [{ id: 'email', label: 'Email address', type: 'email', required: true }] }),
+        provider,
+        registry: makeRegistry([formSubmissionSpec, approvalSpec, emailSpec]),
+        resourceLoader: async () => ({ forms: { resource: 'forms', options: [{ value: 'form_1', label: 'Contact form' }] } })
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.nodes.find(node => node.subType === 'form-submission')?.config?.formId, 'form_1');
+    assert.ok(result.warnings.some(repair => repair.code === 'WORKFLOW_RESOURCE_REFERENCE_UNWRAPPED'));
+    assert.equal(result.nodes.filter(node => node.subType === 'approval').length, 1);
 });
 
 test('pipeline gives the planner attached form fields without an extra lookup', async () => {
@@ -227,7 +307,7 @@ test('pipeline carries an inspected form into the worker that creates its trigge
         formLoader: async () => ({ id: 'form_1', title: 'Contact form', fields: [{ id: 'email', label: 'Email address', type: 'email', required: true }] }),
         provider,
         registry: makeRegistry([formSubmissionSpec, emailSpec]),
-        resourceLoader
+        resourceLoader: async () => ({ forms: { resource: 'forms', options: [{ value: 'form_1', label: 'Contact form' }] } })
     });
 
     assert.match(workerPrompt, /"key":"form_field_1"/);
@@ -384,6 +464,61 @@ test('pipeline calls worker and verifier for a plan_complete and returns a propo
     assert.ok(Array.isArray(result.nodes));
     assert.ok(Array.isArray(result.edges));
     assert.equal(result.verification?.status, 'pass');
+});
+
+test('pipeline proposes a new Google Sheet without browsing an unavailable Google connection', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Record each response before emailing.',
+                    requirements: [{ id: 'req_1', description: 'Record the response before the email.' }],
+                    selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                    capabilities: []
+                }) };
+            }
+            if (options.operation === 'workflow:worker') {
+                return { text: JSON.stringify({ operations: [{
+                    op: 'insert_after_route',
+                    from: { nodeRef: 'n1', handle: 'event' },
+                    node: {
+                        ref: 'response_sheet',
+                        nodeKey: 'action:googleSheets',
+                        title: 'Save response',
+                        config: {
+                            operation: 'append',
+                            spreadsheetId: { $provision: 'response_spreadsheet' },
+                            range: "'Responses'!A1",
+                            values: [['saved']]
+                        }
+                    }
+                }] }) };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+    const result = await generateWorkflowTurn({
+        request: 'Save each response in Excel in Drive before sending the email.',
+        currentWorkflow: existingWorkflow,
+        provider,
+        registry: makeRegistry([triggerSpec, emailSpec, googleSheetsSpec]),
+        resourceLoader: async () => ({
+            'google-spreadsheets': {
+                resource: 'google-spreadsheets',
+                options: [],
+                error: { code: 'GOOGLE_RECONNECT_REQUIRED', message: 'Reconnect Google.' }
+            }
+        })
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.resourceChanges[0]?.type, 'create_google_spreadsheet');
+    assert.equal(result.resourceChanges[0]?.title, 'Workflow Responses');
+    assert.equal(result.readiness.status, 'setup_required');
+    assert.equal(result.readiness.setupActions[0]?.type, 'open_connections');
+    assert.ok(result.nodes.some(node => node.nodeKey === 'action:googleSheets'));
 });
 
 // ---------------------------------------------------------------------------
@@ -600,4 +735,49 @@ test('pipeline asks the planner to choose defaults on its first call when author
 
     assert.equal(result.type, 'proposal');
     assert.equal(plannerAttempt, 1, `Expected one planner call for decide_for_me, got ${plannerAttempt}`);
+});
+
+test('pipeline resolves a planner clarification when clarification mode is decide_everything', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let plannerAttempt = 0;
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                plannerAttempt++;
+                return { text: JSON.stringify(plannerAttempt === 1
+                    ? {
+                        type: 'message',
+                        message: 'Which subject should the email use?',
+                        inputs: [{ id: 'subject', type: 'text', label: 'Email subject' }]
+                    }
+                    : {
+                        type: 'plan_complete',
+                        summary: 'Use a default thank-you subject.',
+                        requirements: [{ id: 'req_1', description: 'Update the thank-you email subject.' }],
+                        selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                        capabilities: []
+                    }) };
+            }
+            if (options.operation === 'workflow:worker') {
+                return { text: JSON.stringify({
+                    operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { subject: 'Thank you' } } }]
+                }) };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'Send a thank-you email.',
+        currentWorkflow: existingWorkflow,
+        clarificationMode: 'decide_everything',
+        turnContext: { authority: 'user', sourceText: 'Send a thank-you email.', latestText: 'Send a thank-you email.' },
+        provider,
+        registry: makeRegistry(),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(plannerAttempt, 2);
+    assert.equal(result.nodes.find(node => node.id === 'email_1')?.config?.subject, 'Thank you');
 });

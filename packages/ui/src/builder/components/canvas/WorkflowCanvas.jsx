@@ -13,7 +13,7 @@ import '@xyflow/react/dist/style.css';
 import DynamicNode from '../../../nodes/DynamicNode';
 import DeletableEdge from './edges/DeletableEdge';
 import CustomConnectionLine from './edges/CustomConnectionLine';
-import { calculateAutoLayout } from '../../utils/layoutUtils.js';
+import { layoutWorkflow } from '../../../../../shared/workflowLayout.js';
 
 const edgeTypes = {
   deletable: DeletableEdge,
@@ -26,7 +26,7 @@ const nodeTypes = {
   logic: DynamicNode,
 };
 
-const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, onNodeClick, onNodesChangeCallback, onEdgesChangeCallback, onAddNode, onPasteNode, onEdgeDelete, draggedNode }) => {
+const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, onNodeClick, onNodesChangeCallback, onEdgesChangeCallback, onAddNode, onPasteNode, onEdgeDelete, onApplyLayout, onToggleLayoutPin, draggedNode }) => {
   const reactFlowWrapper = useRef(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [dragPosition, setDragPosition] = useState(null);
@@ -44,6 +44,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
   const copiedNodeRef = useRef(null);
   const pasteOffsetRef = useRef(40);
   const [hasCopiedNode, setHasCopiedNode] = useState(false);
+  const [layoutPreview, setLayoutPreview] = useState(null);
   const initialNodeById = useMemo(
     () => new Map(initialNodes.map(node => [node.id, node])),
     [initialNodes]
@@ -88,6 +89,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
         bgColor: n.bgColor,
         color: n.color,
         iconColor: n.iconColor,
+        isLayoutPinned: n.layoutPinned !== false,
         isActive: n.id === activeNodeId,
         onClick: () => onNodeClick(n.id),
         onHandleClick: (e, handleId, handleType) => onHandleClickRef.current?.(e, n.id, handleId, handleType),
@@ -95,7 +97,8 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
           if (onNodesChangeCallback) {
             onNodesChangeCallback([{ type: 'remove', id: n.id }]);
           }
-        }
+        },
+        onToggleLayoutPin: () => onToggleLayoutPin?.(n.id)
       }
     }));
 
@@ -135,6 +138,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
             bgColor: matchingInitialNode.bgColor,
             color: matchingInitialNode.color,
             iconColor: matchingInitialNode.iconColor,
+            isLayoutPinned: matchingInitialNode.layoutPinned !== false,
             isActive: node.id === activeNodeId,
           },
         };
@@ -142,20 +146,38 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
     );
   }, [initialNodeById, activeNodeId, setNodes]);
 
-  const triggerAutoLayout = useCallback(() => {
-    const laidOutNodes = calculateAutoLayout(nodes, edges);
+  const setCanvasPositions = useCallback((laidOutNodes) => {
+    const positions = new Map(laidOutNodes.map(node => [node.id, node.position]));
+    setNodes(current => current.map(node => positions.has(node.id)
+      ? { ...node, position: positions.get(node.id) }
+      : node));
+  }, [setNodes]);
 
-    // 5. Update React Flow state
-    setNodes(laidOutNodes);
+  const tidyLayout = useCallback(() => {
+    if (layoutPreview) return;
+    const laidOutNodes = layoutWorkflow({ nodes: initialNodes, edges: initialEdges, mode: 'respect-pins' });
+    setCanvasPositions(laidOutNodes);
+    onApplyLayout?.(laidOutNodes, 'respect-pins');
+  }, [layoutPreview, initialNodes, initialEdges, setCanvasPositions, onApplyLayout]);
 
-    // 6. Notify the parent so the layout is persisted with the workflow draft.
-    const changes = laidOutNodes.map(node => ({
-      id: node.id,
-      type: 'position',
-      position: node.position
-    }));
-    onNodesChangeCallback?.(changes);
-  }, [nodes, edges, setNodes, onNodesChangeCallback]);
+  const previewFullLayout = useCallback(() => {
+    if (layoutPreview) return;
+    const laidOutNodes = layoutWorkflow({ nodes: initialNodes, edges: initialEdges, mode: 'all' });
+    setCanvasPositions(laidOutNodes);
+    setLayoutPreview(laidOutNodes);
+  }, [layoutPreview, initialNodes, initialEdges, setCanvasPositions]);
+
+  const cancelLayoutPreview = useCallback(() => {
+    if (!layoutPreview) return;
+    setCanvasPositions(initialNodes);
+    setLayoutPreview(null);
+  }, [layoutPreview, initialNodes, setCanvasPositions]);
+
+  const applyLayoutPreview = useCallback(() => {
+    if (!layoutPreview) return;
+    onApplyLayout?.(layoutPreview, 'all');
+    setLayoutPreview(null);
+  }, [layoutPreview, onApplyLayout]);
 
   const makeEdge = useCallback((params) => {
     const newEdge = { ...params, id: `e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type: 'deletable', animated: true, style: { stroke: '#818cf8', strokeWidth: 2, filter: 'drop-shadow(0px 4px 6px rgba(99, 102, 241, 0.3))' } };
@@ -220,12 +242,16 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
       if (isEditable) return;
 
       if (e.key === 'Escape') {
+        if (layoutPreview) {
+          cancelLayoutPreview();
+          return;
+        }
         pendingConnectionRef.current = null;
         setPendingConnection(null);
         return;
       }
 
-      if (!(e.metaKey || e.ctrlKey)) return;
+      if (layoutPreview || !(e.metaKey || e.ctrlKey)) return;
       const key = e.key.toLowerCase();
       if (key === 'c' && selectedSourceNode()) {
         e.preventDefault();
@@ -237,7 +263,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [copySelectedNode, hasCopiedNode, pasteCopiedNode, pasteOffsetRef, selectedSourceNode]);
+  }, [copySelectedNode, hasCopiedNode, pasteCopiedNode, pasteOffsetRef, selectedSourceNode, layoutPreview, cancelLayoutPreview]);
 
   // Track cursor position for the ghost line
   useEffect(() => {
@@ -248,6 +274,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
   }, [pendingConnection]);
 
   const onDragOver = useCallback((event) => {
+    if (layoutPreview) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
 
@@ -261,7 +288,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
       position.y -= 55;
       setDragPosition(position);
     }
-  }, [reactFlowInstance, draggedNode]);
+  }, [reactFlowInstance, draggedNode, layoutPreview]);
 
   const onDragLeave = useCallback((event) => {
     if (reactFlowWrapper.current) {
@@ -278,6 +305,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
 
   const onDrop = useCallback(
     (event) => {
+      if (layoutPreview) return;
       event.preventDefault();
       setDragPosition(null);
 
@@ -300,7 +328,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
       const parsedData = JSON.parse(dataStr);
       onAddNode(parsedData, position);
     },
-    [reactFlowInstance, onAddNode],
+    [reactFlowInstance, onAddNode, layoutPreview],
   );
 
   const displayNodes = React.useMemo(() => {
@@ -368,46 +396,49 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
         </svg>
       )}
 
-      {/* Floating Auto Layout Button Overlay */}
+      {/* Floating layout controls */}
       <div className="absolute top-4 right-4 z-10">
         <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white/90 p-1 shadow-md backdrop-blur">
           <button
             type="button"
-            onClick={copySelectedNode}
-            disabled={!selectedSourceNode()}
-            className="rounded-lg px-2.5 py-1.5 text-xs font-black text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
-            title="Copy selected node (Ctrl/Cmd+C)"
-          >
-            Copy node
-          </button>
-          <button
-            type="button"
-            onClick={pasteCopiedNode}
-            disabled={!hasCopiedNode}
-            className="rounded-lg px-2.5 py-1.5 text-xs font-black text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
-            title="Paste copied node (Ctrl/Cmd+V)"
-          >
-            Paste node
-          </button>
-          <button
-            type="button"
-            onClick={triggerAutoLayout}
+            onClick={tidyLayout}
+            disabled={Boolean(layoutPreview)}
             className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-black text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600"
-            title="Auto layout workflow"
+            title="Arrange system-positioned nodes without moving pinned nodes"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="stroke-current">
               <path d="M21 16V8a2 2 0 0 0-2-2h-5M3 8v8a2 2 0 0 0 2 2h5"></path>
               <polyline points="10 12 14 12 14 6"></polyline>
               <polyline points="14 12 10 12 10 18"></polyline>
             </svg>
-            Auto Layout
+            Tidy layout
+          </button>
+          <button
+            type="button"
+            onClick={previewFullLayout}
+            disabled={Boolean(layoutPreview)}
+            className="rounded-lg px-2.5 py-1.5 text-xs font-black text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Preview a clean layout for every node"
+          >
+            Re-layout all
           </button>
         </div>
       </div>
+      {layoutPreview && (
+        <>
+          <div className="absolute inset-0 z-[5] cursor-not-allowed" aria-hidden="true" />
+          <div className="absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-indigo-200 bg-white px-3 py-2 shadow-lg">
+            <span className="text-xs font-bold text-slate-700">Layout preview — nothing has been saved</span>
+            <button type="button" onClick={cancelLayoutPreview} className="rounded-lg px-2 py-1 text-xs font-bold text-slate-600 hover:bg-slate-100">Cancel</button>
+            <button type="button" onClick={applyLayoutPreview} className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-indigo-700">Apply</button>
+          </div>
+        </>
+      )}
       <ReactFlow
         nodes={displayNodes}
         edges={edges}
         onNodesChange={(changes) => {
+          if (layoutPreview) return;
           // Ignore changes on the preview node
           const filteredChanges = changes.filter(c => c.id !== 'preview-drag-node');
           if (filteredChanges.length > 0) {
@@ -416,6 +447,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
           }
         }}
         onEdgesChange={(changes) => {
+          if (layoutPreview) return;
           onEdgesChange(changes);
 
           // Notify parent if edges were removed
@@ -430,7 +462,7 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
             }, 0);
           }
         }}
-        onConnect={onConnect}
+        onConnect={layoutPreview ? undefined : onConnect}
         onInit={setReactFlowInstance}
         onDrop={onDrop}
         onDragOver={onDragOver}
@@ -439,6 +471,9 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
         edgeTypes={edgeTypes}
         connectionLineComponent={CustomConnectionLine}
         onPaneClick={onPaneClick}
+        nodesDraggable={!layoutPreview}
+        nodesConnectable={!layoutPreview}
+        elementsSelectable={!layoutPreview}
         fitView
         className="bg-slate-50"
         proOptions={{ hideAttribution: true }}

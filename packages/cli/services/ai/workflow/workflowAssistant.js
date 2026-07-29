@@ -92,9 +92,13 @@ const replyFor = (text, payload = null, kind = 'text') => ({
     ...(payload ? { payload } : {})
 });
 
-const attachedForm = async (workflow, userId, transaction) => {
-    const trigger = (workflow.nodes || []).find(node => node?.subType === 'form-submission');
-    const formId = trigger?.config?.formId;
+const formIdForWorkflowNodes = (nodes = []) => {
+    const trigger = nodes.find(node => node?.subType === 'form-submission');
+    return trigger?.config?.formId || null;
+};
+
+const attachedForm = async (workflow, userId, transaction, nodes = workflow.nodes || []) => {
+    const formId = formIdForWorkflowNodes(nodes);
     if (!formId) return null;
     return Form.findOne({ where: { id: formId, userId }, transaction });
 };
@@ -459,7 +463,7 @@ export const workflowAssistant = {
                 await lockedMessage.update({ proposalStatus: 'applying' }, { transaction });
             });
             try {
-                const form = await attachedForm(workflow, userId);
+                const form = await attachedForm(workflow, userId, null, payload.nodes || []);
                 const provisioned = await provisionGoogleSheets({
                     changes: payload.resourceChanges,
                     userId,
@@ -494,9 +498,10 @@ export const workflowAssistant = {
                 if (Number(resolvedPayload.baseWorkflowRevision) !== Number(lockedWorkflow.revision)) {
                     throw errorWith('WORKFLOW_PROPOSAL_STALE', 'This workflow changed after the proposal was prepared. Generate a new proposal.', 409);
                 }
-                const form = await attachedForm(lockedWorkflow, userId, transaction);
+                const proposalNodes = resolveProvisionReferences(resolvedPayload.nodes || [], provisionedResources);
+                const form = await attachedForm(lockedWorkflow, userId, transaction, proposalNodes);
                 const normalizedBindings = compileWorkflowBindings({
-                    nodes: resolveProvisionReferences(resolvedPayload.nodes || [], provisionedResources),
+                    nodes: proposalNodes,
                     formSchema: form?.toJSON?.() || null
                 });
                 const bindingIssues = [
@@ -557,6 +562,7 @@ export const workflowAssistantInternals = {
     publicMessage,
     publicState,
     ensureState,
+    formIdForWorkflowNodes,
     normalizeWorkflowCommand,
     resolveWorkflowTurnContext
 };

@@ -1,23 +1,45 @@
-
-function AuthShell({ icon, title, subtitle, children }) {
+function AuthShell({ icon, title, subtitle, children, step = 'Account access' }) {
     return (
-        <div className="surface-grid relative flex min-h-screen items-center justify-center overflow-hidden p-4 font-sans">
-            <div className="pointer-events-none absolute left-[-12%] top-[-16%] h-[46%] w-[46%] rounded-full bg-[#bdb7ff]/30 blur-[110px]" />
-            <div className="pointer-events-none absolute bottom-[-16%] right-[-12%] h-[46%] w-[46%] rounded-full bg-[#c8f17b]/20 blur-[120px]" />
+        <main className="auth-page">
+            <section className="auth-story" aria-label="About Promptly">
+                <a className="auth-brand" href="/" aria-label="Promptly home">
+                    <img src="/logo.png" alt="" />
+                    <span>Promptly<span>.</span></span>
+                </a>
 
-            <div className="relative z-10 w-full max-w-[430px] rounded-[2rem] border border-white/80 bg-white/90 p-8 shadow-[0_28px_70px_rgba(23,24,39,0.14)] backdrop-blur-xl sm:p-10">
-                <div className="mb-8 text-center">
-                    <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#171827] text-[#c8f17b] shadow-lg shadow-[#171827]/20">
-                        {icon}
-                    </div>
-                    <div className="mb-5 flex items-center justify-center gap-2"><img src="/logo.png" alt="Promptly" className="h-6 w-6 rounded-lg" /><span className="font-display text-sm font-bold tracking-tight text-[#171827]">Promptly</span></div>
-                    <h2 className="font-display text-3xl font-bold tracking-tight text-[#171827]">{title}</h2>
-                    <p className="mt-2 text-sm font-medium text-slate-500">{subtitle}</p>
+                <div className="auth-story-copy">
+                    <p className="auth-story-kicker"><i /> Workflow intelligence</p>
+                    <h1>Turn a thought into <em>forward motion.</em></h1>
+                    <p>Promptly gives every handoff a clear path, a human checkpoint, and a visible outcome.</p>
                 </div>
 
-                {children}
-            </div>
-        </div>
+                <div className="auth-route" aria-hidden="true">
+                    <span className="auth-route-line auth-route-line-one" />
+                    <span className="auth-route-line auth-route-line-two" />
+                    <div className="auth-node auth-node-source"><span>Brief</span><b /></div>
+                    <div className="auth-node auth-node-review"><span>Review</span><b /></div>
+                    <div className="auth-node auth-node-live"><span>Live</span><b /></div>
+                    <div className="auth-route-pulse" />
+                </div>
+
+                <p className="auth-story-footer"><span /> Designed for work that needs a human touch.</p>
+            </section>
+
+            <section className="auth-panel">
+                <div className="auth-form-wrap">
+                    <div className="auth-mobile-brand">
+                        <img src="/logo.png" alt="" /> <span>Promptly<span>.</span></span>
+                    </div>
+                    <div className="auth-heading">
+                        <p className="auth-step">{step}</p>
+                        <div className="auth-icon">{icon}</div>
+                        <h2>{title}</h2>
+                        <p>{subtitle}</p>
+                    </div>
+                    {children}
+                </div>
+            </section>
+        </main>
     )
 }
 

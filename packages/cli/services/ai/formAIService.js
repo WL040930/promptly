@@ -55,7 +55,12 @@ export const runFormTurn = async ({
             {
                 sender: 'bot',
                 text: 'Pending proposal available for revision.',
-                proposal: { ...pendingProposal, status: pendingProposal.status || 'pending' }
+                // The form context consumes persisted assistant-message shape.
+                // Keep this adapter aligned with it instead of maintaining the
+                // retired top-level `proposal` representation.
+                kind: 'form_proposal',
+                proposalStatus: 'pending',
+                payload: pendingProposal
             }
         ]
         : history,

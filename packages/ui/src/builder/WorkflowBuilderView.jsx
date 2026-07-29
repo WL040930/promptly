@@ -22,6 +22,7 @@ import ConfirmModal from '../components/modals/ConfirmModal.jsx';
 import { cloneWorkflowNodeForPaste } from './utils/nodeClipboard.js';
 import { WORKFLOW_MODAL_LAYERS } from './modalLayers.js';
 import { createDebouncedSaveQueue } from '../utils/formAutosave.js';
+import { applyWorkflowNodeChanges } from '../utils/workflowMutationReconciliation.js';
 
 const WorkflowCanvas = lazy(() => import('./components/canvas/WorkflowCanvas'));
 const WorkflowAIAssistant = lazy(() => import('./components/sidebars/WorkflowAIAssistant.jsx'));
@@ -392,6 +393,18 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
         }
     }, [redo, nodes, edges, handleWorkflowUpdate]);
 
+    const handleApplyLayout = useCallback((laidOutNodes, mode) => {
+        if (!Array.isArray(laidOutNodes)) return;
+        const nextNodes = laidOutNodes.map(node => ({
+            ...node,
+            layoutPinned: mode === 'all' ? false : node.layoutPinned !== false
+        }));
+        handleWorkflowUpdate({ nodes: nextNodes });
+        toast.success(mode === 'all' ? 'Workflow re-laid out.' : 'Unpinned steps tidied.', {
+            action: { label: 'Undo', onClick: handleUndo }
+        });
+    }, [handleWorkflowUpdate, toast, handleUndo]);
+
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -503,7 +516,8 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
             bgColor: nodeData.bgColor || nodeData.iconBg,
             color: nodeData.color || nodeData.iconColor,
             iconColor: nodeData.iconColor || nodeData.color,
-            position
+            position,
+            layoutPinned: true
         }];
         handleWorkflowUpdate({ nodes: updatedNodes });
         setActiveNodeId(newNodeId);
@@ -536,6 +550,8 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
         });
         if (!pastedNode) return;
 
+        pastedNode.layoutPinned = true;
+
         handleWorkflowUpdate({ nodes: [...nodes, pastedNode] });
         setActiveNodeId(newNodeId);
         toast.success(`Pasted ${pastedTitle}.`);
@@ -546,26 +562,25 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
         const removeChanges = changes.filter(c => c.type === 'remove');
         if (positionChanges.length === 0 && removeChanges.length === 0) return;
 
-        let updatedNodes = [...nodes];
-
-        if (positionChanges.length > 0) {
-            updatedNodes = updatedNodes.map(node => {
-                const change = positionChanges.find(c => c.id === node.id);
-                return change ? { ...node, position: change.position } : node;
-            });
-        }
-
+        const update = applyWorkflowNodeChanges({ nodes, edges, changes });
         if (removeChanges.length > 0) {
             const removeIds = removeChanges.map(c => c.id);
-            updatedNodes = updatedNodes.filter(node => !removeIds.includes(node.id));
             if (removeIds.includes(activeNodeId)) {
                 setActiveNodeId(null);
                 setIsConfigModalOpen(false);
             }
         }
 
-        handleWorkflowUpdate({ nodes: updatedNodes });
-    }, [nodes, activeNodeId, handleWorkflowUpdate]);
+        handleWorkflowUpdate(update);
+    }, [nodes, edges, activeNodeId, handleWorkflowUpdate]);
+
+    const handleToggleLayoutPin = useCallback((nodeId) => {
+        const node = nodes.find(item => item.id === nodeId);
+        if (!node) return;
+        handleWorkflowUpdate({ nodes: nodes.map(item => item.id === nodeId
+            ? { ...item, layoutPinned: item.layoutPinned === false }
+            : item) });
+    }, [nodes, handleWorkflowUpdate]);
 
     const handleEdgesChange = useCallback((updatedEdges) => {
         handleWorkflowUpdate({ edges: updatedEdges });
@@ -701,6 +716,8 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                                 onNodesChangeCallback={handleNodesChange}
                                 onEdgesChangeCallback={handleEdgesChange}
                                 onEdgeDelete={handleEdgeDelete}
+                                onApplyLayout={handleApplyLayout}
+                                onToggleLayoutPin={handleToggleLayoutPin}
                                 draggedNode={draggedNode}
                             />
                         </Suspense>

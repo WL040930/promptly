@@ -4,6 +4,34 @@ const SERVER_METADATA_KEYS = ['revision', 'updatedAt', 'release'];
 const sameValue = (left, right) => JSON.stringify(left) === JSON.stringify(right);
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 
+export const applyWorkflowNodeChanges = ({ nodes = [], edges = [], changes = [] }) => {
+    const positionChanges = changes.filter(change => change.type === 'position' && change.position && !change.dragging);
+    const removeChanges = changes.filter(change => change.type === 'remove');
+    let nextNodes = [...nodes];
+    let nextEdges = edges;
+
+    if (positionChanges.length > 0) {
+        nextNodes = nextNodes.map(node => {
+            const change = positionChanges.find(candidate => candidate.id === node.id);
+            return change ? { ...node, position: change.position, layoutPinned: true } : node;
+        });
+    }
+
+    if (removeChanges.length > 0) {
+        const removedNodeIds = new Set(removeChanges.map(change => change.id));
+        nextNodes = nextNodes.filter(node => !removedNodeIds.has(node.id));
+        nextEdges = edges.filter(edge => (
+            !removedNodeIds.has(edge.source)
+            && !removedNodeIds.has(edge.target)
+        ));
+    }
+
+    return {
+        nodes: nextNodes,
+        ...(removeChanges.length > 0 ? { edges: nextEdges } : {})
+    };
+};
+
 /** Fields owned by the client request rather than the persisted workflow. */
 export const workflowMutationFields = data => Object.fromEntries(
     Object.entries(data || {}).filter(([key]) => !REQUEST_ONLY_KEYS.has(key))

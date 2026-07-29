@@ -2,8 +2,9 @@ import crypto from 'crypto';
 import NodeRegistry from '../../../utils/NodeRegistry.js';
 import { validateWorkflow } from '../../engine/workflowValidator.js';
 import nodeResourceService from '../../nodes/nodeResourceService.js';
-import { normalizeNodeInputOptions, resolveNodeResourceParams } from '../../../../shared/nodeConfigContract.js';
+import { normalizeNodeInputOptions, normalizeNodeResourceValue, resolveNodeResourceParams } from '../../../../shared/nodeConfigContract.js';
 import { compileWorkflowBindings, formFieldReferenceExpression, isWorkflowExpression, validateWorkflowExpressions } from '../../../../shared/workflowExpressions.js';
+import { layoutWorkflow } from '../../../../shared/workflowLayout.js';
 
 
 const resourceVariantKey = params => JSON.stringify(Object.fromEntries(Object.entries(params || {}).sort(([left], [right]) => left.localeCompare(right))));
@@ -108,23 +109,46 @@ export const isProvisionedResourceReference = value => value !== null
     && typeof value.$provision === 'string'
     && Object.keys(value).length === 1;
 
-export const validateGeneratedResourceValues = ({ nodes = [], specs = [], resourceContext = {}, resourceChanges = [] } = {}) => {
+/**
+ * Normalize resource values before compilation. AI output occasionally wraps an
+ * existing resource ID in `$provision`; that syntax is reserved for resources
+ * created by this proposal. We can safely unwrap it only when the ID exactly
+ * matches an account resource supplied by the server.
+ */
+export const normalizeGeneratedResourceValues = ({ nodes = [], specs = [], resourceContext = {}, resourceChanges = [] } = {}) => {
     const specsByKey = new Map(specs.map(spec => [spec.nodeKey || `${spec.type}:${spec.subType}`, spec]));
     const provisionRefs = new Set((resourceChanges || [])
         .filter(change => change?.type === 'create_google_spreadsheet')
         .map(change => change.ref));
     const issues = [];
-    nodes.forEach((node, nodeIndex) => {
+    const repairs = [];
+    const normalizedNodes = nodes.map(node => ({ ...node, config: { ...(node.config || {}) } }));
+    normalizedNodes.forEach((node, nodeIndex) => {
         const spec = specsByKey.get(node.nodeKey || `${node.type}:${node.subType}`);
         (spec?.schema?.inputs || []).filter(input => input.type === 'resource-select' && input.resource).forEach(input => {
             const value = node.config?.[input.name];
             if (value === undefined || value === null || value === '') return;
             if (isProvisionedResourceReference(value)) {
                 if (input.resource === 'google-spreadsheets' && provisionRefs.has(value.$provision)) return;
+                const resource = resourceContextForInput(input, node, resourceContext);
+                const matchingOption = resource?.options?.find(option => String(option.value) === value.$provision);
+                if (matchingOption) {
+                    node.config[input.name] = matchingOption.value;
+                    repairs.push({ code: 'WORKFLOW_RESOURCE_REFERENCE_UNWRAPPED', nodeId: node.id, field: input.name, resource: input.resource });
+                    return;
+                }
                 issues.push({
                     code: 'WORKFLOW_PROVISION_REFERENCE_INVALID',
                     path: `nodes[${nodeIndex}].config.${input.name}`,
-                    message: `${input.label || input.name} refers to a spreadsheet that is not being created by this proposal.`
+                    message: `${input.label || input.name} cannot use a proposed resource reference.`
+                });
+                return;
+            }
+            if (typeof value === 'object') {
+                issues.push({
+                    code: 'WORKFLOW_RESOURCE_REFERENCE_INVALID',
+                    path: `nodes[${nodeIndex}].config.${input.name}`,
+                    message: `${input.label || input.name} must use a resource ID from this account.`
                 });
                 return;
             }
@@ -144,7 +168,17 @@ export const validateGeneratedResourceValues = ({ nodes = [], specs = [], resour
                 return;
             }
             const options = Array.isArray(resource.options) ? resource.options : [];
-            if (!options.some(option => String(option.value) === String(value))) {
+            const normalizedValue = normalizeNodeResourceValue(input.valueFormat, value);
+            const matchingOption = options.find(option => String(option.value) === normalizedValue);
+            if (matchingOption) {
+                node.config[input.name] = matchingOption.value;
+                return;
+            }
+            if (input.allowCustom === true && normalizedValue) {
+                node.config[input.name] = normalizedValue;
+                return;
+            }
+            if (!matchingOption) {
                 issues.push({
                     code: 'WORKFLOW_RESOURCE_NOT_FOUND',
                     path: `nodes[${nodeIndex}].config.${input.name}`,
@@ -153,8 +187,10 @@ export const validateGeneratedResourceValues = ({ nodes = [], specs = [], resour
             }
         });
     });
-    return issues;
+    return { nodes: normalizedNodes, repairs, issues };
 };
+
+export const validateGeneratedResourceValues = (args = {}) => normalizeGeneratedResourceValues(args).issues;
 
 const isEmailAction = node => node?.subType === 'email' || node?.nodeKey === 'action:email';
 
@@ -429,43 +465,6 @@ const assertWorkflowDefinition = (nodes, edges, isActive = false, registry = Nod
     return validation;
 };
 
-export const layoutWorkflowNodes = (nodes = [], edges = []) => {
-    const indegree = new Map(nodes.map(node => [node.id, 0]));
-    const adjacency = new Map(nodes.map(node => [node.id, []]));
-    edges.forEach(edge => {
-        if (!adjacency.has(edge.source) || !adjacency.has(edge.target)) return;
-        adjacency.get(edge.source).push(edge.target);
-        indegree.set(edge.target, indegree.get(edge.target) + 1);
-    });
-
-    const depth = new Map(nodes.map(node => [node.id, 0]));
-    const queue = [...indegree.entries()]
-        .filter(([, degree]) => degree === 0)
-        .map(([id]) => id);
-    let visited = 0;
-    while (queue.length) {
-        const id = queue.shift();
-        visited += 1;
-        adjacency.get(id).forEach(target => {
-            depth.set(target, Math.max(depth.get(target), depth.get(id) + 1));
-            indegree.set(target, indegree.get(target) - 1);
-            if (indegree.get(target) === 0) queue.push(target);
-        });
-    }
-    if (visited !== nodes.length) throw new Error('Assembler returned a cyclic workflow');
-
-    const siblingRows = new Map();
-    return nodes.map(node => {
-        const layer = depth.get(node.id) || 0;
-        const row = siblingRows.get(layer) || 0;
-        siblingRows.set(layer, row + 1);
-        return {
-            ...node,
-            position: { x: 100 + layer * 350, y: 150 + row * 200 }
-        };
-    });
-};
-
 const newId = (prefix) => `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`;
 
 const mergeUsage = (...usages) => usages.reduce((total, usage) => ({
@@ -567,11 +566,6 @@ const addNodeFromEdit = ({ operation, nodeDefinition, nodes, refs, specsByNodeKe
     const x = afterNode
         ? (afterNode.position?.x || 100) + 350
         : Math.max(0, ...nodes.map(node => node.position?.x || 0)) + 350;
-    if (afterNode) {
-        nodes.forEach(node => {
-            if ((node.position?.x || 0) >= x) node.position = { ...(node.position || {}), x: (node.position?.x || 0) + 350 };
-        });
-    }
     const id = newId('node');
     refs.set(nodeDefinition.ref, id);
     const node = {
@@ -583,6 +577,7 @@ const addNodeFromEdit = ({ operation, nodeDefinition, nodes, refs, specsByNodeKe
         description: nodeDefinition.description || spec.description,
         config: normalizeConfig(nodeDefinition.config, spec.schema),
         position: { x, y: afterNode?.position?.y || 150 },
+        layoutPinned: false,
         ...nodeUiFields(spec)
     };
     nodes.push(node);
@@ -606,6 +601,55 @@ const connectNodes = ({ operation, edges, from, to, sourceNode, targetNode }) =>
     assertConnectionHandle(targetNode, to.handle, 'inputs', operation);
     if (findConnection(edges, from, to)) return;
     edges.push(connectionFor({ source: from.nodeId, sourceHandle: from.handle, target: to.nodeId, targetHandle: to.handle }));
+};
+
+/**
+ * Insert a node after a known route without requiring the model to repeat the
+ * destination edge. The compiler owns the fragile "find, replace, reconnect"
+ * work, which makes a proposal resilient to generated edge IDs and ordering.
+ */
+const insertAfterRoute = ({ operation, nodes, edges, refs, specsByNodeKey }) => {
+    const from = normalizeEndpoint(operation.from, refs, operation.op, 'from');
+    const sourceNode = nodes.find(node => node.id === from.nodeId);
+    if (!sourceNode) throwEditError(operation.op, 'Route source references a missing node.', { code: 'WORKFLOW_NODE_REF_INVALID' });
+    assertConnectionHandle(sourceNode, from.handle, 'outputs', operation.op);
+
+    let matches = edges.filter(edge => edge.source === from.nodeId && (edge.sourceHandle || null) === from.handle);
+    if (operation.beforeNodeRef) {
+        const beforeNodeId = refs.get(operation.beforeNodeRef);
+        if (!beforeNodeId) throwEditError(operation.op, `Unknown beforeNodeRef '${operation.beforeNodeRef}'.`, { code: 'WORKFLOW_NODE_REF_INVALID' });
+        matches = matches.filter(edge => edge.target === beforeNodeId);
+    }
+    if (matches.length === 0) {
+        throwEditError(operation.op, 'The selected route has no connection to extend.', { code: 'WORKFLOW_ROUTE_NOT_FOUND' });
+    }
+    if (matches.length > 1) {
+        throwEditError(operation.op, 'The selected route has multiple destinations. Identify which existing step should follow the new one.', { code: 'WORKFLOW_ROUTE_AMBIGUOUS' });
+    }
+
+    const match = matches[0];
+    const to = { nodeId: match.target, handle: match.targetHandle || null };
+    const targetNode = nodes.find(node => node.id === to.nodeId);
+    if (!targetNode) throwEditError(operation.op, 'Route destination references a missing node.', { code: 'WORKFLOW_NODE_REF_INVALID' });
+    const inserted = addNodeFromEdit({
+        operation: operation.op,
+        nodeDefinition: { ...operation.node, afterNodeRef: operation.node?.afterNodeRef || operation.from?.nodeRef },
+        nodes,
+        refs,
+        specsByNodeKey
+    });
+    const insertedSpec = specsByNodeKey.get(nodeKeyFor(inserted));
+    const inputHandles = (insertedSpec?.schema?.inputs || []).filter(input => input.isConnection);
+    const outputHandles = (insertedSpec?.schema?.outputs || []).filter(output => output.isConnection);
+    const inputHandle = operation.inputHandle || (inputHandles.length === 1 ? inputHandles[0].name : null);
+    const outputHandle = operation.outputHandle || (outputHandles.length === 1 ? outputHandles[0].name : null);
+    if (!inputHandle && inputHandles.length > 1) throwEditError(operation.op, 'insert_after_route requires an inputHandle when the node has multiple inputs.', { code: 'WORKFLOW_HANDLE_REQUIRED' });
+    if (!outputHandle && outputHandles.length > 1) throwEditError(operation.op, 'insert_after_route requires an outputHandle when the node has multiple outputs.', { code: 'WORKFLOW_HANDLE_REQUIRED' });
+
+    edges.splice(0, edges.length, ...edges.filter(edge => edge !== match));
+    const insertedId = refs.get(operation.node.ref);
+    connectNodes({ operation: operation.op, edges, from, to: { nodeId: insertedId, handle: inputHandle }, sourceNode, targetNode: inserted });
+    connectNodes({ operation: operation.op, edges, from: { nodeId: insertedId, handle: outputHandle }, to, sourceNode: inserted, targetNode });
 };
 
 export const compileWorkflowEdits = ({ currentWorkflow = {}, operations = [], specs = [], registry = NodeRegistry }) => {
@@ -637,7 +681,7 @@ export const compileWorkflowEdits = ({ currentWorkflow = {}, operations = [], sp
             }
             nodes[index] = {
                 ...nodes[index],
-                ...Object.fromEntries(Object.entries(updates).filter(([key]) => !['id', 'type', 'subType', 'nodeKey', 'schema'].includes(key))),
+                ...Object.fromEntries(Object.entries(updates).filter(([key]) => !['id', 'type', 'subType', 'nodeKey', 'schema', 'position', 'layoutPinned'].includes(key))),
                 config: updates.config ? { ...(nodes[index].config || {}), ...updates.config } : nodes[index].config
             };
         } else if (operation.op === 'connect' || operation.op === 'disconnect') {
@@ -675,10 +719,13 @@ export const compileWorkflowEdits = ({ currentWorkflow = {}, operations = [], sp
             const insertedEndpoint = { nodeId: refs.get(insertedRef), handle: inputHandle };
             connectNodes({ operation: operation.op, edges, from, to: insertedEndpoint, sourceNode: nodes.find(node => node.id === from.nodeId), targetNode: inserted });
             connectNodes({ operation: operation.op, edges, from: { nodeId: refs.get(insertedRef), handle: outputHandle }, to, sourceNode: inserted, targetNode: nodes.find(node => node.id === to.nodeId) });
+        } else if (operation.op === 'insert_after_route') {
+            insertAfterRoute({ operation, nodes, edges, refs, specsByNodeKey });
         } else {
             throwEditError(operation.op, `Unsupported workflow edit operation '${operation.op}'.`, { code: 'WORKFLOW_EDIT_OPERATION_INVALID' });
         }
     }
+    nodes.splice(0, nodes.length, ...layoutWorkflow({ nodes, edges, mode: 'respect-pins' }));
     const validation = assertWorkflowDefinition(nodes, edges, Boolean(currentWorkflow.isActive), registry, true);
     if (!validation.valid && validation.issues?.length) {
         throwEditError('validate', 'The edit plan produced an invalid workflow graph. Review the node refs and connection handles.', { code: 'WORKFLOW_EDIT_GRAPH_INVALID' });

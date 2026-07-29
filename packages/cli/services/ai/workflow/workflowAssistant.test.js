@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { workflowAssistantInternals } from './workflowAssistant.js';
 
-const { normalizeWorkflowCommand, resolveWorkflowTurnContext, publicState } = workflowAssistantInternals;
+const { formIdForWorkflowNodes, normalizeWorkflowCommand, resolveWorkflowTurnContext, publicState } = workflowAssistantInternals;
 
 test('workflow history state includes the latest progress after a refresh', () => {
     const result = publicState({
@@ -13,6 +13,15 @@ test('workflow history state includes the latest progress after a refresh', () =
     });
 
     assert.equal(result.progress.message, 'Checking the workflow proposal…');
+});
+
+test('proposal validation resolves a form from a newly proposed form trigger', () => {
+    assert.equal(formIdForWorkflowNodes([]), null);
+    assert.equal(formIdForWorkflowNodes([{
+        id: 'trigger_new',
+        subType: 'form-submission',
+        config: { formId: 'form_respondent' }
+    }]), 'form_respondent');
 });
 
 // ---------------------------------------------------------------------------

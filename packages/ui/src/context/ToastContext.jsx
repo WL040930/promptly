@@ -15,14 +15,14 @@ export const useToast = () => {
 export const ToastProvider = ({ children }) => {
     const [toasts, setToasts] = useState([]);
 
-    const showToast = useCallback((message, type = 'success') => {
+    const showToast = useCallback((message, type = 'success', options = {}) => {
         const id = Date.now() + Math.random().toString();
-        setToasts(prev => [...prev, { id, message, type }]);
+        setToasts(prev => [...prev, { id, message, type, action: options.action || null }]);
     }, []);
 
-    const success = useCallback((message) => showToast(message, 'success'), [showToast]);
-    const error = useCallback((message) => showToast(message, 'error'), [showToast]);
-    const info = useCallback((message) => showToast(message, 'info'), [showToast]);
+    const success = useCallback((message, options) => showToast(message, 'success', options), [showToast]);
+    const error = useCallback((message, options) => showToast(message, 'error', options), [showToast]);
+    const info = useCallback((message, options) => showToast(message, 'info', options), [showToast]);
 
     const removeToast = useCallback((id) => {
         setToasts(prev => prev.filter(toast => toast.id !== id));
@@ -104,6 +104,18 @@ const ToastItem = ({ toast, removeToast }) => {
         >
             {icons[toast.type]}
             <span className="text-sm font-semibold text-slate-800">{toast.message}</span>
+            {toast.action && (
+                <button
+                    type="button"
+                    onClick={() => {
+                        toast.action.onClick?.();
+                        removeToast(toast.id);
+                    }}
+                    className="ml-1 rounded-lg px-2 py-1 text-xs font-bold text-indigo-600 transition-colors hover:bg-indigo-50"
+                >
+                    {toast.action.label}
+                </button>
+            )}
             <button 
                 onClick={() => {
                     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {

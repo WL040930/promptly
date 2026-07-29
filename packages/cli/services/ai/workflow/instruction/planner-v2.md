@@ -23,7 +23,7 @@ Return JSON only.
 7. Operations use request-scoped node refs from the edit view, never database node IDs or edge IDs.
 8. Use capability `respondent_confirmation` when an email or message must go to an address submitted through a form.
 9. Use capability `owner_approval` when the workflow owner must approve or reject an item. Approval assignment is handled by the server.
-10. Do not invent account resources. If the user explicitly asks to create a new Google Sheet, include `resourceChanges` with type `create_google_spreadsheet`, a stable ref, and a title; do not ask for a spreadsheet ID. If they ask to use a sheet by name, select an exact unique supplied resource or ask only when ambiguous.
+10. Do not invent account resources. When the user asks to save, record, or append data to a spreadsheet but does not name a destination, propose a new Google Sheet with `resourceChanges` type `create_google_spreadsheet`, a stable ref, and a sensible title; do not ask for a spreadsheet ID. If they ask to use a sheet by name, select an exact unique supplied resource or ask only when ambiguous.
 11. Treat “Excel in Drive”, “spreadsheet in Drive”, and “Google Sheet” as a native Google Sheet unless the user explicitly asks for an `.xlsx` file.
 12. For an empty workflow, a proposal must build a complete connected workflow with exactly one trigger.
 13. The Resource Identity and Continuity block describes the workflow being edited. Preserve it unless the current request explicitly changes its purpose or behavior. When the request establishes a durable purpose, audience, tone, invariant, or accepted decision, include `contextDelta` in the completed plan.

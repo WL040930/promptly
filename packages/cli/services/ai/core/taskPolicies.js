@@ -88,42 +88,42 @@ const TASK_POLICIES = Object.freeze({
         profiles: ['fast', 'quality', 'default'],
         responseFormat: 'json',
         maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_PLAN],
-        maxAttempts: 4,
+        maxAttempts: 2,
         allowTools: false
     },
     [AI_TASKS.WORKFLOW_PLAN_REPAIR]: {
         profiles: ['fast', 'quality', 'default'],
         responseFormat: 'json',
         maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_PLAN_REPAIR],
-        maxAttempts: 4,
+        maxAttempts: 2,
         allowTools: false
     },
     [AI_TASKS.WORKFLOW_BUILD]: {
         profiles: ['quality', 'default', 'fast'],
         responseFormat: 'json',
         maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_BUILD],
-        maxAttempts: 4,
+        maxAttempts: 2,
         allowTools: false
     },
     [AI_TASKS.WORKFLOW_BUILD_REPAIR]: {
         profiles: ['quality', 'default', 'fast'],
         responseFormat: 'json',
         maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_BUILD_REPAIR],
-        maxAttempts: 4,
+        maxAttempts: 2,
         allowTools: false
     },
     [AI_TASKS.WORKFLOW_VERIFY]: {
         profiles: ['fast', 'quality', 'default'],
         responseFormat: 'json',
         maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_VERIFY],
-        maxAttempts: 4,
+        maxAttempts: 2,
         allowTools: false
     },
     [AI_TASKS.WORKFLOW_VERIFY_REPAIR]: {
         profiles: ['fast', 'quality', 'default'],
         responseFormat: 'json',
         maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_VERIFY_REPAIR],
-        maxAttempts: 4,
+        maxAttempts: 2,
         allowTools: false
     },
     [AI_TASKS.NODE_TEXT]: {

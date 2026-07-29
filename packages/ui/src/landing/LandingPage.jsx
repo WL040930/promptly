@@ -28,7 +28,7 @@ const SCENES = [
     eyebrow: '01 / Describe the outcome',
     title: 'Start with the sentence in your head.',
     body: 'Tell Promptly what should happen. It keeps the human context that rigid builders throw away.',
-    accent: '#b9ff65',
+    accent: '#a99dff',
     type: 'intent',
     tags: ['Plain language', 'Context-aware']
   },
@@ -38,7 +38,7 @@ const SCENES = [
     eyebrow: '02 / Shape the logic',
     title: 'Watch the moving parts take their place.',
     body: 'The agent translates intent into a reviewable workflow with clear nodes, values, and handoffs.',
-    accent: '#8f83ff',
+    accent: '#7c6cff',
     type: 'shape',
     tags: ['Visual graph', 'Editable steps']
   },
@@ -48,7 +48,7 @@ const SCENES = [
     eyebrow: '03 / Keep the decision yours',
     title: 'Nothing ships behind your back.',
     body: 'Review proposed changes, ask for a refinement, then approve the exact version you want to run.',
-    accent: '#ffcc7a',
+    accent: '#c7bdff',
     type: 'review',
     tags: ['Human approval', 'Safe changes']
   },
@@ -58,7 +58,7 @@ const SCENES = [
     eyebrow: '04 / Make work move',
     title: 'Every run leaves a trail you can trust.',
     body: 'Launch the workflow and see what happened, where, and why — without hunting through logs.',
-    accent: '#71e4da',
+    accent: '#b9ff65',
     type: 'run',
     tags: ['Live history', 'Clear ownership'],
     final: true

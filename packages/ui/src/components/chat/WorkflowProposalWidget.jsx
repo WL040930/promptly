@@ -11,13 +11,14 @@ const toneFor = type => ({
 
 const markerFor = type => ({ add: '+', remove: '−', update: '~', connect: '→' }[type] || '•');
 
-export default function WorkflowProposalWidget({ proposal, status, onIgnore, onPreview, rejecting }) {
+export default function WorkflowProposalWidget({ proposal, status, onIgnore, onPreview, onSetupAction, rejecting }) {
     const isAccepted = isAcceptedProposalStatus(status);
     const isRejected = isRejectedProposalStatus(status);
     const isStale = isStaleProposalStatus(status);
     const presentation = proposal?.presentation || {};
     const changes = presentation.changes || [];
     const setupRequirements = presentation.setupRequirements || [];
+    const setupActions = presentation.setupActions || [];
     const assumptions = presentation.assumptions || [];
     const flow = presentation.flow || [];
 
@@ -52,7 +53,7 @@ export default function WorkflowProposalWidget({ proposal, status, onIgnore, onP
                 )}
 
                 {assumptions.length > 0 && <div className="rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-900"><p className="font-bold">Assumptions</p>{assumptions.map(item => <p key={item} className="mt-1">• {item}</p>)}</div>}
-                {setupRequirements.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900"><p className="font-bold">Setup required</p>{setupRequirements.map(item => <p key={item} className="mt-1">• {item}</p>)}</div>}
+                {setupRequirements.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900"><p className="font-bold">Setup required before Apply</p>{setupRequirements.map(item => <p key={item} className="mt-1">• {item}</p>)}{setupActions.length > 0 && <div className="mt-3">{setupActions.map(action => <Button key={`${action.type}-${action.provider || ''}`} variant="outline" size="sm" onClick={() => onSetupAction?.(action)}>{action.label || 'Open settings'}</Button>)}</div>}</div>}
 
         </ProposalCard>
     );

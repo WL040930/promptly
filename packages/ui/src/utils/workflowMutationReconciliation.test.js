@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    applyWorkflowNodeChanges,
     reconcileWorkflowMutationFailure,
     reconcileWorkflowMutationSuccess,
     workflowMutationFields
@@ -44,6 +45,33 @@ test('a failed older workflow save does not roll back newer node text', () => {
 
 test('workflow mutation fields exclude request-only metadata', () => {
     assert.deepEqual(workflowMutationFields({ nodes: first, expectedRevision: 1, source: 'visual', summary: 'Save' }), { nodes: first });
+});
+
+test('removing a workflow node persists its connected edge removal atomically', () => {
+    const nodes = [
+        { id: 'trigger_1', type: 'trigger', subType: 'manual' },
+        { id: 'email_1', type: 'action', subType: 'email' }
+    ];
+    const edges = [{ id: 'edge_1', source: 'trigger_1', target: 'email_1' }];
+
+    const update = applyWorkflowNodeChanges({
+        nodes,
+        edges,
+        changes: [{ type: 'remove', id: 'email_1' }]
+    });
+
+    assert.deepEqual(update, {
+        nodes: [nodes[0]],
+        edges: []
+    });
+});
+
+test('moving a node marks its position as protected from automatic layout', () => {
+    const result = applyWorkflowNodeChanges({
+        nodes: [{ id: 'node_1', position: { x: 10, y: 20 }, layoutPinned: false }],
+        changes: [{ id: 'node_1', type: 'position', position: { x: 100, y: 200 } }]
+    });
+    assert.deepEqual(result.nodes[0], { id: 'node_1', position: { x: 100, y: 200 }, layoutPinned: true });
 });
 
 test('a delayed first autosave never makes the editor show the first word again', async () => {

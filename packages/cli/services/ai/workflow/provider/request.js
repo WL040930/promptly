@@ -33,7 +33,7 @@ const normalizeProviderError = (label, error) => {
     return error;
 };
 
-export const requestWorkflowJson = async ({ label, prompt, systemInstruction, provider = null, budget }) => {
+export const requestWorkflowJson = async ({ label, prompt, systemInstruction, provider = null, budget, signal = null }) => {
     try {
         const response = await ai.run({
             task: TASKS[label],
@@ -41,7 +41,8 @@ export const requestWorkflowJson = async ({ label, prompt, systemInstruction, pr
             systemInstruction,
             operation: `workflow:${label}`,
             providerOverride: provider,
-            budget
+            budget,
+            signal
         });
         return { value: response.json, rawText: response.text, response };
     } catch (error) {
@@ -70,4 +71,3 @@ export const requestWorkflowJson = async ({ label, prompt, systemInstruction, pr
 };
 
 export const workflowOutputIssues = ({ call, validate }) => call.parseIssues || validate(call.value);
-

@@ -8,111 +8,28 @@ const ResetPasswordPage = ({ token, onLogin }) => {
     const [error, setError] = useState(null)
     const [isSubmitting, setIsSubmitting] = useState(false)
 
-    const handleSubmit = async (e) => {
-        e.preventDefault()
-        setIsSubmitting(true)
-        setError(null)
-        setMessage(null)
-
-        try {
-            const response = await resetPassword(token, password)
-            setMessage(response.message || 'Password successfully reset.')
-        } catch (err) {
-            setError(err?.message || 'Failed to reset password. The link might be invalid or expired.')
-        } finally {
-            setIsSubmitting(false)
-        }
+    const handleSubmit = async (event) => {
+        event.preventDefault()
+        setIsSubmitting(true); setError(null); setMessage(null)
+        try { setMessage((await resetPassword(token, password)).message || 'Your password has been reset.') }
+        catch (err) { setError(err?.message || 'This reset link is invalid or has expired. Request a new one and try again.') }
+        finally { setIsSubmitting(false) }
     }
 
-    return (
-        <AuthShell
-            icon={
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                </svg>
-            }
-            title="Reset Password"
-            subtitle="Enter your new password below."
-        >
-
-                {message ? (
-                    <div className="text-center animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-6 mb-8 text-center">
-                            <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M20 6 9 17l-5-5" />
-                                </svg>
-                            </div>
-                            <h3 className="text-emerald-800 font-bold text-lg mb-2">Success!</h3>
-                            <p className="text-emerald-600/90 font-medium text-sm leading-relaxed">
-                                {message}
-                            </p>
-                        </div>
-                        <button 
-                            onClick={onLogin} 
-                            className="w-full py-3.5 text-base rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all hover:-translate-y-0.5 active:scale-95"
-                        >
-                            Go to Sign In
-                        </button>
-                    </div>
-                ) : (
-                    <form onSubmit={handleSubmit} className="flex flex-col gap-6 animate-in fade-in duration-300">
-                        <div className="space-y-1.5">
-                            <label htmlFor="password" className="block text-sm font-bold text-slate-700">
-                                New Password
-                            </label>
-                            <input
-                                type="password"
-                                id="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                placeholder="••••••••"
-                                className="w-full px-4 py-3 bg-slate-50 hover:bg-white border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:bg-white rounded-xl text-slate-900 placeholder:text-slate-400 font-medium outline-none transition-all focus:ring-4 focus:ring-indigo-500/10 shadow-sm"
-                                required
-                                autoFocus
-                            />
-                        </div>
-
-                        {error && (
-                            <div className="flex items-start gap-2 text-red-600 bg-red-50 p-3 rounded-lg border border-red-100">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 mt-0.5">
-                                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-                                </svg>
-                                <p className="text-sm font-semibold">{error}</p>
-                            </div>
-                        )}
-
-                        <button 
-                            type="submit" 
-                            disabled={isSubmitting || !password.trim()}
-                            className="w-full py-3.5 text-base rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all hover:-translate-y-0.5 active:scale-95 disabled:opacity-50 flex justify-center items-center gap-2"
-                        >
-                            {isSubmitting ? (
-                                <>
-                                    <svg className="animate-spin" width="18" height="18" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                    Resetting...
-                                </>
-                            ) : 'Reset Password'}
-                        </button>
-                    </form>
-                )}
-
-                {!message && (
-                    <div className="mt-8 text-center">
-                        <button 
-                            onClick={onLogin} 
-                            className="text-slate-500 hover:text-slate-800 font-semibold text-sm transition-colors flex items-center justify-center gap-1.5 mx-auto group"
-                        >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="group-hover:-translate-x-1 transition-transform">
-                                <path d="m15 18-6-6 6-6"/>
-                            </svg>
-                            Back to Sign In
-                        </button>
-                    </div>
-                )}
-        </AuthShell>
-    )
+    return <AuthShell step="Account recovery" title={message ? 'Password updated.' : 'Choose a new password.'} subtitle={message ? 'Your account is ready when you are.' : 'Make it memorable and keep your workspace protected.'} icon={<svg viewBox="0 0 24 24" fill="none"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2"/></svg>}>
+        {message ? <div className="auth-success">
+            <div className="auth-success-mark">✓</div><h3>All set</h3><p>{message}</p>
+            <button className="auth-submit" type="button" onClick={onLogin}>Sign in to Promptly <b>→</b></button>
+        </div> : <>
+            <form className="auth-form" onSubmit={handleSubmit}>
+                <label className="auth-field"><span>New password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Choose a secure password" autoComplete="new-password" required autoFocus /></label>
+                <p className="auth-hint">Use at least 8 characters. A passphrase works well.</p>
+                {error && <div className="auth-alert" role="alert"><span>!</span><p>{error}</p></div>}
+                <button className="auth-submit" type="submit" disabled={isSubmitting || !password.trim()}>{isSubmitting && <i className="auth-spinner" />}{isSubmitting ? 'Updating password…' : 'Update password'}<b>→</b></button>
+            </form>
+            <p className="auth-switch"><button type="button" onClick={onLogin}><span>←</span> Back to sign in</button></p>
+        </>}
+    </AuthShell>
 }
 
 export default ResetPasswordPage
