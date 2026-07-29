@@ -6,7 +6,7 @@ const directory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 
 const read = name => fs.readFile(path.join(directory, name), 'utf8');
 
-export const workflowPlannerInstruction = await read('planner-v2.md');
-export const workflowWorkerInstruction = await read('worker-v2.md');
-export const workflowVerifierInstruction = await read('verifier-v2.md');
+export const workflowPlannerInstruction = await read('workflow-planner.md');
+export const workflowWorkerInstruction = await read('workflow-worker.md');
+export const workflowVerifierInstruction = await read('workflow-verifier.md');
 
