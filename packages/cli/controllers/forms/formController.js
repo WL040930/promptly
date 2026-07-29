@@ -1,12 +1,11 @@
 import sequelize from '../../db/index.js';
-import { AssistantMessage, AssistantThread, Form, FormResponse, WorkflowTriggerBinding } from '../../models/index.js';
+import { AssistantThread, Form, FormResponse, WorkflowTriggerBinding } from '../../models/index.js';
 import { validateQuestionCardinality } from '../../services/ai/form/context/formContext.js';
 import { applyFormPatches } from '../../services/ai/form/domain/formPatchEngine.js';
 import { validateFormSchema } from '../../services/ai/form/domain/formSchemaValidator.js';
 import asyncHandler from '../../utils/asyncHandler.js';
 import { executeWorkflow } from '../../services/engine/executionEngine.js';
 import { formAssistant } from '../../services/ai/form/formAssistant.js';
-import { publicStateForThread } from '../../services/assistant/assistantStore.js';
 
 export const getForms = asyncHandler(async (req, res) => {
     const forms = await Form.findAll({
@@ -39,7 +38,7 @@ export const createForm = asyncHandler(async (req, res) => {
 // assistant result, and update the form conversation state as one lifecycle.
 export const submitFormAITurn = asyncHandler(async (req, res) => {
     const { formId } = req.params;
-    const { command, text, clarificationMode, requestId, expectedStateVersion } = req.body || {};
+    const { command, clarificationMode, requestId, expectedStateVersion } = req.body || {};
     const useSSE = String(req.headers.accept || '').includes('text/event-stream');
     let heartbeat = null;
 
@@ -62,7 +61,6 @@ export const submitFormAITurn = asyncHandler(async (req, res) => {
             userId: req.user.id,
             formId,
             command,
-            text,
             clarificationMode,
             expectedStateVersion,
             requestId,
@@ -103,7 +101,7 @@ export const resetFormAIContext = asyncHandler(async (req, res) => {
 
 export const decideFormProposal = asyncHandler(async (req, res) => {
     const { formId, messageId } = req.params;
-    const { action = 'accept', selectedPatchIds, baseFormUpdatedAt } = req.body || {};
+    const { action = 'accept', selectedPatchIds, expectedStateVersion } = req.body || {};
     try {
         const result = await formAssistant.decideProposal({
             userId: req.user.id,
@@ -111,10 +109,17 @@ export const decideFormProposal = asyncHandler(async (req, res) => {
             proposalMessageId: messageId,
             action,
             selectedPatchIds,
-            baseFormUpdatedAt
+            expectedStateVersion
         });
         res.json(result);
     } catch (error) {
+        if (error.code === 'FORM_AI_STATE_CONFLICT') {
+            return res.status(409).json({
+                code: error.code,
+                message: error.message,
+                ...(Number.isInteger(error.currentStateVersion) ? { currentStateVersion: error.currentStateVersion } : {})
+            });
+        }
         if (error.code === 'FORM_PROPOSAL_STALE') {
             return res.status(409).json({ code: error.code, message: error.message });
         }
@@ -283,24 +288,11 @@ export const getFormResponses = asyncHandler(async (req, res) => {
 
 // Form Chat History
 export const getFormChatHistory = asyncHandler(async (req, res) => {
-    const { formId } = req.params;
-    const { limit = 50, offset = 0 } = req.query;
-
-    const form = await Form.findOne({ where: { id: formId, userId: req.user.id } });
-    if (!form) return res.status(404).json({ message: 'Form not found' });
-
-    const thread = await AssistantThread.findOne({ where: { surface: 'form', formId, userId: req.user.id } });
-    if (!thread) return res.json({ messages: [], state: null });
-    const messages = await AssistantMessage.findAll({
-        where: { threadId: thread.id },
-        order: [['createdAt', 'DESC']],
-        limit: parseInt(limit, 10),
-        offset: parseInt(offset, 10)
+    const result = await formAssistant.getHistory({
+        userId: req.user.id,
+        formId: req.params.formId,
+        limit: req.query.limit,
+        before: req.query.before || null
     });
-
-    // Return messages in chronological order for the frontend
-    res.json({
-        messages: messages.reverse().map(message => ({ ...message.toJSON(), formId })),
-        state: publicStateForThread(thread)
-    });
+    res.json(result);
 });

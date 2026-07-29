@@ -184,6 +184,7 @@ test('createMemoryPatch supports replacement, clearing, and legacy memory', () =
 });
 
 test('empty or unchanged memory proposals do not create selectable patches', () => {
+    assert.deepEqual(getMemoryUpdate({ aiMemory: 'Use compact labels.' }), { action: 'none' });
     assert.deepEqual(getMemoryUpdate({
         memoryUpdate: { action: 'replace', summary: 'No durable form-specific rules have been set.' }
     }), { action: 'none' });

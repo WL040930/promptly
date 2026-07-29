@@ -137,6 +137,7 @@ export const useDeleteWorkflow = () => {
         },
         onSettled: () => {
             queryClient.invalidateQueries({ queryKey: ['workflows'] });
+            queryClient.invalidateQueries({ queryKey: ['workflowListPage'] });
         },
     });
 };

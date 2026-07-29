@@ -121,15 +121,36 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
 
     // ── Form CRUD ──────────────────────────────────────────────────────────────
 
+    const reconcileSavedDraft = useCallback((formId, savedUpdates) => {
+        setDraftUpdates(current => {
+            const draft = current[formId];
+            if (!draft) return current;
+            const nextDraft = { ...draft };
+            for (const [key, value] of Object.entries(savedUpdates || {})) {
+                if (Object.is(nextDraft[key], value)) delete nextDraft[key];
+            }
+            if (Object.keys(nextDraft).length === Object.keys(draft).length) return current;
+            if (Object.keys(nextDraft).length === 0) {
+                const { [formId]: _removed, ...rest } = current;
+                return rest;
+            }
+            return { ...current, [formId]: nextDraft };
+        });
+    }, []);
+
     useEffect(() => {
         if (!activeFormId) return undefined;
         const queue = createDebouncedSaveQueue({
             delay: 600,
-            save: updates => updateMutationRef.current({ id: activeFormId, data: updates })
+            save: async updates => {
+                const saved = await updateMutationRef.current({ id: activeFormId, data: updates });
+                reconcileSavedDraft(activeFormId, updates);
+                return saved;
+            }
         });
         saveQueueRef.current = queue;
         return () => { void queue.flush(); };
-    }, [activeFormId]);
+    }, [activeFormId, reconcileSavedDraft]);
 
     const updateForm = useCallback((updates, { immediate = false } = {}) => {
         if (!activeFormId || !saveQueueRef.current) return;
@@ -137,6 +158,18 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
         saveQueueRef.current.schedule(updates);
         if (immediate) void saveQueueRef.current.flush();
     }, [activeFormId]);
+
+    const flushPendingFormSave = useCallback(async () => {
+        await saveQueueRef.current?.flush();
+    }, []);
+
+    const handleAIFormApplied = useCallback(appliedForm => {
+        if (!appliedForm?.id) return;
+        setDraftUpdates(current => {
+            const { [appliedForm.id]: _removed, ...rest } = current;
+            return rest;
+        });
+    }, []);
 
     const handleCreateForm = () => {
         setIsCreatingForm(true);
@@ -530,6 +563,8 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                             <div className="h-full">
                                     <FormAIAssistant
                                         form={activeForm}
+                                        onBeforeSend={flushPendingFormSave}
+                                        onFormApplied={handleAIFormApplied}
                                     />
                             </div>
                         ) : activeSubTab === 'responses' ? (

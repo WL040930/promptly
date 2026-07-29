@@ -30,6 +30,7 @@ import { useToast } from '../../context/ToastContext.jsx';
 import { useCreateWorkflow, useDeleteWorkflow, usePauseWorkflow, usePublishWorkflow, useRestoreWorkflowVersion, useWorkflow, useWorkflowListPage, useWorkflowVersions } from '../../api/hooks/useWorkflows.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../../shared/automationDefaults.js';
 import { useRunWorkflow } from '../../api/hooks/useRunWorkflow.js';
+import { pageAfterDeletingItem } from '../../utils/paginationReconciliation.js';
 import { useExecutionLogs } from '../../api/hooks/useLogs.js';
 import { useDashboardMetrics } from '../../api/hooks/useDashboard.js';
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
@@ -425,8 +426,15 @@ export default function AutomationCenter() {
     };
     const confirmDelete = () => {
         if (!workflowToDelete) return;
+        const nextPage = pageAfterDeletingItem({ page, itemCount: workflows.length });
         deleteWorkflowMutation.mutate(workflowToDelete.id, {
-            onSuccess: () => { setWorkflowToDelete(null); setSelectedWorkflowId(null); toast.success('Automation deleted.'); void refetch(); },
+            onSuccess: () => {
+                setWorkflowToDelete(null);
+                setSelectedWorkflowId(null);
+                toast.success('Automation deleted.');
+                if (nextPage !== page) setPage(nextPage);
+                else void refetch();
+            },
             onError: error => toast.error(error.message || 'Could not delete automation.')
         });
     };

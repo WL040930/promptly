@@ -432,12 +432,6 @@ export const getMemoryUpdate = (plannerResult = {}) => {
         return isEmptyFormMemorySummary(summary) ? { action: 'none' } : { action: 'replace', summary };
     }
 
-    // Keep compatibility with the previous planner response shape.
-    if (typeof plannerResult.aiMemory === 'string' && plannerResult.aiMemory.trim()) {
-        const summary = clampText(plannerResult.aiMemory, FORM_AI_MEMORY_LIMIT);
-        return isEmptyFormMemorySummary(summary) ? { action: 'none' } : { action: 'replace', summary };
-    }
-
     return { action: 'none' };
 };
 

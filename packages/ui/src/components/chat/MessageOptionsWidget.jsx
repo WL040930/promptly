@@ -113,7 +113,7 @@ export default function MessageOptionsWidget({
                                     {(input.options || []).map((option, optionIndex) => {
                                         const checked = selected.includes(option);
                                         return (
-                                            <label key={`${input.id}-${optionIndex}`} className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 transition-colors ${checked ? 'border-violet-300 bg-violet-50 text-violet-950' : 'border-slate-200 bg-white text-slate-700 hover:border-violet-200 hover:bg-violet-50/40'} ${isTyping ? 'cursor-not-allowed opacity-50' : ''}`}>
+                                            <label key={`${input.id}-${optionIndex}`} className={`relative flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 transition-colors ${checked ? 'border-violet-300 bg-violet-50 text-violet-950' : 'border-slate-200 bg-white text-slate-700 hover:border-violet-200 hover:bg-violet-50/40'} ${isTyping ? 'cursor-not-allowed opacity-50' : ''}`}>
                                                 <input type={isSingle ? 'radio' : 'checkbox'} name={input.id} checked={checked} disabled={isTyping} onChange={() => handleToggle(input.id, option, isSingle)} className="sr-only" />
                                                 <span className={`flex h-4 w-4 shrink-0 items-center justify-center border ${isSingle ? 'rounded-full' : 'rounded-[4px]'} ${checked ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-300 bg-white'}`}>
                                                     {checked && <Check size={11} strokeWidth={3} />}

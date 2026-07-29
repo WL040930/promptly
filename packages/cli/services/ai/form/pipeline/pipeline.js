@@ -67,8 +67,8 @@ export const generateFormFromPrompt = async (
         const budget = createRequestBudget();
         const reportProviderActivity = event => {
             const phase = /planner/.test(event.operation) ? 'plan' : /verifier/.test(event.operation) ? 'check' : 'draft';
-            if (event.type === 'provider_fallback') onProgress?.({ id: `${event.operation}:fallback:${event.attempt}`, status: 'retrying', phase, label: 'Trying another AI route', message: 'Retrying with another available AI route', detail: 'The first route did not finish in time, so Promptly is continuing automatically.' });
-            if (event.type === 'provider_attempt') onProgress?.({ id: `${event.operation}:attempt:${event.attempt}`, status: 'awaiting_model', phase, label: phase === 'plan' ? 'Preparing the form plan' : phase === 'check' ? 'Checking the form draft' : 'Drafting form changes', message: 'AI is working on this step', detail: `Attempt ${event.attempt} of ${event.maxAttempts}.` });
+            if (event.type === 'provider_fallback') onProgress?.({ id: `${event.operation}:fallback:${event.attempt}`, attempt: event.attempt, status: 'retrying', phase, label: 'Trying another AI route', message: 'Retrying with another available AI route', detail: 'The first route did not finish in time, so Promptly is continuing automatically.' });
+            if (event.type === 'provider_attempt') onProgress?.({ id: `${event.operation}:attempt:${event.attempt}`, attempt: event.attempt, status: 'awaiting_model', phase, label: phase === 'plan' ? 'Preparing the form plan' : phase === 'check' ? 'Checking the form draft' : 'Drafting form changes', message: 'AI is working on this step', detail: `Attempt ${event.attempt} of ${event.maxAttempts}.` });
         };
         const cardinality = getQuestionCardinality({
             schema: currentSchema || {},

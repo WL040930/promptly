@@ -9,54 +9,85 @@ import { getClarificationModePreference, setClarificationModePreference } from '
 import { navigateTo } from '../../utils/router.js';
 
 const LIMIT = 50;
-const RETRYABLE_ERROR_CODES = new Set([
-    'FORM_AI_RATE_LIMITED',
-    'FORM_AI_PROVIDER_TIMEOUT',
-    'FORM_AI_PROVIDER_UNAVAILABLE',
-    'FORM_AI_STREAM_TIMEOUT',
-    'FORM_AI_STREAM_INCOMPLETE',
-    'FORM_AI_STREAM_START_FAILED'
-]);
 const defaultMessage = {
-    id: 'init',
+    id: 'form_ai_init',
     sender: 'bot',
-    text: "Hi! I'm your AI form designer. Describe what kind of form you want to build, or ask me to add specific fields.",
+    kind: 'text',
+    text: "Hi! I'm your AI form designer. Describe what kind of form you want to build, or ask me to add specific fields."
 };
 
-const getErrorMetadata = (error) => {
-    const code = error?.code?.startsWith('FORM_AI_') ? error.code : 'FORM_AI_GENERATION_FAILED';
-    const issue = Array.isArray(error?.issues) ? error.issues[0] : null;
+const draftKeyFor = formId => `promptly.form-ai.draft.${formId}`;
 
-    return {
-        code,
-        retryable: RETRYABLE_ERROR_CODES.has(code),
-        ...(typeof issue?.path === 'string' && issue.path ? { stage: issue.path } : {})
-    };
+const readDraft = formId => {
+    if (!formId || typeof window === 'undefined') return '';
+    try { return sessionStorage.getItem(draftKeyFor(formId)) || ''; } catch { return ''; }
 };
 
-export const useFormAIAssistant = (form) => {
+const writeDraft = (formId, value) => {
+    if (!formId || typeof window === 'undefined') return;
+    try {
+        if (value) sessionStorage.setItem(draftKeyFor(formId), value);
+        else sessionStorage.removeItem(draftKeyFor(formId));
+    } catch { /* Draft persistence is best effort. */ }
+};
+
+const normalizeInput = value => {
+    if (typeof value === 'string') {
+        const text = value.trim();
+        return { command: { type: 'submit_text', text }, text };
+    }
+    if (value?.type === 'decide_for_me') {
+        return { command: { type: 'decide_for_me', clarificationId: value.clarificationId || null }, text: 'Use sensible defaults.' };
+    }
+    if (value?.type === 'submit_clarification') {
+        const text = String(value.text || '').trim();
+        return { command: { type: 'submit_clarification', text, state: value.state || {} }, text: text || 'Submitted clarification' };
+    }
+    return { command: { type: 'submit_text', text: '' }, text: '' };
+};
+
+const initialHistory = state => ({
+    pages: [{ messages: [], nextBefore: null, state: state || null }],
+    pageParams: [null]
+});
+
+const updateLatestPage = (data, update) => {
+    const current = data || initialHistory();
+    const pages = [...current.pages];
+    pages[0] = update(pages[0] || { messages: [], nextBefore: null, state: null });
+    return { ...current, pages };
+};
+
+export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) => {
+    const formId = form?.id || null;
     const queryClient = useQueryClient();
     const toast = useToast();
-    const [input, setInput] = useState('');
+    const queryKey = ['formChat', formId];
+    const [input, setInputState] = useState(() => readDraft(formId));
     const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
-    const aiStateVersionRef = useRef(null);
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
     const [isSubmittingTurn, setIsSubmittingTurn] = useState(false);
-    const { isTyping, setStreamState, clearStreamState } = useAIStream(form?.id);
+    const stateVersionRef = useRef(null);
+    const { isTyping, setStreamState, clearStreamState } = useAIStream(formId);
 
-    const queryKey = ['formChat', form?.id];
+    const syncStateVersion = useCallback(version => {
+        if (Number.isInteger(version)) stateVersionRef.current = version;
+    }, []);
 
     const updateClarificationMode = useCallback(mode => {
         setClarificationMode(mode);
         setClarificationModePreference(mode);
     }, []);
 
-    // Proposal decisions advance the server-owned conversation version. A ref
-    // makes that new value available to a follow-up send before React renders.
-    const syncAIStateVersion = useCallback(version => {
-        if (Number.isInteger(version)) aiStateVersionRef.current = version;
-    }, []);
+    const setInput = useCallback(value => {
+        setInputState(value);
+        writeDraft(formId, value);
+    }, [formId]);
+
+    useEffect(() => {
+        setInputState(readDraft(formId));
+    }, [formId]);
 
     const {
         data,
@@ -67,209 +98,161 @@ export const useFormAIAssistant = (form) => {
         refetch: refetchHistory
     } = useInfiniteQuery({
         queryKey,
-        queryFn: async ({ pageParam = 0 }) => {
-            const history = await getFormChatHistory(form.id, LIMIT, pageParam);
-            return {
-                messages: history?.messages || [],
-                state: history?.state || null,
-                nextOffset: history?.messages?.length === LIMIT ? pageParam + LIMIT : undefined
-            };
-        },
-        getNextPageParam: (lastPage) => lastPage.nextOffset,
-        enabled: !!form?.id,
-        staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+        queryFn: ({ pageParam = null }) => getFormChatHistory(formId, LIMIT, pageParam),
+        getNextPageParam: lastPage => lastPage?.nextBefore || undefined,
+        enabled: Boolean(formId),
+        staleTime: 0,
+        refetchOnMount: 'always',
+        refetchOnWindowFocus: true,
+        retry: false
     });
 
-    // Combine pages chronologically
-    const rawMessages = useMemo(() => {
+    const messages = useMemo(() => {
         if (!data) return [defaultMessage];
-        // data.pages is [page0 (latest), page1 (older), page2 (oldest)].
-        // We reverse the pages array so oldest page comes first, then flatMap.
-        const allMessages = [...data.pages].reverse().flatMap(page => page.messages);
-        return allMessages.length > 0 ? allMessages : [defaultMessage];
+        const merged = [...data.pages].reverse().flatMap(page => page.messages || []);
+        return merged.length > 0 ? merged : [defaultMessage];
     }, [data]);
 
     const assistantState = data?.pages?.[0]?.state || null;
     const serverProcessing = assistantState?.phase === 'processing';
 
     useEffect(() => {
-        syncAIStateVersion(assistantState?.version);
-    }, [assistantState?.version, syncAIStateVersion]);
+        syncStateVersion(assistantState?.version);
+    }, [assistantState?.version, syncStateVersion]);
 
     useEffect(() => {
-        if (!form?.id || !serverProcessing) return undefined;
+        if (!formId || !serverProcessing) return undefined;
         const interval = setInterval(() => refetchHistory(), 2000);
         return () => clearInterval(interval);
-    }, [form?.id, serverProcessing, refetchHistory]);
+    }, [formId, serverProcessing, refetchHistory]);
 
     useEffect(() => {
-        if (serverProcessing && !isTyping) {
-            setStreamState({ isTyping: true });
-        } else if (!serverProcessing && !isSubmittingTurn && isTyping) {
-            clearStreamState();
-        }
+        if (serverProcessing && !isTyping) setStreamState({ isTyping: true });
+        else if (!serverProcessing && !isSubmittingTurn && isTyping) clearStreamState();
     }, [serverProcessing, isSubmittingTurn, isTyping, setStreamState, clearStreamState]);
 
-    const sendMessageMutation = useMutation({
-        mutationFn: async ({ text, command, optimisticWorkId, requestId }) => {
-            const result = await submitFormAITurnStream(form.id, command, clarificationMode, (progress) => {
-                setStreamState({ isTyping: true });
-                if (progress.work) queryClient.setQueryData(queryKey, old => old ? {
-                    ...old,
-                    pages: old.pages.map((page, index) => index === 0 ? {
-                        ...page,
-                        messages: page.messages.map(message => message.id === optimisticWorkId
-                            ? { ...message, payload: { ...(message.payload || {}), work: progress.work } }
-                            : message)
-                    } : page)
-                } : old);
-            }, { expectedStateVersion: aiStateVersionRef.current ?? assistantState?.version, requestId });
-            return result;
-        },
-        onMutate: async ({ text, optimisticWorkId, requestId }) => {
+    const sendMutation = useMutation({
+        mutationFn: ({ command, requestId, optimisticWorkId }) => submitFormAITurnStream(
+            formId,
+            command,
+            clarificationMode,
+            progress => {
+                setStreamState({ isTyping: true, requestId });
+                if (!progress.work) return;
+                queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({
+                    ...page,
+                    messages: (page.messages || []).map(message => message.id === optimisticWorkId
+                        ? { ...message, payload: { ...(message.payload || {}), work: progress.work } }
+                        : message)
+                })));
+            },
+            { expectedStateVersion: stateVersionRef.current ?? assistantState?.version, requestId }
+        ),
+        onMutate: async ({ text, requestId, optimisticWorkId }) => {
             setIsSubmittingTurn(true);
-            setStreamState({ isTyping: true });
+            setStreamState({ isTyping: true, requestId });
             setInput('');
             await queryClient.cancelQueries({ queryKey });
-
             const previousData = queryClient.getQueryData(queryKey);
-            const optimisticUserId = Date.now().toString();
+            const optimisticUserId = `optimistic_user_${requestId}`;
             const startedAt = new Date().toISOString();
             const optimisticWork = {
-                id: optimisticWorkId, sender: 'bot', kind: 'assistant_work', text: 'Drafting your form', isOptimistic: true,
-                payload: { work: { requestId, surface: 'form', status: 'drafting', title: text, currentPhase: 'understand', currentActivityId: 'preparing', startedAt, updatedAt: startedAt, activities: [{ id: 'preparing', phase: 'understand', label: 'Preparing the request', detail: 'Setting up the context for this change', status: 'active', attempt: 1, startedAt }] } }
+                id: optimisticWorkId,
+                sender: 'bot',
+                kind: 'assistant_work',
+                text: 'Drafting your form',
+                isOptimistic: true,
+                payload: { work: {
+                    requestId,
+                    surface: 'form',
+                    status: 'drafting',
+                    title: text,
+                    currentPhase: 'understand',
+                    currentActivityId: 'preparing',
+                    startedAt,
+                    updatedAt: startedAt,
+                    activities: [{ id: 'preparing', phase: 'understand', label: 'Preparing the request', detail: 'Setting up the context for this change', status: 'active', attempt: 1, startedAt }]
+                } }
             };
-
-            // Optimistically update the UI by appending the message to the first page (since it represents the latest chunk)
-            queryClient.setQueryData(queryKey, (old) => {
-                if (!old) return old;
-                const newPages = [...old.pages];
-                newPages[0] = {
-                    ...newPages[0],
-                    messages: [...newPages[0].messages, { id: optimisticUserId, sender: 'user', text, isOptimistic: true }, optimisticWork]
-                };
-                return { ...old, pages: newPages };
-            });
-
-            return { previousData, optimisticUserId, optimisticWorkId };
+            queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({
+                ...page,
+                messages: [...(page.messages || []), { id: optimisticUserId, sender: 'user', kind: 'text', text, isOptimistic: true }, optimisticWork]
+            })));
+            return { previousData, optimisticUserId, optimisticWorkId, text };
         },
-        onError: async (err, variables, context) => {
+        onSuccess: (result, _variables, context) => {
             setIsSubmittingTurn(false);
             clearStreamState();
-            if (err?.code === 'FORM_AI_STATE_CONFLICT') {
-                syncAIStateVersion(err.currentStateVersion);
-            }
-            if (context?.previousData) {
-                queryClient.setQueryData(queryKey, context.previousData);
-            }
-            
-            // Show error message
-            const safeErrorMessage = err?.code?.startsWith('FORM_AI_')
-                ? err.message
-                : 'Failed to generate form with AI.';
-            toast.error(safeErrorMessage);
-
-            queryClient.setQueryData(queryKey, (old) => {
-                if (!old) return old;
-                const newPages = [...old.pages];
-                const currentMessages = [...newPages[0].messages];
-                if (variables?.text && !currentMessages.some(message => message.id === context?.optimisticUserId)) {
-                    currentMessages.push({
-                        id: context?.optimisticUserId || `failed_${Date.now()}`,
-                        sender: 'user',
-                        text: variables.text
-                    });
-                }
-                newPages[0] = {
-                    ...newPages[0],
-                    messages: [...currentMessages, {
-                        id: Date.now().toString(),
-                        sender: 'bot',
-                        text: safeErrorMessage,
-                        isError: true,
-                        errorMetadata: getErrorMetadata(err)
-                    }]
+            syncStateVersion(result.state?.version);
+            queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => {
+                const currentMessages = (page.messages || []).filter(message => ![
+                    context?.optimisticUserId,
+                    context?.optimisticWorkId,
+                    result.userMsg?.id,
+                    result.botMsg?.id
+                ].includes(message.id));
+                const superseded = new Set(result.botMsg?.supersededMessageIds || []);
+                return {
+                    ...page,
+                    state: result.state || page.state,
+                    messages: [
+                        ...currentMessages.map(message => superseded.has(message.id) ? { ...message, proposalStatus: 'superseded' } : message),
+                        result.userMsg,
+                        result.botMsg
+                    ].filter(Boolean)
                 };
-                return { ...old, pages: newPages };
-            });
+            }));
         },
-        onSuccess: (data, variables, context) => {
+        onError: async (error, _variables, context) => {
             setIsSubmittingTurn(false);
             clearStreamState();
-            syncAIStateVersion(data.state?.version);
-            queryClient.setQueryData(queryKey, (old) => {
-                if (!old) return old;
-                const newPages = [...old.pages];
-                // Remove optimistic message and any existing copies of the userMsg/botMsg that might have been fetched from DB
-                let currentMessages = newPages[0].messages.filter(m => 
-                    m.id !== context.optimisticUserId &&
-                    m.id !== context.optimisticWorkId &&
-                    m.id !== data.userMsg.id &&
-                    m.id !== data.botMsg.id
-                );
-                const supersededMessageIds = new Set(data.botMsg.supersededMessageIds || []);
-                if (supersededMessageIds.size > 0) {
-                    currentMessages = currentMessages.map(message => supersededMessageIds.has(message.id)
-                        ? { 
-                            ...message, 
-                            proposalStatus: 'superseded'
-                          }
-                        : message);
-                }
-                newPages[0] = {
-                    ...newPages[0],
-                    messages: [...currentMessages, data.userMsg, data.botMsg],
-                    state: data.state || null
-                };
-                return { ...old, pages: newPages };
-            });
+            const errorCode = error?.code || error?.payload?.code;
+            if (errorCode === 'FORM_AI_STATE_CONFLICT') syncStateVersion(error.currentStateVersion || error.payload?.currentStateVersion);
+            if (context?.previousData) queryClient.setQueryData(queryKey, context.previousData);
+            setInput(context?.text || '');
+            await queryClient.invalidateQueries({ queryKey });
+            toast.error(error.message || 'Form AI could not start this request.');
         }
     });
 
     const clearChatMutation = useMutation({
-        mutationFn: () => clearFormAIChat(form.id),
+        mutationFn: () => clearFormAIChat(formId),
         onSuccess: result => {
             clearStreamState();
-            syncAIStateVersion(result?.state?.version);
-            queryClient.setQueryData(queryKey, { pages: [{ messages: [], nextOffset: undefined, state: result.state || null }], pageParams: [0] });
+            syncStateVersion(result?.state?.version);
+            queryClient.setQueryData(queryKey, initialHistory(result?.state));
             toast.success('Form AI chat cleared.');
         },
-        onError: error => {
-            toast.error(error.message || 'The form AI chat could not be cleared.');
-        }
+        onError: error => toast.error(error.message || 'The form AI chat could not be cleared.')
     });
 
     const resetContextMutation = useMutation({
-        mutationFn: () => resetFormAIContext(form.id),
+        mutationFn: () => resetFormAIContext(formId),
         onSuccess: result => {
-            syncAIStateVersion(result?.state?.version);
+            syncStateVersion(result?.state?.version);
+            queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({ ...page, state: result.state || page.state })));
             toast.success('Remembered form context reset.');
         },
         onError: error => toast.error(error.message || 'The remembered form context could not be reset.')
     });
 
-    const handleSend = useCallback((value, command = null) => {
-        let text = '';
-        let nextCommand = command;
-
-        if (typeof value === 'string') {
-            text = value;
-            nextCommand = nextCommand || { type: 'submit_text', text };
-        } else if (value?.type === 'decide_for_me') {
-            text = 'Use sensible defaults.';
-            nextCommand = nextCommand || value;
-        } else if (value?.type === 'submit_clarification') {
-            text = value.text || 'Submitted clarification';
-            nextCommand = nextCommand || value;
-        } else {
-            text = String(value?.name || value?.title || value?.label || '');
-            nextCommand = nextCommand || { type: 'submit_text', text };
+    const handleSend = useCallback(async value => {
+        const normalized = normalizeInput(value);
+        if (!normalized.text || isTyping || isSubmittingTurn || serverProcessing || !formId) return;
+        try {
+            await onBeforeSend?.();
+        } catch (error) {
+            toast.error(error.message || 'Save the form before asking AI to change it.');
+            return;
         }
-
-        if (!text.trim() || isTyping || isSubmittingTurn || serverProcessing || !form?.id) return;
         const requestId = globalThis.crypto?.randomUUID?.() || `form_turn_${Date.now()}`;
-        sendMessageMutation.mutate({ text, command: nextCommand, requestId, optimisticWorkId: `optimistic_work_${requestId}` });
-    }, [form?.id, isTyping, isSubmittingTurn, serverProcessing, sendMessageMutation]);
+        sendMutation.mutate({
+            command: normalized.command,
+            text: normalized.text,
+            requestId,
+            optimisticWorkId: `optimistic_work_${requestId}`
+        });
+    }, [formId, isSubmittingTurn, isTyping, onBeforeSend, sendMutation, serverProcessing, toast]);
 
     const handleRecoveryAction = useCallback((action, message, previousRequest = '') => {
         const recovery = message?.errorMetadata?.recovery || message?.payload?.recovery || {};
@@ -283,111 +266,89 @@ export const useFormAIAssistant = (form) => {
         }
         if (action?.type === 'retry') {
             const retryText = recovery.retryText || previousRequest;
-            if (retryText) handleSend(retryText);
+            if (retryText) void handleSend(retryText);
             return;
         }
         setInput(recovery.suggestedPrompt || previousRequest || '');
-    }, [handleSend]);
+    }, [handleSend, setInput]);
 
-    const handleAcceptProposal = useCallback(async (msgId, selectedPatchIds = null) => {
-        setAcceptingProposalId(msgId);
+    const handleAcceptProposal = useCallback(async (messageId, selectedPatchIds = null) => {
+        setAcceptingProposalId(messageId);
         try {
-            const msg = rawMessages.find(m => m.id === msgId);
-            const originalProposal = msg?.payload || {};
-            const patches = originalProposal.patches || [];
-            const requestedPatchIds = selectedPatchIds || patches
-                .map((patch, index) => ({ patch, index, patchId: patch.patchId || `patch_${index + 1}` }))
-                .map(({ patchId }) => patchId);
-
-            const result = await decideFormProposal(form.id, msgId, {
+            const message = messages.find(item => item.id === messageId);
+            const patches = message?.payload?.patches || [];
+            const requestedPatchIds = selectedPatchIds || patches.map((patch, index) => patch.patchId || `patch_${index + 1}`);
+            const result = await decideFormProposal(formId, messageId, {
                 action: 'accept',
                 selectedPatchIds: requestedPatchIds,
-                baseFormUpdatedAt: originalProposal.baseFormUpdatedAt || form.updatedAt
+                expectedStateVersion: stateVersionRef.current ?? assistantState?.version
             });
-            syncAIStateVersion(result.state?.version);
-
-            queryClient.setQueryData(['forms'], old => old ? old.map(item => item.id === form.id ? result.form : item) : old);
-            queryClient.setQueryData(['forms', form.id], result.form);
-            queryClient.setQueryData(queryKey, old => {
-                if (!old) return old;
-                return {
-                    ...old,
-                    pages: old.pages.map(page => ({
-                        ...page,
-                        state: result.state || page.state,
-                        messages: page.messages.map(message => message.id === msgId
-                            ? { ...message, payload: result.message?.payload || message.payload, proposalStatus: result.message?.proposalStatus || 'applied' }
-                            : message)
-                    }))
-                };
-            });
-
+            syncStateVersion(result.state?.version);
+            queryClient.setQueryData(['forms'], old => old ? old.map(item => item.id === formId ? result.form : item) : old);
+            queryClient.setQueryData(['forms', formId], result.form);
+            queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({
+                ...page,
+                state: result.state || page.state,
+                messages: (page.messages || []).map(message => message.id === messageId
+                    ? { ...message, payload: result.message?.payload || message.payload, proposalStatus: result.message?.proposalStatus || 'applied' }
+                    : message)
+            })));
+            await onFormApplied?.(result.form);
             toast.success('Form updated successfully!');
         } catch (error) {
-            console.error('Error applying proposal:', error);
-            if (error.payload?.code === 'FORM_PROPOSAL_STALE') {
-                queryClient.setQueryData(queryKey, old => {
-                    if (!old) return old;
-                    return {
-                        ...old,
-                        pages: old.pages.map(page => ({
-                            ...page,
-                        messages: page.messages.map(message => message.id === msgId
-                                ? { ...message, proposalStatus: 'stale' }
-                                : message)
-                        }))
-                    };
-                });
+            const code = error.code || error.payload?.code;
+            if (code === 'FORM_PROPOSAL_STALE') {
+                queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({
+                    ...page,
+                    messages: (page.messages || []).map(message => message.id === messageId ? { ...message, proposalStatus: 'stale' } : message)
+                })));
                 await queryClient.invalidateQueries({ queryKey });
             }
-            toast.error(error.payload?.code === 'FORM_PROPOSAL_STALE'
-                ? 'This suggestion is outdated. Generate a new one.'
-                : error.message || 'Failed to apply changes.');
+            toast.error(code === 'FORM_PROPOSAL_STALE' ? 'This suggestion is outdated. Generate a new one.' : error.message || 'Failed to apply changes.');
         } finally {
             setAcceptingProposalId(null);
         }
-    }, [form, queryClient, queryKey, toast, rawMessages]);
+    }, [assistantState?.version, formId, messages, onFormApplied, queryClient, queryKey, toast, syncStateVersion]);
 
-    const handleRejectProposal = useCallback(async (msgId) => {
-        setRejectingProposalId(msgId);
+    const handleRejectProposal = useCallback(async messageId => {
+        setRejectingProposalId(messageId);
         try {
-            const result = await decideFormProposal(form.id, msgId, { action: 'reject' });
-            syncAIStateVersion(result.state?.version);
-            queryClient.setQueryData(queryKey, old => {
-                if (!old) return old;
-                return {
-                    ...old,
-                    pages: old.pages.map(page => ({
-                        ...page,
-                        messages: page.messages.map(message => message.id === msgId
-                            ? { ...message, payload: result.message?.payload || message.payload, proposalStatus: result.message?.proposalStatus || 'rejected' }
-                            : message)
-                    }))
-                };
+            const result = await decideFormProposal(formId, messageId, {
+                action: 'reject',
+                expectedStateVersion: stateVersionRef.current ?? assistantState?.version
             });
+            syncStateVersion(result.state?.version);
+            queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({
+                ...page,
+                state: result.state || page.state,
+                messages: (page.messages || []).map(message => message.id === messageId
+                    ? { ...message, payload: result.message?.payload || message.payload, proposalStatus: result.message?.proposalStatus || 'rejected' }
+                    : message)
+            })));
             toast.success('Proposal rejected.');
         } catch (error) {
             toast.error(error.message || 'Failed to reject proposal.');
         } finally {
             setRejectingProposalId(null);
         }
-    }, [form?.id, queryClient, queryKey, toast]);
+    }, [assistantState?.version, formId, queryClient, queryKey, toast, syncStateVersion]);
 
     const clearChat = useCallback(() => {
-        if (!form?.id || clearChatMutation.isPending) return Promise.resolve();
+        if (!formId || clearChatMutation.isPending) return Promise.resolve();
         return clearChatMutation.mutateAsync();
-    }, [clearChatMutation, form?.id]);
+    }, [clearChatMutation, formId]);
 
     return {
-        messages: rawMessages,
+        messages,
         input,
         setInput,
         clarificationMode,
         setClarificationMode: updateClarificationMode,
         isTyping: isTyping || isSubmittingTurn || serverProcessing,
-        isLoadingHistory: isLoadingHistory && rawMessages.length === 1 && rawMessages[0].id === 'init', // Only show main loader on first ever fetch
-        hasMore: !!hasNextPage,
+        isLoadingHistory: isLoadingHistory && messages.length === 1 && messages[0].id === defaultMessage.id,
+        hasMore: Boolean(hasNextPage),
         loadMoreHistory: fetchNextPage,
+        isLoadingMore: isFetchingNextPage,
         handleSend,
         handleAcceptProposal,
         handleRejectProposal,
@@ -396,7 +357,7 @@ export const useFormAIAssistant = (form) => {
         rejectingProposalId,
         clearChat,
         isClearingChat: clearChatMutation.isPending,
-        resetContext: () => form?.id ? resetContextMutation.mutateAsync() : Promise.resolve(),
+        resetContext: () => formId ? resetContextMutation.mutateAsync() : Promise.resolve(),
         isResettingContext: resetContextMutation.isPending
     };
 };

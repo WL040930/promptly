@@ -5,6 +5,7 @@ import MarkdownRenderer from '../ui/MarkdownRenderer.jsx';
 import MessageOptionsWidget from './MessageOptionsWidget.jsx';
 import AssistantFailureCard from './AssistantFailureCard.jsx';
 import AssistantWorkCard from './AssistantWorkCard.jsx';
+import { clarificationMessageData } from './clarificationMessage.js';
 import { proposalStatusLabel, shouldShowProposalActions } from './proposalStatus.js';
 import { messagePresentation } from './messagePresentation.js';
 import { AlertTriangle, CheckCircle2, Copy, GitBranch, LoaderCircle, ShieldAlert, Trash2, Zap } from 'lucide-react';
@@ -59,11 +60,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
     const rawStatus = message.proposalStatus || payload.status;
     const status = proposalStatusLabel(rawStatus);
     const showProposalActions = shouldShowProposalActions(rawStatus);
-    const clarification = (message.options && !Array.isArray(message.options)) ? message.options : null;
-    const options = Array.isArray(message.options)
-        ? message.options
-        : (clarification?.inputs || payload.options || []);
-    const selectedState = clarification?.selectedState || payload.selectedState || {};
+    const { clarification, options, selectedState } = clarificationMessageData(message);
     const kind = message.kind || (message.proposal ? 'form_proposal' : (options.length > 0 ? 'clarification' : 'text'));
     const isClarification = kind === 'clarification' && options.length > 0;
     const work = message.sender === 'bot' ? payload.work : null;
@@ -120,7 +117,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
 
     return (
         <div className={`flex w-full ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {message.sender !== 'user' && !isWorkMessage && (
+            {message.sender !== 'user' && !isProposalWork && (
                 <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-4 mr-2.5 shadow-sm border border-indigo-200/50">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="14" x="3" y="8" rx="2" /><path d="M12 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" /><path d="M12 5v3" /><path d="M8 14h.01" /><path d="M16 14h.01" /><path d="M9 19h6" /></svg>
                 </div>

@@ -78,7 +78,7 @@ export default function FormProposalWidget({ proposal, status, summary, tokenUsa
         {proposal?.work && <div className="border-t border-slate-100 bg-slate-50/40 px-4 py-3"><AssistantWorkDetails work={proposal.work} tokenUsage={tokenUsage} /></div>}
     </section>;
 
-    return <section className="w-full bg-white">
+    return <section className="w-full overflow-hidden rounded-2xl border border-violet-100 bg-white shadow-sm shadow-slate-900/5">
         <div className="border-b border-violet-100 bg-violet-50/45 px-4 py-3.5">
             <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-violet-700">Review form changes</p><h3 className="mt-1 text-sm font-extrabold text-slate-900">{proposal?.schema?.title || 'Untitled form'}</h3></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${isUnverified ? 'bg-amber-100 text-amber-800' : locked ? 'bg-slate-100 text-slate-600' : 'bg-violet-600 text-white'}`}>{isUnverified ? 'Review carefully' : locked ? 'Locked' : 'Ready to review'}</span></div>
             <p className="mt-1.5 text-xs leading-5 text-slate-600">{summary || `${patches.length} changes prepared for this form.`}</p>

@@ -3,8 +3,7 @@ import { CLARIFICATION_MODES } from '../../../../shared/agentContract.js';
 
 const OPTIONS = [
     { value: CLARIFICATION_MODES.DECIDE_EVERYTHING, label: 'Decide everything' },
-    { value: CLARIFICATION_MODES.IMPORTANT_ONLY, label: 'Ask important only' },
-    { value: CLARIFICATION_MODES.ASK_EVERYTHING, label: 'Ask everything' }
+    { value: CLARIFICATION_MODES.IMPORTANT_ONLY, label: 'Ask important only' }
 ];
 
 export default function ClarificationModeSelect({ value, onChange, className = '' }) {

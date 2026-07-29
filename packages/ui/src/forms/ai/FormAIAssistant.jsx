@@ -11,7 +11,7 @@ const SUGGESTIONS = [
     "A product feedback questionnaire"
 ];
 
-const FormAIAssistant = ({ form }) => {
+const FormAIAssistant = ({ form, onBeforeSend, onFormApplied }) => {
     const {
         messages,
         input,
@@ -30,7 +30,7 @@ const FormAIAssistant = ({ form }) => {
         rejectingProposalId,
         clearChat,
         isClearingChat
-    } = useFormAIAssistant(form);
+    } = useFormAIAssistant(form, { onBeforeSend, onFormApplied });
 
     const [previewProposal, setPreviewProposal] = useState(null);
     const prevAcceptingIdRef = useRef(acceptingProposalId);
@@ -75,11 +75,7 @@ const FormAIAssistant = ({ form }) => {
                     } else if (option?.type === 'regenerate_proposal') {
                         handleSend(option.text);
                     } else {
-                        if (option?.type === 'decide_for_me') {
-                            handleSend('Use sensible defaults.', option);
-                        } else {
-                            handleSend(option);
-                        }
+                        handleSend(option);
                     }
                 }}
                 onRecoveryAction={handleRecoveryAction}

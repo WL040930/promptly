@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { Op } from 'sequelize';
 import sequelize from '../../../db/index.js';
 import { AssistantMessage, AssistantThread, Form } from '../../../models/index.js';
 import { createAssistantStateView, ensureAssistantThread } from '../../assistant/assistantStore.js';
@@ -14,6 +15,7 @@ import { buildFormPresentation } from '../../assistant/proposalPresentation.js';
 import { advanceAssistantWork, createAssistantWork, finishAssistantWork } from '../../../../shared/assistantWork.js';
 
 const IN_FLIGHT_TIMEOUT_MS = 10 * 60 * 1000;
+const MAX_HISTORY = 100;
 
 const makeId = prefix => `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`;
 
@@ -27,12 +29,13 @@ const progressSnapshot = (progress, now = () => new Date()) => ({
     ...(typeof progress?.detail === 'string' ? { detail: progress.detail } : {}),
     ...(typeof progress?.id === 'string' ? { id: progress.id } : {}),
     ...(typeof progress?.type === 'string' ? { type: progress.type } : {}),
+    ...(Number.isInteger(progress?.attempt) ? { attempt: progress.attempt } : {}),
     ...(['reply', 'clarification', 'proposal'].includes(progress?.outcomeKind) ? { outcomeKind: progress.outcomeKind } : {}),
     ...(progress?.artifact && typeof progress.artifact === 'object' ? { artifact: progress.artifact } : {}),
     updatedAt: now().toISOString()
 });
 
-const toCommand = ({ command, text } = {}) => {
+const toCommand = ({ command } = {}) => {
     if (command && typeof command === 'object' && command.type === 'decide_for_me') {
         return { type: 'decide_for_me', clarificationId: command.clarificationId || null };
     }
@@ -42,12 +45,29 @@ const toCommand = ({ command, text } = {}) => {
     if (command && typeof command === 'object' && command.type === 'submit_text') {
         return { type: 'submit_text', text: String(command.text || '').trim() };
     }
-    return { type: 'submit_text', text: typeof text === 'string' ? text.trim() : '' };
+    return { type: 'submit_text', text: '' };
+};
+
+const publicMessage = message => {
+    const value = asJson(message);
+    if (!value) return null;
+    return {
+        id: value.id,
+        sender: value.sender,
+        text: value.text,
+        createdAt: value.createdAt,
+        kind: value.kind || 'text',
+        payload: value.payload || null,
+        proposalStatus: value.proposalStatus || null,
+        tokenUsage: value.tokenUsage || null,
+        errorMetadata: value.errorMetadata || null,
+        isError: value.isError === true
+    };
 };
 
 const messageFromResult = (result, form = {}) => {
     const text = result?.message || result?.text || 'I could not find a safe change to make.';
-    if (result?.kind === 'proposal' || result?.type === 'proposal') {
+    if (result?.kind === 'proposal') {
         const proposal = {
             schema: result.schema,
             patches: result.patches,
@@ -62,12 +82,12 @@ const messageFromResult = (result, form = {}) => {
         return { text: presentation.outcome, proposal: { ...proposal, presentation } };
     }
 
-    if (result?.kind === 'clarification' || result?.type === 'message') {
+    if (result?.kind === 'clarification') {
         return {
             text,
             options: {
                 clarificationId: makeId('clarification'),
-                inputs: result.inputs || result.options || [],
+                inputs: result.inputs || [],
                 allowDecide: true
             }
         };
@@ -76,17 +96,17 @@ const messageFromResult = (result, form = {}) => {
     return { text };
 };
 
-const statePatchForResult = ({ result, command, form, proposalMessageId = null }) => {
-    const isClarification = result?.kind === 'clarification' || result?.type === 'message';
-    const isProposal = result?.kind === 'proposal' || result?.type === 'proposal';
+const statePatchForResult = ({ result, command, proposalMessageId = null, previousActiveProposalMessageId = null }) => {
+    const isClarification = result?.kind === 'clarification';
+    const isProposal = result?.kind === 'proposal';
     const sourceText = command.type === 'decide_for_me'
         ? null
         : (typeof command.text === 'string' ? command.text.trim() : null);
 
     return {
-        phase: isClarification ? 'awaiting_clarification' : (isProposal ? 'awaiting_proposal' : 'idle'),
-        openClarification: isClarification ? { message: result.message, inputs: result.inputs || result.options || [] } : null,
-        activeProposalMessageId: isProposal ? proposalMessageId : null,
+        phase: isClarification ? 'awaiting_clarification' : (isProposal || previousActiveProposalMessageId ? 'awaiting_proposal' : 'idle'),
+        openClarification: isClarification ? { message: result.message, inputs: result.inputs || [] } : null,
+        activeProposalMessageId: isProposal ? proposalMessageId : previousActiveProposalMessageId,
         activeWork: isClarification
             ? { id: makeId('work'), sourceText, scope: detectFormIntentScope(sourceText), updatedAt: new Date().toISOString() }
             : null,
@@ -116,14 +136,13 @@ export const createFormAssistant = ({
         userId,
         formId,
         command: rawCommand,
-        text,
         clarificationMode,
         expectedStateVersion = null,
         requestId = idFactory('request'),
         provider = null,
         onProgress = null
     } = {}) => {
-        const command = toCommand({ command: rawCommand, text });
+        const command = toCommand({ command: rawCommand });
         const mode = normalizeClarificationMode(clarificationMode);
         if (command.type === 'submit_text' && !command.text) {
             const error = new Error('Prompt is required');
@@ -226,7 +245,6 @@ export const createFormAssistant = ({
         let progressChain = Promise.resolve();
         const reportProgress = progress => {
             const snapshot = progressSnapshot(progress, now);
-            onProgress?.(snapshot);
             progressChain = progressChain.then(() => db.transaction(async transaction => {
                 const freshState = await loadState(formId, transaction, userId);
                 if (freshState.inFlightRequestId !== requestId) return;
@@ -234,8 +252,9 @@ export const createFormAssistant = ({
                 const work = advanceAssistantWork(workMessage?.payload?.work, snapshot, now());
                 if (workMessage) await workMessage.update({ payload: { ...(workMessage.payload || {}), work } }, { transaction });
                 await freshState.update({ phase: 'processing', progress: snapshot }, { transaction });
-                onProgress?.({ ...snapshot, work, messageId: workMessage?.id || null });
+                return { ...snapshot, work, messageId: workMessage?.id || null };
             }));
+            void progressChain.then(event => onProgress?.(event)).catch(() => {});
         };
         try {
             const rawHistory = await models.AssistantMessage.findAll({
@@ -294,7 +313,12 @@ export const createFormAssistant = ({
                     proposalStatus: messageData.proposal ? 'pending' : null,
                     tokenUsage: messageData.tokenUsage
                 }, { transaction });
-                const statePatch = statePatchForResult({ result, command: context.command, form, proposalMessageId: assistantMessage.id });
+                const statePatch = statePatchForResult({
+                    result,
+                    command: context.command,
+                    proposalMessageId: assistantMessage.id,
+                    previousActiveProposalMessageId: state.activeProposalMessageId
+                });
                 const freshState = await loadState(formId, transaction, form.userId);
                 await freshState.update({
                     ...statePatch,
@@ -341,10 +365,11 @@ export const createFormAssistant = ({
                 }, { transaction });
                 const freshState = await loadState(formId, transaction, form.userId);
                 await freshState.update({
-                    phase: 'idle',
+                    // A failed follow-up must never discard an earlier proposal
+                    // that is still awaiting the user's decision.
+                    phase: freshState.activeProposalMessageId ? 'awaiting_proposal' : 'idle',
                     openClarification: null,
                     activeWork: null,
-                    activeProposalMessageId: null,
                     version: freshState.version + 1,
                     inFlightRequestId: null,
                     inFlightStartedAt: null,
@@ -359,6 +384,38 @@ export const createFormAssistant = ({
             });
             return response;
         }
+    };
+
+    const getHistory = async ({ userId, formId, limit = 50, before = null } = {}) => {
+        const form = await models.Form.findOne({ where: { id: formId, userId } });
+        if (!form) {
+            const error = new Error('Form not found');
+            error.status = 404;
+            throw error;
+        }
+        return db.transaction(async transaction => {
+            const state = await loadState(formId, transaction, userId);
+            const where = { threadId: state.threadId };
+            if (before) {
+                const cursor = await models.AssistantMessage.findOne({ where: { id: before, threadId: state.threadId }, transaction });
+                if (cursor?.createdAt) where.createdAt = { [Op.lt]: cursor.createdAt };
+            }
+            const pageSize = Math.min(Math.max(Number(limit) || 50, 1), MAX_HISTORY);
+            const messages = await models.AssistantMessage.findAll({
+                where,
+                order: [['createdAt', 'DESC']],
+                limit: pageSize,
+                transaction
+            });
+            const nextBefore = messages.length >= pageSize ? messages[messages.length - 1]?.id || null : null;
+            return {
+                messages: messages.reverse().map(publicMessage),
+                // Results are fetched newest-first, then returned chronologically.
+                // The next page must start before the oldest item in this page.
+                nextBefore,
+                state: state.toJSON()
+            };
+        });
     };
 
     const clearChat = async ({ userId, formId } = {}) => {
@@ -417,7 +474,7 @@ export const createFormAssistant = ({
         proposalMessageId,
         action = 'accept',
         selectedPatchIds,
-        baseFormUpdatedAt
+        expectedStateVersion = null
     } = {}) => {
         let response;
         let deferredError = null;
@@ -430,6 +487,13 @@ export const createFormAssistant = ({
                 throw error;
             }
             const state = await loadState(formId, transaction, userId);
+            if (Number.isInteger(expectedStateVersion) && state.version !== expectedStateVersion) {
+                const error = new Error('The form AI conversation changed. Refresh and try again.');
+                error.code = 'FORM_AI_STATE_CONFLICT';
+                error.status = 409;
+                error.currentStateVersion = state.version;
+                throw error;
+            }
             const message = await models.AssistantMessage.findOne({ where: { id: proposalMessageId, threadId: state.threadId }, transaction });
             if (!message) {
                 const error = new Error('Proposal message not found');
@@ -483,7 +547,7 @@ export const createFormAssistant = ({
                 throw error;
             }
 
-            const expectedRevision = baseFormUpdatedAt || proposal.baseFormUpdatedAt;
+            const expectedRevision = proposal.baseFormUpdatedAt;
             if (expectedRevision && new Date(form.updatedAt).getTime() !== new Date(expectedRevision).getTime()) {
                 await message.update({
                     payload: { ...proposal, staleReason: 'FORM_VERSION_CHANGED', work: finishAssistantWork(proposal.work, { status: 'failed', detail: 'The form changed before this proposal could be applied.' }, now()) },
@@ -558,7 +622,7 @@ export const createFormAssistant = ({
         return response;
     };
 
-    return { submitTurn, clearChat, resetContext, decideProposal };
+    return { getHistory, submitTurn, clearChat, resetContext, decideProposal };
 };
 
 export const formAssistant = createFormAssistant();
