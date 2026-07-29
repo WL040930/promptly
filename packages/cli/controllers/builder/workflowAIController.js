@@ -42,9 +42,7 @@ export const submitWorkflowAITurn = asyncHandler(async (req, res) => {
         const result = await workflowAssistant.submitTurn({
             workflowId: req.params.id,
             userId: req.user.id,
-            userEmail: req.user.email,
             command: req.body?.command,
-            text: req.body?.text,
             clarificationMode: req.body?.clarificationMode,
             expectedStateVersion: req.body?.expectedStateVersion,
             requestId: req.body?.requestId,

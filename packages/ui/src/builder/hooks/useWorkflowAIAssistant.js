@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
 import { getClarificationModePreference, setClarificationModePreference } from '../../utils/storage.js';
 import { clearWorkflowAIChat, decideWorkflowAIProposal, getWorkflowAIChat, resetWorkflowAIContext } from '../../api/backend.js';
@@ -8,7 +8,6 @@ import { useAIStream } from '../../context/AIStreamContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
 import { navigateTo } from '../../utils/router.js';
 import { markSupersededWorkflowProposals, markWorkflowProposalStale } from '../../components/chat/proposalStatus.js';
-import { workflowAIHistoryQueryPolicy } from '../utils/workflowAIHistoryPolicy.js';
 
 const LIMIT = 50;
 const defaultMessage = {
@@ -33,29 +32,31 @@ const writeDraft = (workflowId, value) => {
     } catch { /* Draft persistence is best effort. */ }
 };
 
-/**
- * Normalize a send input into the canonical `{ command, text }` shape
- * expected by submitWorkflowAITurnStream.
- *
- * Accepts:
- *  - A string              → { command: null, text: string }
- *  - { type, ... } object  → forwarded as { command: object, text: '' }
- *  - { command, text }     → passed through as-is
- */
 const normalizeInput = value => {
-    if (typeof value === 'string') return { command: null, text: value };
-    if (value && typeof value === 'object') {
-        if ('type' in value) return { command: value, text: '' };
-        return { command: value.command || null, text: value.text || '' };
+    if (typeof value === 'string') {
+        const text = value.trim();
+        return { command: { type: 'submit_text', text }, text };
     }
-    return { command: null, text: '' };
+    if (value?.type === 'decide_for_me') {
+        return { command: { type: 'decide_for_me', clarificationId: value.clarificationId || null }, text: 'Use sensible defaults.' };
+    }
+    if (value?.type === 'submit_clarification') {
+        const text = String(value.text || '').trim();
+        return { command: { type: 'submit_clarification', text, state: value.state || {} }, text: text || 'Submitted clarification' };
+    }
+    return { command: { type: 'submit_text', text: '' }, text: '' };
 };
 
-/** Derive a display text for the optimistic user message bubble. */
-const displayTextFor = ({ command, text }) => {
-    if (command?.type === 'decide_for_me') return 'Use sensible defaults.';
-    if (command?.type === 'submit_clarification') return command.text || 'Submitted clarification';
-    return text || '';
+const initialHistory = state => ({
+    pages: [{ messages: [], nextBefore: null, state: state || null }],
+    pageParams: [null]
+});
+
+const updateLatestPage = (data, update) => {
+    const current = data || initialHistory();
+    const pages = [...current.pages];
+    pages[0] = update(pages[0] || { messages: [], nextBefore: null, state: null });
+    return { ...current, pages };
 };
 
 export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt = '' } = {}) => {
@@ -64,133 +65,154 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
     const toast = useToast();
     const queryKey = ['workflowAI', workflowId];
     const [input, setInputState] = useState(() => readDraft(workflowId) || initialPrompt || '');
-    const [isTyping, setIsTyping] = useState(false);
     const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
-    // Cursor for loading older messages (null = no earlier messages fetched yet).
-    const [beforeCursor, setBeforeCursor] = useState(null);
-    const [olderMessages, setOlderMessages] = useState([]);
-    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const [isSubmittingTurn, setIsSubmittingTurn] = useState(false);
     const stateVersionRef = useRef(null);
-
-    const {
-        isTyping: sharedIsTyping,
-        setStreamState,
-        clearStreamState
-    } = useAIStream(workflowId);
-
-    const historyQuery = useQuery({
-        queryKey,
-        queryFn: () => getWorkflowAIChat(workflowId, LIMIT),
-        enabled: Boolean(workflowId),
-        ...workflowAIHistoryQueryPolicy,
-        retry: false
-    });
+    const { isTyping, setStreamState, clearStreamState } = useAIStream(workflowId);
 
     const syncStateVersion = useCallback(version => {
         if (Number.isInteger(version)) stateVersionRef.current = version;
     }, []);
 
-    useEffect(() => {
-        syncStateVersion(historyQuery.data?.state?.version);
-    }, [historyQuery.data?.state?.version, syncStateVersion]);
-
-    useEffect(() => {
-        if (!workflowId || historyQuery.data?.state?.phase !== 'processing') return undefined;
-        const interval = setInterval(() => historyQuery.refetch(), 2000);
-        return () => clearInterval(interval);
-    }, [workflowId, historyQuery.data?.state?.phase, historyQuery.refetch]);
-
-    // The provider survives Configure/History unmounts. Reconcile its visual
-    // state with the server-owned lifecycle when the assistant is remounted.
-    useEffect(() => {
-        const processing = historyQuery.data?.state?.phase === 'processing';
-        if (processing && !sharedIsTyping) {
-            setStreamState({ isTyping: true });
-        } else if (!processing && sharedIsTyping && !isTyping) {
-            clearStreamState();
-        }
-    }, [historyQuery.data?.state?.phase, isTyping, sharedIsTyping, setStreamState, clearStreamState]);
-
-    useEffect(() => {
-        setInputState(readDraft(workflowId) || initialPrompt || '');
-        // Reset pagination when switching workflows.
-        setBeforeCursor(null);
-        setOlderMessages([]);
-    }, [workflowId, initialPrompt]);
+    const updateClarificationMode = useCallback(mode => {
+        setClarificationMode(mode);
+        setClarificationModePreference(mode);
+    }, []);
 
     const setInput = useCallback(value => {
         setInputState(value);
         writeDraft(workflowId, value);
     }, [workflowId]);
 
-    // Combine older messages (loaded via pagination) with the live query result.
+    useEffect(() => {
+        setInputState(readDraft(workflowId) || initialPrompt || '');
+    }, [workflowId, initialPrompt]);
+
+    const {
+        data,
+        fetchNextPage,
+        hasNextPage,
+        isFetchingNextPage,
+        isLoading: isLoadingHistory,
+        refetch: refetchHistory
+    } = useInfiniteQuery({
+        queryKey,
+        queryFn: ({ pageParam = null }) => getWorkflowAIChat(workflowId, LIMIT, pageParam),
+        getNextPageParam: lastPage => lastPage?.nextBefore || undefined,
+        enabled: Boolean(workflowId),
+        staleTime: 0,
+        refetchOnMount: 'always',
+        refetchOnWindowFocus: true,
+        retry: false
+    });
+
+    const assistantState = data?.pages?.[0]?.state || null;
+    const serverProcessing = assistantState?.phase === 'processing';
     const messages = useMemo(() => {
-        const recent = historyQuery.data?.messages || [];
-        if (!historyQuery.data) return [defaultMessage];
-        const combined = [...olderMessages, ...recent];
-        const visible = markSupersededWorkflowProposals(combined, historyQuery.data?.state?.activeProposalMessageId);
+        if (!data) return [defaultMessage];
+        const merged = [...data.pages].reverse().flatMap(page => page.messages || []);
+        const visible = markSupersededWorkflowProposals(merged, assistantState?.activeProposalMessageId);
         return visible.length ? visible : [defaultMessage];
-    }, [historyQuery.data, olderMessages]);
+    }, [assistantState?.activeProposalMessageId, data]);
+
+    useEffect(() => {
+        syncStateVersion(assistantState?.version);
+    }, [assistantState?.version, syncStateVersion]);
+
+    useEffect(() => {
+        if (!workflowId || !serverProcessing) return undefined;
+        const interval = setInterval(() => refetchHistory(), 2000);
+        return () => clearInterval(interval);
+    }, [workflowId, serverProcessing, refetchHistory]);
+
+    useEffect(() => {
+        if (serverProcessing && !isTyping) setStreamState({ isTyping: true });
+        else if (!serverProcessing && !isSubmittingTurn && isTyping) clearStreamState();
+    }, [serverProcessing, isSubmittingTurn, isTyping, setStreamState, clearStreamState]);
 
     const sendMutation = useMutation({
-        mutationFn: async ({ input: sendInput, requestId, optimisticWorkId }) => {
-            const { command, text } = normalizeInput(sendInput);
-            return submitWorkflowAITurnStream(
-                workflowId,
-                { command, text },
-                clarificationMode,
-                progress => {
-                    setStreamState({ isTyping: true, requestId });
-                    if (progress.work) queryClient.setQueryData(queryKey, old => old ? {
-                        ...old,
-                        messages: (old.messages || []).map(message => message.id === optimisticWorkId
-                            ? { ...message, payload: { ...(message.payload || {}), work: progress.work } }
-                            : message)
-                    } : old);
-                },
-                { expectedStateVersion: stateVersionRef.current ?? historyQuery.data?.state?.version, requestId }
-            );
-        },
-        onMutate: async ({ input: sendInput, requestId, optimisticWorkId }) => {
-            const { command, text } = normalizeInput(sendInput);
-            const optimisticText = displayTextFor({ command, text });
-            setIsTyping(true);
+        mutationFn: ({ command, requestId, optimisticWorkId }) => submitWorkflowAITurnStream(
+            workflowId,
+            command,
+            clarificationMode,
+            progress => {
+                setStreamState({ isTyping: true, requestId });
+                if (!progress.work) return;
+                queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({
+                    ...page,
+                    messages: (page.messages || []).map(message => message.id === optimisticWorkId
+                        ? { ...message, payload: { ...(message.payload || {}), work: progress.work } }
+                        : message)
+                })));
+            },
+            { expectedStateVersion: stateVersionRef.current ?? assistantState?.version, requestId }
+        ),
+        onMutate: async ({ text, requestId, optimisticWorkId }) => {
+            setIsSubmittingTurn(true);
             setStreamState({ isTyping: true, requestId });
             setInput('');
             await queryClient.cancelQueries({ queryKey });
-            const previous = queryClient.getQueryData(queryKey);
-            const optimistic = { id: `optimistic_${Date.now()}`, sender: 'user', kind: 'text', text: optimisticText, isOptimistic: true };
+            const previousData = queryClient.getQueryData(queryKey);
+            const optimisticUserId = `optimistic_user_${requestId}`;
             const startedAt = new Date().toISOString();
             const optimisticWork = {
-                id: optimisticWorkId, sender: 'bot', kind: 'assistant_work', text: 'Drafting your workflow', isOptimistic: true,
-                payload: { work: { requestId, surface: 'workflow', status: 'drafting', title: optimisticText, currentPhase: 'understand', currentActivityId: 'preparing', startedAt, updatedAt: startedAt, activities: [{ id: 'preparing', phase: 'understand', label: 'Preparing the request', detail: 'Setting up the context for this change', status: 'active', attempt: 1, startedAt }] } }
+                id: optimisticWorkId,
+                sender: 'bot',
+                kind: 'assistant_work',
+                text: 'Drafting your workflow',
+                isOptimistic: true,
+                payload: { work: {
+                    requestId,
+                    surface: 'workflow',
+                    status: 'drafting',
+                    title: text,
+                    currentPhase: 'understand',
+                    currentActivityId: 'preparing',
+                    startedAt,
+                    updatedAt: startedAt,
+                    activities: [{ id: 'preparing', phase: 'understand', label: 'Preparing the request', detail: 'Setting up the context for this change', status: 'active', attempt: 1, startedAt }]
+                } }
             };
-            queryClient.setQueryData(queryKey, old => ({
-                ...(old || { state: null, nextBefore: null }),
-                messages: [...(old?.messages || []), optimistic, optimisticWork]
-            }));
-            return { previous, optimisticId: optimistic.id, optimisticWorkId };
+            queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({
+                ...page,
+                messages: [...(page.messages || []), { id: optimisticUserId, sender: 'user', kind: 'text', text, isOptimistic: true }, optimisticWork]
+            })));
+            return { previousData, optimisticUserId, optimisticWorkId, text };
         },
-        onSuccess: (result, variables, context) => {
-            setIsTyping(false);
+        onSuccess: (result, _variables, context) => {
+            setIsSubmittingTurn(false);
             clearStreamState();
             syncStateVersion(result.state?.version);
-            queryClient.setQueryData(queryKey, old => {
-                const existing = old?.messages || [];
-                const filtered = existing.filter(message => ![context?.optimisticId, context?.optimisticWorkId, result.userMsg?.id, result.botMsg?.id].includes(message.id));
-                return { ...(old || {}), messages: [...filtered, result.userMsg, result.botMsg].filter(Boolean), state: result.state };
-            });
+            queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => {
+                const currentMessages = (page.messages || []).filter(message => ![
+                    context?.optimisticUserId,
+                    context?.optimisticWorkId,
+                    result.userMsg?.id,
+                    result.botMsg?.id
+                ].includes(message.id));
+                const superseded = new Set(result.botMsg?.supersededMessageIds || []);
+                return {
+                    ...page,
+                    state: result.state || page.state,
+                    messages: [
+                        ...currentMessages.map(message => superseded.has(message.id) ? { ...message, proposalStatus: 'superseded' } : message),
+                        result.userMsg,
+                        result.botMsg
+                    ].filter(Boolean)
+                };
+            }));
         },
-        onError: (error, _variables, context) => {
-            setIsTyping(false);
+        onError: async (error, _variables, context) => {
+            setIsSubmittingTurn(false);
             clearStreamState();
-            if (error?.code === 'WORKFLOW_AI_STATE_CONFLICT') {
-                syncStateVersion(error.currentStateVersion);
-            }
-            if (context?.previous) queryClient.setQueryData(queryKey, context.previous);
-            queryClient.invalidateQueries({ queryKey });
+            const errorCode = error?.code || error?.payload?.code;
+            if (errorCode === 'WORKFLOW_AI_STATE_CONFLICT') syncStateVersion(error.currentStateVersion || error.payload?.currentStateVersion);
+            if (context?.previousData) queryClient.setQueryData(queryKey, context.previousData);
+            setInput(context?.text || '');
+            await queryClient.invalidateQueries({ queryKey });
+            toast.error(error.message || 'Workflow AI could not start this request.');
         }
     });
 
@@ -199,15 +221,15 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
             workflowId,
             messageId,
             action,
-            stateVersionRef.current ?? historyQuery.data?.state?.version
+            stateVersionRef.current ?? assistantState?.version
         ),
         onSuccess: result => {
             syncStateVersion(result.state?.version);
-            queryClient.setQueryData(queryKey, old => old ? {
-                ...old,
-                state: result.state,
-                messages: old.messages.map(message => message.id === result.message?.id ? result.message : message)
-            } : old);
+            queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({
+                ...page,
+                state: result.state || page.state,
+                messages: (page.messages || []).map(message => message.id === result.message?.id ? result.message : message)
+            })));
             if (result.workflow) {
                 queryClient.setQueryData(['workflows', workflowId], result.workflow);
                 queryClient.setQueryData(['workflows'], old => old ? old.map(item => item.id === workflowId ? result.workflow : item) : old);
@@ -215,11 +237,12 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
             queryClient.invalidateQueries({ queryKey: ['workflows', workflowId] });
         },
         onError: (error, variables) => {
-            if (error?.payload?.code !== 'WORKFLOW_PROPOSAL_STALE') return;
-            queryClient.setQueryData(queryKey, old => old ? {
-                ...old,
-                messages: markWorkflowProposalStale(old.messages || [], variables.messageId)
-            } : old);
+            const code = error?.code || error?.payload?.code;
+            if (code !== 'WORKFLOW_PROPOSAL_STALE') return;
+            queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({
+                ...page,
+                messages: markWorkflowProposalStale(page.messages || [], variables.messageId)
+            })));
         }
     });
 
@@ -227,45 +250,40 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         mutationFn: () => clearWorkflowAIChat(workflowId),
         onSuccess: result => {
             clearStreamState();
-            syncStateVersion(result.state?.version);
-            setBeforeCursor(null);
-            setOlderMessages([]);
-            queryClient.setQueryData(queryKey, { messages: [], nextBefore: null, state: result.state });
+            syncStateVersion(result?.state?.version);
+            queryClient.setQueryData(queryKey, initialHistory(result?.state));
             toast.success('Workflow AI chat cleared.');
         },
-        onError: error => {
-            toast.error(error.message || 'The workflow AI chat could not be cleared.');
-        }
+        onError: error => toast.error(error.message || 'The workflow AI chat could not be cleared.')
     });
 
     const resetContextMutation = useMutation({
         mutationFn: () => resetWorkflowAIContext(workflowId),
         onSuccess: result => {
-            syncStateVersion(result.state?.version);
-            queryClient.setQueryData(queryKey, old => old ? { ...old, state: result.state } : old);
+            syncStateVersion(result?.state?.version);
+            queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({ ...page, state: result.state || page.state })));
             toast.success('Remembered workflow context reset.');
         },
         onError: error => toast.error(error.message || 'The remembered workflow context could not be reset.')
     });
 
-    /**
-     * handleSend accepts:
-     *  - A plain string  → regular text message
-     *  - A command object with `type` field → structured command (e.g. decide_for_me)
-     */
     const handleSend = useCallback(async value => {
         const normalized = normalizeInput(value);
-        // Require either a non-empty text or a structured command.
-        const hasContent = normalized.command || normalized.text.trim();
-        if (!hasContent || isTyping || !workflowId) return;
+        if (!normalized.text || isTyping || isSubmittingTurn || serverProcessing || !workflowId) return;
         try {
             await onBeforeSend?.();
-        } catch {
+        } catch (error) {
+            toast.error(error.message || 'Save the workflow before asking AI to change it.');
             return;
         }
         const requestId = globalThis.crypto?.randomUUID?.() || `workflow_turn_${Date.now()}`;
-        sendMutation.mutate({ input: normalized, requestId, optimisticWorkId: `optimistic_work_${requestId}` });
-    }, [isTyping, onBeforeSend, sendMutation, workflowId]);
+        sendMutation.mutate({
+            command: normalized.command,
+            text: normalized.text,
+            requestId,
+            optimisticWorkId: `optimistic_work_${requestId}`
+        });
+    }, [workflowId, isSubmittingTurn, isTyping, onBeforeSend, sendMutation, serverProcessing, toast]);
 
     const handleRecoveryAction = useCallback((action, message, previousRequest = '') => {
         const recovery = message?.errorMetadata?.recovery || message?.payload?.recovery || {};
@@ -279,49 +297,47 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         }
         if (action?.type === 'retry') {
             const retryText = recovery.retryText || previousRequest;
-            if (retryText) handleSend(retryText);
+            if (retryText) void handleSend(retryText);
             return;
         }
         setInput(recovery.suggestedPrompt || previousRequest || '');
     }, [handleSend, setInput]);
 
     const handleApply = useCallback(async message => {
-        if (message.kind !== 'workflow_proposal' && message.kind !== 'workflow_diff') return;
+        if (message.kind !== 'workflow_proposal') return;
         setAcceptingProposalId(message.id);
         try {
             const result = await decideMutation.mutateAsync({ messageId: message.id, action: 'accept' });
             const created = result?.createdResources || [];
             toast.success(created.length ? `Workflow updated and Google Sheet “${created[0].name}” is ready.` : 'Workflow updated successfully!');
+            return result;
         } catch (error) {
             toast.error(error.message || 'Failed to apply changes.');
+            throw error;
+        } finally {
+            setAcceptingProposalId(null);
         }
-        finally { setAcceptingProposalId(null); }
     }, [decideMutation, toast]);
 
     const handleIgnore = useCallback(async message => {
-        if (message.kind !== 'workflow_proposal' && message.kind !== 'workflow_diff') return;
+        if (message.kind !== 'workflow_proposal') return;
         setRejectingProposalId(message.id);
-        try { await decideMutation.mutateAsync({ messageId: message.id, action: 'reject' }); }
-        finally { setRejectingProposalId(null); }
-    }, [decideMutation]);
+        try {
+            await decideMutation.mutateAsync({ messageId: message.id, action: 'reject' });
+            toast.success('Proposal ignored.');
+        } catch (error) {
+            toast.error(error.message || 'Failed to ignore proposal.');
+        } finally {
+            setRejectingProposalId(null);
+        }
+    }, [decideMutation, toast]);
 
-    /**
-     * handleOption handles both suggestion chip strings and structured
-     * clarification responses. When the clarification card emits a
-     * `decide_for_me` command, it should be forwarded as a command object.
-     */
     const handleOption = useCallback(option => {
         if (option?.type === 'regenerate_proposal') {
             if (option.text) handleSend(option.text);
             return;
         }
-        if (option && typeof option === 'object' && option.type) {
-            // Structured command (e.g. { type: 'decide_for_me', clarificationId })
-            handleSend(option);
-        } else {
-            const value = typeof option === 'string' ? option : option?.label || option?.name || option?.title || '';
-            if (value) handleSend(value);
-        }
+        handleSend(option);
     }, [handleSend]);
 
     const clearChat = useCallback(() => {
@@ -329,43 +345,11 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         return clearChatMutation.mutateAsync();
     }, [clearChatMutation, workflowId]);
 
-    const updateClarificationMode = useCallback(mode => {
-        setClarificationMode(mode);
-        setClarificationModePreference(mode);
-    }, []);
-
-    /**
-     * Load the next page of older messages using cursor-based pagination.
-     * Results are prepended to the olderMessages list.
-     */
-    const loadMoreHistory = useCallback(async () => {
-        if (!workflowId || isLoadingMore) return;
-        const cursor = beforeCursor ?? historyQuery.data?.nextBefore;
-        if (!cursor) return;
-        setIsLoadingMore(true);
-        try {
-            const result = await getWorkflowAIChat(workflowId, LIMIT, cursor);
-            const fetched = result?.messages || [];
-            setOlderMessages(prev => [...fetched, ...prev]);
-            setBeforeCursor(result?.nextBefore || null);
-        } catch {
-            toast.error('Could not load older messages.');
-        } finally {
-            setIsLoadingMore(false);
-        }
-    }, [workflowId, isLoadingMore, beforeCursor, historyQuery.data?.nextBefore, toast]);
-
-    const hasMore = Boolean(
-        beforeCursor !== null
-            ? beforeCursor
-            : historyQuery.data?.nextBefore
-    );
-
     return {
         messages,
         input,
         setInput,
-        isTyping: isTyping || sharedIsTyping || historyQuery.data?.state?.phase === 'processing',
+        isTyping: isTyping || isSubmittingTurn || serverProcessing,
         clarificationMode,
         updateClarificationMode,
         handleSend,
@@ -375,11 +359,10 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         handleOption,
         acceptingProposalId,
         rejectingProposalId,
-        isLoadingHistory: historyQuery.isLoading,
-        hasMore,
-        loadMoreHistory,
-        isLoadingMore,
-        error: historyQuery.error,
+        isLoadingHistory: isLoadingHistory && messages.length === 1 && messages[0].id === defaultMessage.id,
+        hasMore: Boolean(hasNextPage),
+        loadMoreHistory: fetchNextPage,
+        isLoadingMore: isFetchingNextPage,
         clearChat,
         isClearingChat: clearChatMutation.isPending,
         resetContext: () => workflowId ? resetContextMutation.mutateAsync() : Promise.resolve(),

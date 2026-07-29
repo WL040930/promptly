@@ -24,7 +24,7 @@ const edgeTypes = {
     deletable: DeletableEdge,
 };
 
-export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkflow, versionWorkflow, onRestore, isRestoring = false, isRestoringSuccess = false, confirmText = "Restore This Version", loadingText = "Restoring…", title = null, description = null, mode = 'version' }) {
+export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkflow, versionWorkflow, onRestore, isRestoring = false, isRestoringSuccess = false, confirmText = "Restore This Version", loadingText = "Restoring…", title = null, description = null, mode = 'version', canConfirm = true, confirmDisabledReason = '' }) {
     // Prevent background scrolling when open
     useEffect(() => {
         if (isOpen) {
@@ -325,8 +325,10 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
                         onClick={handleRestore}
                         isLoading={isRestoring}
                         loadingText={loadingText}
+                        disabled={!canConfirm}
+                        title={!canConfirm ? confirmDisabledReason : undefined}
                     >
-                        {confirmText}
+                        {canConfirm ? confirmText : 'Setup required'}
                     </Button>
                 </div>
             </div>

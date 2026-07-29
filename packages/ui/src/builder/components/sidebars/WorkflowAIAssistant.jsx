@@ -51,6 +51,8 @@ export default function WorkflowAIAssistant({ workflow, onBeforeSend, initialPro
                         title="Review workflow changes"
                         description="Compare the current workflow with the proposed changes."
                         mode="proposal"
+                        canConfirm={previewProposal?.readiness?.canApply !== false}
+                        confirmDisabledReason={(previewProposal?.readiness?.issues || []).map(issue => issue.message).filter(Boolean).join(' ')}
                         isRestoring={!!assistant.acceptingProposalId}
                         onRestore={async () => {
                             const message = assistant.messages.find(m => m.id === previewProposal.messageId);

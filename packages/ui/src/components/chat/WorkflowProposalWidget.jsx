@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { Check, ChevronDown } from 'lucide-react';
 import Button from '../ui/Button.jsx';
 import ProposalCard from './ProposalCard.jsx';
 import { isAcceptedProposalStatus, isRejectedProposalStatus, isStaleProposalStatus, normalizeProposalStatus } from './proposalStatus.js';
@@ -22,11 +24,23 @@ export default function WorkflowProposalWidget({ proposal, status, tokenUsage, o
     const setupActions = presentation.setupActions || [];
     const assumptions = presentation.assumptions || [];
     const flow = presentation.flow || [];
+    const [showAppliedDetails, setShowAppliedDetails] = useState(false);
+
+    if (isAccepted) {
+        return <section className="mt-2 w-full overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-sm shadow-emerald-900/5">
+            <button type="button" onClick={() => setShowAppliedDetails(value => !value)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-emerald-50/40" aria-expanded={showAppliedDetails}>
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700"><Check size={17} strokeWidth={3} /></span>
+                <span className="min-w-0 flex-1"><span className="block text-[10px] font-extrabold uppercase tracking-[0.14em] text-emerald-700">Changes applied</span><span className="mt-0.5 block truncate text-sm font-extrabold text-slate-900">{presentation.title || 'Workflow updated'}</span><span className="mt-0.5 block text-xs text-slate-500">{changes.length || flow.length} workflow changes applied</span></span>
+                <span className="flex items-center gap-1 text-[11px] font-bold text-slate-500">{showAppliedDetails ? 'Hide' : 'View changes'}<ChevronDown size={15} className={`transition-transform ${showAppliedDetails ? 'rotate-180' : ''}`} /></span>
+            </button>
+            {showAppliedDetails && <div className="border-t border-slate-100 bg-slate-50/55 px-4 py-3"><div className="space-y-2 text-xs text-slate-600">{changes.map(change => <div key={change.id}><span className="font-bold text-slate-800">{change.label}</span>{change.detail ? ` — ${change.detail}` : ''}</div>)}</div></div>}
+            {proposal?.work && <div className="border-t border-slate-100 bg-slate-50/40 px-4 py-3"><AssistantWorkDetails work={proposal.work} tokenUsage={tokenUsage} /></div>}
+        </section>;
+    }
 
     return (
         <ProposalCard type="workflow" title={presentation.title || 'Workflow changes'} status={status} verification={proposal?.verification} actions={
-            isAccepted ? <Status text="Changes applied" tone="success" />
-                : isRejected ? <Status text="Proposal ignored" />
+            isRejected ? <Status text="Proposal ignored" />
                     : isStale ? <Status text={normalizeProposalStatus(status) === 'superseded' ? 'A newer proposal replaced this one.' : 'This proposal is outdated. Generate a new one.'} tone="warning" />
                         : <div className="flex items-center gap-2"><Button variant="ghost" size="sm" className="flex-1" onClick={onIgnore} isLoading={rejecting} loadingText="Ignoring…">Ignore</Button>{proposal?.verification?.status === 'unverified' && <Button variant="outline" size="sm" className="flex-1" onClick={onRegenerate}>Generate new</Button>}<Button variant="primary" size="sm" className="flex-1" onClick={onPreview}>Preview changes</Button></div>
         }>

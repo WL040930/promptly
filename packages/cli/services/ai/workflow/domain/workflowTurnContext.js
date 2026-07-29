@@ -5,7 +5,7 @@ const CORRECTION_PATTERN = /\b(?:actually|instead|i\s+mean|correction|not\s+that
 
 const textOf = value => String(value || '').trim();
 
-export const normalizeWorkflowCommand = ({ command, text } = {}) => {
+export const normalizeWorkflowCommand = (command = {}) => {
     if (command?.type === 'decide_for_me') {
         return { type: 'decide_for_me', clarificationId: command.clarificationId || null };
     }
@@ -16,15 +16,8 @@ export const normalizeWorkflowCommand = ({ command, text } = {}) => {
             state: command.state && typeof command.state === 'object' ? command.state : {}
         };
     }
-    const input = typeof text === 'string' && text.trim()
-        ? text.trim()
-        : command?.type === 'submit_text'
-            ? textOf(command.text)
-            : typeof command === 'string'
-                ? command.trim()
-                : '';
-    if (DECIDE_PATTERN.test(input)) return { type: 'decide_for_me', clarificationId: null };
-    return { type: 'submit_text', text: input };
+    if (command?.type === 'submit_text') return { type: 'submit_text', text: textOf(command.text) };
+    return { type: 'submit_text', text: '' };
 };
 
 export const resolveWorkflowTurnContext = ({
@@ -34,7 +27,7 @@ export const resolveWorkflowTurnContext = ({
     pendingProposal = null,
     clarificationMode = null
 } = {}) => {
-    const delegated = command?.type === 'decide_for_me';
+    const delegated = command?.type === 'decide_for_me' || DECIDE_PATTERN.test(textOf(command?.text));
     const clarified = command?.type === 'submit_clarification';
     const rawText = delegated ? '' : textOf(command?.text);
     const sourceText = activeWork?.sourceText || rawText;
