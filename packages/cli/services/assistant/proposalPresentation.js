@@ -69,6 +69,7 @@ export const buildWorkflowPresentation = ({ workflow = {}, proposal = {} } = {})
         assumptions: [],
         setupRequirements: proposal.readiness?.ready === false ? (proposal.readiness.issues || []).map(issue => issue.message).filter(Boolean) : [],
         setupActions: proposal.readiness?.setupActions || [],
-        flow
+        flow,
+        diagnosis: proposal.diagnosis || null
     };
 };

@@ -8,6 +8,7 @@ export const ensureDatabaseSchema = async (sequelize) => {
         console.warn('[DB] pgvector extension is unavailable; knowledge-base search will remain disabled.', error.message);
     });
     await sequelize.query(`CREATE EXTENSION IF NOT EXISTS pg_trgm;`);
+    await sequelize.query(`ALTER TABLE "automation_runs" ADD COLUMN IF NOT EXISTS "definitionSnapshot" JSONB;`).catch(() => {});
     await sequelize.query(`
         ALTER TABLE "knowledge_chunks"
         ADD COLUMN IF NOT EXISTS "embedding" vector(1536);

@@ -174,6 +174,7 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
                 workflowId,
                 userId,
                 revisionId: executedRevisionId || null,
+                definitionSnapshot: { revisionId: executedRevisionId || null, nodes: clone(nodes), edges: clone(edges) },
                 status: 'running',
                 trigger: executionOptions.trigger || 'Manual Test Run',
                 state: {}
@@ -211,15 +212,18 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
                 }
             }
             state.stepLogs.push({
+                nodeId,
                 name: node.title || node.type,
                 type: node.type,
+                subType: node.subType,
                 status: stepStatus,
                 time: stepDetails?.time || '0ms',
                 details: stepDetails?.details || `Successfully executed ${node.title || node.type} (${node.subType})`,
-                ...(executionResult.logEntry ? { metadata: executionResult.logEntry } : {})
+                ...(executionResult.logEntry ? { metadata: executionResult.logEntry } : {}),
+                ...(stepStatus === 'failed' ? { errorCode: executionResult.errorCode || executionResult.code || null } : {})
             });
             const outgoing = graph.outgoing.get(nodeId) || [];
-            const selected = selectOutgoingEdges(node, executionResult, outgoing);
+            const selected = selectOutgoingEdges(node, executionResult, outgoing, nodeMap);
             const selectedIds = new Set(selected.map(edge => edge.id));
             for (const edge of outgoing) {
                 state.incomingRemaining.set(edge.target, state.incomingRemaining.get(edge.target) - 1);
@@ -293,7 +297,7 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
                 const { continuation } = await createContinuation({ run, node, suspension: executionResult.suspend });
                 state.suspendedNodeId = nodeId;
                 state.suspendedInputNodeIds = inputNodeIds;
-                state.stepLogs.push({ name: node.title || node.type, type: node.type, status: 'waiting', time: `${Date.now() - stepStartTime}ms`, details: `Waiting for ${executionResult.suspend.kind}.`, continuationId: continuation.id });
+                state.stepLogs.push({ nodeId, name: node.title || node.type, type: node.type, subType: node.subType, status: 'waiting', time: `${Date.now() - stepStartTime}ms`, details: `Waiting for ${executionResult.suspend.kind}.`, continuationId: continuation.id });
                 await run.update({ status: 'waiting', suspendedNodeId: nodeId, state: serializeState(state) });
                 return persistLog({ run, workflowId, revisionId: executedRevisionId, userId, status: 'waiting', trigger: executionOptions.trigger, error: null, steps: state.stepLogs, output: state.workflowOutput, durationMs: Date.now() - startTime }).then(log => ({ ...log.toJSON(), continuationId: continuation.id }));
             }

@@ -205,6 +205,37 @@ test('AI client retries a lone workflow provider after a transient failure', asy
     assert.deepEqual(result.json, { type: 'reply', message: 'Ready' });
 });
 
+test('AI client accepts a workflow-specific provider-attempt override', async () => {
+    let calls = 0;
+    const ai = createAIClient({
+        registry: createRegistry({
+            gemini: {
+                async generateContent() {
+                    calls += 1;
+                    if (calls < 3) {
+                        const error = new Error('Service temporarily unavailable.');
+                        error.status = 503;
+                        throw error;
+                    }
+                    return { text: '{"type":"reply","message":"Ready"}' };
+                }
+            }
+        }),
+        profiles: {
+            fast: { provider: 'gemini', model: 'workflow-model' },
+            quality: { provider: 'gemini', model: 'workflow-model' },
+            default: { provider: 'gemini', model: 'workflow-model' }
+        },
+        fallbackProviders: [],
+        logger: { info() {}, warn() {}, error() {} }
+    });
+
+    const result = await ai.run({ task: 'workflow.plan', messages: [], maxAttempts: 3 });
+
+    assert.equal(calls, 3);
+    assert.deepEqual(result.json, { type: 'reply', message: 'Ready' });
+});
+
 test('AI client enforces the caller request budget across fallback attempts', async () => {
     const calls = [];
     const ai = createAIClient({

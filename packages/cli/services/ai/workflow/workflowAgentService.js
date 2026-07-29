@@ -9,7 +9,7 @@ import { layoutWorkflow } from '../../../../shared/workflowLayout.js';
 
 const resourceVariantKey = params => JSON.stringify(Object.fromEntries(Object.entries(params || {}).sort(([left], [right]) => left.localeCompare(right))));
 
-const resourceRequestsFor = specs => {
+const resourceRequestsFor = (specs, nodes = [], selections = {}) => {
     const requests = new Map();
     for (const spec of specs || []) {
         const inputs = spec.schema?.inputs || [];
@@ -22,7 +22,11 @@ const resourceRequestsFor = specs => {
                     continue;
                 }
                 const dependency = inputsByName.get(binding.slice(1));
-                const options = normalizeNodeInputOptions(dependency, {}).filter(option => !option.disabled && option.value !== '').map(option => String(option.value));
+                const schemaOptions = normalizeNodeInputOptions(dependency, {}).filter(option => !option.disabled && option.value !== '').map(option => String(option.value));
+                const existingValues = (nodes || []).filter(node => (node.nodeKey || `${node.type}:${node.subType}`) === spec.nodeKey)
+                    .map(node => node.config?.[binding.slice(1)]).filter(value => typeof value === 'string' && value);
+                const selectedValue = selections?.[dependency?.resource];
+                const options = [...new Set([...schemaOptions, ...existingValues, ...(selectedValue ? [selectedValue] : [])])];
                 if (options.length === 0) {
                     variants = [];
                     break;
@@ -45,10 +49,12 @@ const resourceContextEntry = ({ resource, params, result }) => ({
     ...(Object.keys(params).length > 0 ? { params } : {})
 });
 
-export const loadWorkflowResourceContext = async ({ userId, specs = [], resourceService = nodeResourceService } = {}) => {
+export const loadWorkflowResource = async ({ userId, resource, params = {}, resourceService = nodeResourceService } = {}) => resourceService.list({ userId, resource, params });
+
+export const loadWorkflowResourceContext = async ({ userId, specs = [], nodes = [], selections = {}, resourceService = nodeResourceService } = {}) => {
     if (!userId) return {};
     const context = {};
-    for (const { resource, params } of resourceRequestsFor(specs)) {
+    for (const { resource, params } of resourceRequestsFor(specs, nodes, selections)) {
         const key = resourceVariantKey(params);
         try {
             const result = await resourceService.list({ userId, resource, params });
@@ -109,6 +115,15 @@ export const isProvisionedResourceReference = value => value !== null
     && typeof value.$provision === 'string'
     && Object.keys(value).length === 1;
 
+const provisionedSpreadsheetChangeFor = (reference, resourceChanges = []) => (resourceChanges || []).find(change => (
+    change?.type === 'create_google_spreadsheet' && change.ref === reference
+));
+
+const rangeForProvisionedSpreadsheet = change => {
+    const sheetTitle = String(change?.sheetTitle || 'Responses').replaceAll("'", "''");
+    return `'${sheetTitle}'!A1`;
+};
+
 /**
  * Normalize resource values before compilation. AI output occasionally wraps an
  * existing resource ID in `$provision`; that syntax is reserved for resources
@@ -127,7 +142,40 @@ export const normalizeGeneratedResourceValues = ({ nodes = [], specs = [], resou
         const spec = specsByKey.get(node.nodeKey || `${node.type}:${node.subType}`);
         (spec?.schema?.inputs || []).filter(input => input.type === 'resource-select' && input.resource).forEach(input => {
             const value = node.config?.[input.name];
+            const provisionedDependency = Object.values(input.resourceParams || {})
+                .map(binding => (typeof binding === 'string' && binding.startsWith('$') ? node.config?.[binding.slice(1)] : null))
+                .find(isProvisionedResourceReference);
+            const expressionDependency = Object.values(input.resourceParams || {})
+                .map(binding => (typeof binding === 'string' && binding.startsWith('$') ? node.config?.[binding.slice(1)] : null))
+                .find(isWorkflowExpression);
+            if (provisionedDependency && input.resource === 'google-sheet-ranges') {
+                const change = provisionedSpreadsheetChangeFor(provisionedDependency.$provision, resourceChanges);
+                if (!change) {
+                    issues.push({
+                        code: 'WORKFLOW_PROVISION_REFERENCE_INVALID',
+                        path: `nodes[${nodeIndex}].config.${input.name}`,
+                        message: `${input.label || input.name} depends on a proposed spreadsheet that does not exist.`
+                    });
+                    return;
+                }
+                const expectedRange = rangeForProvisionedSpreadsheet(change);
+                if (node.config[input.name] !== expectedRange) {
+                    node.config[input.name] = expectedRange;
+                    repairs.push({
+                        code: 'WORKFLOW_PROVISIONED_SHEET_RANGE_RESOLVED',
+                        nodeId: node.id,
+                        field: input.name,
+                        resourceRef: provisionedDependency.$provision,
+                        range: expectedRange
+                    });
+                }
+                return;
+            }
             if (value === undefined || value === null || value === '') return;
+            // A preceding runtime node may create the spreadsheet during this
+            // execution. Its canonical expression is not an account resource
+            // and must not be rejected as an invented ID.
+            if (isWorkflowExpression(value)) return;
             if (isProvisionedResourceReference(value)) {
                 if (input.resource === 'google-spreadsheets' && provisionRefs.has(value.$provision)) return;
                 const resource = resourceContextForInput(input, node, resourceContext);
@@ -152,12 +200,7 @@ export const normalizeGeneratedResourceValues = ({ nodes = [], specs = [], resou
                 });
                 return;
             }
-            const dependsOnProvisionedSpreadsheet = Object.values(input.resourceParams || {}).some(binding => (
-                typeof binding === 'string'
-                && binding.startsWith('$')
-                && isProvisionedResourceReference(node.config?.[binding.slice(1)])
-            ));
-            if (dependsOnProvisionedSpreadsheet) return;
+            if (provisionedDependency || expressionDependency) return;
             const resource = resourceContextForInput(input, node, resourceContext);
             if (!resource || resource.error) {
                 issues.push({
@@ -499,6 +542,15 @@ const assertConnectionHandle = (node, handle, direction, operation) => {
     }
 };
 
+// Many nodes expose one generic payload input but use different names
+// (`triggerData`, `inputData`, or `event`). The generated graph only needs the
+// one available port, so normalize an alias instead of failing the proposal.
+const normalizeSingleInputHandle = (node, handle) => {
+    if (handle === null || handle === undefined) return handle;
+    const inputs = (node?.schema?.inputs || []).filter(input => input?.isConnection).map(input => input.name).filter(Boolean);
+    return inputs.length === 1 && !inputs.includes(handle) ? inputs[0] : handle;
+};
+
 const nodeKeyFor = node => node.nodeKey || `${node.type}:${node.subType}`;
 
 const connectionKey = ({ source, sourceHandle = null, target, targetHandle = null }) => JSON.stringify({
@@ -597,10 +649,11 @@ const findConnection = (edges, from, to) => edges.find(edge => connectionKey({
 }));
 
 const connectNodes = ({ operation, edges, from, to, sourceNode, targetNode }) => {
+    const resolvedTo = { ...to, handle: normalizeSingleInputHandle(targetNode, to.handle) };
     assertConnectionHandle(sourceNode, from.handle, 'outputs', operation);
-    assertConnectionHandle(targetNode, to.handle, 'inputs', operation);
-    if (findConnection(edges, from, to)) return;
-    edges.push(connectionFor({ source: from.nodeId, sourceHandle: from.handle, target: to.nodeId, targetHandle: to.handle }));
+    assertConnectionHandle(targetNode, resolvedTo.handle, 'inputs', operation);
+    if (findConnection(edges, from, resolvedTo)) return;
+    edges.push(connectionFor({ source: from.nodeId, sourceHandle: from.handle, target: resolvedTo.nodeId, targetHandle: resolvedTo.handle }));
 };
 
 /**

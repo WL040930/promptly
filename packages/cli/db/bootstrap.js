@@ -56,6 +56,12 @@ const needsPostgresSetup = async () => {
                 AND to_regclass('public.automation_runs_trigger_trgm') IS NOT NULL
                 AND to_regclass('public.automation_runs_error_trgm') IS NOT NULL
                 AS trigram_indexes_ready,
+            EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'automation_runs'
+                  AND column_name = 'definitionSnapshot'
+            ) AS automation_run_snapshot_ready,
             NOT EXISTS (
                 SELECT 1 FROM pg_constraint
                 WHERE conname = 'workflow_assets_storageKey_key1'

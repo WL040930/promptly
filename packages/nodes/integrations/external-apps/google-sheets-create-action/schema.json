@@ -1,0 +1,11 @@
+{
+  "inputs": [
+    { "name": "triggerData", "type": "object", "label": "Input Payload", "isConnection": true },
+    { "name": "title", "type": "text", "label": "Spreadsheet title", "required": true, "maxLength": 180 },
+    { "name": "sheetTitle", "type": "text", "label": "First sheet tab", "required": true, "defaultValue": "Responses", "maxLength": 100 },
+    { "name": "headers", "type": "data-grid", "label": "Header row", "defaultValue": [] }
+  ],
+  "outputs": [
+    { "name": "outputData", "type": "object", "label": "Created spreadsheet", "isConnection": true }
+  ]
+}

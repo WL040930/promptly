@@ -7,6 +7,7 @@ const AutomationRun = sequelize.define('AutomationRun', {
     workflowId: { type: DataTypes.STRING(100), allowNull: false },
     userId: { type: DataTypes.UUID, allowNull: false },
     revisionId: { type: DataTypes.STRING(100), allowNull: true },
+    definitionSnapshot: { type: DataTypes.JSONB, allowNull: true },
     status: { type: DataTypes.STRING(30), allowNull: false, defaultValue: 'running' },
     trigger: { type: DataTypes.STRING(255), allowNull: true },
     state: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },

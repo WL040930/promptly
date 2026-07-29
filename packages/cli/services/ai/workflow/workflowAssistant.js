@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { Op } from 'sequelize';
 import sequelize from '../../../db/index.js';
-import { AssistantMessage, AssistantThread, Form, Workflow } from '../../../models/index.js';
+import { AssistantMessage, AssistantThread, Form, Workflow, AutomationRun } from '../../../models/index.js';
 import { assistantMessageToJSON, createAssistantStateView, ensureAssistantThread } from '../../assistant/assistantStore.js';
 import { saveAutomationDraft } from '../../automations/automationService.js';
 import { runWorkflowTurn } from '../workflowAIService.js';
@@ -15,6 +15,8 @@ import googleSpreadsheetService from '../../nodes/googleSpreadsheetService.js';
 import { advanceAssistantWork, createAssistantWork, finishAssistantWork } from '../../../../shared/assistantWork.js';
 import { normalizeClarificationMode } from '../../../../shared/agentContract.js';
 import { createWorkflowProposalApplier } from './workflowProposalApplier.js';
+import nodeResourceService from '../../nodes/nodeResourceService.js';
+import { buildRunDiagnosticReport } from './runDiagnostics.js';
 
 const MAX_HISTORY = 100;
 const AI_CONTEXT_HISTORY = 30;
@@ -78,7 +80,8 @@ const messageFromResult = ({ result, workflow, idFactory = makeId }) => {
             warnings: result.warnings || [],
             plan: result.plan || [],
             resourceChanges: result.resourceChanges || [],
-            contextDelta: result.contextDelta || null
+            contextDelta: result.contextDelta || null,
+            diagnosis: result.diagnosis || null
         };
         const presentation = buildWorkflowPresentation({ workflow: toWorkflowJson(workflow), proposal });
         return { text: presentation.outcome, kind: 'workflow_proposal', payload: { ...proposal, presentation } };
@@ -94,7 +97,7 @@ const messageFromResult = ({ result, workflow, idFactory = makeId }) => {
 };
 
 export const createWorkflowAssistant = ({
-    models = { AssistantMessage, AssistantThread, Form, Workflow },
+    models = { AssistantMessage, AssistantThread, Form, Workflow, AutomationRun },
     db = sequelize,
     runTurn = runWorkflowTurn,
     saveDraft = saveAutomationDraft,
@@ -182,8 +185,21 @@ export const createWorkflowAssistant = ({
 
             const rawHistory = await models.AssistantMessage.findAll({ where: { threadId: reservation.state.threadId }, order: [['createdAt', 'DESC']], limit: AI_CONTEXT_HISTORY + 2 });
             const history = rawHistory.reverse().filter(message => ![reservation.userMessage.id, reservation.workMessage.id].includes(message.id)).map(publicMessage);
-            const form = await attachedForm(workflow, userId);
+        const form = await attachedForm(workflow, userId);
             const ownedForms = await models.Form.findAll({ where: { userId }, attributes: ['id', 'title', 'updatedAt'], order: [['updatedAt', 'DESC']] });
+            const loadRunDiagnostic = async ({ selector, runId }) => {
+                if (!models.AutomationRun) return null;
+                const where = { userId, workflowId };
+                if (selector === 'referenced') where.id = runId;
+                if (selector === 'latest_failed') where.status = 'failed';
+                const run = await models.AutomationRun.findOne({ where, order: [['createdAt', 'DESC']] });
+                if (!run) return null;
+                return buildRunDiagnosticReport({
+                    run: run.toJSON?.() || run,
+                    workflow: toWorkflowJson(workflow),
+                    rangeLoader: ({ spreadsheetId }) => nodeResourceService.list({ userId, resource: 'google-sheet-ranges', params: { spreadsheetId } })
+                });
+            };
             const request = reservation.context.command.type === 'decide_for_me' ? `Resolve the active workflow request using sensible defaults. Active request: ${reservation.context.intent.sourceText || 'the current workflow request'}` : reservation.context.command.text;
             const result = await runTurn({
                 request, currentWorkflow: toWorkflowJson(workflow), history,
@@ -192,6 +208,7 @@ export const createWorkflowAssistant = ({
                 assistantContext: resourceContextForPrompt({ identity: buildResourceIdentity({ surface: 'workflow', resource: toWorkflowJson(workflow) }), context: reservation.state.context }),
                 formSchema: form?.toJSON?.() || null,
                 formLoader: async ({ formId }) => (await models.Form.findOne({ where: { id: formId, userId } }))?.toJSON?.() || null,
+                runLoader: loadRunDiagnostic,
                 onProgress: reportProgress
             });
             await progressChain;

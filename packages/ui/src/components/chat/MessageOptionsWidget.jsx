@@ -3,7 +3,7 @@ import { Check, ChevronRight, Sparkles } from 'lucide-react';
 import Button from '../ui/Button.jsx';
 import { choiceValues, clarificationState, textValue, updateChoiceValue } from '../../utils/clarificationState.js';
 
-const isResourceChoice = input => input.type === 'workflow_choice' || input.type === 'form_choice';
+const isResourceChoice = input => input.type === 'workflow_choice' || input.type === 'form_choice' || input.type === 'resource_choice';
 
 const answerFor = (input, value) => {
     if (Array.isArray(value)) return value.join(', ');
@@ -91,11 +91,13 @@ export default function MessageOptionsWidget({
                                             key={resource.id}
                                             type="button"
                                             disabled={isTyping}
-                                            onClick={() => onSend?.(resource)}
+                                            onClick={() => input.type === 'resource_choice'
+                                                ? onSend?.({ type: 'submit_clarification', text: `${questionLabel}: ${resource.name}`, state: { [input.id]: resource.id } })
+                                                : onSend?.(resource)}
                                             className="group flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left transition-colors hover:border-violet-300 hover:bg-violet-50/50 disabled:cursor-not-allowed disabled:opacity-50"
                                         >
                                             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-500">{(resource.name || resource.title || '?').slice(0, 1).toUpperCase()}</span>
-                                            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-700">{resource.name || resource.title}</span>
+                                            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-700">{resource.name || resource.title}</span>{resource.description && <span className="block truncate text-xs text-slate-500">{resource.description}</span>}</span>
                                             <ChevronRight size={16} className="text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-violet-600" />
                                         </button>
                                     ))}

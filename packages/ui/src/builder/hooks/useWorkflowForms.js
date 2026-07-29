@@ -1,12 +1,11 @@
 import { useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { getForm } from '../../api/backend.js';
+import { workflowFormIds } from '../utils/workflowFormIds.js';
 
 /** Fetches only the form schemas referenced by workflow form-submission steps. */
 export function useWorkflowForms(nodes = []) {
-    const formIds = useMemo(() => [...new Set((nodes || [])
-        .filter(node => node?.subType === 'form-submission' && node?.config?.formId)
-        .map(node => node.config.formId))], [nodes]);
+    const formIds = useMemo(() => workflowFormIds(nodes), [nodes]);
 
     const queries = useQueries({
         queries: formIds.map(formId => ({

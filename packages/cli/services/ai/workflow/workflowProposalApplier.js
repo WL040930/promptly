@@ -1,6 +1,7 @@
 import { applyResourceContextDelta, buildResourceIdentity } from '../../assistant/resourceContext.js';
 import { compileWorkflowBindings, validateWorkflowExpressions } from '../../../../shared/workflowExpressions.js';
 import { finishAssistantWork } from '../../../../shared/assistantWork.js';
+import { applyFormResponseSpreadsheetContract } from './formSpreadsheetContract.js';
 
 const isProvisionReference = value => value !== null && typeof value === 'object' && !Array.isArray(value)
     && typeof value.$provision === 'string' && Object.keys(value).length === 1;
@@ -16,13 +17,28 @@ const resolveProvisionReferences = (value, resources, errorWith) => {
     return value;
 };
 
-const formIdForWorkflowNodes = (nodes = []) => nodes.find(node => node?.subType === 'form-submission')?.config?.formId || null;
+/**
+ * A spreadsheet created by a proposal has no real ID or tab metadata until
+ * Apply. The provisioner is therefore the source of truth for both dependent
+ * node values; never retain an AI-authored A1 range for that new spreadsheet.
+ */
+export const resolveProvisionedGoogleSheetConfigs = (nodes = [], resources, errorWith) => nodes.map(node => {
+    if (node?.subType !== 'googleSheets' || !isProvisionReference(node.config?.spreadsheetId)) return node;
+    const resource = resources.get(node.config.spreadsheetId.$provision);
+    if (!resource?.id || !resource?.range) {
+        throw errorWith('WORKFLOW_PROVISION_REFERENCE_INVALID', 'A proposed Google Sheet could not be resolved before saving the workflow.', 409);
+    }
+    return {
+        ...node,
+        config: {
+            ...(node.config || {}),
+            spreadsheetId: resource.id,
+            range: resource.range
+        }
+    };
+});
 
-const spreadsheetHeadersFor = form => [
-    'Submitted At', 'Response ID',
-    ...(form?.fields || []).filter(field => field?.id && !field.deleted && field.type !== 'heading')
-        .map(field => field.label || field.name || field.id)
-];
+const formIdForWorkflowNodes = (nodes = []) => nodes.find(node => node?.subType === 'form-submission')?.config?.formId || null;
 
 export const createWorkflowProposalApplier = ({
     db,
@@ -62,7 +78,7 @@ export const createWorkflowProposalApplier = ({
         return { form, normalizedBindings };
     };
 
-    const provisionGoogleSheets = async ({ changes = [], userId, workflowId, proposalMessageId, form }) => {
+    const provisionGoogleSheets = async ({ changes = [], userId, workflowId, proposalMessageId }) => {
         const resources = new Map();
         const resolvedChanges = [];
         for (const change of changes) {
@@ -74,7 +90,7 @@ export const createWorkflowProposalApplier = ({
                 userId,
                 title: change.title,
                 sheetTitle: change.sheetTitle || 'Responses',
-                headers: change.headers?.length ? change.headers : spreadsheetHeadersFor(form),
+                headers: change.headers || [],
                 provisioningKey: `workflow-proposal:${workflowId}:${proposalMessageId}:${change.ref}`,
                 folderId: change.folderId || null
             });
@@ -119,10 +135,19 @@ export const createWorkflowProposalApplier = ({
             });
             try {
                 const form = await attachedForm(workflow, userId, null, payload.nodes || []);
-                const provisioned = await provisionGoogleSheets({ changes: payload.resourceChanges, userId, workflowId, proposalMessageId, form: form?.toJSON?.() || form });
+                const responseSheetContract = applyFormResponseSpreadsheetContract({
+                    nodes: payload.nodes || [],
+                    resourceChanges: payload.resourceChanges || [],
+                    form: form?.toJSON?.() || form
+                });
+                const provisioned = await provisionGoogleSheets({ changes: responseSheetContract.resourceChanges, userId, workflowId, proposalMessageId });
                 provisionedResources = provisioned.resources;
                 createdResources = [...provisionedResources.values()];
-                resolvedPayload = { ...payload, resourceChanges: provisioned.resolvedChanges };
+                resolvedPayload = {
+                    ...payload,
+                    nodes: resolveProvisionedGoogleSheetConfigs(responseSheetContract.nodes, provisionedResources, errorWith),
+                    resourceChanges: provisioned.resolvedChanges
+                };
                 await message.update({ payload: resolvedPayload });
             } catch (error) {
                 await message.update({ proposalStatus: 'pending' }).catch(() => {});

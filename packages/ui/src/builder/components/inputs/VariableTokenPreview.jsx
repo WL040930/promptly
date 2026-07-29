@@ -1,5 +1,6 @@
 import { describeWorkflowVariable, splitWorkflowVariableTokens } from '../../utils/workflowVariableDisplay.js';
 import { describeWorkflowExpression, isWorkflowExpression } from '../../../../../shared/workflowExpressions.js';
+import { expressionPreviewParts, previewValueItems, workflowPreviewFallbackText } from '../../utils/workflowPreviewValue.js';
 
 /** Read-only rich rendering for text that contains workflow {{variables}}. */
 export default function VariableTokenPreview({ value, nodes = [], formsById = {}, availableVars = [], className = '', tone = 'indigo' }) {
@@ -20,12 +21,18 @@ export default function VariableTokenPreview({ value, nodes = [], formsById = {}
     if (isWorkflowExpression(value)) {
         const description = describeWorkflowExpression(value, { nodes, formsById });
         return <span className={`flex flex-wrap items-center gap-1 ${className}`}>
-            {description.parts.map((part, index) => part.reference
+            {expressionPreviewParts(description).map((part, index) => part.reference
                 ? pill({ ...part.reference, runtimeReference: `${value.$expr === 'reference' ? value.nodeId : ''}` }, index)
                 : part.text ? <span key={index} className="whitespace-pre-wrap">{part.text}</span> : null)}
         </span>;
     }
-    if (typeof value !== 'string') return <span>{String(value)}</span>;
+    if (Array.isArray(value)) return <span className={`flex flex-wrap items-center gap-1 ${className}`}>
+        {previewValueItems(value).map((item, index) => <span key={index} className="inline-flex min-w-0 items-center gap-1">
+            <VariableTokenPreview value={item} nodes={nodes} formsById={formsById} availableVars={availableVars} tone={tone} />
+            {index < value.length - 1 && <span className="text-slate-400">,</span>}
+        </span>)}
+    </span>;
+    if (typeof value !== 'string') return <span className={className}>{workflowPreviewFallbackText(value)}</span>;
 
     return <span className={`flex flex-wrap items-center gap-1 ${className}`}>
         {splitWorkflowVariableTokens(value).map((part, index) => {

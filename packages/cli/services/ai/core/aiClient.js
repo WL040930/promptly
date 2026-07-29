@@ -114,6 +114,7 @@ export const createAIClient = ({
         operation = task,
         providerOverride = null,
         mode = null,
+        maxAttempts = null,
         budget = null,
         onActivity = null
     } = {}) => {
@@ -122,6 +123,7 @@ export const createAIClient = ({
             registry,
             providerOverride,
             mode,
+            maxAttempts,
             profiles,
             fallbackProviders
         });

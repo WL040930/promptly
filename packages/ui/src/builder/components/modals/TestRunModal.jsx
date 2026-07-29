@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useForms } from '../../../api/hooks/useForms.js';
 import { useFormEngine } from '../../../forms/engine/useFormEngine.js';
 import FieldRenderer from '../../../forms/preview/FieldRenderer.jsx';
 import Button from '../../../components/ui/Button.jsx';
 import { WORKFLOW_MODAL_LAYERS } from '../../modalLayers.js';
+import { useWorkflowForms } from '../../hooks/useWorkflowForms.js';
 
 const STORAGE_KEY = (id) => `promptly-test-payload-${id}`;
 
@@ -138,14 +138,13 @@ function FormFillMode({ form, savedValues, onSubmit, isSubmitting, isProduction 
 
 const TestRunModal = ({ isOpen, onClose, onConfirm, isLoading, workflowId, nodes, runType = 'test' }) => {
     const isProduction = runType === 'production';
-    const { data: forms = [] } = useForms();
-
     const trigger = useMemo(() => detectTrigger(nodes), [nodes]);
+    const { formsById, isLoading: isLoadingLinkedForms } = useWorkflowForms(nodes);
     const linkedForm = useMemo(() => {
         if (trigger.type !== 'form') return null;
         const formId = trigger.node?.config?.formId;
-        return forms.find(f => f.id === formId) || null;
-    }, [trigger, forms]);
+        return formId ? formsById[formId] || null : null;
+    }, [formsById, trigger]);
 
     const [activeTab, setActiveTab] = useState(trigger.type === 'form' ? 'form' : 'kv');
     const [kvRows, setKvRows] = useState([EMPTY_ROW]);
@@ -285,7 +284,9 @@ const TestRunModal = ({ isOpen, onClose, onConfirm, isLoading, workflowId, nodes
                         )}
 
                         <div className="p-5 overflow-y-auto flex-1">
-                            {activeTab === 'form' && (linkedForm ? (
+                            {activeTab === 'form' && (isLoadingLinkedForms ? (
+                                <div className="py-10 text-center text-sm font-medium text-slate-500">Loading form fields…</div>
+                            ) : linkedForm ? (
                                 <FormFillMode key={formKey} form={linkedForm} savedValues={savedFormValues} onSubmit={handleFormSubmit} isSubmitting={isLoading} isProduction={isProduction} />
                             ) : (
                                 <div className="text-center py-10">

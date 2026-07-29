@@ -19,7 +19,10 @@ export const buildExecutionGraph = (nodes = [], edges = []) => {
     return { nodeMap, outgoing, incoming };
 };
 
-export const selectOutgoingEdges = (node, result = {}, edges = []) => {
+export const selectOutgoingEdges = (node, result = {}, edges = [], nodeMap = null) => {
+    if (result.success === false) {
+        return edges.filter(edge => nodeMap?.get(nodeKey(edge.target))?.subType === 'catchError');
+    }
     if (node.type !== 'logic') return edges;
 
     const targetEdgeId = result.targetEdgeId || edges.find(edge => edge.sourceHandle === result.targetHandle)?.id;

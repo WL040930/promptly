@@ -65,6 +65,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
     const isClarification = kind === 'clarification' && options.length > 0;
     const work = message.sender === 'bot' ? payload.work : null;
     const isFormProposal = message.sender !== 'user' && kind === 'form_proposal';
+    const isWorkflowProposal = message.sender !== 'user' && (kind === 'workflow_proposal' || kind === 'workflow_diff');
     const presentation = messagePresentation(message);
     const isCompactWork = presentation === 'work';
     const isProposalWork = presentation === 'proposal_work';
@@ -135,7 +136,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                     </div>
                 ) : message.sender !== 'user' && (message.isError || kind === 'error') ? (
                     <AssistantFailureCard message={message} onAction={onRecoveryAction} isWorking={isTyping} />
-                ) : kind === 'assistant_work' || isFormProposal || isClarification ? null : (
+                ) : kind === 'assistant_work' || isFormProposal || isWorkflowProposal || isClarification ? null : (
                     <div className={`relative w-full min-w-0 rounded-2xl ${message.sender === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'}`}>
                         <div className="w-full min-w-0 overflow-x-auto p-3.5 text-sm leading-relaxed">
                             {message.sender === 'user' ? (
@@ -225,6 +226,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                     <WorkflowProposalWidget
                         proposal={payload}
                         status={status}
+                        summary={message.text}
                         tokenUsage={message.tokenUsage}
                         onAccept={() => onApply?.(message)}
                         onIgnore={() => onIgnore?.(message)}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compileWorkflowEdits } from './workflowAgentService.js';
+import { compileWorkflowEdits, normalizeGeneratedResourceValues } from './workflowAgentService.js';
 
 test('insert_after_route replaces the real route without model-authored destination edges', () => {
     const specs = [
@@ -81,4 +81,53 @@ test('new workflows use deterministic graph layout and AI updates cannot move ex
     });
     assert.equal(updated.nodes[0].title, 'Renamed');
     assert.deepEqual(updated.nodes[0].position, { x: 712, y: 384 });
+});
+
+test('normalizes a generic payload handle to a node with one input handle', () => {
+    const specs = [
+        { nodeKey: 'trigger:form-submission', type: 'trigger', subType: 'form-submission', schema: { inputs: [], outputs: [{ name: 'event', isConnection: true }] } },
+        { nodeKey: 'logic:approval', type: 'logic', subType: 'approval', schema: { inputs: [{ name: 'inputData', isConnection: true }], outputs: [{ name: 'approved', isConnection: true }] } }
+    ];
+    const registry = { getDefinition: (type, subType) => {
+        const spec = specs.find(item => item.type === type && item.subType === subType);
+        return spec ? { implementationStatus: 'experimental', configSchema: spec.schema } : null;
+    } };
+    const result = compileWorkflowEdits({
+        currentWorkflow: { nodes: [], edges: [] }, specs, registry,
+        operations: [
+            { op: 'create_node', node: { ref: 'form', nodeKey: 'trigger:form-submission' } },
+            { op: 'create_node', node: { ref: 'approval', nodeKey: 'logic:approval' } },
+            { op: 'connect', from: { nodeRef: 'form', handle: 'event' }, to: { nodeRef: 'approval', handle: 'triggerData' } }
+        ]
+    });
+    assert.equal(result.edges[0].targetHandle, 'inputData');
+});
+
+test('a provisioned Google Sheet always uses its declared tab range in the proposal', () => {
+    const specs = [{
+        nodeKey: 'action:googleSheets',
+        type: 'action',
+        subType: 'googleSheets',
+        schema: {
+            inputs: [
+                { name: 'spreadsheetId', type: 'resource-select', resource: 'google-spreadsheets' },
+                { name: 'range', type: 'resource-select', resource: 'google-sheet-ranges', resourceParams: { spreadsheetId: '$spreadsheetId' } }
+            ]
+        }
+    }];
+    const result = normalizeGeneratedResourceValues({
+        nodes: [{
+            id: 'sheet', nodeKey: 'action:googleSheets', type: 'action', subType: 'googleSheets',
+            config: { spreadsheetId: { $provision: 'registrations' }, range: "'Sheet1'!A1" }
+        }],
+        specs,
+        resourceChanges: [{
+            type: 'create_google_spreadsheet', ref: 'registrations',
+            title: 'Approved Event Registrations', sheetTitle: 'Responses'
+        }]
+    });
+
+    assert.deepEqual(result.issues, []);
+    assert.equal(result.nodes[0].config.range, "'Responses'!A1");
+    assert.ok(result.repairs.some(repair => repair.code === 'WORKFLOW_PROVISIONED_SHEET_RANGE_RESOLVED'));
 });

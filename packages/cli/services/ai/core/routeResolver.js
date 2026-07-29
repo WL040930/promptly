@@ -14,10 +14,12 @@ export const resolveProviderRoutes = (task, {
     registry,
     providerOverride = null,
     mode = null,
+    maxAttempts = null,
     profiles = env.ai?.tiers || {},
     fallbackProviders = env.ai?.fallbackProviders || []
 } = {}) => {
     const policy = getTaskPolicy(task, { mode });
+    const attemptLimit = Number.isInteger(maxAttempts) && maxAttempts > 0 ? maxAttempts : policy.maxAttempts;
     const routes = [];
     const seen = new Set();
 
@@ -30,7 +32,7 @@ export const resolveProviderRoutes = (task, {
             provider: providerOverride
         };
         routes.push(route);
-        while (routes.length < policy.maxAttempts) routes.push({ ...route, retry: true });
+        while (routes.length < attemptLimit) routes.push({ ...route, retry: true });
         return routes;
     }
 
@@ -75,7 +77,7 @@ export const resolveProviderRoutes = (task, {
     // routes still provide normal provider failover.
     if (routes.length === 1) {
         const [route] = routes;
-        while (routes.length < policy.maxAttempts) routes.push({ ...route, retry: true });
+        while (routes.length < attemptLimit) routes.push({ ...route, retry: true });
     }
-    return routes.slice(0, policy.maxAttempts);
+    return routes.slice(0, attemptLimit);
 };

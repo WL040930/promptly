@@ -69,6 +69,15 @@ const googleSheetsSpec = {
     ui: {}
 };
 
+const googleSheetsCreateSpec = {
+    nodeKey: 'action:googleSheetsCreate', type: 'action', subType: 'googleSheetsCreate',
+    title: 'Create Google Sheet', description: 'Creates a spreadsheet during a run', implementationStatus: 'experimental',
+    schema: {
+        inputs: [{ name: 'event', isConnection: true }, { name: 'title', type: 'text' }, { name: 'sheetTitle', type: 'text' }, { name: 'headers', type: 'data-grid' }],
+        outputs: [{ name: 'done', isConnection: true }]
+    }, ui: {}
+};
+
 const approvalSpec = {
     nodeKey: 'logic:approval',
     type: 'logic',
@@ -102,6 +111,30 @@ const makeRegistry = (specs = [triggerSpec, emailSpec]) => ({
 });
 
 const resourceLoader = async () => ({});
+
+test('workflow complexity budgets reserve deeper recovery for forms, resources, and routing', async () => {
+    const { workflowPipelineInternals } = await import('./pipeline.js');
+    const { workflowComplexityFor } = workflowPipelineInternals;
+
+    assert.equal(workflowComplexityFor({
+        workflow: { nodes: [] },
+        plan: { selectedNodeKeys: ['action:email'], requirements: [{ id: 'req_1' }] }
+    }).id, 'simple');
+    assert.equal(workflowComplexityFor({
+        workflow: { nodes: Array.from({ length: 4 }, () => ({})) },
+        plan: { selectedNodeKeys: ['action:email'], requirements: [{ id: 'req_1' }] }
+    }).id, 'standard');
+    assert.equal(workflowComplexityFor({
+        workflow: existingWorkflow,
+        plan: { selectedNodeKeys: ['trigger:webhook', 'action:email', 'logic:approval'], requirements: [{ id: 'req_1' }, { id: 'req_2' }, { id: 'req_3' }], capabilities: ['owner_approval'] }
+    }).id, 'complex');
+    const complex = workflowComplexityFor({
+        workflow: { nodes: [] },
+        formSchema: { id: 'form_1' },
+        plan: { selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'], requirements: [{ id: 'req_1' }], resourceChanges: [{ type: 'create_google_spreadsheet' }] }
+    });
+    assert.deepEqual(complex, { id: 'complex', label: 'Complex workflow', providerAttempts: 3, buildAttempts: 4, maxProviderCalls: 16 });
+});
 
 /**
  * Build a provider object (with generateContent) that returns responses in
@@ -156,6 +189,26 @@ test('pipeline returns a reply directly from the planner without calling the wor
     assert.equal(result.type, 'reply');
     assert.match(result.message, /webhook/i);
     assert.equal(callCount, 1);
+});
+
+test('pipeline resolves an exact existing Google Sheet before the second planner pass', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let lookupCount = 0;
+    const provider = makeProvider([
+        { type: 'inspect_resource', resource: 'google-spreadsheets', query: 'Approved Event Registrations' },
+        { type: 'reply', message: 'I found Approved Event Registrations and can use it for the approved route.' }
+    ]);
+    const result = await generateWorkflowTurn({
+        request: 'Append approved registrations to Approved Event Registrations.',
+        currentWorkflow: existingWorkflow, provider, registry: makeRegistry(), resourceLoader,
+        resourceLookup: async () => {
+            lookupCount += 1;
+            return { options: [{ value: 'sheet_approved', label: 'Approved Event Registrations' }] };
+        }
+    });
+    assert.equal(result.type, 'reply');
+    assert.equal(lookupCount, 1);
+    assert.match(result.message, /found/i);
 });
 
 test('pipeline unwraps an exact form resource ID accidentally wrapped as provisioned', async () => {
@@ -431,6 +484,37 @@ test('pipeline compiles a direct_plan using at most 2 AI calls (planner + verifi
     assert.equal(progress.find(event => event.status === 'plan_ready')?.outcomeKind, 'proposal');
 });
 
+test('pipeline turns a confirmed run diagnosis into a reviewable direct proposal', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const workflow = {
+        revision: 1,
+        nodes: [
+            { id: 'trigger_1', type: 'trigger', subType: 'webhook', nodeKey: 'trigger:webhook', title: 'Receive webhook', config: {}, position: { x: 100, y: 150 } },
+            { id: 'sheets_1', type: 'action', subType: 'googleSheets', nodeKey: 'action:googleSheets', title: 'Append registrations', config: { operation: 'append', spreadsheetId: 'sheet_1', range: "'Sheet1'!A1", values: '[]' }, position: { x: 450, y: 150 } }
+        ], edges: [{ id: 'e1', source: 'trigger_1', target: 'sheets_1', sourceHandle: 'event', targetHandle: 'event' }]
+    };
+    const provider = makeProvider([
+        { type: 'diagnose_run', selector: 'referenced', runId: 'run_123', goal: 'explain_and_propose' },
+        { status: 'pass', issues: [] }
+    ]);
+    const diagnosis = {
+        run: { id: 'run_123', status: 'failed' }, finding: { summary: 'The configured tab is missing.' },
+        failedStep: { name: 'Append registrations' }, fix: { nodeId: 'sheets_1', range: "'Responses'!A1", summary: 'Use the Responses tab.' }
+    };
+    const result = await generateWorkflowTurn({
+        request: 'Diagnose run_123 and propose a safe fix.', currentWorkflow: workflow, provider,
+        registry: makeRegistry([triggerSpec, googleSheetsSpec]),
+        resourceLoader: async () => ({
+            'google-spreadsheets': { options: [{ value: 'sheet_1', label: 'Sheet' }] },
+            'google-sheet-ranges': { variants: { '{"spreadsheetId":"sheet_1"}': { options: [{ value: "'Responses'!A1", label: 'Responses' }] } } }
+        }),
+        runLoader: async () => diagnosis
+    });
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.diagnosis, diagnosis);
+    assert.equal(result.nodes.find(node => node.id === 'sheets_1').config.range, "'Responses'!A1");
+});
+
 // ---------------------------------------------------------------------------
 // Plan complete — calls worker and verifier, produces a proposal
 // ---------------------------------------------------------------------------
@@ -525,6 +609,40 @@ test('pipeline proposes a new Google Sheet without browsing an unavailable Googl
     assert.equal(result.readiness.status, 'setup_required');
     assert.equal(result.readiness.setupActions[0]?.type, 'open_connections');
     assert.ok(result.nodes.some(node => node.nodeKey === 'action:googleSheets'));
+});
+
+test('pipeline uses a runtime sheet for every approved form submission', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') return { text: JSON.stringify({
+                type: 'plan_complete', summary: 'Save approved responses.',
+                requirements: [{ id: 'req_approval', description: 'Ask the owner to approve every response.' }],
+                selectedNodeKeys: ['trigger:form-submission', 'logic:approval', 'action:googleSheets'], capabilities: ['owner_approval']
+            }) };
+            if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') return { text: JSON.stringify({ operations: [
+                { op: 'create_node', node: { ref: 'approval', nodeKey: 'logic:approval', title: 'Review required', config: {} } },
+                { op: 'create_node', node: { ref: 'create', nodeKey: 'action:googleSheetsCreate', title: 'Create response sheet', config: {} } },
+                { op: 'create_node', node: { ref: 'append', nodeKey: 'action:googleSheets', title: 'Append approved response', config: { operation: 'append', range: "'Responses'!A1", values: [['wrong']] } } },
+                { op: 'connect', from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'approval', handle: 'event' } },
+                { op: 'connect', from: { nodeRef: 'approval', handle: 'approved' }, to: { nodeRef: 'create', handle: 'event' } },
+                { op: 'connect', from: { nodeRef: 'create', handle: 'done' }, to: { nodeRef: 'append', handle: 'event' } }
+            ] }) };
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+    const result = await generateWorkflowTurn({
+        request: 'When the form receives a response, ask my approval and if approved append it into a new sheet for each submission.',
+        currentWorkflow: { nodes: [{ id: 'form', type: 'trigger', subType: 'form-submission', nodeKey: 'trigger:form-submission', title: 'Form', config: {}, position: { x: 0, y: 0 } }], edges: [] },
+        formSchema: { title: 'Event Registration', fields: [{ id: 'name', label: 'Name' }] },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, approvalSpec, googleSheetsCreateSpec, googleSheetsSpec]), resourceLoader
+    });
+    const creator = result.nodes.find(node => node.subType === 'googleSheetsCreate');
+    const append = result.nodes.find(node => node.subType === 'googleSheets');
+    assert.equal(result.resourceChanges.length, 0);
+    assert.equal(append.config.spreadsheetId.nodeId, creator.id);
+    assert.deepEqual(creator.config.headers, [['Submitted At', 'Response ID', 'Name']]);
 });
 
 // ---------------------------------------------------------------------------

@@ -128,7 +128,7 @@ export const getExecutionLog = asyncHandler(async (req, res) => {
         include: [{
             model: Workflow,
             as: 'workflow',
-            attributes: ['id', 'name'],
+            attributes: ['id', 'name', 'nodes'],
             required: false
         }]
     });
@@ -137,5 +137,22 @@ export const getExecutionLog = asyncHandler(async (req, res) => {
         return res.status(404).json({ message: 'Execution log not found' });
     }
 
-    res.json(log);
+    const value = log.toJSON();
+    const nodes = value.workflow?.nodes || [];
+    const linkedSteps = (value.steps || []).map(step => {
+        const node = nodes.find(candidate => candidate.id === step.nodeId)
+            || nodes.find(candidate => candidate.title && candidate.title === step.name)
+            || null;
+        return {
+            ...step,
+            links: {
+                workflowId: value.workflowId,
+                ...(node?.subType === 'form-submission' && node.config?.formId ? { formId: node.config.formId } : {})
+            }
+        };
+    });
+    // Keep the endpoint intentionally narrow: the client only needs stable
+    // navigation IDs, never the workflow's full node configuration.
+    if (value.workflow) delete value.workflow.nodes;
+    res.json({ ...value, steps: linkedSteps });
 });

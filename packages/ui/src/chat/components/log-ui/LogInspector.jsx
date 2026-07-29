@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Check, CheckCircle2, Circle, Clock3, Copy, X, XCircle } from 'lucide-react';
+import { Check, CheckCircle2, Circle, Clock3, Copy, FileText, GitBranch, X, XCircle } from 'lucide-react';
 import { useExecutionLog } from '../../../api/hooks/useLogs.js';
 import { formatDuration, formatLogDate, getStatusClasses, getWorkflowName, isSuccessStatus, isWaitingStatus } from './logFormatters.js';
 import { LogInspectorSkeleton } from './LogsSkeleton.jsx';
+import { navigateTo } from '../../../utils/router.js';
 
 const LogInspector = ({ logId, isOpen = true, onClose }) => {
     const [hasCopied, setHasCopied] = useState(false);
@@ -102,7 +103,11 @@ const LogInspector = ({ logId, isOpen = true, onClose }) => {
                                                     {isSuccess ? <CheckCircle2 size={16} aria-hidden="true" /> : isFailed ? <XCircle size={16} aria-hidden="true" /> : <Circle size={12} aria-hidden="true" />}
                                                 </div>
                                                 <div className="flex items-center justify-between gap-2 pl-2">
-                                                    <span className={`text-xs sm:text-sm font-medium ${step.status === 'skipped' ? 'text-slate-400' : 'text-slate-800'}`}>{step.name}</span>
+                                                    <div className="flex min-w-0 items-center gap-1.5">
+                                                        {step.links?.workflowId ? <button type="button" onClick={() => navigateTo({ page: 'automation-build', automationId: step.links.workflowId, editor: 'visual' })} className={`truncate text-left text-xs sm:text-sm font-medium hover:text-indigo-600 hover:underline ${step.status === 'skipped' ? 'text-slate-400' : 'text-slate-800'}`} title="Open workflow">{step.name}</button> : <span className={`truncate text-xs sm:text-sm font-medium ${step.status === 'skipped' ? 'text-slate-400' : 'text-slate-800'}`}>{step.name}</span>}
+                                                        {step.links?.workflowId && <button type="button" onClick={() => navigateTo({ page: 'automation-build', automationId: step.links.workflowId, editor: 'visual' })} title="Open workflow" aria-label={`Open workflow for ${step.name}`} className="shrink-0 text-slate-400 hover:text-indigo-600"><GitBranch size={13} /></button>}
+                                                        {step.links?.formId && <button type="button" onClick={() => navigateTo({ page: 'form-detail', formId: step.links.formId, section: 'build' })} title="Open form" aria-label={`Open form for ${step.name}`} className="shrink-0 text-slate-400 hover:text-indigo-600"><FileText size={13} /></button>}
+                                                    </div>
                                                     <span className="text-xs font-medium text-slate-400 shrink-0">{step.time}</span>
                                                 </div>
                                                 <p className="text-xs font-medium text-slate-500 pl-2 leading-relaxed break-words">{step.details}</p>

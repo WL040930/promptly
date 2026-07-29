@@ -2,9 +2,9 @@ const MAX_TEXT = 4000;
 const MAX_REQUIREMENTS = 30;
 const MAX_OPERATIONS = 50;
 const MAX_VERIFIER_ISSUES = 3;
-const INPUT_TYPES = new Set(['single_choice', 'multiple_choice', 'text', 'textarea']);
-const PLANNER_TYPES = new Set(['reply', 'message', 'inspect_form', 'direct_plan', 'plan_complete']);
-const CAPABILITIES = new Set(['respondent_confirmation', 'owner_approval']);
+const INPUT_TYPES = new Set(['single_choice', 'multiple_choice', 'text', 'textarea', 'resource_choice']);
+const PLANNER_TYPES = new Set(['reply', 'message', 'inspect_form', 'inspect_resource', 'diagnose_run', 'direct_plan', 'plan_complete']);
+const CAPABILITIES = new Set(['respondent_confirmation', 'owner_approval', 'per_submission_spreadsheet']);
 const RESOURCE_CHANGE_TYPES = new Set(['create_google_spreadsheet']);
 
 const issue = (code, path, message) => ({ code, path, message });
@@ -63,6 +63,16 @@ const validateInputs = inputs => {
                 input.options.forEach((option, optionIndex) => issues.push(...textIssues(option, `${path}.options[${optionIndex}]`, { required: true, max: 500 })));
             }
         }
+        if (input.type === 'resource_choice') {
+            if (!Array.isArray(input.options) || input.options.length === 0) issues.push(issue('INVALID_RESOURCE_CHOICES', `${path}.options`, 'Resource choices require options.'));
+            else input.options.forEach((option, optionIndex) => {
+                if (!isObject(option)) issues.push(issue('INVALID_RESOURCE_CHOICE', `${path}.options[${optionIndex}]`, 'Resource choice must be an object.'));
+                else {
+                    issues.push(...textIssues(option.id, `${path}.options[${optionIndex}].id`, { required: true, max: 200 }));
+                    issues.push(...textIssues(option.name, `${path}.options[${optionIndex}].name`, { required: true, max: 500 }));
+                }
+            });
+        }
     });
     return issues;
 };
@@ -114,6 +124,19 @@ export const validateWorkflowPlannerResult = result => {
     if (!PLANNER_TYPES.has(result.type)) issues.push(issue('INVALID_PLANNER_TYPE', 'type', 'Unsupported planner outcome.'));
     if (result.type === 'reply') issues.push(...textIssues(result.message, 'message', { required: true }));
     if (result.type === 'inspect_form') issues.push(...textIssues(result.formId, 'formId', { required: true, max: 150 }));
+    if (result.type === 'inspect_resource') {
+        if (result.resource !== 'google-spreadsheets') issues.push(issue('INVALID_RESOURCE_LOOKUP', 'resource', 'Only Google Sheets can be inspected.'));
+        issues.push(...textIssues(result.query, 'query', { required: true, max: 300 }));
+    }
+    if (result.type === 'diagnose_run') {
+        if (!['referenced', 'latest_failed', 'latest'].includes(result.selector)) {
+            issues.push(issue('INVALID_RUN_SELECTOR', 'selector', 'Run selector must be referenced, latest_failed, or latest.'));
+        }
+        if (result.selector === 'referenced') issues.push(...textIssues(result.runId, 'runId', { required: true, max: 150 }));
+        if (result.goal !== undefined && !['explain', 'explain_and_propose'].includes(result.goal)) {
+            issues.push(issue('INVALID_DIAGNOSIS_GOAL', 'goal', 'Diagnosis goal must be explain or explain_and_propose.'));
+        }
+    }
     if (result.type === 'message') {
         issues.push(...textIssues(result.message, 'message', { required: true }));
         issues.push(...validateInputs(result.inputs));

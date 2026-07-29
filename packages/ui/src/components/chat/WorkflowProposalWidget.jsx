@@ -14,7 +14,7 @@ const toneFor = type => ({
 
 const markerFor = type => ({ add: '+', remove: '−', update: '~', connect: '→' }[type] || '•');
 
-export default function WorkflowProposalWidget({ proposal, status, tokenUsage, onIgnore, onPreview, onSetupAction, onRegenerate, rejecting }) {
+export default function WorkflowProposalWidget({ proposal, status, summary, tokenUsage, onIgnore, onPreview, onSetupAction, onRegenerate, rejecting }) {
     const isAccepted = isAcceptedProposalStatus(status);
     const isRejected = isRejectedProposalStatus(status);
     const isStale = isStaleProposalStatus(status);
@@ -24,6 +24,7 @@ export default function WorkflowProposalWidget({ proposal, status, tokenUsage, o
     const setupActions = presentation.setupActions || [];
     const assumptions = presentation.assumptions || [];
     const flow = presentation.flow || [];
+    const diagnosis = presentation.diagnosis || proposal?.diagnosis || null;
     const [showAppliedDetails, setShowAppliedDetails] = useState(false);
 
     if (isAccepted) {
@@ -44,7 +45,9 @@ export default function WorkflowProposalWidget({ proposal, status, tokenUsage, o
                     : isStale ? <Status text={normalizeProposalStatus(status) === 'superseded' ? 'A newer proposal replaced this one.' : 'This proposal is outdated. Generate a new one.'} tone="warning" />
                         : <div className="flex items-center gap-2"><Button variant="ghost" size="sm" className="flex-1" onClick={onIgnore} isLoading={rejecting} loadingText="Ignoring…">Ignore</Button>{proposal?.verification?.status === 'unverified' && <Button variant="outline" size="sm" className="flex-1" onClick={onRegenerate}>Generate new</Button>}<Button variant="primary" size="sm" className="flex-1" onClick={onPreview}>Preview changes</Button></div>
         }>
-                <p className="text-sm leading-6 text-slate-700">{presentation.outcome || 'Review the proposed workflow changes.'}</p>
+                <p className="text-sm leading-6 text-slate-700">{summary || presentation.outcome || 'Review the proposed workflow changes.'}</p>
+
+                {diagnosis && <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2.5 text-xs text-slate-700"><p className="font-bold uppercase tracking-[0.12em] text-indigo-700">Run diagnosis</p><p className="mt-1 font-semibold text-slate-800">{diagnosis.finding?.summary}</p>{diagnosis.failedStep?.name && <p className="mt-1 text-slate-500">Failed step: {diagnosis.failedStep.name}</p>}</div>}
 
                 {flow.length > 0 && (
                     <div>

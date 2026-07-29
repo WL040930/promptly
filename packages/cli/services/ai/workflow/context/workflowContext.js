@@ -107,6 +107,8 @@ export const buildWorkflowPlannerContext = ({
     resourceContext = null,
     formSchema = null,
     inspectedFormSchema = null,
+    inspectedRun = null,
+    inspectedResource = null,
     formLookupUsed = false,
     forceDecision = false
 }) => {
@@ -136,6 +138,12 @@ export const buildWorkflowPlannerContext = ({
     'Inspected Form Context:',
     inspectedFormSchema ? JSON.stringify(projectFormResourceContext(inspectedFormSchema)) : '(none)',
     formLookupUsed ? 'A form lookup was already used for this request. Do not request another lookup.' : '',
+    '',
+    'Inspected Run Diagnostic Context:',
+    inspectedRun ? JSON.stringify(compactValue(inspectedRun)) : '(none)',
+    '',
+    'Inspected Account Resource:',
+    inspectedResource ? JSON.stringify(compactValue(inspectedResource)) : '(none)',
     '',
     'Available Owned Resources:',
     userContext ? JSON.stringify(compactValue(userContext)) : '(none)',
@@ -172,6 +180,7 @@ export const buildWorkflowWorkerContext = ({
     capabilities,
     resourceChanges = [],
     resourceContext,
+    resourceSelections = {},
     formSchema = null,
     priorResponse = null,
     repairIssues = []
@@ -205,6 +214,8 @@ export const buildWorkflowWorkerContext = ({
     '',
     'Account Resources:',
     JSON.stringify(compactResources(resourceContext)),
+    'Resolved Account Selections:',
+    JSON.stringify(compactValue(resourceSelections)),
     ...(priorResponse ? [
         '',
         'Previous Invalid Operations:',

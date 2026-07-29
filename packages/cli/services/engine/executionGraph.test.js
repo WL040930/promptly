@@ -22,6 +22,22 @@ test('selectOutgoingEdges follows a logic routing handle', () => {
     assert.deepEqual(selectOutgoingEdges({ type: 'action' }, {}, edges), edges);
 });
 
+test('a failed action only continues into an explicit Catch Error step', () => {
+    const edges = [
+        { id: 'email', target: 'email_1' },
+        { id: 'recovery', target: 'catch_1' }
+    ];
+    const nodes = new Map([
+        ['email_1', { subType: 'email' }],
+        ['catch_1', { subType: 'catchError' }]
+    ]);
+
+    assert.deepEqual(
+        selectOutgoingEdges({ type: 'action' }, { success: false }, edges, nodes),
+        [edges[1]]
+    );
+});
+
 test('mergeExecutionResult exposes canonical node output and persisted variables', () => {
     const context = {};
     mergeExecutionResult(context, { id: 'set_1', title: 'Set Value', type: 'logic', subType: 'setVariable' }, {
