@@ -9,6 +9,13 @@ export const normalizeWorkflowCommand = ({ command, text } = {}) => {
     if (command?.type === 'decide_for_me') {
         return { type: 'decide_for_me', clarificationId: command.clarificationId || null };
     }
+    if (command?.type === 'submit_clarification') {
+        return {
+            type: 'submit_clarification',
+            text: textOf(command.text),
+            state: command.state && typeof command.state === 'object' ? command.state : {}
+        };
+    }
     const input = typeof text === 'string' && text.trim()
         ? text.trim()
         : command?.type === 'submit_text'
@@ -28,13 +35,16 @@ export const resolveWorkflowTurnContext = ({
     clarificationMode = null
 } = {}) => {
     const delegated = command?.type === 'decide_for_me';
+    const clarified = command?.type === 'submit_clarification';
     const rawText = delegated ? '' : textOf(command?.text);
     const sourceText = activeWork?.sourceText || rawText;
     const correction = CORRECTION_PATTERN.test(rawText);
     return {
         command: delegated
             ? { type: 'decide_for_me', clarificationId: command.clarificationId || clarification?.id || null }
-            : { type: 'submit_text', text: rawText },
+            : clarified
+                ? { type: 'submit_clarification', text: rawText, state: command.state || {} }
+                : { type: 'submit_text', text: rawText },
         intent: {
             sourceText: correction ? rawText : sourceText,
             latestText: rawText,
@@ -48,4 +58,3 @@ export const resolveWorkflowTurnContext = ({
         }
     };
 };
-

@@ -28,7 +28,6 @@ const FormAIAssistant = ({ form }) => {
         handleRecoveryAction,
         acceptingProposalId,
         rejectingProposalId,
-        progressLabel,
         clearChat,
         isClearingChat
     } = useFormAIAssistant(form);
@@ -84,7 +83,6 @@ const FormAIAssistant = ({ form }) => {
                 onRecoveryAction={handleRecoveryAction}
                 acceptingProposalId={acceptingProposalId}
                 rejectingProposalId={rejectingProposalId}
-                progressLabel={progressLabel}
                 inputAccessory={<ClarificationModeSelect value={clarificationMode} onChange={setClarificationMode} />}
                 placeholder="Ask AI to build or modify form..."
                 suggestions={SUGGESTIONS}

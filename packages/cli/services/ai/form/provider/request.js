@@ -94,7 +94,7 @@ const normalizeProviderError = (label, error) => {
     return error;
 };
 
-export const requestJson = async ({ provider, contents, systemInstruction, label, budget }) => {
+export const requestJson = async ({ provider, contents, systemInstruction, label, budget, onActivity = null }) => {
     const task = getFormTask(label);
     try {
         const response = await ai.run({
@@ -103,7 +103,8 @@ export const requestJson = async ({ provider, contents, systemInstruction, label
             systemInstruction,
             operation: operationName(label),
             providerOverride: provider,
-            budget
+            budget,
+            onActivity
         });
         return { value: response.json, response, rawText: response.text };
     } catch (error) {

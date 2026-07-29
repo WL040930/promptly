@@ -1,7 +1,6 @@
 import { lazy, Suspense, useState } from 'react';
 import GenericChatWidget from '../../../components/chat/GenericChatWidget.jsx';
 import ClarificationModeSelect from '../../../components/chat/ClarificationModeSelect.jsx';
-import { getAgentProgressLabel } from '../../../../../shared/agentProgress.js';
 import { useWorkflowAIAssistant } from '../../hooks/useWorkflowAIAssistant.js';
 
 const WorkflowDiffPreviewModal = lazy(() => import('../modals/WorkflowDiffPreviewModal.jsx'));
@@ -10,7 +9,6 @@ const SUGGESTIONS = ['Add an approval step', 'Send an email after submission', '
 
 export default function WorkflowAIAssistant({ workflow, onBeforeSend, initialPrompt = '' }) {
     const assistant = useWorkflowAIAssistant(workflow, { onBeforeSend, initialPrompt });
-    const progressLabel = getAgentProgressLabel({ message: assistant.progressLabel }) || assistant.progressLabel;
     const [previewProposal, setPreviewProposal] = useState(null);
     return (
         <div className="flex min-h-0 h-full flex-col bg-white relative overflow-hidden">
@@ -33,7 +31,6 @@ export default function WorkflowAIAssistant({ workflow, onBeforeSend, initialPro
                 onRecoveryAction={assistant.handleRecoveryAction}
                 acceptingProposalId={assistant.acceptingProposalId}
                 rejectingProposalId={assistant.rejectingProposalId}
-                progressLabel={progressLabel}
                 inputAccessory={<ClarificationModeSelect value={assistant.clarificationMode} onChange={assistant.updateClarificationMode} />}
                 placeholder="Describe a change to this workflow…"
                 suggestions={SUGGESTIONS}

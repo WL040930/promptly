@@ -43,7 +43,7 @@ export const useFormAIAssistant = (form) => {
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
     const [isSubmittingTurn, setIsSubmittingTurn] = useState(false);
-    const { isTyping, progressLabel, setStreamState, clearStreamState } = useAIStream(form?.id);
+    const { isTyping, setStreamState, clearStreamState } = useAIStream(form?.id);
 
     const queryKey = ['formChat', form?.id];
 
@@ -85,7 +85,6 @@ export const useFormAIAssistant = (form) => {
 
     const assistantState = data?.pages?.[0]?.state || null;
     const serverProcessing = assistantState?.phase === 'processing';
-    const recoveredProgressLabel = assistantState?.progress?.message || 'Working on your form…';
 
     useEffect(() => {
         if (Number.isInteger(assistantState?.version)) setAIStateVersion(assistantState.version);
@@ -98,28 +97,42 @@ export const useFormAIAssistant = (form) => {
     }, [form?.id, serverProcessing, refetchHistory]);
 
     useEffect(() => {
-        if (serverProcessing && (!isTyping || progressLabel !== recoveredProgressLabel)) {
-            setStreamState({ isTyping: true, progressLabel: recoveredProgressLabel });
+        if (serverProcessing && !isTyping) {
+            setStreamState({ isTyping: true });
         } else if (!serverProcessing && !isSubmittingTurn && isTyping) {
             clearStreamState();
         }
-    }, [serverProcessing, recoveredProgressLabel, isSubmittingTurn, isTyping, progressLabel, setStreamState, clearStreamState]);
+    }, [serverProcessing, isSubmittingTurn, isTyping, setStreamState, clearStreamState]);
 
     const sendMessageMutation = useMutation({
-        mutationFn: async ({ text, command }) => {
+        mutationFn: async ({ text, command, optimisticWorkId, requestId }) => {
             const result = await submitFormAITurnStream(form.id, command, clarificationMode, (progress) => {
-                setStreamState({ isTyping: true, progressLabel: progress.message || 'Working on your form…' });
-            }, { expectedStateVersion: aiStateVersion });
+                setStreamState({ isTyping: true });
+                if (progress.work) queryClient.setQueryData(queryKey, old => old ? {
+                    ...old,
+                    pages: old.pages.map((page, index) => index === 0 ? {
+                        ...page,
+                        messages: page.messages.map(message => message.id === optimisticWorkId
+                            ? { ...message, payload: { ...(message.payload || {}), work: progress.work } }
+                            : message)
+                    } : page)
+                } : old);
+            }, { expectedStateVersion: aiStateVersion, requestId });
             return result;
         },
-        onMutate: async ({ text }) => {
+        onMutate: async ({ text, optimisticWorkId, requestId }) => {
             setIsSubmittingTurn(true);
-            setStreamState({ isTyping: true, progressLabel: 'Thinking...' });
+            setStreamState({ isTyping: true });
             setInput('');
             await queryClient.cancelQueries({ queryKey });
 
             const previousData = queryClient.getQueryData(queryKey);
             const optimisticUserId = Date.now().toString();
+            const startedAt = new Date().toISOString();
+            const optimisticWork = {
+                id: optimisticWorkId, sender: 'bot', kind: 'assistant_work', text: 'Drafting your form', isOptimistic: true,
+                payload: { work: { requestId, surface: 'form', status: 'drafting', title: text, currentPhase: 'understand', currentActivityId: 'preparing', startedAt, updatedAt: startedAt, activities: [{ id: 'preparing', phase: 'understand', label: 'Preparing the request', detail: 'Setting up the context for this change', status: 'active', attempt: 1, startedAt }] } }
+            };
 
             // Optimistically update the UI by appending the message to the first page (since it represents the latest chunk)
             queryClient.setQueryData(queryKey, (old) => {
@@ -127,12 +140,12 @@ export const useFormAIAssistant = (form) => {
                 const newPages = [...old.pages];
                 newPages[0] = {
                     ...newPages[0],
-                    messages: [...newPages[0].messages, { id: optimisticUserId, sender: 'user', text, isOptimistic: true }]
+                    messages: [...newPages[0].messages, { id: optimisticUserId, sender: 'user', text, isOptimistic: true }, optimisticWork]
                 };
                 return { ...old, pages: newPages };
             });
 
-            return { previousData, optimisticUserId };
+            return { previousData, optimisticUserId, optimisticWorkId };
         },
         onError: async (err, variables, context) => {
             setIsSubmittingTurn(false);
@@ -180,7 +193,8 @@ export const useFormAIAssistant = (form) => {
                 const newPages = [...old.pages];
                 // Remove optimistic message and any existing copies of the userMsg/botMsg that might have been fetched from DB
                 let currentMessages = newPages[0].messages.filter(m => 
-                    m.id !== context.optimisticUserId && 
+                    m.id !== context.optimisticUserId &&
+                    m.id !== context.optimisticWorkId &&
                     m.id !== data.userMsg.id &&
                     m.id !== data.botMsg.id
                 );
@@ -244,7 +258,8 @@ export const useFormAIAssistant = (form) => {
         }
 
         if (!text.trim() || isTyping || isSubmittingTurn || serverProcessing || !form?.id) return;
-        sendMessageMutation.mutate({ text, command: nextCommand });
+        const requestId = globalThis.crypto?.randomUUID?.() || `form_turn_${Date.now()}`;
+        sendMessageMutation.mutate({ text, command: nextCommand, requestId, optimisticWorkId: `optimistic_work_${requestId}` });
     }, [form?.id, isTyping, isSubmittingTurn, serverProcessing, sendMessageMutation]);
 
     const handleRecoveryAction = useCallback((action, message, previousRequest = '') => {
@@ -370,7 +385,6 @@ export const useFormAIAssistant = (form) => {
         handleRecoveryAction,
         acceptingProposalId,
         rejectingProposalId,
-        progressLabel: isTyping ? progressLabel : (serverProcessing ? recoveredProgressLabel : progressLabel),
         clearChat,
         isClearingChat: clearChatMutation.isPending,
         resetContext: () => form?.id ? resetContextMutation.mutateAsync() : Promise.resolve(),

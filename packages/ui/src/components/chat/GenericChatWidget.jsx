@@ -157,27 +157,6 @@ export default function GenericChatWidget({
                         />
                     ))
                 )}
-
-                {isTyping && (
-                    <div className="flex w-full justify-start">
-                        <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-4 mr-2.5 shadow-sm border border-indigo-200/50">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="14" x="3" y="8" rx="2"/><path d="M12 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 5v3"/><path d="M8 14h.01"/><path d="M16 14h.01"/><path d="M9 19h6"/></svg>
-                        </div>
-                        <div className="flex flex-col gap-1 items-start max-w-[85%]">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
-                                Promptly AI
-                            </span>
-                            <div className="bg-white border border-slate-200/60 rounded-2xl rounded-tl-none p-3.5 shadow-sm flex items-center gap-2 h-12">
-                                <span className="flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></span>
-                                    <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
-                                    <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></span>
-                                </span>
-                                {progressLabel && <span className="text-xs text-slate-500 font-medium ml-1">{progressLabel}…</span>}
-                            </div>
-                        </div>
-                    </div>
-                )}
                 </div>
 
             </div>

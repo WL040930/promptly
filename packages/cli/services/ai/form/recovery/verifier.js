@@ -9,13 +9,14 @@ import { repairVerifier } from './repairs.js';
 import { addTokenUsage } from '../shared/usage.js';
 import { MAX_VERIFIER_ATTEMPTS } from '../shared/constants.js';
 
-const verifyProposal = async ({ provider, requirements, patches, memoryUpdate, tokenUsage, budget, cardinality }) => {
+const verifyProposal = async ({ provider, requirements, patches, memoryUpdate, tokenUsage, budget, cardinality, onActivity = null }) => {
     const verification = await requestJson({
         provider,
         contents: [{ role: 'user', parts: [{ text: buildVerifierContext({ requirements, patches, memoryUpdate, cardinality }) }] }],
         systemInstruction: verifierInstruction,
         label: 'verifier',
-        budget
+        budget,
+        onActivity
     });
     return {
         ...verification,
@@ -31,6 +32,7 @@ export const verifyProposalWithRecovery = async ({
     cardinality,
     tokenUsage,
     onProgress,
+    onActivity = null,
     budget
 }) => {
     let verifierCall;
@@ -46,7 +48,8 @@ export const verifyProposalWithRecovery = async ({
                 memoryUpdate,
                 cardinality,
                 tokenUsage: totalTokenUsage,
-                budget
+                budget,
+                onActivity
             });
         } else {
             if (onProgress) onProgress({ status: 'repairing', message: 'Correcting the verification response...' });
@@ -59,7 +62,8 @@ export const verifyProposalWithRecovery = async ({
                 rawText: verifierCall.rawText,
                 issues: verificationIssues,
                 tokenUsage: totalTokenUsage,
-                budget
+                budget,
+                onActivity
             });
         }
 

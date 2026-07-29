@@ -11,6 +11,7 @@ import { resolveFormTurnContext, detectFormIntentScope } from './domain/formTurn
 import { supersedePendingFormChatProposals } from '../../proposalLifecycle.js';
 import { applyResourceContextDelta, buildResourceIdentity, resourceContextForPrompt } from '../../assistant/resourceContext.js';
 import { buildFormPresentation } from '../../assistant/proposalPresentation.js';
+import { advanceAssistantWork, createAssistantWork, finishAssistantWork } from '../../../../shared/assistantWork.js';
 
 const IN_FLIGHT_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -21,6 +22,12 @@ const asJson = value => (value && typeof value.toJSON === 'function' ? value.toJ
 const progressSnapshot = (progress, now = () => new Date()) => ({
     status: String(progress?.status || 'working').trim() || 'working',
     message: String(progress?.message || 'Working on your form…').trim() || 'Working on your form…',
+    ...(typeof progress?.phase === 'string' ? { phase: progress.phase } : {}),
+    ...(typeof progress?.label === 'string' ? { label: progress.label } : {}),
+    ...(typeof progress?.detail === 'string' ? { detail: progress.detail } : {}),
+    ...(typeof progress?.id === 'string' ? { id: progress.id } : {}),
+    ...(typeof progress?.type === 'string' ? { type: progress.type } : {}),
+    ...(progress?.artifact && typeof progress.artifact === 'object' ? { artifact: progress.artifact } : {}),
     updatedAt: now().toISOString()
 });
 
@@ -154,7 +161,7 @@ export const createFormAssistant = ({
                 ? await models.AssistantMessage.findOne({ where: { id: state.activeProposalMessageId, threadId: state.threadId }, transaction })
                 : null;
 
-            if (state.openClarification && command.type === 'submit_clarification' && command.state) {
+            if (state.openClarification && ['submit_clarification', 'decide_for_me'].includes(command.type)) {
                 const clarificationMessage = await models.AssistantMessage.findOne({
                     where: { threadId: state.threadId, sender: 'bot', kind: 'clarification' },
                     order: [['createdAt', 'DESC']],
@@ -162,7 +169,14 @@ export const createFormAssistant = ({
                 });
                 if (clarificationMessage) {
                     await clarificationMessage.update({
-                        payload: { ...clarificationMessage.payload, selectedState: command.state }
+                        payload: {
+                            ...clarificationMessage.payload,
+                            ...(command.type === 'submit_clarification' ? { selectedState: command.state || {} } : {}),
+                            resolution: {
+                                type: command.type === 'decide_for_me' ? 'defaulted' : 'answered',
+                                answeredAt: new Date().toISOString()
+                            }
+                        }
                     }, { transaction });
                 }
             }
@@ -182,6 +196,14 @@ export const createFormAssistant = ({
                 sender: 'user',
                 text: command.type === 'decide_for_me' ? 'Use sensible defaults.' : command.text
             }, { transaction });
+            const workMessage = await models.AssistantMessage.create({
+                id: idFactory('fmsg'), threadId: state.threadId, sender: 'bot', text: 'Drafting your form', kind: 'assistant_work',
+                payload: { work: createAssistantWork({
+                    requestId, surface: 'form',
+                    title: command.type === 'decide_for_me' ? 'Using sensible defaults' : command.text,
+                    now: now()
+                }) }
+            }, { transaction });
 
             await state.update({
                 version: state.version + 1,
@@ -192,7 +214,7 @@ export const createFormAssistant = ({
                 progress: progressSnapshot({ status: 'starting', message: 'Preparing form changes…' }, now)
             }, { transaction });
 
-            reservation = { form, state, pending, context, userMessage, resourceContext: resourceContextForPrompt({
+            reservation = { form, state, pending, context, userMessage, workMessage, resourceContext: resourceContextForPrompt({
                 identity: buildResourceIdentity({ surface: 'form', resource: asJson(form) }),
                 context: state.context
             }) };
@@ -206,7 +228,11 @@ export const createFormAssistant = ({
             progressChain = progressChain.then(() => db.transaction(async transaction => {
                 const freshState = await loadState(formId, transaction, userId);
                 if (freshState.inFlightRequestId !== requestId) return;
+                const workMessage = await models.AssistantMessage.findOne({ where: { id: reservation.workMessage.id, threadId: freshState.threadId }, transaction });
+                const work = advanceAssistantWork(workMessage?.payload?.work, snapshot, now());
+                if (workMessage) await workMessage.update({ payload: { ...(workMessage.payload || {}), work } }, { transaction });
                 await freshState.update({ phase: 'processing', progress: snapshot }, { transaction });
+                onProgress?.({ ...snapshot, work, messageId: workMessage?.id || null });
             }));
         };
         try {
@@ -216,7 +242,7 @@ export const createFormAssistant = ({
                 limit: FORM_AI_HISTORY_LIMIT + 2
             });
             const history = rawHistory.reverse()
-                .filter(message => message.id !== userMessage.id)
+                .filter(message => ![userMessage.id, reservation.workMessage.id].includes(message.id))
                 .map(asJson);
             const pendingForAI = context.pendingProposal.mode === 'include'
                 ? asJson(pending)?.payload || null
@@ -253,13 +279,16 @@ export const createFormAssistant = ({
                         threadId: state.threadId
                     });
                 }
-                const assistantMessage = await models.AssistantMessage.create({
-                    id: idFactory('fmsg'),
-                    threadId: state.threadId,
-                    sender: 'bot',
+                const assistantMessage = await models.AssistantMessage.findOne({ where: { id: reservation.workMessage.id, threadId: state.threadId }, transaction });
+                const kind = messageData.proposal ? 'form_proposal' : messageData.options ? 'clarification' : 'text';
+                const work = finishAssistantWork(assistantMessage?.payload?.work, {
+                    status: messageData.proposal ? 'awaiting_review' : messageData.options ? 'needs_input' : 'completed',
+                    detail: messageData.text
+                }, now());
+                await assistantMessage.update({
                     text: messageData.text,
-                    kind: messageData.proposal ? 'form_proposal' : messageData.options ? 'clarification' : 'text',
-                    payload: messageData.proposal || messageData.options || null,
+                    kind,
+                    payload: { ...(messageData.proposal || messageData.options || {}), work },
                     proposalStatus: messageData.proposal ? 'pending' : null,
                     tokenUsage: messageData.tokenUsage
                 }, { transaction });
@@ -291,17 +320,18 @@ export const createFormAssistant = ({
             const safeMessage = recovery.summary;
             let response;
             await db.transaction(async transaction => {
-                const assistantMessage = await models.AssistantMessage.create({
-                    id: idFactory('fmsg'),
-                    threadId: state.threadId,
-                    sender: 'bot',
+                const assistantMessage = await models.AssistantMessage.findOne({ where: { id: reservation.workMessage.id, threadId: state.threadId }, transaction });
+                const errorMetadata = {
+                    code: error.code || 'FORM_AI_GENERATION_FAILED',
+                    retryable: recovery.retryable,
+                    recovery
+                };
+                await assistantMessage.update({
                     text: safeMessage,
+                    kind: 'error',
+                    payload: { ...errorMetadata, work: finishAssistantWork(assistantMessage?.payload?.work, { status: 'failed', detail: safeMessage }, now()) },
                     isError: true,
-                    errorMetadata: {
-                        code: error.code || 'FORM_AI_GENERATION_FAILED',
-                        retryable: recovery.retryable,
-                        recovery
-                    }
+                    errorMetadata
                 }, { transaction });
                 const freshState = await loadState(formId, transaction, form.userId);
                 await freshState.update({
@@ -404,7 +434,10 @@ export const createFormAssistant = ({
 
             const proposal = message.payload || {};
             if (action === 'reject' || action === 'ignore') {
-                await message.update({ payload: proposal, proposalStatus: 'rejected' }, { transaction });
+                await message.update({
+                    payload: { ...proposal, work: finishAssistantWork(proposal.work, { status: 'ignored', detail: 'Proposal ignored' }, now()) },
+                    proposalStatus: 'rejected'
+                }, { transaction });
                 if (state?.activeProposalMessageId === message.id) {
                     await state.update({
                         phase: 'idle',
@@ -448,7 +481,10 @@ export const createFormAssistant = ({
 
             const expectedRevision = baseFormUpdatedAt || proposal.baseFormUpdatedAt;
             if (expectedRevision && new Date(form.updatedAt).getTime() !== new Date(expectedRevision).getTime()) {
-                await message.update({ payload: { ...proposal, staleReason: 'FORM_VERSION_CHANGED' }, proposalStatus: 'stale' }, { transaction });
+                await message.update({
+                    payload: { ...proposal, staleReason: 'FORM_VERSION_CHANGED', work: finishAssistantWork(proposal.work, { status: 'failed', detail: 'The form changed before this proposal could be applied.' }, now()) },
+                    proposalStatus: 'stale'
+                }, { transaction });
                 if (state?.activeProposalMessageId === message.id) {
                     await state.update({
                         phase: 'idle',
@@ -491,6 +527,7 @@ export const createFormAssistant = ({
                 payload: {
                     ...proposal,
                     schema: applied.schema,
+                    work: finishAssistantWork(proposal.work, { status: 'applied', detail: 'Changes applied to the form.' }, now()),
                     patches: applied.patches,
                     selectedPatchIds: requestedPatchIds
                 },

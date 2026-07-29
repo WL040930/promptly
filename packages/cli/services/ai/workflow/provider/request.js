@@ -33,7 +33,7 @@ const normalizeProviderError = (label, error) => {
     return error;
 };
 
-export const requestWorkflowJson = async ({ label, prompt, systemInstruction, provider = null, budget, signal = null }) => {
+export const requestWorkflowJson = async ({ label, prompt, systemInstruction, provider = null, budget, signal = null, onActivity = null }) => {
     try {
         const response = await ai.run({
             task: TASKS[label],
@@ -42,7 +42,8 @@ export const requestWorkflowJson = async ({ label, prompt, systemInstruction, pr
             operation: `workflow:${label}`,
             providerOverride: provider,
             budget,
-            signal
+            signal,
+            onActivity
         });
         return { value: response.json, rawText: response.text, response };
     } catch (error) {

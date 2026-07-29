@@ -13,6 +13,7 @@ import { supersedePendingWorkflowProposals } from '../../proposalLifecycle.js';
 import { projectFormResourceSummary } from '../form/context/formResourceContext.js';
 import { compileWorkflowBindings, validateWorkflowExpressions } from '../../../../shared/workflowExpressions.js';
 import googleSpreadsheetService from '../../nodes/googleSpreadsheetService.js';
+import { advanceAssistantWork, createAssistantWork, finishAssistantWork } from '../../../../shared/assistantWork.js';
 
 const DEFAULT_MODE = 'important_only';
 const MAX_HISTORY = 100;
@@ -22,6 +23,12 @@ const IN_FLIGHT_TIMEOUT_MS = 10 * 60 * 1000;
 const progressSnapshot = progress => ({
     status: String(progress?.status || 'working').trim() || 'working',
     message: String(progress?.message || 'Working on your workflow…').trim() || 'Working on your workflow…',
+    ...(typeof progress?.phase === 'string' ? { phase: progress.phase } : {}),
+    ...(typeof progress?.label === 'string' ? { label: progress.label } : {}),
+    ...(typeof progress?.detail === 'string' ? { detail: progress.detail } : {}),
+    ...(typeof progress?.id === 'string' ? { id: progress.id } : {}),
+    ...(typeof progress?.type === 'string' ? { type: progress.type } : {}),
+    ...(progress?.artifact && typeof progress.artifact === 'object' ? { artifact: progress.artifact } : {}),
     updatedAt: new Date().toISOString()
 });
 
@@ -221,7 +228,11 @@ export const workflowAssistant = {
             progressChain = progressChain.then(() => sequelize.transaction(async transaction => {
                 const freshState = await ensureState({ workflow, transaction });
                 if (freshState.inFlightRequestId !== runId) return;
+                const workMessage = await AssistantMessage.findOne({ where: { id: reservation?.workMessage?.id, threadId: freshState.threadId }, transaction });
+                const work = advanceAssistantWork(workMessage?.payload?.work, snapshot);
+                if (workMessage) await workMessage.update({ payload: { ...(workMessage.payload || {}), work } }, { transaction });
                 await freshState.update({ phase: 'processing', progress: snapshot }, { transaction });
+                onProgress?.({ ...snapshot, work, messageId: workMessage?.id || null });
             }));
         };
 
@@ -245,6 +256,25 @@ export const workflowAssistant = {
                         transaction
                     })
                     : null;
+                if (state.openClarification && ['submit_clarification', 'decide_for_me'].includes(normalizedCommand.type)) {
+                    const clarificationMessage = await AssistantMessage.findOne({
+                        where: { threadId: state.threadId, sender: 'bot', kind: 'clarification' },
+                        order: [['createdAt', 'DESC']],
+                        transaction
+                    });
+                    if (clarificationMessage) {
+                        await clarificationMessage.update({
+                            payload: {
+                                ...(clarificationMessage.payload || {}),
+                                ...(normalizedCommand.type === 'submit_clarification' ? { selectedState: normalizedCommand.state || {} } : {}),
+                                resolution: {
+                                    type: normalizedCommand.type === 'decide_for_me' ? 'defaulted' : 'answered',
+                                    answeredAt: new Date().toISOString()
+                                }
+                            }
+                        }, { transaction });
+                    }
+                }
                 const context = resolveWorkflowTurnContext({
                     command: normalizedCommand,
                     activeWork: state.activeWork,
@@ -254,6 +284,10 @@ export const workflowAssistant = {
                 });
                 const message = await AssistantMessage.create({
                     id: messageId(), threadId: state.threadId, sender: 'user', text: displayText, kind: 'text'
+                }, { transaction });
+                const workMessage = await AssistantMessage.create({
+                    id: messageId(), threadId: state.threadId, sender: 'bot', text: 'Drafting your workflow', kind: 'assistant_work',
+                    payload: { work: createAssistantWork({ requestId: runId, surface: 'workflow', title: displayText }) }
                 }, { transaction });
                 await state.update({
                     version: state.version + 1,
@@ -265,7 +299,7 @@ export const workflowAssistant = {
                     openClarification: null
                 }, { transaction });
                 started = true;
-                reservation = { state, pending, context, userMessage: message };
+                reservation = { state, pending, context, userMessage: message, workMessage };
             });
 
             const rawHistory = await AssistantMessage.findAll({
@@ -274,7 +308,7 @@ export const workflowAssistant = {
                 limit: AI_CONTEXT_HISTORY + 2
             });
             const history = rawHistory.reverse()
-                .filter(message => message.id !== reservation.userMessage.id)
+                .filter(message => ![reservation.userMessage.id, reservation.workMessage.id].includes(message.id))
                 .map(publicMessage);
             const form = await attachedForm(workflow, userId);
             const ownedForms = await Form.findAll({
@@ -313,7 +347,7 @@ export const workflowAssistant = {
             return sequelize.transaction(async transaction => {
                 const state = await ensureState({ workflow, transaction });
                 let activeProposalMessageId = null;
-                if (reply.kind === 'workflow_proposal') activeProposalMessageId = reply.id;
+                if (reply.kind === 'workflow_proposal') activeProposalMessageId = reservation.workMessage.id;
                 const supersededMessageIds = activeProposalMessageId
                     ? await supersedePendingWorkflowProposals({
                         threadId: state.threadId,
@@ -321,9 +355,16 @@ export const workflowAssistant = {
                         messageModel: AssistantMessage
                     })
                     : [];
-                const botMessage = await AssistantMessage.create({
-                    ...reply,
-                    threadId: state.threadId,
+                const botMessage = await AssistantMessage.findOne({ where: { id: reservation.workMessage.id, threadId: state.threadId }, transaction });
+                const work = finishAssistantWork(botMessage?.payload?.work, {
+                    status: reply.kind === 'workflow_proposal' ? 'awaiting_review' : reply.kind === 'clarification' ? 'needs_input' : 'completed',
+                    detail: reply.text
+                });
+                await botMessage.update({
+                    text: reply.text,
+                    kind: reply.kind,
+                    payload: { ...(reply.payload || {}), work },
+                    tokenUsage: reply.tokenUsage,
                     proposalStatus: reply.kind === 'workflow_proposal' ? 'pending' : null
                 }, { transaction });
                 await state.update({
@@ -367,9 +408,12 @@ export const workflowAssistant = {
             await sequelize.transaction(async transaction => {
                 const state = await ensureState({ workflow, transaction });
                 if (!state || state.inFlightRequestId !== runId) return;
-                const botMessage = await AssistantMessage.create({
-                    ...errorMessage,
-                    threadId: state.threadId,
+                const botMessage = await AssistantMessage.findOne({ where: { id: reservation.workMessage.id, threadId: state.threadId }, transaction });
+                const work = finishAssistantWork(botMessage?.payload?.work, { status: 'failed', detail: recovery.summary });
+                await botMessage.update({
+                    text: errorMessage.text,
+                    kind: 'error',
+                    payload: { ...errorMessage.payload, work },
                     isError: true,
                     errorMetadata: errorMessage.payload
                 }, { transaction });
@@ -440,7 +484,10 @@ export const workflowAssistant = {
                 if (Number.isInteger(expectedStateVersion) && expectedStateVersion !== state.version) {
                     throw errorWith('WORKFLOW_AI_STATE_CONFLICT', 'The workflow assistant changed in another tab. Refresh and try again.', 409, { currentStateVersion: state.version });
                 }
-                await message.update({ proposalStatus: 'rejected' }, { transaction });
+                await message.update({
+                    proposalStatus: 'rejected',
+                    payload: { ...payload, work: finishAssistantWork(payload.work, { status: 'ignored', detail: 'Proposal ignored' }) }
+                }, { transaction });
                 await state.update({ version: state.version + 1, activeProposalMessageId: state.activeProposalMessageId === message.id ? null : state.activeProposalMessageId }, { transaction });
                 return { message: publicMessage(message), state: publicState(state) };
             });
@@ -531,11 +578,16 @@ export const workflowAssistant = {
                 });
                 await lockedMessage.update({
                     proposalStatus: 'applied',
+                    payload: {
+                        ...resolvedPayload,
+                        work: finishAssistantWork(resolvedPayload.work, { status: 'applied', detail: 'Changes applied to the workflow.' })
+                    },
                     ...(normalizedBindings.repairs.length > 0 ? {
                         payload: {
                             ...resolvedPayload,
                             nodes: normalizedBindings.nodes,
-                            warnings: [...(resolvedPayload.warnings || []), ...normalizedBindings.repairs]
+                            warnings: [...(resolvedPayload.warnings || []), ...normalizedBindings.repairs],
+                            work: finishAssistantWork(resolvedPayload.work, { status: 'applied', detail: 'Changes applied to the workflow.' })
                         }
                     } : {})
                 }, { transaction });

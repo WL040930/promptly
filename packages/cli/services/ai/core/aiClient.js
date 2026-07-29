@@ -114,7 +114,8 @@ export const createAIClient = ({
         operation = task,
         providerOverride = null,
         mode = null,
-        budget = null
+        budget = null,
+        onActivity = null
     } = {}) => {
         const policy = getTaskPolicy(task, { mode });
         const routes = resolveProviderRoutes(task, {
@@ -130,6 +131,7 @@ export const createAIClient = ({
             const route = routes[index];
             const attempt = index + 1;
             reserveBudget({ budget, task, operation });
+            onActivity?.({ type: 'provider_attempt', operation, attempt, maxAttempts: routes.length });
 
             try {
                 logger.info('[AI Attempt]', JSON.stringify({
@@ -189,6 +191,7 @@ export const createAIClient = ({
                     completionTokens: result.usage.completionTokens,
                     totalTokens: result.usage.totalTokens
                 }));
+                onActivity?.({ type: 'provider_complete', operation, attempt, maxAttempts: routes.length });
 
                 return {
                     ...result,
@@ -221,6 +224,11 @@ export const createAIClient = ({
 
                 const nextRoute = routes[index + 1];
                 if (!shouldFailover({ error: normalized, hasNextRoute: Boolean(nextRoute) })) throw normalized;
+
+                onActivity?.({
+                    type: 'provider_fallback', operation, attempt, maxAttempts: routes.length,
+                    category: normalized.category
+                });
 
                 logger.warn('[AI Fallback]', JSON.stringify({
                     task,

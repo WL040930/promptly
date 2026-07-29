@@ -1,6 +1,6 @@
 const DEFAULT_PROVIDER = 'openrouter';
 const DEFAULT_THINKING_LEVEL = 'minimal';
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 50_000;
 
 export const DEFAULT_AI_MODELS = Object.freeze({
     gemini: 'gemini-3.5-flash',
@@ -92,10 +92,6 @@ export const createAIConfig = (source = process.env) => {
         aiNvidiaReasoningBudget: readPositiveInteger(source, 'NVIDIA_REASONING_BUDGET', 16_384),
         aiNvidiaEnableThinking: readBoolean(source, 'NVIDIA_ENABLE_THINKING', true),
         aiTimeoutMs: readPositiveInteger(source, 'AI_TIMEOUT_MS', DEFAULT_TIMEOUT_MS),
-        // Completion controls are intentionally global so every AI task follows
-        // the same policy. `null` means the provider adapter omits its own
-        // request cap and lets the provider/model choose the maximum allowed
-        // output for its context window.
         aiUnlimitedCompletionTokens: readBoolean(source, 'AI_UNLIMITED_COMPLETION_TOKENS'),
         aiMaxCompletionTokens: readPositiveInteger(source, 'AI_MAX_COMPLETION_TOKENS'),
         aiFormUnlimitedCompletionTokens: readBoolean(source, 'AI_FORM_UNLIMITED_COMPLETION_TOKENS'),

@@ -47,6 +47,18 @@ test('normalizeWorkflowCommand returns submit_text for ordinary messages', () =>
     assert.equal(result.text, 'add an email step');
 });
 
+test('normalizeWorkflowCommand preserves a structured clarification response', () => {
+    const result = normalizeWorkflowCommand({
+        command: { type: 'submit_clarification', text: 'Email provider: Gmail', state: { provider: ['Gmail'] } },
+        text: ''
+    });
+    assert.deepEqual(result, {
+        type: 'submit_clarification',
+        text: 'Email provider: Gmail',
+        state: { provider: ['Gmail'] }
+    });
+});
+
 test('normalizeWorkflowCommand returns empty submit_text when no input is given', () => {
     const result = normalizeWorkflowCommand({ command: null, text: '' });
     assert.equal(result.type, 'submit_text');
@@ -82,6 +94,16 @@ test('resolveWorkflowTurnContext marks relation as revise when a pending proposa
     });
     assert.equal(ctx.intent.relationToPending, 'revise');
     assert.equal(ctx.pendingProposal.mode, 'include');
+});
+
+test('resolveWorkflowTurnContext retains structured clarification state', () => {
+    const ctx = resolveWorkflowTurnContext({
+        command: { type: 'submit_clarification', text: 'Email provider: Gmail', state: { provider: ['Gmail'] } },
+        activeWork: { sourceText: 'Add an email step' }
+    });
+    assert.equal(ctx.command.type, 'submit_clarification');
+    assert.deepEqual(ctx.command.state, { provider: ['Gmail'] });
+    assert.equal(ctx.intent.sourceText, 'Add an email step');
 });
 
 test('resolveWorkflowTurnContext marks relation as replace on correction language', () => {

@@ -1,168 +1,167 @@
 import { useState } from 'react';
+import { Check, ChevronRight, Sparkles } from 'lucide-react';
 import Button from '../ui/Button.jsx';
 
-export default function MessageOptionsWidget({ options, onSend, isTyping, allowDecide = false, clarificationId = null, isResolved = false, initialState = {} }) {
-    // Store state for each input field by its ID
+const isResourceChoice = input => input.type === 'workflow_choice' || input.type === 'form_choice';
+
+const answerFor = (input, value) => {
+    if (Array.isArray(value)) return value.join(', ');
+    return typeof value === 'string' ? value.trim() : '';
+};
+
+const answerRows = (options, state) => (options || []).flatMap(input => {
+    const answer = answerFor(input, state?.[input.id]);
+    return answer ? [{ id: input.id, label: input.label || 'Answer', answer }] : [];
+});
+
+export default function MessageOptionsWidget({
+    message,
+    options,
+    onSend,
+    isTyping,
+    allowDecide = false,
+    clarificationId = null,
+    isResolved = false,
+    initialState = {},
+    resolution = null
+}) {
     const [formState, setFormState] = useState(initialState);
+    // The original message is updated in place after submission, so use the
+    // persisted payload for the receipt instead of a possibly stale local draft.
+    const answers = answerRows(options, isResolved ? initialState : formState);
+    const hasAnswers = answers.length > 0;
 
     const handleToggle = (inputId, option, isSingle) => {
-        setFormState(prev => {
-            if (isSingle) {
-                return { ...prev, [inputId]: [option] };
-            }
-            const current = prev[inputId] || [];
+        setFormState(previous => {
+            if (isSingle) return { ...previous, [inputId]: [option] };
+            const current = previous[inputId] || [];
             return {
-                ...prev,
-                [inputId]: current.includes(option) ? current.filter(o => o !== option) : [...current, option]
+                ...previous,
+                [inputId]: current.includes(option) ? current.filter(value => value !== option) : [...current, option]
             };
         });
     };
 
-    const handleTextChange = (inputId, text) => {
-        setFormState(prev => ({ ...prev, [inputId]: text }));
-    };
-
     const handleSend = () => {
-        const parts = [];
-        (options || []).forEach(input => {
-            const val = formState[input.id];
-            if (input.type === 'text' || input.type === 'textarea') {
-                if (val && val.trim()) {
-                    parts.push(input.label ? `${input.label}: ${val.trim()}` : val.trim());
-                }
-            } else if (Array.isArray(val) && val.length > 0) {
-                if (input.label) {
-                    parts.push(`${input.label}: ${val.join(', ')}`);
-                } else {
-                    parts.push(val.join(', '));
-                }
-            }
-        });
-
-        if (parts.length > 0) {
-            onSend({ type: 'submit_clarification', text: parts.join('\n'), state: formState });
-        }
+        if (!hasAnswers) return;
+        const text = answers.map(({ label, answer }) => `${label}: ${answer}`).join('\n');
+        onSend?.({ type: 'submit_clarification', text, state: formState });
     };
 
-    const isAnySelected = Object.values(formState).some(val => {
-        if (Array.isArray(val)) return val.length > 0;
-        return typeof val === 'string' && val.trim().length > 0;
-    });
-    const hasDirectChoice = (options || []).some(input =>
-        input.type === 'workflow_choice' || input.type === 'form_choice'
-    );
+    if (isResolved) {
+        return (
+            <section className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-950/[0.03]">
+                <div className="flex items-center gap-2.5 px-4 py-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                        <Check size={14} strokeWidth={2.75} />
+                    </span>
+                    <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-800">Input received</p>
+                        <p className="mt-0.5 truncate text-xs text-slate-500">
+                            {resolution?.type === 'defaulted'
+                                ? 'Promptly continued with sensible defaults.'
+                                : answers.length > 0
+                                    ? answers.map(({ label, answer }) => `${label}: ${answer}`).join(' · ')
+                                    : 'This question was answered in the conversation.'}
+                        </p>
+                    </div>
+                </div>
+            </section>
+        );
+    }
 
     return (
-        <div className="mt-2 flex flex-col gap-4 w-full max-w-[90%] bg-slate-50 border border-slate-200 p-3 rounded-xl">
-            {(options || []).map((input, idx) => {
-                if (input.type === 'workflow_choice' || input.type === 'form_choice') {
-                    return (
-                        <div key={input.id || idx} className="flex flex-col gap-1.5">
-                            {input.label && <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{input.label}</span>}
-                            <div className="flex flex-col gap-1.5">
-                                {(input.options || []).map((resource) => (
-                                    <button
-                                        key={resource.id}
-                                        type="button"
-                                        disabled={isTyping || isResolved}
-                                        onClick={() => onSend?.(resource)}
-                                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-900 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        {resource.name || resource.title}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    );
-                }
+        <section className="w-full overflow-hidden rounded-2xl border border-violet-200 bg-white shadow-[0_12px_30px_rgba(91,71,218,0.08)]">
+            <header className="border-b border-violet-100 bg-gradient-to-r from-violet-50 via-white to-white px-4 py-3.5">
+                <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.16em] text-violet-700">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-violet-600 text-white"><Sparkles size={11} /></span>
+                    Needs your input
+                    {options.length > 1 && <span className="ml-auto normal-case tracking-normal text-violet-500">{options.length} questions</span>}
+                </div>
+                {message && <p className="mt-2 text-sm font-semibold leading-5 text-slate-800">{message}</p>}
+                <p className="mt-1 text-xs leading-5 text-slate-500">Choose an answer and Promptly will continue the draft.</p>
+            </header>
 
-                if (input.type === 'single_choice' || input.type === 'multiple_choice') {
-                    const isSingle = input.type === 'single_choice';
-                    const selectedOptions = formState[input.id] || [];
-                    
-                    return (
-                        <div key={input.id || idx} className="flex flex-col gap-1.5">
-                            {input.label && <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{input.label}</span>}
-                            <div className="flex flex-col gap-1.5">
-                                {input.options.map((opt, oIdx) => {
-                                    const isChecked = selectedOptions.includes(opt);
-                                    return (
-                                        <label 
-                                            key={oIdx} 
-                                            className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition-colors ${isChecked ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-200 hover:border-indigo-300'}`}
+            <div className="space-y-4 p-4">
+                {(options || []).map((input, index) => {
+                    const selected = formState[input.id] || [];
+                    const questionLabel = input.label || `Question ${index + 1}`;
+
+                    if (isResourceChoice(input)) {
+                        return (
+                            <fieldset key={input.id || index} className="space-y-2">
+                                <legend className="text-xs font-bold text-slate-700">{questionLabel}</legend>
+                                <div className="grid gap-2">
+                                    {(input.options || []).map(resource => (
+                                        <button
+                                            key={resource.id}
+                                            type="button"
+                                            disabled={isTyping}
+                                            onClick={() => onSend?.(resource)}
+                                            className="group flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left transition-colors hover:border-violet-300 hover:bg-violet-50/50 disabled:cursor-not-allowed disabled:opacity-50"
                                         >
-                                            <input 
-                                                type={isSingle ? 'radio' : 'checkbox'}
-                                                name={input.id}
-                                                checked={isChecked}
-                                                disabled={isTyping || isResolved}
-                                                onChange={() => handleToggle(input.id, opt, isSingle)}
-                                                className="mt-0.5 w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-500 disabled:opacity-50"
-                                            />
-                                            <span className={`text-sm ${isChecked ? 'text-indigo-900 font-medium' : 'text-slate-700'}`}>
-                                                {opt}
-                                            </span>
-                                        </label>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    );
-                } else if (input.type === 'text' || input.type === 'textarea') {
-                    return (
-                        <div key={input.id || idx} className="flex flex-col gap-1.5">
-                            {input.label && <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{input.label}</span>}
-                            {input.type === 'textarea' || input.multiline || (input.placeholder && input.placeholder.includes('\n')) ? (
-                                <textarea
-                                    disabled={isTyping || isResolved}
-                                    placeholder={input.placeholder || "Type here..."}
-                                    value={formState[input.id] || ''}
-                                    onChange={(e) => handleTextChange(input.id, e.target.value)}
-                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 min-h-[80px] resize-y"
-                                />
-                            ) : (
-                                <input 
-                                    type="text"
-                                    disabled={isTyping || isResolved}
-                                    placeholder={input.placeholder || "Type here..."}
-                                    value={formState[input.id] || ''}
-                                    onChange={(e) => handleTextChange(input.id, e.target.value)}
-                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && isAnySelected && !isTyping) {
-                                            handleSend();
-                                        }
-                                    }}
-                                />
-                            )}
-                        </div>
-                    );
-                }
-                return null;
-            })}
-            
-            {!hasDirectChoice && (
-                <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={handleSend}
-                    disabled={!isAnySelected || isTyping || isResolved}
-                    className="w-full mt-1"
-                >
-                    Send Selected
+                                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-500">{(resource.name || resource.title || '?').slice(0, 1).toUpperCase()}</span>
+                                            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-700">{resource.name || resource.title}</span>
+                                            <ChevronRight size={16} className="text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-violet-600" />
+                                        </button>
+                                    ))}
+                                </div>
+                            </fieldset>
+                        );
+                    }
+
+                    if (input.type === 'single_choice' || input.type === 'multiple_choice') {
+                        const isSingle = input.type === 'single_choice';
+                        return (
+                            <fieldset key={input.id || index} className="space-y-2">
+                                <legend className="text-xs font-bold text-slate-700">{questionLabel}</legend>
+                                <div className="grid gap-2">
+                                    {(input.options || []).map((option, optionIndex) => {
+                                        const checked = selected.includes(option);
+                                        return (
+                                            <label key={`${input.id}-${optionIndex}`} className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 transition-colors ${checked ? 'border-violet-300 bg-violet-50 text-violet-950' : 'border-slate-200 bg-white text-slate-700 hover:border-violet-200 hover:bg-violet-50/40'} ${isTyping ? 'cursor-not-allowed opacity-50' : ''}`}>
+                                                <input type={isSingle ? 'radio' : 'checkbox'} name={input.id} checked={checked} disabled={isTyping} onChange={() => handleToggle(input.id, option, isSingle)} className="sr-only" />
+                                                <span className={`flex h-4 w-4 shrink-0 items-center justify-center border ${isSingle ? 'rounded-full' : 'rounded-[4px]'} ${checked ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-300 bg-white'}`}>
+                                                    {checked && <Check size={11} strokeWidth={3} />}
+                                                </span>
+                                                <span className="text-sm font-medium">{option}</span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            </fieldset>
+                        );
+                    }
+
+                    if (input.type === 'text' || input.type === 'textarea') {
+                        const multiline = input.type === 'textarea' || input.multiline || input.placeholder?.includes('\n');
+                        const fieldClass = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-violet-400 focus:ring-4 focus:ring-violet-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500';
+                        return (
+                            <label key={input.id || index} className="block space-y-2">
+                                <span className="text-xs font-bold text-slate-700">{questionLabel}</span>
+                                {multiline ? (
+                                    <textarea disabled={isTyping} placeholder={input.placeholder || 'Type your answer…'} value={formState[input.id] || ''} onChange={event => setFormState(previous => ({ ...previous, [input.id]: event.target.value }))} className={`${fieldClass} min-h-24 resize-y`} />
+                                ) : (
+                                    <input disabled={isTyping} placeholder={input.placeholder || 'Type your answer…'} value={formState[input.id] || ''} onChange={event => setFormState(previous => ({ ...previous, [input.id]: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') handleSend(); }} className={fieldClass} />
+                                )}
+                            </label>
+                        );
+                    }
+
+                    return null;
+                })}
+            </div>
+
+            <footer className="flex flex-col gap-2 border-t border-slate-100 bg-slate-50/70 px-4 py-3 sm:flex-row sm:items-center">
+                <Button variant="primary" size="sm" onClick={handleSend} disabled={!hasAnswers || isTyping} className="w-full sm:flex-1">
+                    Continue drafting
                 </Button>
-            )}
-            {allowDecide && (
-                <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onSend?.({ type: 'decide_for_me', clarificationId })}
-                    disabled={isTyping || isResolved}
-                    className="w-full"
-                >
-                    Use sensible defaults
-                </Button>
-            )}
-        </div>
+                {allowDecide && (
+                    <Button variant="ghost" size="sm" onClick={() => onSend?.({ type: 'decide_for_me', clarificationId })} disabled={isTyping} className="w-full text-xs sm:w-auto">
+                        Let Promptly decide
+                    </Button>
+                )}
+            </footer>
+        </section>
     );
 }

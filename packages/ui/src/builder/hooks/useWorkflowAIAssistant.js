@@ -54,6 +54,7 @@ const normalizeInput = value => {
 /** Derive a display text for the optimistic user message bubble. */
 const displayTextFor = ({ command, text }) => {
     if (command?.type === 'decide_for_me') return 'Use sensible defaults.';
+    if (command?.type === 'submit_clarification') return command.text || 'Submitted clarification';
     return text || '';
 };
 
@@ -64,7 +65,6 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
     const queryKey = ['workflowAI', workflowId];
     const [input, setInputState] = useState(() => readDraft(workflowId) || initialPrompt || '');
     const [isTyping, setIsTyping] = useState(false);
-    const [progressLabel, setProgressLabel] = useState('Reading this workflow');
     const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
@@ -75,7 +75,6 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
 
     const {
         isTyping: sharedIsTyping,
-        progressLabel: sharedProgressLabel,
         setStreamState,
         clearStreamState
     } = useAIStream(workflowId);
@@ -98,13 +97,12 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
     // state with the server-owned lifecycle when the assistant is remounted.
     useEffect(() => {
         const processing = historyQuery.data?.state?.phase === 'processing';
-        const persistedProgress = historyQuery.data?.state?.progress?.message || 'Working on your workflow…';
-        if (processing && (!sharedIsTyping || sharedProgressLabel !== persistedProgress)) {
-            setStreamState({ isTyping: true, progressLabel: persistedProgress });
+        if (processing && !sharedIsTyping) {
+            setStreamState({ isTyping: true });
         } else if (!processing && sharedIsTyping && !isTyping) {
             clearStreamState();
         }
-    }, [historyQuery.data?.state?.phase, historyQuery.data?.state?.progress?.message, isTyping, sharedIsTyping, sharedProgressLabel, setStreamState, clearStreamState]);
+    }, [historyQuery.data?.state?.phase, isTyping, sharedIsTyping, setStreamState, clearStreamState]);
 
     useEffect(() => {
         setInputState(readDraft(workflowId) || initialPrompt || '');
@@ -128,42 +126,50 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
     }, [historyQuery.data, olderMessages]);
 
     const sendMutation = useMutation({
-        mutationFn: async ({ input: sendInput, requestId }) => {
+        mutationFn: async ({ input: sendInput, requestId, optimisticWorkId }) => {
             const { command, text } = normalizeInput(sendInput);
             return submitWorkflowAITurnStream(
                 workflowId,
                 { command, text },
                 clarificationMode,
                 progress => {
-                    const label = progress.message || 'Thinking…';
-                    setProgressLabel(label);
-                    setStreamState({ isTyping: true, progressLabel: label, requestId });
+                    setStreamState({ isTyping: true, requestId });
+                    if (progress.work) queryClient.setQueryData(queryKey, old => old ? {
+                        ...old,
+                        messages: (old.messages || []).map(message => message.id === optimisticWorkId
+                            ? { ...message, payload: { ...(message.payload || {}), work: progress.work } }
+                            : message)
+                    } : old);
                 },
                 { expectedStateVersion: historyQuery.data?.state?.version, requestId }
             );
         },
-        onMutate: async ({ input: sendInput, requestId }) => {
+        onMutate: async ({ input: sendInput, requestId, optimisticWorkId }) => {
             const { command, text } = normalizeInput(sendInput);
             const optimisticText = displayTextFor({ command, text });
             setIsTyping(true);
-            setProgressLabel('Preparing workflow changes…');
-            setStreamState({ isTyping: true, progressLabel: 'Preparing workflow changes…', requestId });
+            setStreamState({ isTyping: true, requestId });
             setInput('');
             await queryClient.cancelQueries({ queryKey });
             const previous = queryClient.getQueryData(queryKey);
             const optimistic = { id: `optimistic_${Date.now()}`, sender: 'user', kind: 'text', text: optimisticText, isOptimistic: true };
+            const startedAt = new Date().toISOString();
+            const optimisticWork = {
+                id: optimisticWorkId, sender: 'bot', kind: 'assistant_work', text: 'Drafting your workflow', isOptimistic: true,
+                payload: { work: { requestId, surface: 'workflow', status: 'drafting', title: optimisticText, currentPhase: 'understand', currentActivityId: 'preparing', startedAt, updatedAt: startedAt, activities: [{ id: 'preparing', phase: 'understand', label: 'Preparing the request', detail: 'Setting up the context for this change', status: 'active', attempt: 1, startedAt }] } }
+            };
             queryClient.setQueryData(queryKey, old => ({
                 ...(old || { state: null, nextBefore: null }),
-                messages: [...(old?.messages || []), optimistic]
+                messages: [...(old?.messages || []), optimistic, optimisticWork]
             }));
-            return { previous, optimisticId: optimistic.id };
+            return { previous, optimisticId: optimistic.id, optimisticWorkId };
         },
         onSuccess: (result, variables, context) => {
             setIsTyping(false);
             clearStreamState();
             queryClient.setQueryData(queryKey, old => {
                 const existing = old?.messages || [];
-                const filtered = existing.filter(message => message.id !== context?.optimisticId && message.id !== result.userMsg?.id && message.id !== result.botMsg?.id);
+                const filtered = existing.filter(message => ![context?.optimisticId, context?.optimisticWorkId, result.userMsg?.id, result.botMsg?.id].includes(message.id));
                 return { ...(old || {}), messages: [...filtered, result.userMsg, result.botMsg].filter(Boolean), state: result.state };
             });
         },
@@ -242,7 +248,7 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
             return;
         }
         const requestId = globalThis.crypto?.randomUUID?.() || `workflow_turn_${Date.now()}`;
-        sendMutation.mutate({ input: normalized, requestId });
+        sendMutation.mutate({ input: normalized, requestId, optimisticWorkId: `optimistic_work_${requestId}` });
     }, [isTyping, onBeforeSend, sendMutation, workflowId]);
 
     const handleRecoveryAction = useCallback((action, message, previousRequest = '') => {
@@ -340,11 +346,6 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         input,
         setInput,
         isTyping: isTyping || sharedIsTyping || historyQuery.data?.state?.phase === 'processing',
-        progressLabel: sharedIsTyping
-            ? sharedProgressLabel
-            : (historyQuery.data?.state?.phase === 'processing'
-                ? historyQuery.data.state.progress?.message || 'Working on your workflow…'
-                : progressLabel),
         clarificationMode,
         updateClarificationMode,
         handleSend,

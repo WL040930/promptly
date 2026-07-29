@@ -62,6 +62,8 @@ test('form assistant persists a clarification and opens explicit decision state'
     assert.equal(result.botMsg.payload.allowDecide, true);
     assert.equal(result.state.phase, 'awaiting_clarification');
     assert.equal(memory.messages.length, 2);
+    assert.equal(memory.messages[1].kind, 'clarification');
+    assert.equal(memory.messages[1].payload.work.status, 'needs_input');
 });
 
 test('form assistant preserves non-fatal form AI warnings in the reviewable proposal', async () => {

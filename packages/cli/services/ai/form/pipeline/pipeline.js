@@ -51,13 +51,21 @@ export const generateFormFromPrompt = async (
     try {
         const provider = options.provider || null;
         const budget = createRequestBudget();
+        const reportProviderActivity = event => {
+            const phase = /planner/.test(event.operation) ? 'plan' : /verifier/.test(event.operation) ? 'check' : 'draft';
+            if (event.type === 'provider_fallback') onProgress?.({ id: `${event.operation}:fallback:${event.attempt}`, status: 'retrying', phase, label: 'Trying another AI route', message: 'Retrying with another available AI route', detail: 'The first route did not finish in time, so Promptly is continuing automatically.' });
+            if (event.type === 'provider_attempt') onProgress?.({ id: `${event.operation}:attempt:${event.attempt}`, status: 'awaiting_model', phase, label: phase === 'plan' ? 'Preparing the form plan' : phase === 'check' ? 'Checking the form draft' : 'Drafting form changes', message: 'AI is working on this step', detail: `Attempt ${event.attempt} of ${event.maxAttempts}.` });
+        };
         const cardinality = getQuestionCardinality({
             schema: currentSchema || {},
             prompt,
             chatHistory
         });
 
-        if (onProgress) onProgress({ status: 'analyzing', message: 'Analyzing requirements...' });
+        if (onProgress) onProgress({
+            status: 'analyzing', phase: 'understand', label: 'Reading your form request',
+            message: 'Analyzing requirements...', detail: 'Identifying the questions, rules, and form changes you asked for.'
+        });
 
         // The planner owns the conversational decision: reply, clarify, or
         // produce a proposal plan for the worker/verification pipeline.
@@ -80,21 +88,26 @@ export const generateFormFromPrompt = async (
             contents: buildPlannerContents(false),
             systemInstruction: plannerInstruction,
             label: 'planner',
-            budget
+            budget,
+            onActivity: reportProviderActivity
         });
 
         let tokenUsage = addTokenUsage({}, plannerCall.response, 'planner');
         let plannerResult = plannerCall.value;
         let plannerIssues = getOutputIssues({ ...plannerCall, validate: validatePlannerResult });
         if (plannerIssues.length > 0) {
-            if (onProgress) onProgress({ status: 'repairing', message: 'Checking and correcting the plan...' });
+            if (onProgress) onProgress({
+                status: 'repairing', phase: 'plan', label: 'Correcting the form plan',
+                message: 'Checking and correcting the plan...', detail: `${plannerIssues.length} plan issue${plannerIssues.length === 1 ? '' : 's'} found before a draft can be built.`
+            });
             plannerCall = await repairPlanner({
                 provider,
                 rawText: plannerCall.rawText || JSON.stringify(plannerResult),
                 issues: plannerIssues,
                 tokenUsage,
                 budget,
-                cardinality
+                cardinality,
+                onActivity: reportProviderActivity
             });
             tokenUsage = plannerCall.tokenUsage;
             plannerResult = plannerCall.value;
@@ -115,14 +128,25 @@ export const generateFormFromPrompt = async (
             delegated: options.turnContext?.authority === 'assistant'
         });
 
+        if (onProgress) onProgress({
+            status: 'plan_ready', phase: 'plan', label: 'Mapped the form request',
+            message: 'Planning the form changes',
+            detail: plannerResult.summary || `${(plannerResult.requirements || []).length} requirement${(plannerResult.requirements || []).length === 1 ? '' : 's'} identified for this form.`,
+            artifact: { id: 'form-requirements', kind: 'requirements', title: 'What Promptly understood', items: (plannerResult.requirements || []).map(requirement => requirement.description || requirement.title || requirement.id).filter(Boolean) }
+        });
+
         if (plannerPolicy.action === 'resolve_defaults' && !options.forceDecision) {
-            if (onProgress) onProgress({ status: 'deciding', message: 'Choosing sensible defaults...' });
+            if (onProgress) onProgress({
+                status: 'deciding', phase: 'plan', label: 'Choosing sensible defaults',
+                message: 'Choosing sensible defaults...', detail: 'Resolving details you asked Promptly to decide.'
+            });
             plannerCall = await requestJson({
                 provider,
                 contents: buildPlannerContents(true),
                 systemInstruction: `${plannerInstruction}\n\nThe previous planner response asked for defaultable details. Resolve those details yourself now and return a completed plan.`,
                 label: 'planner',
-                budget
+                budget,
+                onActivity: reportProviderActivity
             });
             tokenUsage = addTokenUsage(tokenUsage, plannerCall.response, 'planner');
             plannerResult = plannerCall.value;
@@ -149,7 +173,10 @@ export const generateFormFromPrompt = async (
         }
 
         if (plannerResult.type === 'direct_proposal' || plannerResult.type === 'plan_complete') {
-            if (onProgress) onProgress({ status: 'building', message: 'Preparing form changes…' });
+            if (onProgress) onProgress({
+                status: 'building', phase: 'draft', label: 'Drafting form changes',
+                message: 'Preparing form changes…', detail: `${(plannerResult.requirements || []).length} requested requirement${(plannerResult.requirements || []).length === 1 ? '' : 's'} are being turned into form changes.`
+            });
             const sourceSchema = currentSchema || {};
             const needsTitlePatch = !hasUsableFormTitle(sourceSchema);
             // New-form turns start with an empty schema. Give the patch engine a
@@ -175,6 +202,7 @@ export const generateFormFromPrompt = async (
                 ...(plannerResult.type === 'direct_proposal' ? { initialWorkerResult: plannerResult } : {}),
                 tokenUsage,
                 onProgress,
+                onActivity: reportProviderActivity,
                 budget,
                 cardinality,
                 needsTitlePatch,
@@ -184,6 +212,12 @@ export const generateFormFromPrompt = async (
             const appliedProposal = workerResult.appliedProposal;
             const verification = workerResult.verification;
             tokenUsage = workerResult.tokenUsage;
+            if (onProgress) onProgress({
+                status: 'proposal_ready', phase: 'check', label: 'Prepared a reviewable form draft',
+                message: 'The form draft is ready for review',
+                detail: `${(appliedProposal.patches || []).length} change${(appliedProposal.patches || []).length === 1 ? '' : 's'} prepared; verification ${verification.status === 'pass' ? 'passed' : 'needs review'}.`,
+                artifact: { id: 'form-draft', kind: 'draft', title: 'Draft prepared', items: (appliedProposal.patches || []).map(patch => patch.field?.label || patch.updates?.title || patch.op).filter(Boolean) }
+            });
             return {
                 ...result,
                 type: 'proposal',

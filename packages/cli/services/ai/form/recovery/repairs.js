@@ -8,7 +8,7 @@ import { plannerInstruction, verifierInstruction, workerInstruction } from '../s
 import { requestJson } from '../provider/request.js';
 import { addTokenUsage } from '../shared/usage.js';
 
-export const repairPlanner = async ({ provider, rawText, issues, tokenUsage, budget, cardinality }) => {
+export const repairPlanner = async ({ provider, rawText, issues, tokenUsage, budget, cardinality, onActivity = null }) => {
     const repaired = await requestJson({
         provider,
         contents: [{ role: 'user', parts: [{ text: buildPlannerRepairContext({
@@ -18,7 +18,8 @@ export const repairPlanner = async ({ provider, rawText, issues, tokenUsage, bud
         }) }] }],
         systemInstruction: plannerInstruction,
         label: 'planner repair',
-        budget
+        budget,
+        onActivity
     });
     return {
         ...repaired,
@@ -26,7 +27,7 @@ export const repairPlanner = async ({ provider, rawText, issues, tokenUsage, bud
     };
 };
 
-export const repairWorker = async ({ provider, schema, requirements, rawText, issues, tokenUsage, budget, cardinality, turnContext = null }) => {
+export const repairWorker = async ({ provider, schema, requirements, rawText, issues, tokenUsage, budget, cardinality, turnContext = null, onActivity = null }) => {
     const repaired = await requestJson({
         provider,
         contents: [{ role: 'user', parts: [{ text: buildWorkerRepairContext({
@@ -39,7 +40,8 @@ export const repairWorker = async ({ provider, schema, requirements, rawText, is
         }) }] }],
         systemInstruction: workerInstruction,
         label: 'worker repair',
-        budget
+        budget,
+        onActivity
     });
     return {
         ...repaired,
@@ -47,7 +49,7 @@ export const repairWorker = async ({ provider, schema, requirements, rawText, is
     };
 };
 
-export const repairVerifier = async ({ provider, requirements, patches, memoryUpdate, rawText, issues, tokenUsage, budget, cardinality }) => {
+export const repairVerifier = async ({ provider, requirements, patches, memoryUpdate, rawText, issues, tokenUsage, budget, cardinality, onActivity = null }) => {
     const repaired = await requestJson({
         provider,
         contents: [{ role: 'user', parts: [{ text: buildVerifierRepairContext({
@@ -60,7 +62,8 @@ export const repairVerifier = async ({ provider, requirements, patches, memoryUp
         }) }] }],
         systemInstruction: verifierInstruction,
         label: 'verifier repair',
-        budget
+        budget,
+        onActivity
     });
     return {
         ...repaired,

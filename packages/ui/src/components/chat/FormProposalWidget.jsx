@@ -1,279 +1,98 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Check, ChevronDown, ChevronRight, Eye, Settings2, X } from 'lucide-react';
 import Button from '../ui/Button.jsx';
-import ProposalCard from './ProposalCard.jsx';
 import { isEmptyFormMemorySummary } from '../../../../shared/formContract.js';
 import { formatFormSettingValue, getFormSettingLabel } from '../../forms/settings/formSettingPresentation.js';
 import { isAcceptedProposalStatus, isRejectedProposalStatus, isStaleProposalStatus } from './proposalStatus.js';
 
-const isMeaningfulPatch = patch => {
-    if (patch?.op !== 'update_memory') return true;
-    const memory = patch.updates?.memory;
-    if (memory?.summary) return !isEmptyFormMemorySummary(memory.summary);
-    return Boolean(patch.originalMemory);
-};
+const meaningful = patch => patch?.op !== 'update_memory' || (patch.updates?.memory?.summary ? !isEmptyFormMemorySummary(patch.updates.memory.summary) : Boolean(patch.originalMemory));
+const titleFor = patch => patch.op === 'add' ? patch.field?.label || 'New question'
+    : patch.op === 'remove' ? patch.label || patch.originalField?.label || 'Question'
+        : patch.op === 'update' ? patch.label || patch.field?.label || patch.originalField?.label || 'Question'
+            : patch.op === 'update_meta' ? 'Form details'
+                : patch.op === 'update_settings' ? 'Form settings'
+                    : 'Remember this preference';
+const detailFor = patch => patch.op === 'add' ? `${patch.field?.type || 'text'} question`
+    : patch.op === 'remove' ? 'Remove from this form'
+        : patch.op === 'update' ? 'Update this existing question'
+            : patch.op === 'update_meta' ? 'Title or description'
+                : patch.op === 'update_memory' ? patch.updates?.memory?.summary || 'Persistent form preference'
+                    : `${Object.keys(patch.updates || {}).length} setting${Object.keys(patch.updates || {}).length === 1 ? '' : 's'} changed`;
+const groupFor = patch => ['add', 'update', 'remove'].includes(patch.op) ? 'Questions' : patch.op === 'update_meta' ? 'Form details' : 'Settings & confirmation';
+const toneFor = patch => patch.op === 'remove' ? 'border-rose-100 bg-rose-50/45 text-rose-800'
+    : patch.op === 'add' ? 'border-emerald-100 bg-emerald-50/45 text-emerald-800'
+        : 'border-slate-200 bg-white text-slate-800';
+const markerFor = patch => patch.op === 'add' ? '+' : patch.op === 'remove' ? '−' : '~';
 
-export default function FormProposalWidget({ 
-    proposal, 
-    status, 
-    onIgnore, 
-    onPreview,
-    onPreviewUpdate, 
-    rejecting 
-}) {
+export default function FormProposalWidget({ proposal, status, summary, onIgnore, onPreview, onPreviewUpdate, rejecting }) {
     const isAccepted = isAcceptedProposalStatus(status);
-    const isRejected = isRejectedProposalStatus(status);
-    const isStale = isStaleProposalStatus(status);
+    const locked = isAccepted || isRejectedProposalStatus(status) || isStaleProposalStatus(status);
+    const [selected, setSelected] = useState({});
+    const [expanded, setExpanded] = useState({});
+    const [showAppliedDetails, setShowAppliedDetails] = useState(false);
+    const patches = useMemo(() => (proposal?.patches || []).filter(meaningful), [proposal?.patches]);
+    const groups = useMemo(() => patches.reduce((result, patch, index) => {
+        const name = groupFor(patch);
+        (result[name] ||= []).push({ patch, index });
+        return result;
+    }, {}), [patches]);
+    const selectedCount = Object.values(selected).filter(Boolean).length;
+    const isUnverified = proposal?.verification?.status === 'unverified';
 
-    // Track which patches are checked by the user
-    const [selectedPatches, setSelectedPatches] = useState({});
-    const proposalPatches = useMemo(
-        () => (proposal?.patches || []).filter(isMeaningfulPatch),
-        [proposal?.patches]
-    );
-    const settingsChangeCount = proposalPatches
-        .filter(patch => patch.op === 'update_settings')
-        .reduce((count, patch) => count + Object.keys(patch.updates || {}).length, 0);
-    const hasFormChanges = proposalPatches.some(patch => ['add', 'remove', 'update', 'update_meta'].includes(patch.op));
-    const hasSettingsOnlyChanges = settingsChangeCount > 0 && !hasFormChanges;
+    useEffect(() => setSelected(Object.fromEntries(patches.map((_, index) => [index, !proposal?.unselectedPatchIndices?.includes(index)]))), [proposal, patches]);
 
-    // Initialize all patches to true by default, unless they were previously unselected
-    useEffect(() => {
-        if (proposalPatches.length > 0) {
-            const initial = {};
-            proposalPatches.forEach((patch, idx) => {
-                if (proposal.unselectedPatchIndices && proposal.unselectedPatchIndices.includes(idx)) {
-                    initial[idx] = false;
-                } else {
-                    initial[idx] = true;
-                }
-            });
-            setSelectedPatches(initial);
-        }
-    }, [proposal, proposalPatches]);
-
-    const handleTogglePatch = (idx) => {
-        if (isAccepted || isRejected || isStale) return;
-        setSelectedPatches(prev => ({ ...prev, [idx]: !prev[idx] }));
+    const filtered = () => {
+        const unselectedIndices = Object.keys(selected).filter(index => !selected[index]).map(Number);
+        const schema = { ...proposal.schema, settings: { ...(proposal.schema?.settings || {}) }, fields: [...(proposal.schema?.fields || [])] };
+        [...unselectedIndices].sort((a, b) => b - a).forEach(index => {
+            const patch = patches[index];
+            if (patch?.op === 'add') schema.fields = schema.fields.filter(field => field.id !== patch.field?.id);
+            if (patch?.op === 'remove' && patch.originalField) schema.fields.splice(patch.originalIndex ?? schema.fields.length, 0, patch.originalField);
+            if (patch?.op === 'update' && patch.originalField) schema.fields = schema.fields.map(field => field.id === patch.id ? patch.originalField : field);
+            if (patch?.op === 'update_meta' && patch.originalMeta) Object.assign(schema, patch.originalMeta);
+            if (patch?.op === 'update_settings') schema.settings = { ...(patch.originalSettings || {}) };
+            if (patch?.op === 'update_memory') patch.originalMemory ? (schema.settings.aiMemory = patch.originalMemory) : delete schema.settings.aiMemory;
+        });
+        return { ...proposal, schema, patches: patches.filter((_, index) => !unselectedIndices.includes(index)), unselectedIndices };
     };
 
-    const getFilteredProposal = () => {
-        const unselectedIndices = Object.keys(selectedPatches).filter(idx => !selectedPatches[idx]).map(Number);
-        
-        let filteredSchema = {
-            ...proposal.schema,
-            settings: { ...(proposal.schema.settings || {}) }
-        };
-        if (!filteredSchema.fields) {
-            filteredSchema.fields = [];
-        } else {
-            filteredSchema.fields = [...filteredSchema.fields];
-        }
-        
-        if (unselectedIndices.length > 0 && proposalPatches.length > 0) {
-            // Revert patches (process in reverse order of indices)
-            const sortedUnselected = [...unselectedIndices].sort((a, b) => b - a);
-
-            for (const idx of sortedUnselected) {
-                const patch = proposalPatches[idx];
-                if (!patch) continue;
-
-                if (patch.op === 'add') {
-                    filteredSchema.fields = filteredSchema.fields.filter(f => f.id !== patch.field?.id);
-                } else if (patch.op === 'remove') {
-                    if (patch.originalField) {
-                        const originalIndex = patch.originalIndex ?? filteredSchema.fields.length;
-                        filteredSchema.fields.splice(originalIndex, 0, patch.originalField);
-                    }
-                } else if (patch.op === 'update') {
-                    if (patch.originalField) {
-                        filteredSchema.fields = filteredSchema.fields.map(f => f.id === patch.id ? patch.originalField : f);
-                    }
-                } else if (patch.op === 'update_meta') {
-                    if (patch.originalMeta) {
-                        filteredSchema.title = patch.originalMeta.title;
-                        filteredSchema.description = patch.originalMeta.description;
-                    }
-                } else if (patch.op === 'update_settings') {
-                    filteredSchema.settings = { ...(patch.originalSettings || {}) };
-                } else if (patch.op === 'update_memory') {
-                    if (patch.originalMemory) filteredSchema.settings.aiMemory = patch.originalMemory;
-                    else delete filteredSchema.settings.aiMemory;
-                }
-            }
-        }
-
-        return {
-            unselectedIndices,
-            // Create a new proposal object that has the updated schema and patches
-            filteredProposal: {
-                ...proposal,
-                schema: filteredSchema,
-                // Only keep patches that were actually selected so the preview modal renders them correctly
-                patches: proposalPatches.filter((_, idx) => !unselectedIndices.includes(idx)),
-                unselectedIndices
-            }
-        };
-    };
-
-    const handlePreviewClick = () => {
-        if (!proposal?.schema) return onPreview(proposal);
-        
-        const { filteredProposal } = getFilteredProposal();
-        onPreview(filteredProposal);
-    };
-
-    useEffect(() => {
-        if (onPreviewUpdate && proposal?.schema) {
-            const { filteredProposal } = getFilteredProposal();
-            onPreviewUpdate(filteredProposal);
-        }
+    useEffect(() => { if (!locked && onPreviewUpdate && proposal?.schema) onPreviewUpdate(filtered());
+    // Preview follows the explicit selection state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedPatches]); // Re-fire whenever selected patches change
+    }, [selected]);
 
-    return (
-        <ProposalCard
-            type="form"
-            title={proposal?.schema?.title || (hasSettingsOnlyChanges ? 'Form settings' : 'Form changes')}
-            status={status}
-            verification={proposal?.verification}
-            actions={(!isAccepted && !isRejected && !isStale) ? (
-                <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="sm" className="flex-1" onClick={onIgnore} isLoading={rejecting} loadingText="Ignoring…">Ignore</Button>
-                    <Button variant="primary" size="sm" className="flex-1" onClick={handlePreviewClick}>Preview changes</Button>
-                </div>
-            ) : null}
-        >
-            <div>
-                <h4 className="text-sm font-semibold text-slate-800">{proposal?.schema?.title || "Form Update"}</h4>
+    const chooseAll = value => setSelected(Object.fromEntries(patches.map((_, index) => [index, value])));
+    const toggle = index => !locked && setSelected(previous => ({ ...previous, [index]: !previous[index] }));
+    const addedCount = patches.filter(patch => patch.op === 'add').length;
+    const updatedCount = patches.filter(patch => ['update', 'update_meta', 'update_settings'].includes(patch.op)).length;
+    const removedCount = patches.filter(patch => patch.op === 'remove').length;
+    const countSummary = [addedCount ? `${addedCount} added` : null, updatedCount ? `${updatedCount} updated` : null, removedCount ? `${removedCount} removed` : null].filter(Boolean).join(' · ');
 
-                {(() => {
-                    if (proposalPatches.length === 0) {
-                        return <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">Adds {proposal?.schema?.fields?.length || 0} fields to your canvas.</p>;
-                    }
-                    const adds = proposalPatches.filter(p => p.op === 'add').length;
-                    const removes = proposalPatches.filter(p => p.op === 'remove').length;
-                    const updates = proposalPatches.filter(p => ['update', 'update_meta'].includes(p.op)).length;
-                    const memoryUpdates = proposalPatches.filter(p => p.op === 'update_memory').length;
+    if (isAccepted) return <section className="w-full bg-white">
+        <button type="button" onClick={() => setShowAppliedDetails(value => !value)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-emerald-50/40" aria-expanded={showAppliedDetails}>
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700"><Check size={17} strokeWidth={3} /></span>
+            <span className="min-w-0 flex-1"><span className="block text-[10px] font-extrabold uppercase tracking-[0.14em] text-emerald-700">Changes applied</span><span className="mt-0.5 block truncate text-sm font-extrabold text-slate-900">{proposal?.schema?.title || 'Form updated'}</span><span className="mt-0.5 block text-xs text-slate-500">{countSummary || `${patches.length} changes applied`}</span></span>
+            <span className="flex items-center gap-1 text-[11px] font-bold text-slate-500">{showAppliedDetails ? 'Hide' : 'View changes'}<ChevronDown size={15} className={`transition-transform ${showAppliedDetails ? 'rotate-180' : ''}`} /></span>
+        </button>
+        {showAppliedDetails && <div className="border-t border-slate-100 bg-slate-50/55 px-4 py-3"><div className="space-y-3">{Object.entries(groups).map(([group, entries]) => <div key={group}><p className="mb-1 text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-400">{group}</p><div className="overflow-hidden rounded-xl border border-slate-200 bg-white">{entries.map(({ patch, index }) => <div key={`${patch.patchId || patch.op}-${index}`} className="flex items-center gap-2.5 border-b px-3 py-2 last:border-0"><span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-xs font-extrabold ${toneFor(patch)}`}>{markerFor(patch)}</span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-bold text-slate-800">{titleFor(patch)}</span><span className="block truncate text-[11px] text-slate-500">{detailFor(patch)}</span></span><Check size={14} className="shrink-0 text-emerald-600" /></div>)}</div></div>)}</div></div>}
+    </section>;
 
-                    const parts = [];
-                    if (adds > 0) parts.push(`Added ${adds}`);
-                    if (removes > 0) parts.push(`Removed ${removes}`);
-                    if (updates > 0) parts.push(`Modified ${updates}`);
+    return <section className="w-full bg-white">
+        <div className="border-b border-violet-100 bg-violet-50/45 px-4 py-3.5">
+            <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-violet-700">Review form changes</p><h3 className="mt-1 text-sm font-extrabold text-slate-900">{proposal?.schema?.title || 'Untitled form'}</h3></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${isUnverified ? 'bg-amber-100 text-amber-800' : locked ? 'bg-slate-100 text-slate-600' : 'bg-violet-600 text-white'}`}>{isUnverified ? 'Review carefully' : locked ? 'Locked' : 'Ready to review'}</span></div>
+            <p className="mt-1.5 text-xs leading-5 text-slate-600">{summary || `${patches.length} changes prepared for this form.`}</p>
+            <div className="mt-3 flex flex-wrap gap-1.5"><span className="rounded-full border border-violet-200 bg-white px-2 py-1 text-[10px] font-bold text-violet-800">{patches.filter(patch => patch.op === 'add').length} added</span><span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-700">{patches.filter(patch => ['update', 'update_meta'].includes(patch.op)).length} updated</span>{patches.some(patch => patch.op === 'remove') && <span className="rounded-full border border-rose-200 bg-white px-2 py-1 text-[10px] font-bold text-rose-700">{patches.filter(patch => patch.op === 'remove').length} removed</span>}</div>
+        </div>
 
-                    return (
-                        <div className="flex flex-col gap-1">
-                            <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                                {parts.length > 0 ? `${parts.join(', ')} fields.` : hasSettingsOnlyChanges ? `${settingsChangeCount} form setting${settingsChangeCount === 1 ? '' : 's'} will change.` : 'No field changes.'}
-                            </p>
-                            {memoryUpdates > 0 && <p className="text-xs text-indigo-600 font-medium leading-relaxed">A persistent form preference is also proposed.</p>}
-                        </div>
-                    );
-                })()}
-            </div>
-
-            {proposalPatches.length > 0 && (
-                <div className="flex flex-col gap-1.5 mt-1 border border-slate-100 rounded-lg p-2 bg-white">
-                    {proposalPatches.map((patch, idx) => {
-                        const isChecked = selectedPatches[idx];
-                        if (patch.op === 'add') {
-                            return (
-                                <div key={idx} className={`flex items-start gap-2 text-xs font-medium px-2 py-1.5 rounded border transition-colors ${isChecked ? 'text-emerald-700 bg-emerald-50/50 border-emerald-100' : 'text-slate-400 bg-slate-50 border-slate-100'}`}>
-                                    <label className="flex items-center gap-2 cursor-pointer w-full">
-                                        <input 
-                                            type="checkbox" 
-                                            checked={!!isChecked} 
-                                            onChange={() => handleTogglePatch(idx)}
-                                            disabled={isAccepted || isRejected || isStale}
-                                            className="w-3.5 h-3.5 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 disabled:opacity-50"
-                                        />
-                                        <span className="flex-1">
-                                            <span className={`font-bold ${isChecked ? 'text-emerald-600' : 'text-slate-400'}`}>+</span> Added: {patch.field?.label || patch.field?.title || 'Field'}
-                                        </span>
-                                    </label>
-                                </div>
-                            );
-                        }
-                        if (patch.op === 'remove') {
-                            return (
-                                <div key={idx} className={`flex items-start gap-2 text-xs font-medium px-2 py-1.5 rounded border transition-colors ${isChecked ? 'text-red-700 bg-red-50/50 border-red-100' : 'text-slate-400 bg-slate-50 border-slate-100'}`}>
-                                    <label className="flex items-center gap-2 cursor-pointer w-full">
-                                        <input 
-                                            type="checkbox" 
-                                            checked={!!isChecked} 
-                                            onChange={() => handleTogglePatch(idx)}
-                                            disabled={isAccepted || isRejected || isStale}
-                                            className="w-3.5 h-3.5 text-red-600 rounded border-slate-300 focus:ring-red-500 disabled:opacity-50"
-                                        />
-                                        <span className="flex-1">
-                                            <span className={`font-bold ${isChecked ? 'text-red-600' : 'text-slate-400'}`}>-</span> Removed: {patch.label || 'Field'}
-                                        </span>
-                                    </label>
-                                </div>
-                            );
-                        }
-                        if (patch.op === 'update' || patch.op === 'update_meta' || patch.op === 'update_settings') {
-                            const settingEntries = patch.op === 'update_settings' ? Object.entries(patch.updates || {}) : [];
-                            return (
-                                <div key={idx} className={`flex items-start gap-2 text-xs font-medium px-2 py-2 rounded border transition-colors ${isChecked ? 'text-amber-700 bg-amber-50/50 border-amber-100' : 'text-slate-400 bg-slate-50 border-slate-100'}`}>
-                                    <label className="flex items-center gap-2 cursor-pointer w-full">
-                                        <input 
-                                            type="checkbox" 
-                                            checked={!!isChecked} 
-                                            onChange={() => handleTogglePatch(idx)}
-                                            disabled={isAccepted || isRejected || isStale}
-                                            className="w-3.5 h-3.5 text-amber-600 rounded border-slate-300 focus:ring-amber-500 disabled:opacity-50"
-                                        />
-                                        <span className="flex-1 min-w-0">
-                                            {patch.op === 'update_settings' ? (
-                                                <span className="flex flex-col gap-1.5">
-                                                    <span className={`font-semibold ${isChecked ? 'text-amber-800' : 'text-slate-500'}`}>Form settings</span>
-                                                    {settingEntries.map(([key, value]) => {
-                                                        const oldValue = patch.originalSettings?.[key];
-                                                        return (
-                                                            <span key={key} className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] font-medium text-slate-600">
-                                                                <span className="font-semibold text-slate-700">{getFormSettingLabel(key)}:</span>
-                                                                <span className="text-slate-400">{formatFormSettingValue(key, oldValue)}</span>
-                                                                <span className="text-slate-300" aria-hidden="true">→</span>
-                                                                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${isChecked ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-500'}`}>
-                                                                    {formatFormSettingValue(key, value)}
-                                                                </span>
-                                                            </span>
-                                                        );
-                                                    })}
-                                                </span>
-                                            ) : (
-                                                <><span className={`font-bold ${isChecked ? 'text-amber-600' : 'text-slate-400'}`}>~</span> {patch.op === 'update_meta' ? 'Modified form properties' : `Modified: ${patch.label || 'Field'}`}</>
-                                            )}
-                                        </span>
-                                    </label>
-                                </div>
-                            );
-                        }
-                        if (patch.op === 'update_memory') {
-                            const memory = patch.updates?.memory;
-                            return (
-                                <div key={idx} className={`flex items-start gap-2 text-xs font-medium px-2 py-1.5 rounded border transition-colors ${isChecked ? 'text-indigo-700 bg-indigo-50/50 border-indigo-100' : 'text-slate-400 bg-slate-50 border-slate-100'}`}>
-                                    <label className="flex items-center gap-2 cursor-pointer w-full">
-                                        <input
-                                            type="checkbox"
-                                            checked={!!isChecked}
-                                            onChange={() => handleTogglePatch(idx)}
-                                            disabled={isAccepted || isRejected || isStale}
-                                            className="w-3.5 h-3.5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 disabled:opacity-50"
-                                        />
-                                        <span className="flex-1">
-                                            <span className={`font-bold ${isChecked ? 'text-indigo-600' : 'text-slate-400'}`}>*</span>{' '}
-                                            {memory ? `Remember: ${memory.summary}` : 'Clear persistent form memory'}
-                                        </span>
-                                    </label>
-                                </div>
-                            );
-                        }
-                        return null;
-                    })}
-                </div>
-            )}
-
-        </ProposalCard>
-    );
+        <div className="px-4 py-3.5">
+            {isUnverified && <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900"><strong>Final AI verification was unavailable.</strong> Local validation passed; confirm the form in preview before applying it.</div>}
+            <div className="mb-3 flex items-center justify-between"><div><p className="text-sm font-extrabold text-slate-900">Changes</p><p className="mt-0.5 text-xs text-slate-500">{locked ? `${patches.length} proposed` : `${selectedCount} of ${patches.length} selected`}</p></div>{!locked && patches.length > 1 && <button type="button" onClick={() => chooseAll(selectedCount !== patches.length)} className="text-xs font-bold text-violet-700 hover:text-violet-900">{selectedCount === patches.length ? 'Clear all' : 'Select all'}</button>}</div>
+            <div className="space-y-4">{Object.entries(groups).map(([group, entries]) => <div key={group}><p className="mb-1.5 text-[10px] font-extrabold uppercase tracking-[0.13em] text-slate-400">{group}</p><div className="overflow-hidden rounded-xl border border-slate-200">{entries.map(({ patch, index }) => {
+                const open = Boolean(expanded[index]); const selectedPatch = Boolean(selected[index]); const settings = patch.op === 'update_settings' ? Object.entries(patch.updates || {}) : [];
+                const details = settings.length > 0 || patch.op === 'update' || patch.op === 'update_meta' || patch.op === 'update_memory';
+                return <div key={`${patch.patchId || patch.op}-${index}`} className={`border-b last:border-0 ${selectedPatch ? '' : 'bg-slate-50/70 opacity-60'}`}><div className="flex items-center gap-2.5 px-3 py-2.5"><input aria-label={`Include ${titleFor(patch)}`} type="checkbox" checked={selectedPatch} onChange={() => toggle(index)} disabled={locked} className="h-4 w-4 shrink-0 rounded border-slate-300 text-violet-600 focus:ring-violet-500" /><span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-xs font-extrabold ${toneFor(patch)}`}>{markerFor(patch)}</span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-bold text-slate-800">{titleFor(patch)}</span><span className="block truncate text-[11px] text-slate-500">{detailFor(patch)}</span></span>{details && <button type="button" onClick={() => setExpanded(previous => ({ ...previous, [index]: !previous[index] }))} className="rounded-md p-1 text-slate-400 hover:bg-violet-50 hover:text-violet-700" aria-label={`${open ? 'Hide' : 'Show'} details for ${titleFor(patch)}`}>{open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</button>}</div>{open && <div className="border-t border-slate-100 bg-slate-50 px-11 py-2.5 text-[11px] leading-5 text-slate-600">{settings.length > 0 ? settings.map(([key, value]) => <div key={key} className="flex flex-wrap gap-x-1.5"><strong>{getFormSettingLabel(key)}</strong><span className="line-through text-slate-400">{formatFormSettingValue(key, patch.originalSettings?.[key])}</span><span>→</span><span className="font-bold text-slate-700">{formatFormSettingValue(key, value)}</span></div>) : patch.op === 'update_meta' ? 'The title or description will be updated in the preview.' : patch.op === 'update_memory' ? 'This preference will be used for future AI edits.' : 'The preview shows the exact before-and-after field details.'}</div>}</div>;
+            })}</div></div>)}</div>
+        </div>
+        {!locked && <footer className="border-t border-violet-100 bg-slate-50/60 p-3.5"><div className="flex gap-2"><Button variant="ghost" size="sm" className="flex-1 whitespace-nowrap" onClick={onIgnore} isLoading={rejecting} loadingText="Discarding…" iconLeft={<X size={15} />}>Discard</Button><Button variant="primary" size="sm" className="flex-[1.5] whitespace-nowrap" disabled={selectedCount === 0} onClick={() => onPreview(filtered())} iconLeft={<Eye size={15} />}>Preview {selectedCount || ''} selected</Button></div></footer>}
+    </section>;
 }

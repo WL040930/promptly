@@ -6,6 +6,8 @@ import MessageOptionsWidget from './MessageOptionsWidget.jsx';
 import AssistantFailureCard from './AssistantFailureCard.jsx';
 import { proposalStatusLabel, shouldShowProposalActions } from './proposalStatus.js';
 import { AlertTriangle, CheckCircle2, Copy, GitBranch, ShieldAlert, Trash2, Zap } from 'lucide-react';
+import { Fragment } from 'react';
+import AssistantWorkCard from './AssistantWorkCard.jsx';
 
 const formatTokens = (value) => (value || 0).toLocaleString();
 
@@ -63,6 +65,10 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
         : (clarification?.inputs || payload.options || []);
     const selectedState = clarification?.selectedState || payload.selectedState || {};
     const kind = message.kind || (message.proposal ? 'form_proposal' : (options.length > 0 ? 'clarification' : 'text'));
+    const isClarification = kind === 'clarification' && options.length > 0;
+    const work = message.sender === 'bot' ? payload.work : null;
+    const isFormProposal = message.sender !== 'user' && kind === 'form_proposal';
+    const MessageShell = work ? AssistantWorkCard : Fragment;
     const planSteps = Array.isArray(payload.plan) ? payload.plan : (Array.isArray(payload.plan?.outcomes) ? payload.plan.outcomes : (Array.isArray(payload.plan?.steps) ? payload.plan.steps : []));
     const planSummary = typeof payload.plan?.summary === 'string' ? payload.plan.summary : null;
     const planAssumptions = Array.isArray(payload.plan?.assumptions) ? payload.plan.assumptions : [];
@@ -108,18 +114,19 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
 
     return (
         <div className={`flex w-full ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {message.sender !== 'user' && (
+            {message.sender !== 'user' && !work && (
                 <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-4 mr-2.5 shadow-sm border border-indigo-200/50">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="14" x="3" y="8" rx="2" /><path d="M12 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" /><path d="M12 5v3" /><path d="M8 14h.01" /><path d="M16 14h.01" /><path d="M9 19h6" /></svg>
                 </div>
             )}
-            <div className={`flex flex-col gap-1 ${message.sender === 'user' ? 'items-end' : 'items-start'} max-w-[90%] min-w-0`}>
+            <div className={`flex min-w-0 flex-col gap-1 ${message.sender === 'user' ? 'max-w-[90%] items-end' : work ? 'w-full max-w-4xl items-start' : 'max-w-[90%] items-start'}`}>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
                     {message.sender === 'user' ? 'You' : 'Promptly AI'}
                 </span>
+                <MessageShell {...(work ? { work, tokenUsage: message.tokenUsage } : {})}>
                 {message.sender !== 'user' && (message.isError || kind === 'error') ? (
                     <AssistantFailureCard message={message} onAction={onRecoveryAction} isWorking={isTyping} />
-                ) : (
+                ) : kind === 'assistant_work' || isFormProposal || isClarification ? null : (
                     <div className={`relative w-full min-w-0 rounded-2xl ${message.sender === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'}`}>
                         <div className="w-full min-w-0 overflow-x-auto p-3.5 text-sm leading-relaxed">
                             {message.sender === 'user' ? (
@@ -129,21 +136,6 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                             )}
                         </div>
                         {message.tokenUsage && <TokenUsageBreakdown tokenUsage={message.tokenUsage} />}
-                    </div>
-                )}
-
-                {message.sender !== 'user' && kind === 'form_proposal' && planSteps.length > 0 && (
-                    <div className="w-full rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2.5 text-xs text-slate-600">
-                        <div className="mb-1 font-semibold text-slate-800">Plan</div>
-                        {planSummary && <div className="mb-2 text-slate-600">{planSummary}</div>}
-                        <div className="flex flex-col gap-1">
-                            {planSteps.map((step, index) => (
-                                <div key={step.id || `${step.title || step.type}-${index}`} className="flex gap-2">
-                                    <span className="font-semibold text-indigo-600">{index + 1}.</span>
-                                    <span>{step.title || step.reason || step.type}</span>
-                                </div>
-                            ))}
-                        </div>
                     </div>
                 )}
 
@@ -190,15 +182,17 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                     </div>
                 )}
 
-                {kind === 'clarification' && options.length > 0 && (
+                {isClarification && (
                     <MessageOptionsWidget
+                        message={message.text}
                         options={options}
-                        allowDecide={clarification?.allowDecide === true}
-                        clarificationId={clarification?.clarificationId || clarification?.id}
+                        allowDecide={clarification?.allowDecide === true || payload.allowDecide === true}
+                        clarificationId={clarification?.clarificationId || clarification?.id || payload.clarificationId}
                         onSend={(selected) => onOption?.(selected)}
                         isTyping={isTyping}
-                        isResolved={!isLatest}
+                        isResolved={!isLatest || Object.keys(selectedState).length > 0}
                         initialState={selectedState}
+                        resolution={clarification?.resolution || payload.resolution}
                     />
                 )}
 
@@ -206,6 +200,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                     <FormProposalWidget
                         proposal={payload}
                         status={status}
+                        summary={message.text}
                         onAccept={(filteredSchema, unselectedIndices) => onApply?.(message, filteredSchema, unselectedIndices)}
                         onIgnore={() => onIgnore?.(message)}
                         onPreview={(filteredProposal) => onOption?.({ type: 'preview_form', proposal: { ...(filteredProposal || payload), messageId: message.id }, formId: payload.formId })}
@@ -331,6 +326,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                         </div>
                     </div>
                 )}
+                </MessageShell>
             </div>
         </div>
     );

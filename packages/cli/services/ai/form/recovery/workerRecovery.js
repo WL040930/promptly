@@ -177,6 +177,7 @@ export const recoverWorkerProposal = async ({
     initialWorkerResult = null,
     tokenUsage,
     onProgress,
+    onActivity = null,
     budget,
     cardinality,
     needsTitlePatch = false,
@@ -203,15 +204,19 @@ export const recoverWorkerProposal = async ({
                 contents: workerContents,
                 systemInstruction: workerInstruction,
                 label: 'worker',
-                budget
+                budget,
+                onActivity
             });
             totalTokenUsage = addTokenUsage(totalTokenUsage, workerCall.response, 'worker');
         } else {
             if (onProgress) onProgress({
                 status: 'repairing',
+                phase: failure?.stage === 'verifier' ? 'check' : 'draft',
+                label: failure?.stage === 'verifier' ? 'Correcting a requirement mismatch' : 'Correcting the form draft',
                 message: failure?.stage === 'verifier'
                     ? `Correcting the form changes to match the request (attempt ${attempt + 1} of ${MAX_FORM_REPAIR_LOOPS})...`
-                    : `Checking and correcting the form changes (attempt ${attempt + 1} of ${MAX_FORM_REPAIR_LOOPS})...`
+                    : `Checking and correcting the form changes (attempt ${attempt + 1} of ${MAX_FORM_REPAIR_LOOPS})...`,
+                detail: `${failure?.issues?.length || 1} issue${(failure?.issues?.length || 1) === 1 ? '' : 's'} found in the previous attempt.`
             });
             workerCall = await repairWorker({
                 provider,
@@ -222,7 +227,8 @@ export const recoverWorkerProposal = async ({
                 tokenUsage: totalTokenUsage,
                 budget,
                 cardinality,
-                turnContext
+                turnContext,
+                onActivity
             });
             totalTokenUsage = workerCall.tokenUsage;
         }
@@ -251,7 +257,10 @@ export const recoverWorkerProposal = async ({
             continue;
         }
 
-        if (onProgress) onProgress({ status: 'checking', message: 'Checking generated form...' });
+        if (onProgress) onProgress({
+            status: 'checking', phase: 'check', label: 'Checking the form draft',
+            message: 'Checking generated form...', detail: `${(result.patches || []).length} proposed change${(result.patches || []).length === 1 ? '' : 's'} are being validated.`
+        });
         const memoryPatch = createMemoryPatch(schema, plannerResult);
         const rawPatches = memoryPatch ? [memoryPatch, ...(result.patches || [])] : (result.patches || []);
         const metadataSafePatches = ensureTitlePatch(rawPatches, schema, needsTitlePatch);
@@ -299,7 +308,9 @@ export const recoverWorkerProposal = async ({
 
         if (onProgress) onProgress({
             status: 'verifying',
-            message: attempt === 0 ? 'Verifying the form instructions...' : 'Verifying the corrected form...'
+            phase: 'check', label: 'Verifying the requested form rules',
+            message: attempt === 0 ? 'Verifying the form instructions...' : 'Verifying the corrected form...',
+            detail: `${(plannerResult.requirements || []).length} requested requirement${(plannerResult.requirements || []).length === 1 ? '' : 's'} are being checked.`
         });
         let verificationCall;
         try {
@@ -311,6 +322,7 @@ export const recoverWorkerProposal = async ({
                 cardinality,
                 tokenUsage: totalTokenUsage,
                 onProgress,
+                onActivity,
                 budget
             });
         } catch (error) {

@@ -222,9 +222,10 @@ const requestAndValidate = async ({
     validate,
     provider,
     budget,
-    usage
+    usage,
+    onActivity = null
 }) => {
-    let call = await requestWorkflowJson({ label, prompt, systemInstruction: instruction, provider, budget });
+    let call = await requestWorkflowJson({ label, prompt, systemInstruction: instruction, provider, budget, onActivity });
     let nextUsage = addWorkflowUsage(usage, call.response, label);
     let issues = workflowOutputIssues({ call, validate });
     if (issues.length === 0) return { call, usage: nextUsage };
@@ -234,7 +235,8 @@ const requestAndValidate = async ({
         prompt: buildWorkflowOutputRepairContext({ stage: label, rawText: call.rawText, issues }),
         systemInstruction: instruction,
         provider,
-        budget
+        budget,
+        onActivity
     });
     nextUsage = addWorkflowUsage(nextUsage, call.response, `${label} repair`);
     issues = workflowOutputIssues({ call, validate });
@@ -264,8 +266,16 @@ export const generateWorkflowTurn = async ({
     const budget = { calls: 0, maxCalls: MAX_REQUEST_CALLS };
     const catalogue = registry.getCompactCatalogue().filter(node => node.implementationStatus !== 'disabled');
     let usage = {};
+    const reportProviderActivity = event => {
+        const phase = /planner/.test(event.operation) ? 'plan' : /verifier/.test(event.operation) ? 'check' : 'draft';
+        if (event.type === 'provider_fallback') onProgress?.({ id: `${event.operation}:fallback:${event.attempt}`, status: 'retrying', phase, label: 'Trying another AI route', message: 'Retrying with another available AI route', detail: 'The first route did not finish in time, so Promptly is continuing automatically.' });
+        if (event.type === 'provider_attempt') onProgress?.({ id: `${event.operation}:attempt:${event.attempt}`, status: 'awaiting_model', phase, label: phase === 'plan' ? 'Preparing the workflow plan' : phase === 'check' ? 'Checking the workflow proposal' : 'Drafting workflow changes', message: 'AI is working on this step', detail: `Attempt ${event.attempt} of ${event.maxAttempts}.` });
+    };
 
-    onProgress?.({ status: 'planning', message: 'Understanding your request' });
+    onProgress?.({
+        status: 'planning', phase: 'understand', label: 'Reading your request',
+        message: 'Understanding your request', detail: 'Identifying the trigger, actions, and any approval rules.'
+    });
     const buildPlannerContext = ({ inspectedFormSchema = null, formLookupUsed = false, forceDecision = false } = {}) => buildWorkflowPlannerContext({
         workflow: currentWorkflow,
         catalogue,
@@ -289,7 +299,8 @@ export const generateWorkflowTurn = async ({
         validate: validateWorkflowPlannerResult,
         provider,
         budget,
-        usage
+        usage,
+        onActivity: reportProviderActivity
     });
     usage = plannerResult.usage;
     let plan = plannerResult.call.value;
@@ -341,7 +352,8 @@ export const generateWorkflowTurn = async ({
             validate: validateWorkflowPlannerResult,
             provider,
             budget,
-            usage
+            usage,
+            onActivity: reportProviderActivity
         });
         usage = plannerResult.usage;
         plan = plannerResult.call.value;
@@ -365,7 +377,8 @@ export const generateWorkflowTurn = async ({
             validate: validateWorkflowPlannerResult,
             provider,
             budget,
-            usage
+            usage,
+            onActivity: reportProviderActivity
         });
         usage = plannerResult.usage;
         plan = plannerResult.call.value;
@@ -387,6 +400,15 @@ export const generateWorkflowTurn = async ({
         capabilities: plan.capabilities || []
     });
 
+    onProgress?.({
+        status: 'plan_ready', phase: 'plan', label: 'Mapped the workflow request',
+        message: 'Planning the workflow changes',
+        detail: plan.type === 'message' ? 'A decision is needed before a safe workflow can be drafted.'
+            : plan.type === 'reply' ? 'The request is ready for a direct response.'
+                : plan.summary || `${(plan.requirements || []).length} requirement${(plan.requirements || []).length === 1 ? '' : 's'} and ${(plan.selectedNodeKeys || []).length} step type${(plan.selectedNodeKeys || []).length === 1 ? '' : 's'} identified.`,
+        artifact: { id: 'workflow-requirements', kind: 'requirements', title: 'What Promptly understood', items: (plan.requirements || []).map(requirement => requirement.description || requirement.title || requirement.id).filter(Boolean) }
+    });
+
     if (plan.type === 'reply') return { type: 'reply', message: plan.message, tokenUsage: { ...usage, requestCalls: budget.calls } };
     if (plan.type === 'message') return { type: 'message', message: plan.message, inputs: plan.inputs, tokenUsage: { ...usage, requestCalls: budget.calls } };
 
@@ -397,7 +419,10 @@ export const generateWorkflowTurn = async ({
         throw createPipelineError('The workflow plan did not identify any supported nodes.', 'WORKFLOW_AI_NODE_SELECTION_REQUIRED');
     }
     const capabilities = unique(plan.capabilities || []);
-    onProgress?.({ status: 'loading_resources', message: 'Loading workflow resources…' });
+    onProgress?.({
+        status: 'loading_resources', phase: 'understand', label: 'Checking available workflow resources',
+        message: 'Loading workflow resources…', detail: `${specs.length} selected step type${specs.length === 1 ? '' : 's'} ready to configure.`
+    });
     const resourceContext = await resourceLoader({ userId, specs });
     let previousResponse = null;
     let repairIssues = [];
@@ -406,7 +431,10 @@ export const generateWorkflowTurn = async ({
     for (let attempt = 0; attempt < MAX_BUILD_ATTEMPTS; attempt += 1) {
         onProgress?.({
             status: attempt === 0 ? 'building' : 'repairing',
-            message: attempt === 0 ? 'Building workflow changes…' : `Correcting the workflow proposal (${attempt + 1}/${MAX_BUILD_ATTEMPTS})`
+            phase: 'draft',
+            label: attempt === 0 ? 'Drafting workflow changes' : 'Correcting the workflow draft',
+            message: attempt === 0 ? 'Building workflow changes…' : `Correcting the workflow proposal (${attempt + 1}/${MAX_BUILD_ATTEMPTS})`,
+            detail: attempt === 0 ? `${(plan.requirements || []).length} requested requirement${(plan.requirements || []).length === 1 ? '' : 's'} are being turned into workflow steps.` : `${repairIssues.length} issue${repairIssues.length === 1 ? '' : 's'} found in the previous draft.`
         });
 
         let workerCall;
@@ -429,13 +457,15 @@ export const generateWorkflowTurn = async ({
                 }),
                 systemInstruction: workflowWorkerInstruction,
                 provider,
-                budget
+                budget,
+                onActivity: reportProviderActivity
             });
             usage = addWorkflowUsage(usage, workerCall.response, label);
         }
 
         const workerIssues = workflowOutputIssues({ call: workerCall, validate: validateWorkflowWorkerResult });
         if (workerIssues.length > 0) {
+            onProgress?.({ status: 'repairing', phase: 'draft', label: 'Repairing an invalid workflow draft', message: 'The draft needs a correction', detail: `${workerIssues.length} issue${workerIssues.length === 1 ? '' : 's'} found before the workflow could be checked.` });
             previousResponse = workerCall.rawText || workerCall.value;
             repairIssues = workerIssues;
             continue;
@@ -456,6 +486,7 @@ export const generateWorkflowTurn = async ({
                 registry
             });
         } catch (error) {
+            onProgress?.({ status: 'repairing', phase: 'draft', label: 'Correcting workflow connections', message: 'The draft needs a correction', detail: `${(error.issues || []).length || 1} connection or configuration issue needs repair.` });
             previousResponse = workerCall.value;
             repairIssues = error.issues || [{ code: error.code || 'WORKFLOW_AI_PROPOSAL_INVALID', message: error.message }];
             await recordAiDiagnostic({
@@ -474,7 +505,12 @@ export const generateWorkflowTurn = async ({
             usage
         };
 
-        onProgress?.({ status: 'checking', message: 'Checking the proposal against your request' });
+        onProgress?.({
+            status: 'checking', phase: 'check', label: 'Checking the workflow draft',
+            message: 'Checking the proposal against your request',
+            detail: `${(workerCall.value.operations || []).length} proposed change${(workerCall.value.operations || []).length === 1 ? '' : 's'} compiled into a valid workflow.`,
+            artifact: { id: 'workflow-draft', kind: 'draft', title: 'Draft assembled', items: (compiled.finalWorkflow?.nodes || []).map(node => node.title || node.subType).filter(Boolean) }
+        });
         let verifier;
         try {
             verifier = await requestAndValidate({
@@ -490,7 +526,8 @@ export const generateWorkflowTurn = async ({
                 validate: validateWorkflowVerifierResult,
                 provider,
                 budget,
-                usage
+                usage,
+                onActivity: reportProviderActivity
             });
         } catch (error) {
             if (!['WORKFLOW_AI_INVALID_VERIFIER', 'WORKFLOW_AI_BUDGET_EXCEEDED', 'WORKFLOW_AI_PROVIDER_TIMEOUT'].includes(error.code)) throw error;
@@ -514,6 +551,7 @@ export const generateWorkflowTurn = async ({
         }
         usage = verifier.usage;
         if (verifier.call.value.status === 'repair') {
+            onProgress?.({ status: 'repairing', phase: 'check', label: 'Repairing a requirement mismatch', message: 'The verifier found a requirement to correct', detail: `${verifier.call.value.issues.length} requested detail${verifier.call.value.issues.length === 1 ? '' : 's'} still needs attention.` });
             previousResponse = workerCall.value;
             repairIssues = verifier.call.value.issues.map(item => ({
                 code: 'REQUIREMENT_NOT_SATISFIED',
@@ -543,6 +581,7 @@ export const generateWorkflowTurn = async ({
                 repairs: compiled.repairs.map(item => ({ code: item.code, nodeId: item.nodeId }))
             });
         }
+        onProgress?.({ status: 'verified', phase: 'check', label: 'Verified the workflow proposal', message: 'The workflow draft is ready for review', detail: 'All requested workflow requirements passed the final check.' });
         return buildProposalResult({
             ...proposal,
             usage: { ...usage, requestCalls: budget.calls },
