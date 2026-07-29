@@ -28,6 +28,7 @@ const progressSnapshot = progress => ({
     ...(typeof progress?.detail === 'string' ? { detail: progress.detail } : {}),
     ...(typeof progress?.id === 'string' ? { id: progress.id } : {}),
     ...(typeof progress?.type === 'string' ? { type: progress.type } : {}),
+    ...(['reply', 'clarification', 'proposal'].includes(progress?.outcomeKind) ? { outcomeKind: progress.outcomeKind } : {}),
     ...(progress?.artifact && typeof progress.artifact === 'object' ? { artifact: progress.artifact } : {}),
     updatedAt: new Date().toISOString()
 });

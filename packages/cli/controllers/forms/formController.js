@@ -80,7 +80,8 @@ export const submitFormAITurn = asyncHandler(async (req, res) => {
                 type: 'error',
                 code: error.code || 'FORM_AI_FAILED',
                 message: error.message || 'Form AI turn failed.',
-                issues: error.issues || []
+                issues: error.issues || [],
+                ...(Number.isInteger(error.currentStateVersion) ? { currentStateVersion: error.currentStateVersion } : {})
             });
             return res.end();
         }

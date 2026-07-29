@@ -33,6 +33,20 @@ const canRebuildDirectProposal = (plannerResult, issues = []) => {
     ));
 };
 
+const normalizePlannerType = (plannerResult) => {
+    if (!plannerResult || typeof plannerResult !== 'object' || Array.isArray(plannerResult)) return plannerResult;
+    const type = String(plannerResult.type || '').trim().toLowerCase();
+    if (['reply', 'message', 'plan_complete', 'direct_proposal'].includes(type)) {
+        return type === plannerResult.type ? plannerResult : { ...plannerResult, type };
+    }
+    if (['clarification', 'clarify', 'question'].includes(type)) return { ...plannerResult, type: 'message' };
+    if (['response', 'answer', 'text'].includes(type)) return { ...plannerResult, type: 'reply' };
+    if (['proposal', 'plan', 'form_proposal'].includes(type)) {
+        return { ...plannerResult, type: Array.isArray(plannerResult.patches) ? 'direct_proposal' : 'plan_complete' };
+    }
+    return plannerResult;
+};
+
 const rebuildAsWorkerPlan = (plannerResult) => {
     const workerPlan = Object.fromEntries(
         Object.entries(plannerResult).filter(([key]) => key !== 'patches')
@@ -93,8 +107,8 @@ export const generateFormFromPrompt = async (
         });
 
         let tokenUsage = addTokenUsage({}, plannerCall.response, 'planner');
-        let plannerResult = plannerCall.value;
-        let plannerIssues = getOutputIssues({ ...plannerCall, validate: validatePlannerResult });
+        let plannerResult = normalizePlannerType(plannerCall.value);
+        let plannerIssues = getOutputIssues({ ...plannerCall, value: plannerResult, validate: validatePlannerResult });
         if (plannerIssues.length > 0) {
             if (onProgress) onProgress({
                 status: 'repairing', phase: 'plan', label: 'Correcting the form plan',
@@ -110,8 +124,8 @@ export const generateFormFromPrompt = async (
                 onActivity: reportProviderActivity
             });
             tokenUsage = plannerCall.tokenUsage;
-            plannerResult = plannerCall.value;
-            plannerIssues = getOutputIssues({ ...plannerCall, validate: validatePlannerResult });
+            plannerResult = normalizePlannerType(plannerCall.value);
+            plannerIssues = getOutputIssues({ ...plannerCall, value: plannerResult, validate: validatePlannerResult });
             if (plannerIssues.length > 0) {
                 if (canRebuildDirectProposal(plannerResult, plannerIssues)) {
                     plannerResult = rebuildAsWorkerPlan(plannerResult);
@@ -128,13 +142,6 @@ export const generateFormFromPrompt = async (
             delegated: options.turnContext?.authority === 'assistant'
         });
 
-        if (onProgress) onProgress({
-            status: 'plan_ready', phase: 'plan', label: 'Mapped the form request',
-            message: 'Planning the form changes',
-            detail: plannerResult.summary || `${(plannerResult.requirements || []).length} requirement${(plannerResult.requirements || []).length === 1 ? '' : 's'} identified for this form.`,
-            artifact: { id: 'form-requirements', kind: 'requirements', title: 'What Promptly understood', items: (plannerResult.requirements || []).map(requirement => requirement.description || requirement.title || requirement.id).filter(Boolean) }
-        });
-
         if (plannerPolicy.action === 'resolve_defaults' && !options.forceDecision) {
             if (onProgress) onProgress({
                 status: 'deciding', phase: 'plan', label: 'Choosing sensible defaults',
@@ -149,12 +156,48 @@ export const generateFormFromPrompt = async (
                 onActivity: reportProviderActivity
             });
             tokenUsage = addTokenUsage(tokenUsage, plannerCall.response, 'planner');
-            plannerResult = plannerCall.value;
-            plannerIssues = getOutputIssues({ ...plannerCall, validate: validatePlannerResult });
+            plannerResult = normalizePlannerType(plannerCall.value);
+            plannerIssues = getOutputIssues({ ...plannerCall, value: plannerResult, validate: validatePlannerResult });
             if (plannerIssues.length > 0) {
-                throw createAIOutputError('I could not create a reliable plan for this request.', 'FORM_AI_UNSAFE_PLAN', plannerIssues);
+                if (onProgress) onProgress({
+                    status: 'repairing', phase: 'plan', label: 'Correcting the defaults plan',
+                    message: 'Checking and correcting the plan...', detail: `${plannerIssues.length} plan issue${plannerIssues.length === 1 ? '' : 's'} found after choosing defaults.`
+                });
+                plannerCall = await repairPlanner({
+                    provider,
+                    rawText: plannerCall.rawText || JSON.stringify(plannerResult),
+                    issues: plannerIssues,
+                    tokenUsage,
+                    budget,
+                    cardinality,
+                    onActivity: reportProviderActivity
+                });
+                tokenUsage = plannerCall.tokenUsage;
+                plannerResult = normalizePlannerType(plannerCall.value);
+                plannerIssues = getOutputIssues({ ...plannerCall, value: plannerResult, validate: validatePlannerResult });
+                if (plannerIssues.length > 0) {
+                    if (canRebuildDirectProposal(plannerResult, plannerIssues)) {
+                        plannerResult = rebuildAsWorkerPlan(plannerResult);
+                    } else {
+                        throw createAIOutputError('I could not create a reliable plan for this request.', 'FORM_AI_UNSAFE_PLAN', plannerIssues);
+                    }
+                }
             }
         }
+
+        const resolvedOutcomeKind = plannerResult.type === 'reply'
+            || (plannerResult.type === 'message' && plannerPolicy.action === 'resolve_defaults')
+            ? 'reply'
+            : plannerResult.type === 'message' ? 'clarification' : 'proposal';
+        if (onProgress) onProgress({
+            status: 'plan_ready', phase: 'plan', label: 'Mapped the form request',
+            outcomeKind: resolvedOutcomeKind,
+            message: resolvedOutcomeKind === 'reply' ? 'Preparing a response'
+                : resolvedOutcomeKind === 'clarification' ? 'Preparing a clarification'
+                    : 'Planning the form changes',
+            detail: plannerResult.summary || plannerResult.message || `${(plannerResult.requirements || []).length} requirement${(plannerResult.requirements || []).length === 1 ? '' : 's'} identified for this form.`,
+            artifact: { id: 'form-requirements', kind: 'requirements', title: 'What Promptly understood', items: (plannerResult.requirements || []).map(requirement => requirement.description || requirement.title || requirement.id).filter(Boolean) }
+        });
 
         // Conversational replies and clarification questions are terminal and
         // non-mutating outcomes. Decide-everything has already had one bounded

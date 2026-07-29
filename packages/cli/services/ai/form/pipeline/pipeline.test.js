@@ -10,6 +10,7 @@ process.env.AI_TIMEOUT_MS = '50';
 test('generateFormFromPrompt returns a non-mutating conversational reply', async () => {
     const { generateFormFromPrompt } = await import('./pipeline.js');
     let calls = 0;
+    const progress = [];
     const provider = {
         async generateContent() {
             calls += 1;
@@ -26,7 +27,7 @@ test('generateFormFromPrompt returns a non-mutating conversational reply', async
         'Why should I use a dropdown for this field?',
         { title: 'Survey', description: '', settings: {}, fields: [] },
         [],
-        null,
+        event => progress.push(event),
         { provider }
     );
 
@@ -34,10 +35,12 @@ test('generateFormFromPrompt returns a non-mutating conversational reply', async
     assert.match(result.message, /dropdown/);
     assert.equal(calls, 1);
     assert.equal(result.tokenUsage.requestCalls, 1);
+    assert.equal(progress.find(event => event.status === 'plan_ready')?.outcomeKind, 'reply');
 });
 
 test('new forms remain valid when the worker returns field-only patches', async () => {
     const { generateFormFromPrompt } = await import('./pipeline.js');
+    const progress = [];
     const provider = {
         async generateContent(contents, options) {
             if (options.operation === 'form:planner') {
@@ -62,7 +65,7 @@ test('new forms remain valid when the worker returns field-only patches', async 
         'Create a contact form with an email field.',
         { fields: [], settings: {} },
         [],
-        null,
+        event => progress.push(event),
         { provider }
     );
 
@@ -71,6 +74,7 @@ test('new forms remain valid when the worker returns field-only patches', async 
     assert.equal(result.schema.fields[0].label, 'Email');
     assert.ok(result.patches.some(patch => patch.op === 'update_meta' && patch.updates.title === 'Untitled Form'));
     assert.equal(result.verification.status, 'pass');
+    assert.equal(progress.find(event => event.status === 'plan_ready')?.outcomeKind, 'proposal');
 });
 
 test('decide_everything resolves a section-heading clarification and rejects unrelated field scope', async () => {
@@ -130,6 +134,92 @@ test('decide_everything resolves a section-heading clarification and rejects unr
     assert.equal(result.type, 'proposal');
     assert.deepEqual(result.schema.fields.map(field => field.type), ['heading', 'text']);
     assert.equal(result.schema.fields[0].label, 'Contact Information');
+});
+
+test('decide_everything repairs an invalid planner type returned by the defaults pass', async () => {
+    const { generateFormFromPrompt } = await import('./pipeline.js');
+    const outputs = [
+        {
+            type: 'message',
+            message: 'Which field should be required?',
+            inputs: [{ id: 'field', type: 'text', label: 'Field name' }]
+        },
+        {
+            type: 'unexpected_outcome',
+            summary: 'Make the email field required.',
+            requirements: [{ id: 'req_email', description: 'Require the email field.' }]
+        },
+        {
+            type: 'plan_complete',
+            summary: 'Make the email field required.',
+            requirements: [{ id: 'req_email', description: 'Require the email field.' }],
+            memoryUpdate: { action: 'none' }
+        },
+        {
+            patches: [{ op: 'update', id: 'email', updates: { required: true } }]
+        },
+        { status: 'pass', issues: [] }
+    ];
+    const operations = [];
+    const provider = {
+        async generateContent(_contents, options) {
+            operations.push(options.operation);
+            const output = outputs.shift();
+            assert.ok(output, 'The fake provider received an unexpected request.');
+            return { text: JSON.stringify(output) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Use sensible defaults.',
+        {
+            id: 'form_1',
+            title: 'Contact form',
+            description: '',
+            settings: {},
+            fields: [{ id: 'email', type: 'email', label: 'Email', required: false }]
+        },
+        [],
+        null,
+        { provider, clarificationMode: 'decide_everything' }
+    );
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.schema.fields[0].required, true);
+    assert.deepEqual(operations.slice(0, 3), ['form:planner', 'form:planner', 'form:planner repair']);
+});
+
+test('planner normalizes a proposal type alias without spending a repair call', async () => {
+    const { generateFormFromPrompt } = await import('./pipeline.js');
+    const outputs = [
+        {
+            type: 'proposal',
+            summary: 'Add a phone field.',
+            requirements: [{ id: 'req_phone', description: 'Collect a phone number.' }],
+            memoryUpdate: { action: 'none' }
+        },
+        { patches: [{ op: 'add', field: { id: 'phone', type: 'phone', label: 'Phone' } }] },
+        { status: 'pass', issues: [] }
+    ];
+    const operations = [];
+    const provider = {
+        async generateContent(_contents, options) {
+            operations.push(options.operation);
+            return { text: JSON.stringify(outputs.shift()) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Add a phone field.',
+        { id: 'form_1', title: 'Contact form', description: '', settings: {}, fields: [] },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.schema.fields[0].type, 'phone');
+    assert.deepEqual(operations, ['form:planner', 'form:worker', 'form:verifier']);
 });
 
 test('generateFormFromPrompt preserves normalized token usage from the AI client', async () => {
@@ -443,6 +533,44 @@ test('recovers user-facing labels when the worker and its repair omit them', asy
 
     assert.deepEqual(result.schema.fields.map(field => field.label), ['First Name', 'Email', 'Attendance Type']);
     assert.equal(result.verification.status, 'pass');
+});
+
+test('falls back to append order when the worker invents a placement anchor', async () => {
+    const { generateFormFromPrompt } = await import('./pipeline.js');
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'form:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Create an event registration form.',
+                    requirements: [{ id: 'req_fields', description: 'Collect attendee name and email.' }],
+                    memoryUpdate: { action: 'none' }
+                }) };
+            }
+            if (options.operation === 'form:worker') {
+                return { text: JSON.stringify({
+                    patches: [
+                        { op: 'add', field: { id: 'name', type: 'text', label: 'Name' } },
+                        { op: 'add', field: { id: 'email', type: 'email', label: 'Email' }, insertAfter: 'invented_field' }
+                    ]
+                }) };
+            }
+            assert.equal(options.operation, 'form:verifier');
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Create an event registration form.',
+        { id: 'form_1', title: 'Event', description: '', settings: {}, fields: [] },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.equal(result.type, 'proposal');
+    assert.deepEqual(result.schema.fields.map(field => field.id), ['name', 'email']);
+    assert.ok(result.warnings.some(warning => warning.code === 'UNKNOWN_PLACEMENT_IGNORED'));
 });
 
 test('generateFormFromPrompt fails instead of hanging when a model stage never resolves', async () => {

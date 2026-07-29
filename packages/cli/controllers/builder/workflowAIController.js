@@ -62,6 +62,7 @@ export const submitWorkflowAITurn = asyncHandler(async (req, res) => {
                 code: error.code || 'WORKFLOW_AI_FAILED',
                 message: error.message || 'Workflow AI turn failed.',
                 issues: error.issues || [],
+                ...(Number.isInteger(error.currentStateVersion) ? { currentStateVersion: error.currentStateVersion } : {}),
                 ...(error.recovery ? { recovery: error.recovery } : {})
             });
             return res.end();

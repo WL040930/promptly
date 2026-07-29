@@ -27,6 +27,7 @@ const progressSnapshot = (progress, now = () => new Date()) => ({
     ...(typeof progress?.detail === 'string' ? { detail: progress.detail } : {}),
     ...(typeof progress?.id === 'string' ? { id: progress.id } : {}),
     ...(typeof progress?.type === 'string' ? { type: progress.type } : {}),
+    ...(['reply', 'clarification', 'proposal'].includes(progress?.outcomeKind) ? { outcomeKind: progress.outcomeKind } : {}),
     ...(progress?.artifact && typeof progress.artifact === 'object' ? { artifact: progress.artifact } : {}),
     updatedAt: now().toISOString()
 });
@@ -145,6 +146,7 @@ export const createFormAssistant = ({
                 const error = new Error('The form AI conversation changed. Refresh and try again.');
                 error.code = 'FORM_AI_STATE_CONFLICT';
                 error.status = 409;
+                error.currentStateVersion = state.version;
                 throw error;
             }
             if (state.inFlightRequestId && state.inFlightStartedAt) {
@@ -311,6 +313,10 @@ export const createFormAssistant = ({
             });
             return response;
         } catch (error) {
+            // Progress persistence is intentionally queued so model callbacks do
+            // not block. Drain that queue before writing the terminal failure,
+            // otherwise a late attempt can replace the failed work snapshot.
+            await progressChain.catch(() => {});
             const recovery = buildAssistantRecovery({
                 surface: 'form',
                 code: error.code || 'FORM_AI_GENERATION_FAILED',
@@ -344,7 +350,12 @@ export const createFormAssistant = ({
                     inFlightStartedAt: null,
                     progress: null
                 }, { transaction });
-                response = { userMsg: asJson(userMessage), botMsg: asJson(assistantMessage), error: { code: error.code, message: safeMessage } };
+                response = {
+                    userMsg: asJson(userMessage),
+                    botMsg: asJson(assistantMessage),
+                    state: asJson(freshState),
+                    error: { code: error.code, message: safeMessage }
+                };
             });
             return response;
         }
@@ -450,13 +461,6 @@ export const createFormAssistant = ({
                 }
                 response = { form: asJson(form), message: asJson(message), state: nextState };
                 return;
-            }
-
-            if (proposal.verification?.status !== 'pass') {
-                const error = new Error('This proposal still needs verification before it can be applied.');
-                error.status = 409;
-                error.code = 'FORM_PROPOSAL_UNVERIFIED';
-                throw error;
             }
 
             const proposalPatches = Array.isArray(proposal.patches) ? proposal.patches : [];

@@ -132,6 +132,7 @@ export const submitFormAITurnStream = async (formId, command, clarificationMode,
                 if (data.type === 'error') {
                     const error = createStreamError(data.message, data.code);
                     error.issues = data.issues;
+                    error.currentStateVersion = data.currentStateVersion;
                     throw error;
                 }
             }
@@ -207,6 +208,7 @@ export const submitWorkflowAITurnStream = async (workflowId, input, clarificatio
                     const error = createStreamError(data.message, data.code || 'WORKFLOW_AI_FAILED');
                     error.issues = data.issues;
                     error.recovery = data.recovery;
+                    error.currentStateVersion = data.currentStateVersion;
                     throw error;
                 }
             }

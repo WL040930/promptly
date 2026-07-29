@@ -4,10 +4,10 @@ import WorkflowProposalWidget from './WorkflowProposalWidget.jsx';
 import MarkdownRenderer from '../ui/MarkdownRenderer.jsx';
 import MessageOptionsWidget from './MessageOptionsWidget.jsx';
 import AssistantFailureCard from './AssistantFailureCard.jsx';
-import { proposalStatusLabel, shouldShowProposalActions } from './proposalStatus.js';
-import { AlertTriangle, CheckCircle2, Copy, GitBranch, ShieldAlert, Trash2, Zap } from 'lucide-react';
-import { Fragment } from 'react';
 import AssistantWorkCard from './AssistantWorkCard.jsx';
+import { proposalStatusLabel, shouldShowProposalActions } from './proposalStatus.js';
+import { messagePresentation } from './messagePresentation.js';
+import { AlertTriangle, CheckCircle2, Copy, GitBranch, LoaderCircle, ShieldAlert, Trash2, Zap } from 'lucide-react';
 
 const formatTokens = (value) => (value || 0).toLocaleString();
 
@@ -68,7 +68,13 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
     const isClarification = kind === 'clarification' && options.length > 0;
     const work = message.sender === 'bot' ? payload.work : null;
     const isFormProposal = message.sender !== 'user' && kind === 'form_proposal';
-    const MessageShell = work ? AssistantWorkCard : Fragment;
+    const presentation = messagePresentation(message);
+    const isCompactWork = presentation === 'work';
+    const isProposalWork = presentation === 'proposal_work';
+    const isWorkMessage = isCompactWork || isProposalWork;
+    const workLabel = work?.activities?.find(activity => activity.status === 'active')?.label
+        || work?.activities?.at(-1)?.label
+        || 'Thinking';
     const planSteps = Array.isArray(payload.plan) ? payload.plan : (Array.isArray(payload.plan?.outcomes) ? payload.plan.outcomes : (Array.isArray(payload.plan?.steps) ? payload.plan.steps : []));
     const planSummary = typeof payload.plan?.summary === 'string' ? payload.plan.summary : null;
     const planAssumptions = Array.isArray(payload.plan?.assumptions) ? payload.plan.assumptions : [];
@@ -114,17 +120,23 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
 
     return (
         <div className={`flex w-full ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {message.sender !== 'user' && !work && (
+            {message.sender !== 'user' && !isWorkMessage && (
                 <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-4 mr-2.5 shadow-sm border border-indigo-200/50">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="14" x="3" y="8" rx="2" /><path d="M12 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" /><path d="M12 5v3" /><path d="M8 14h.01" /><path d="M16 14h.01" /><path d="M9 19h6" /></svg>
                 </div>
             )}
-            <div className={`flex min-w-0 flex-col gap-1 ${message.sender === 'user' ? 'max-w-[90%] items-end' : work ? 'w-full max-w-4xl items-start' : 'max-w-[90%] items-start'}`}>
+            <div className={`flex min-w-0 flex-col gap-1 ${message.sender === 'user' ? 'max-w-[90%] items-end' : isProposalWork ? 'w-full max-w-4xl items-start' : 'max-w-[90%] items-start'}`}>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
                     {message.sender === 'user' ? 'You' : 'Promptly AI'}
                 </span>
-                <MessageShell {...(work ? { work, tokenUsage: message.tokenUsage } : {})}>
-                {message.sender !== 'user' && (message.isError || kind === 'error') ? (
+                {isProposalWork ? (
+                    <AssistantWorkCard work={work} tokenUsage={message.tokenUsage} />
+                ) : isCompactWork ? (
+                    <div className="inline-flex items-center gap-2 rounded-2xl rounded-tl-none border border-slate-200/70 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-500 shadow-sm" role="status" aria-label="Promptly is working">
+                        <LoaderCircle size={14} className="animate-spin text-violet-600" />
+                        <span>{workLabel}…</span>
+                    </div>
+                ) : message.sender !== 'user' && (message.isError || kind === 'error') ? (
                     <AssistantFailureCard message={message} onAction={onRecoveryAction} isWorking={isTyping} />
                 ) : kind === 'assistant_work' || isFormProposal || isClarification ? null : (
                     <div className={`relative w-full min-w-0 rounded-2xl ${message.sender === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'}`}>
@@ -201,10 +213,12 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                         proposal={payload}
                         status={status}
                         summary={message.text}
-                        onAccept={(filteredSchema, unselectedIndices) => onApply?.(message, filteredSchema, unselectedIndices)}
+                        tokenUsage={message.tokenUsage}
+                        onAccept={(filteredSchema, selectedPatchIds) => onApply?.(message, filteredSchema, selectedPatchIds)}
                         onIgnore={() => onIgnore?.(message)}
                         onPreview={(filteredProposal) => onOption?.({ type: 'preview_form', proposal: { ...(filteredProposal || payload), messageId: message.id }, formId: payload.formId })}
                         onPreviewUpdate={(filteredProposal) => onOption?.({ type: 'preview_update', proposal: filteredProposal, formId: payload.formId })}
+                        onRegenerate={() => onOption?.({ type: 'regenerate_proposal', text: payload.work?.title || message.text || '' })}
                         accepting={isAccepting}
                         rejecting={isRejecting}
                     />
@@ -214,10 +228,12 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                     <WorkflowProposalWidget
                         proposal={payload}
                         status={status}
+                        tokenUsage={message.tokenUsage}
                         onAccept={() => onApply?.(message)}
                         onIgnore={() => onIgnore?.(message)}
                         onPreview={() => onOption?.({ type: 'preview_workflow', proposal: { ...payload, messageId: message.id }, workflowId: payload.workflowId })}
                         onSetupAction={action => onRecoveryAction?.(action, message)}
+                        onRegenerate={() => onOption?.({ type: 'regenerate_proposal', text: payload.work?.title || message.text || '' })}
                         accepting={isAccepting}
                         rejecting={isRejecting}
                     />
@@ -326,7 +342,6 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                         </div>
                     </div>
                 )}
-                </MessageShell>
             </div>
         </div>
     );

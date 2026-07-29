@@ -147,6 +147,28 @@ const normalizeOptionalSettings = patches => {
     return { patches: normalized, warnings };
 };
 
+const normalizePlacementAnchors = (patches, schema) => {
+    const availableFieldIds = new Set((schema?.fields || []).map(field => field?.id).filter(Boolean));
+    const warnings = [];
+    const normalized = (Array.isArray(patches) ? patches : []).map((patch, index) => {
+        if (patch?.op !== 'add') return patch;
+        const anchor = patch.insertBefore || patch.insertAfter;
+        let nextPatch = patch;
+        if (anchor && !availableFieldIds.has(anchor)) {
+            const { insertBefore, insertAfter, ...withoutPlacement } = patch;
+            nextPatch = withoutPlacement;
+            warnings.push({
+                code: 'UNKNOWN_PLACEMENT_IGNORED',
+                path: `patches[${index}].${insertBefore ? 'insertBefore' : 'insertAfter'}`,
+                message: `Placed '${patch.field?.label || patch.field?.id || 'the field'}' at the end because its requested position was unavailable.`
+            });
+        }
+        if (patch.field?.id) availableFieldIds.add(patch.field.id);
+        return nextPatch;
+    });
+    return { patches: normalized, warnings };
+};
+
 const hasUsableTitle = value => typeof value === 'string' && value.trim().length > 0;
 
 const ensureTitlePatch = (patches, schema, needsTitlePatch) => {
@@ -210,6 +232,7 @@ export const recoverWorkerProposal = async ({
             totalTokenUsage = addTokenUsage(totalTokenUsage, workerCall.response, 'worker');
         } else {
             if (onProgress) onProgress({
+                id: `form-repair:${attempt + 1}`,
                 status: 'repairing',
                 phase: failure?.stage === 'verifier' ? 'check' : 'draft',
                 label: failure?.stage === 'verifier' ? 'Correcting a requirement mismatch' : 'Correcting the form draft',
@@ -266,8 +289,10 @@ export const recoverWorkerProposal = async ({
         const metadataSafePatches = ensureTitlePatch(rawPatches, schema, needsTitlePatch);
         const normalizedSettings = normalizeOptionalSettings(metadataSafePatches);
         warnings.push(...normalizedSettings.warnings);
+        const normalizedPlacement = normalizePlacementAnchors(normalizedSettings.patches, schema);
+        warnings.push(...normalizedPlacement.warnings);
         try {
-            appliedProposal = applyFormPatches({ currentSchema: schema, patches: normalizedSettings.patches });
+            appliedProposal = applyFormPatches({ currentSchema: schema, patches: normalizedPlacement.patches });
         } catch (error) {
             failure = {
                 stage: 'patch',

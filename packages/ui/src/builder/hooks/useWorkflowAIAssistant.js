@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
 import { getClarificationModePreference, setClarificationModePreference } from '../../utils/storage.js';
@@ -72,6 +72,7 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
     const [beforeCursor, setBeforeCursor] = useState(null);
     const [olderMessages, setOlderMessages] = useState([]);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const stateVersionRef = useRef(null);
 
     const {
         isTyping: sharedIsTyping,
@@ -86,6 +87,14 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         ...workflowAIHistoryQueryPolicy,
         retry: false
     });
+
+    const syncStateVersion = useCallback(version => {
+        if (Number.isInteger(version)) stateVersionRef.current = version;
+    }, []);
+
+    useEffect(() => {
+        syncStateVersion(historyQuery.data?.state?.version);
+    }, [historyQuery.data?.state?.version, syncStateVersion]);
 
     useEffect(() => {
         if (!workflowId || historyQuery.data?.state?.phase !== 'processing') return undefined;
@@ -141,7 +150,7 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
                             : message)
                     } : old);
                 },
-                { expectedStateVersion: historyQuery.data?.state?.version, requestId }
+                { expectedStateVersion: stateVersionRef.current ?? historyQuery.data?.state?.version, requestId }
             );
         },
         onMutate: async ({ input: sendInput, requestId, optimisticWorkId }) => {
@@ -167,15 +176,19 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         onSuccess: (result, variables, context) => {
             setIsTyping(false);
             clearStreamState();
+            syncStateVersion(result.state?.version);
             queryClient.setQueryData(queryKey, old => {
                 const existing = old?.messages || [];
                 const filtered = existing.filter(message => ![context?.optimisticId, context?.optimisticWorkId, result.userMsg?.id, result.botMsg?.id].includes(message.id));
                 return { ...(old || {}), messages: [...filtered, result.userMsg, result.botMsg].filter(Boolean), state: result.state };
             });
         },
-        onError: (_error, _variables, context) => {
+        onError: (error, _variables, context) => {
             setIsTyping(false);
             clearStreamState();
+            if (error?.code === 'WORKFLOW_AI_STATE_CONFLICT') {
+                syncStateVersion(error.currentStateVersion);
+            }
             if (context?.previous) queryClient.setQueryData(queryKey, context.previous);
             queryClient.invalidateQueries({ queryKey });
         }
@@ -186,9 +199,10 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
             workflowId,
             messageId,
             action,
-            historyQuery.data?.state?.version
+            stateVersionRef.current ?? historyQuery.data?.state?.version
         ),
         onSuccess: result => {
+            syncStateVersion(result.state?.version);
             queryClient.setQueryData(queryKey, old => old ? {
                 ...old,
                 state: result.state,
@@ -213,6 +227,7 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         mutationFn: () => clearWorkflowAIChat(workflowId),
         onSuccess: result => {
             clearStreamState();
+            syncStateVersion(result.state?.version);
             setBeforeCursor(null);
             setOlderMessages([]);
             queryClient.setQueryData(queryKey, { messages: [], nextBefore: null, state: result.state });
@@ -226,6 +241,7 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
     const resetContextMutation = useMutation({
         mutationFn: () => resetWorkflowAIContext(workflowId),
         onSuccess: result => {
+            syncStateVersion(result.state?.version);
             queryClient.setQueryData(queryKey, old => old ? { ...old, state: result.state } : old);
             toast.success('Remembered workflow context reset.');
         },
@@ -295,6 +311,10 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
      * `decide_for_me` command, it should be forwarded as a command object.
      */
     const handleOption = useCallback(option => {
+        if (option?.type === 'regenerate_proposal') {
+            if (option.text) handleSend(option.text);
+            return;
+        }
         if (option && typeof option === 'object' && option.type) {
             // Structured command (e.g. { type: 'decide_for_me', clarificationId })
             handleSend(option);

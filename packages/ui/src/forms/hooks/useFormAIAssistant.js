@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clearFormAIChat, decideFormProposal, getFormChatHistory, resetFormAIContext } from '../../api/backend.js';
 import { submitFormAITurnStream } from '../../api/aiStream.js';
@@ -39,7 +39,7 @@ export const useFormAIAssistant = (form) => {
     const toast = useToast();
     const [input, setInput] = useState('');
     const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
-    const [aiStateVersion, setAIStateVersion] = useState(null);
+    const aiStateVersionRef = useRef(null);
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
     const [isSubmittingTurn, setIsSubmittingTurn] = useState(false);
@@ -50,6 +50,12 @@ export const useFormAIAssistant = (form) => {
     const updateClarificationMode = useCallback(mode => {
         setClarificationMode(mode);
         setClarificationModePreference(mode);
+    }, []);
+
+    // Proposal decisions advance the server-owned conversation version. A ref
+    // makes that new value available to a follow-up send before React renders.
+    const syncAIStateVersion = useCallback(version => {
+        if (Number.isInteger(version)) aiStateVersionRef.current = version;
     }, []);
 
     const {
@@ -87,8 +93,8 @@ export const useFormAIAssistant = (form) => {
     const serverProcessing = assistantState?.phase === 'processing';
 
     useEffect(() => {
-        if (Number.isInteger(assistantState?.version)) setAIStateVersion(assistantState.version);
-    }, [assistantState?.version]);
+        syncAIStateVersion(assistantState?.version);
+    }, [assistantState?.version, syncAIStateVersion]);
 
     useEffect(() => {
         if (!form?.id || !serverProcessing) return undefined;
@@ -117,7 +123,7 @@ export const useFormAIAssistant = (form) => {
                             : message)
                     } : page)
                 } : old);
-            }, { expectedStateVersion: aiStateVersion, requestId });
+            }, { expectedStateVersion: aiStateVersionRef.current ?? assistantState?.version, requestId });
             return result;
         },
         onMutate: async ({ text, optimisticWorkId, requestId }) => {
@@ -150,6 +156,9 @@ export const useFormAIAssistant = (form) => {
         onError: async (err, variables, context) => {
             setIsSubmittingTurn(false);
             clearStreamState();
+            if (err?.code === 'FORM_AI_STATE_CONFLICT') {
+                syncAIStateVersion(err.currentStateVersion);
+            }
             if (context?.previousData) {
                 queryClient.setQueryData(queryKey, context.previousData);
             }
@@ -187,7 +196,7 @@ export const useFormAIAssistant = (form) => {
         onSuccess: (data, variables, context) => {
             setIsSubmittingTurn(false);
             clearStreamState();
-            if (Number.isInteger(data.state?.version)) setAIStateVersion(data.state.version);
+            syncAIStateVersion(data.state?.version);
             queryClient.setQueryData(queryKey, (old) => {
                 if (!old) return old;
                 const newPages = [...old.pages];
@@ -221,7 +230,7 @@ export const useFormAIAssistant = (form) => {
         mutationFn: () => clearFormAIChat(form.id),
         onSuccess: result => {
             clearStreamState();
-            if (Number.isInteger(result?.state?.version)) setAIStateVersion(result.state.version);
+            syncAIStateVersion(result?.state?.version);
             queryClient.setQueryData(queryKey, { pages: [{ messages: [], nextOffset: undefined, state: result.state || null }], pageParams: [0] });
             toast.success('Form AI chat cleared.');
         },
@@ -233,7 +242,7 @@ export const useFormAIAssistant = (form) => {
     const resetContextMutation = useMutation({
         mutationFn: () => resetFormAIContext(form.id),
         onSuccess: result => {
-            if (Number.isInteger(result?.state?.version)) setAIStateVersion(result.state.version);
+            syncAIStateVersion(result?.state?.version);
             toast.success('Remembered form context reset.');
         },
         onError: error => toast.error(error.message || 'The remembered form context could not be reset.')
@@ -280,23 +289,22 @@ export const useFormAIAssistant = (form) => {
         setInput(recovery.suggestedPrompt || previousRequest || '');
     }, [handleSend]);
 
-    const handleAcceptProposal = useCallback(async (msgId, unselectedIndices = []) => {
+    const handleAcceptProposal = useCallback(async (msgId, selectedPatchIds = null) => {
         setAcceptingProposalId(msgId);
         try {
             const msg = rawMessages.find(m => m.id === msgId);
             const originalProposal = msg?.payload || {};
             const patches = originalProposal.patches || [];
-            const selectedPatchIds = patches
+            const requestedPatchIds = selectedPatchIds || patches
                 .map((patch, index) => ({ patch, index, patchId: patch.patchId || `patch_${index + 1}` }))
-                .filter(({ index }) => !unselectedIndices.includes(index))
                 .map(({ patchId }) => patchId);
 
             const result = await decideFormProposal(form.id, msgId, {
                 action: 'accept',
-                selectedPatchIds,
+                selectedPatchIds: requestedPatchIds,
                 baseFormUpdatedAt: originalProposal.baseFormUpdatedAt || form.updatedAt
             });
-            if (Number.isInteger(result.state?.version)) setAIStateVersion(result.state.version);
+            syncAIStateVersion(result.state?.version);
 
             queryClient.setQueryData(['forms'], old => old ? old.map(item => item.id === form.id ? result.form : item) : old);
             queryClient.setQueryData(['forms', form.id], result.form);
@@ -306,6 +314,7 @@ export const useFormAIAssistant = (form) => {
                     ...old,
                     pages: old.pages.map(page => ({
                         ...page,
+                        state: result.state || page.state,
                         messages: page.messages.map(message => message.id === msgId
                             ? { ...message, payload: result.message?.payload || message.payload, proposalStatus: result.message?.proposalStatus || 'applied' }
                             : message)
@@ -343,7 +352,7 @@ export const useFormAIAssistant = (form) => {
         setRejectingProposalId(msgId);
         try {
             const result = await decideFormProposal(form.id, msgId, { action: 'reject' });
-            if (Number.isInteger(result.state?.version)) setAIStateVersion(result.state.version);
+            syncAIStateVersion(result.state?.version);
             queryClient.setQueryData(queryKey, old => {
                 if (!old) return old;
                 return {

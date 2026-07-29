@@ -134,7 +134,19 @@ export const buildAssistantRecovery = ({ surface = 'assistant', code, issues = [
         });
     }
 
-    if (['WORKFLOW_AI_STATE_CONFLICT', 'FORM_AI_STATE_CONFLICT', 'AUTOMATION_REVISION_CONFLICT', 'FORM_PROPOSAL_STALE'].includes(code)) {
+    if (['WORKFLOW_AI_STATE_CONFLICT', 'FORM_AI_STATE_CONFLICT'].includes(code)) {
+        return recovery({
+            type: 'assistant_state_conflict',
+            title: 'The assistant conversation was updated',
+            summary: 'No changes were made because the assistant conversation updated before this request started.',
+            steps: ['The latest conversation state has been restored.', 'Try the request again.'],
+            action: retryAction,
+            details: safeIssues,
+            retryable: true
+        });
+    }
+
+    if (['AUTOMATION_REVISION_CONFLICT', 'FORM_PROPOSAL_STALE'].includes(code)) {
         return recovery({
             type: 'stale_change',
             title: 'This item changed while Promptly was working',

@@ -48,3 +48,41 @@ test('assistant work keeps safe artifacts with the current activity', () => {
     assert.deepEqual(work.currentArtifact.items, ['Start on form submission', 'Ask the owner for approval']);
     assert.equal(work.artifacts.length, 1);
 });
+
+test('assistant work records the planner outcome without losing it during later progress', () => {
+    const now = new Date('2026-07-29T00:00:00.000Z');
+    const work = createAssistantWork({ requestId: 'req_5', surface: 'form', title: 'Add an email field', now });
+    const planned = advanceAssistantWork(work, {
+        status: 'plan_ready', phase: 'plan', label: 'Mapped the form request', outcomeKind: 'proposal'
+    }, now);
+    const drafting = advanceAssistantWork(planned, {
+        status: 'building', phase: 'draft', label: 'Drafting form changes'
+    }, now);
+
+    assert.equal(planned.outcomeKind, 'proposal');
+    assert.equal(drafting.outcomeKind, 'proposal');
+});
+
+test('duplicate retry events do not invent a new user-facing attempt number', () => {
+    const start = createAssistantWork({ requestId: 'req_retry', surface: 'form' });
+    const first = advanceAssistantWork(start, {
+        id: 'form:worker repair:fallback:1',
+        status: 'retrying',
+        label: 'Trying another AI route',
+        detail: 'The first route timed out.'
+    });
+    const continued = advanceAssistantWork(first, {
+        id: 'form:worker repair:attempt:2',
+        status: 'awaiting_model',
+        label: 'Drafting form changes',
+        detail: 'Attempt 2 of 4.'
+    });
+    const repeated = advanceAssistantWork(continued, {
+        id: 'form:worker repair:fallback:1',
+        status: 'retrying',
+        label: 'Trying another AI route',
+        detail: 'The first route timed out.'
+    });
+
+    assert.equal(repeated.activities.at(-1).attempt, 1);
+});

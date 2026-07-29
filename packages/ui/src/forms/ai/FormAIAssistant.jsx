@@ -54,8 +54,8 @@ const FormAIAssistant = ({ form }) => {
                 hasMore={hasMore}
                 loadMoreHistory={loadMoreHistory}
                 handleSend={handleSend}
-                handleApply={(msg, _filteredSchema, unselectedIndices) => {
-                    handleAcceptProposal(msg.id, unselectedIndices);
+                handleApply={(msg, _filteredSchema, selectedPatchIds) => {
+                    handleAcceptProposal(msg.id, selectedPatchIds);
                     setPreviewProposal(null);
                 }}
                 handleIgnore={(msg) => {
@@ -72,6 +72,8 @@ const FormAIAssistant = ({ form }) => {
                             }
                             return prev;
                         });
+                    } else if (option?.type === 'regenerate_proposal') {
+                        handleSend(option.text);
                     } else {
                         if (option?.type === 'decide_for_me') {
                             handleSend('Use sensible defaults.', option);
@@ -98,7 +100,7 @@ const FormAIAssistant = ({ form }) => {
                 proposal={previewProposal}
                 onApply={() => {
                     if (previewProposal?.messageId) {
-                        handleAcceptProposal(previewProposal.messageId, previewProposal.unselectedIndices || []);
+                        handleAcceptProposal(previewProposal.messageId, previewProposal.selectedPatchIds || null);
                     }
                 }}
                 isApplying={acceptingProposalId === previewProposal?.messageId}

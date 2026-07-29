@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Check, ChevronRight, Sparkles } from 'lucide-react';
 import Button from '../ui/Button.jsx';
+import { choiceValues, clarificationState, textValue, updateChoiceValue } from '../../utils/clarificationState.js';
 
 const isResourceChoice = input => input.type === 'workflow_choice' || input.type === 'form_choice';
 
@@ -25,21 +26,14 @@ export default function MessageOptionsWidget({
     initialState = {},
     resolution = null
 }) {
-    const [formState, setFormState] = useState(initialState);
+    const [formState, setFormState] = useState(() => clarificationState(initialState));
     // The original message is updated in place after submission, so use the
     // persisted payload for the receipt instead of a possibly stale local draft.
     const answers = answerRows(options, isResolved ? initialState : formState);
     const hasAnswers = answers.length > 0;
 
     const handleToggle = (inputId, option, isSingle) => {
-        setFormState(previous => {
-            if (isSingle) return { ...previous, [inputId]: [option] };
-            const current = previous[inputId] || [];
-            return {
-                ...previous,
-                [inputId]: current.includes(option) ? current.filter(value => value !== option) : [...current, option]
-            };
-        });
+        setFormState(previous => updateChoiceValue(previous, inputId, option, isSingle));
     };
 
     const handleSend = () => {
@@ -84,7 +78,7 @@ export default function MessageOptionsWidget({
 
             <div className="space-y-4 p-4">
                 {(options || []).map((input, index) => {
-                    const selected = formState[input.id] || [];
+                    const selected = choiceValues(formState?.[input.id]);
                     const questionLabel = input.label || `Question ${index + 1}`;
 
                     if (isResourceChoice(input)) {
@@ -140,9 +134,9 @@ export default function MessageOptionsWidget({
                             <label key={input.id || index} className="block space-y-2">
                                 <span className="text-xs font-bold text-slate-700">{questionLabel}</span>
                                 {multiline ? (
-                                    <textarea disabled={isTyping} placeholder={input.placeholder || 'Type your answer…'} value={formState[input.id] || ''} onChange={event => setFormState(previous => ({ ...previous, [input.id]: event.target.value }))} className={`${fieldClass} min-h-24 resize-y`} />
+                                    <textarea disabled={isTyping} placeholder={input.placeholder || 'Type your answer…'} value={textValue(formState?.[input.id])} onChange={event => setFormState(previous => ({ ...clarificationState(previous), [input.id]: event.target.value }))} className={`${fieldClass} min-h-24 resize-y`} />
                                 ) : (
-                                    <input disabled={isTyping} placeholder={input.placeholder || 'Type your answer…'} value={formState[input.id] || ''} onChange={event => setFormState(previous => ({ ...previous, [input.id]: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') handleSend(); }} className={fieldClass} />
+                                    <input disabled={isTyping} placeholder={input.placeholder || 'Type your answer…'} value={textValue(formState?.[input.id])} onChange={event => setFormState(previous => ({ ...clarificationState(previous), [input.id]: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') handleSend(); }} className={fieldClass} />
                                 )}
                             </label>
                         );

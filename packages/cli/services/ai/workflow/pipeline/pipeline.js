@@ -402,6 +402,7 @@ export const generateWorkflowTurn = async ({
 
     onProgress?.({
         status: 'plan_ready', phase: 'plan', label: 'Mapped the workflow request',
+        outcomeKind: plan.type === 'reply' ? 'reply' : plan.type === 'message' ? 'clarification' : 'proposal',
         message: 'Planning the workflow changes',
         detail: plan.type === 'message' ? 'A decision is needed before a safe workflow can be drafted.'
             : plan.type === 'reply' ? 'The request is ready for a direct response.'

@@ -86,6 +86,26 @@ test('form assistant preserves non-fatal form AI warnings in the reviewable prop
     assert.deepEqual(result.botMsg.payload.warnings, [{ code: 'UNSUPPORTED_SETTINGS_IGNORED', message: 'Ignored an unsupported optional setting.' }]);
 });
 
+test('form assistant reports the authoritative version when a turn is stale', async () => {
+    const memory = createMemoryModels();
+    await memory.models.AssistantThread.create({
+        id: 'thread_1', userId: 'user_1', surface: 'form', formId: 'form_1',
+        state: { version: 4, phase: 'idle' }, context: {}
+    });
+    const assistant = createFormAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async () => {
+            throw new Error('The pipeline must not run for a stale turn.');
+        }
+    });
+
+    await assert.rejects(
+        () => assistant.submitTurn({ userId: 'user_1', formId: 'form_1', text: 'Add a section', expectedStateVersion: 3 }),
+        error => error.code === 'FORM_AI_STATE_CONFLICT' && error.currentStateVersion === 4
+    );
+});
+
 test('form assistant clears chat messages without changing the form', async () => {
     const memory = createMemoryModels();
     const thread = await memory.models.AssistantThread.create({ id: 'thread_1', userId: 'user_1', surface: 'form', formId: 'form_1', state: { version: 1, phase: 'idle' }, context: {} });
@@ -137,6 +157,27 @@ test('form assistant accepts a proposal through the same state boundary', async 
     assert.equal(result.form.fields[0].type, 'heading');
     assert.equal(memory.threads[0].state.phase, 'idle');
     assert.equal(memory.threads[0].state.activeProposalMessageId, null);
+});
+
+test('form assistant permits applying a locally valid unverified proposal after user review', async () => {
+    const memory = createMemoryModels();
+    const state = await memory.models.AssistantThread.create({
+        id: 'thread_1', userId: 'user_1', surface: 'form', formId: 'form_1',
+        state: { version: 1, phase: 'awaiting_proposal', activeProposalMessageId: 'proposal_1' }, context: {}
+    });
+    await memory.models.AssistantMessage.create({
+        id: 'proposal_1', threadId: state.id, sender: 'bot', kind: 'form_proposal', proposalStatus: 'pending', text: 'Add an email field.',
+        payload: {
+            verification: { status: 'unverified', skippedReason: 'AI_CALL_BUDGET_EXCEEDED' },
+            patches: [{ op: 'add', field: { id: 'email', type: 'email', label: 'Email' } }]
+        }
+    });
+
+    const assistant = createFormAssistant({ models: memory.models, db: { transaction: async callback => callback({}) } });
+    const result = await assistant.decideProposal({ userId: 'user_1', formId: 'form_1', proposalMessageId: 'proposal_1' });
+
+    assert.equal(result.message.proposalStatus, 'applied');
+    assert.equal(result.form.fields[0].id, 'email');
 });
 
 test('form assistant rejects a proposal without letting the client alter its patches', async () => {
@@ -232,4 +273,40 @@ test('form assistant persists processing progress while a turn is running', asyn
 
     release();
     await turn;
+});
+
+test('form assistant failure wins over queued progress writes and returns idle state', async () => {
+    const memory = createMemoryModels();
+    let releaseProgress;
+    const progressBlocked = new Promise(resolve => { releaseProgress = resolve; });
+    let transactionCount = 0;
+    const assistant = createFormAssistant({
+        models: memory.models,
+        db: {
+            transaction: async callback => {
+                transactionCount += 1;
+                if (transactionCount === 2) await progressBlocked;
+                return callback({});
+            }
+        },
+        runTurn: async ({ onProgress }) => {
+            onProgress({ id: 'worker:attempt:3', status: 'awaiting_model', phase: 'draft', label: 'Drafting form changes', detail: 'Attempt 3 of 4.' });
+            const error = new Error('The generated changes were invalid.');
+            error.code = 'FORM_AI_UNSAFE_PROPOSAL';
+            error.issues = [{ code: 'UNKNOWN_PLACEMENT_ANCHOR', path: 'patches[1].insertAfter', message: 'Placement anchor does not exist.' }];
+            throw error;
+        }
+    });
+
+    const turn = assistant.submitTurn({ userId: 'user_1', formId: 'form_1', text: 'Create an event form' });
+    await new Promise(resolve => setImmediate(resolve));
+    releaseProgress();
+    const result = await turn;
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(result.botMsg.kind, 'error');
+    assert.equal(result.botMsg.payload.work.status, 'failed');
+    assert.equal(result.state.phase, 'idle');
+    assert.equal(memory.messages[1].payload.work.status, 'failed');
+    assert.equal(memory.threads[0].state.phase, 'idle');
 });

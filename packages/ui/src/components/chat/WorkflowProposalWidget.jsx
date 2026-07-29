@@ -1,6 +1,7 @@
 import Button from '../ui/Button.jsx';
 import ProposalCard from './ProposalCard.jsx';
 import { isAcceptedProposalStatus, isRejectedProposalStatus, isStaleProposalStatus, normalizeProposalStatus } from './proposalStatus.js';
+import { AssistantWorkDetails } from './AssistantWorkCard.jsx';
 
 const toneFor = type => ({
     add: 'text-emerald-700 bg-emerald-50 border-emerald-100',
@@ -11,7 +12,7 @@ const toneFor = type => ({
 
 const markerFor = type => ({ add: '+', remove: '−', update: '~', connect: '→' }[type] || '•');
 
-export default function WorkflowProposalWidget({ proposal, status, onIgnore, onPreview, onSetupAction, rejecting }) {
+export default function WorkflowProposalWidget({ proposal, status, tokenUsage, onIgnore, onPreview, onSetupAction, onRegenerate, rejecting }) {
     const isAccepted = isAcceptedProposalStatus(status);
     const isRejected = isRejectedProposalStatus(status);
     const isStale = isStaleProposalStatus(status);
@@ -27,7 +28,7 @@ export default function WorkflowProposalWidget({ proposal, status, onIgnore, onP
             isAccepted ? <Status text="Changes applied" tone="success" />
                 : isRejected ? <Status text="Proposal ignored" />
                     : isStale ? <Status text={normalizeProposalStatus(status) === 'superseded' ? 'A newer proposal replaced this one.' : 'This proposal is outdated. Generate a new one.'} tone="warning" />
-                        : <div className="flex items-center gap-2"><Button variant="ghost" size="sm" className="flex-1" onClick={onIgnore} isLoading={rejecting} loadingText="Ignoring…">Ignore</Button><Button variant="primary" size="sm" className="flex-1" onClick={onPreview}>Preview changes</Button></div>
+                        : <div className="flex items-center gap-2"><Button variant="ghost" size="sm" className="flex-1" onClick={onIgnore} isLoading={rejecting} loadingText="Ignoring…">Ignore</Button>{proposal?.verification?.status === 'unverified' && <Button variant="outline" size="sm" className="flex-1" onClick={onRegenerate}>Generate new</Button>}<Button variant="primary" size="sm" className="flex-1" onClick={onPreview}>Preview changes</Button></div>
         }>
                 <p className="text-sm leading-6 text-slate-700">{presentation.outcome || 'Review the proposed workflow changes.'}</p>
 
@@ -54,6 +55,7 @@ export default function WorkflowProposalWidget({ proposal, status, onIgnore, onP
 
                 {assumptions.length > 0 && <div className="rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-900"><p className="font-bold">Assumptions</p>{assumptions.map(item => <p key={item} className="mt-1">• {item}</p>)}</div>}
                 {setupRequirements.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900"><p className="font-bold">Setup required before Apply</p>{setupRequirements.map(item => <p key={item} className="mt-1">• {item}</p>)}{setupActions.length > 0 && <div className="mt-3">{setupActions.map(action => <Button key={`${action.type}-${action.provider || ''}`} variant="outline" size="sm" onClick={() => onSetupAction?.(action)}>{action.label || 'Open settings'}</Button>)}</div>}</div>}
+                {proposal?.work && <AssistantWorkDetails work={proposal.work} tokenUsage={tokenUsage} />}
 
         </ProposalCard>
     );

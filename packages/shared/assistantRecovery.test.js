@@ -22,6 +22,19 @@ test('assistant recovery makes temporary provider failures retryable', () => {
     assert.equal(result.action.type, 'retry');
 });
 
+test('assistant-state conflicts do not claim that the form changed', () => {
+    const result = buildAssistantRecovery({
+        surface: 'form',
+        code: 'FORM_AI_STATE_CONFLICT',
+        context: { retryText: 'Add a section for contact details' }
+    });
+
+    assert.equal(result.type, 'assistant_state_conflict');
+    assert.equal(result.title, 'The assistant conversation was updated');
+    assert.doesNotMatch(result.summary, /form changed|current version no longer matches/i);
+    assert.equal(result.action.type, 'retry');
+});
+
 test('assistant recovery keeps generic failure details safe and actionable', () => {
     const result = buildAssistantRecovery({
         surface: 'assistant',

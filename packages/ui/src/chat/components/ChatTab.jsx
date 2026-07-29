@@ -261,6 +261,9 @@ export default function ChatTab({ conversationId = null }) {
             });
             return;
         }
+        if (option?.type === 'regenerate_proposal') {
+            return send(option.text);
+        }
         return send(typeof option === 'string' ? option : option?.label || option?.name || option?.title);
     };
 
@@ -430,16 +433,8 @@ export default function ChatTab({ conversationId = null }) {
                     isTyping={effectiveIsTyping}
                     isLoadingHistory={Boolean(sessionId && isSessionPending)}
                     handleSend={send}
-                    handleApply={(msg, filteredSchema, unselectedIndices) => {
-                        const updatedMessage = {
-                            ...msg,
-                            payload: {
-                                ...msg.payload,
-                                schema: filteredSchema || msg.payload?.schema,
-                                unselectedPatchIndices: unselectedIndices
-                            }
-                        };
-                        handleApply(updatedMessage);
+                    handleApply={(msg, filteredSchema) => {
+                        handleApply(msg, filteredSchema);
                         setPreviewProposal(null);
                     }}
                     handleIgnore={(msg) => {
@@ -480,6 +475,11 @@ export default function ChatTab({ conversationId = null }) {
                 onClose={() => setPreviewProposal(null)}
                 currentForm={previewForm}
                 proposal={previewProposal}
+                onApply={() => {
+                    const message = messages.find(item => item.id === previewProposal?.messageId);
+                    if (message) handleApply(message, previewProposal?.schema);
+                }}
+                isApplying={acceptingProposalId === previewProposal?.messageId}
             />
         </div>
     );

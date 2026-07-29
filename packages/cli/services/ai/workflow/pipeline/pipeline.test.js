@@ -367,6 +367,7 @@ test('pipeline refuses a form lookup that was not listed for the user', async ()
 
 test('pipeline returns a clarification with structured inputs from the planner', async () => {
     const { generateWorkflowTurn } = await import('./pipeline.js');
+    const progress = [];
     const provider = makeProvider([{
         type: 'message',
         message: 'Which email provider would you like to use?',
@@ -378,12 +379,14 @@ test('pipeline returns a clarification with structured inputs from the planner',
         currentWorkflow: existingWorkflow,
         provider,
         registry: makeRegistry(),
-        resourceLoader
+        resourceLoader,
+        onProgress: event => progress.push(event)
     });
 
     assert.equal(result.type, 'message');
     assert.equal(result.inputs[0].id, 'q1');
     assert.deepEqual(result.inputs[0].options, ['Gmail', 'SendGrid']);
+    assert.equal(progress.find(event => event.status === 'plan_ready')?.outcomeKind, 'clarification');
 });
 
 // ---------------------------------------------------------------------------
@@ -393,6 +396,7 @@ test('pipeline returns a clarification with structured inputs from the planner',
 test('pipeline compiles a direct_plan using at most 2 AI calls (planner + verifier)', async () => {
     const { generateWorkflowTurn } = await import('./pipeline.js');
     let callCount = 0;
+    const progress = [];
     const provider = {
         async generateContent(_contents, options) {
             callCount++;
@@ -416,13 +420,15 @@ test('pipeline compiles a direct_plan using at most 2 AI calls (planner + verifi
         currentWorkflow: existingWorkflow,
         provider,
         registry: makeRegistry(),
-        resourceLoader
+        resourceLoader,
+        onProgress: event => progress.push(event)
     });
 
     assert.equal(result.type, 'proposal');
     // Only 2 AI calls: planner + verifier (no separate worker call)
     assert.ok(callCount <= 2, `Expected ≤2 AI calls for direct_plan, got ${callCount}`);
     assert.ok(result.nodes.find(n => n.subType === 'email')?.config?.subject === 'Hello');
+    assert.equal(progress.find(event => event.status === 'plan_ready')?.outcomeKind, 'proposal');
 });
 
 // ---------------------------------------------------------------------------

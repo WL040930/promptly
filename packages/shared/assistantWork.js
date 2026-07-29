@@ -1,5 +1,6 @@
 const MAX_ACTIVITIES = 20;
 const MAX_ARTIFACTS = 4;
+const OUTCOME_KINDS = new Set(['reply', 'clarification', 'proposal']);
 
 export const ASSISTANT_WORK_PHASES = Object.freeze([
     { id: 'understand', label: 'Understand' },
@@ -33,6 +34,7 @@ export const createAssistantWork = ({ requestId, surface, title, now = new Date(
     return {
         requestId: clean(requestId, 'request'),
         surface: surface === 'form' ? 'form' : 'workflow',
+        outcomeKind: null,
         status: 'drafting',
         title: clean(title, 'Preparing your request'),
         currentPhase: 'understand',
@@ -56,7 +58,6 @@ export const advanceAssistantWork = (work, progress = {}, now = new Date()) => {
     const status = clean(progress.status, 'working');
     const label = labelFor(progress);
     const detail = clean(progress.detail || progress.message, label);
-    const repair = /repair|correct|recover|retry/.test(`${status} ${label}`.toLowerCase());
     const baseId = clean(progress.id || progress.type, `${phase}:${status}:${label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`);
     const activities = (current.activities || []).map(activity => ({ ...activity }));
     const matching = [...activities].reverse().find(activity => activity.id === baseId && activity.status === 'active');
@@ -72,14 +73,16 @@ export const advanceAssistantWork = (work, progress = {}, now = new Date()) => {
         matching.detail = detail;
         matching.updatedAt = timestamp;
     } else {
-        const previousAttempts = activities.filter(activity => activity.id === baseId).length;
         activities.push({
             id: baseId,
             phase,
             label,
             detail,
             status: 'active',
-            attempt: repair ? previousAttempts + 1 : 1,
+            // Provider progress already describes its real attempt in `detail`.
+            // Repeated transport/fallback events must not manufacture a second
+            // user-facing attempt merely because the same activity ID reappears.
+            attempt: Number.isInteger(progress.attempt) && progress.attempt > 0 ? progress.attempt : 1,
             startedAt: timestamp,
             completedAt: null
         });
@@ -98,9 +101,13 @@ export const advanceAssistantWork = (work, progress = {}, now = new Date()) => {
     const artifacts = artifact
         ? [...(current.artifacts || []).filter(item => item.id !== artifact.id), artifact].slice(-MAX_ARTIFACTS)
         : (current.artifacts || []);
+    const outcomeKind = OUTCOME_KINDS.has(progress.outcomeKind)
+        ? progress.outcomeKind
+        : current.outcomeKind || null;
 
     return {
         ...current,
+        outcomeKind,
         status: 'drafting',
         currentPhase: phase,
         currentActivityId: baseId,
@@ -129,4 +136,4 @@ export const finishAssistantWork = (work, { status = 'completed', title, detail 
     };
 };
 
-export const assistantWorkInternals = { phaseFor, labelFor, MAX_ACTIVITIES, MAX_ARTIFACTS };
+export const assistantWorkInternals = { phaseFor, labelFor, MAX_ACTIVITIES, MAX_ARTIFACTS, OUTCOME_KINDS };
