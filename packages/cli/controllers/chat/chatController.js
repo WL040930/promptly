@@ -14,12 +14,9 @@ export const createSendMessageHandler = ({
     let { sessionId, message, context = {}, event } = req.body || {};
     const userId = req.user.id;
     const useSSE = String(req.headers.accept || '').includes('text/event-stream');
-    if (context?.workflowId || context?.automationId) {
-        return res.status(409).json({
-            code: 'WORKFLOW_AI_REQUIRED',
-            message: 'Workflow changes must be handled by the workflow-owned AI assistant.'
-        });
-    }
+    // Ask Promptly is the workspace coordinator. A selected workflow is
+    // context for its specialist delegation, not a reason to reject the turn.
+    if (context?.automationId && !context.workflowId) context = { ...context, workflowId: context.automationId };
     if (useSSE) {
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache, no-transform');

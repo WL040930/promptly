@@ -1,4 +1,4 @@
-import { AutomationRun, Form, FormResponse, Workflow } from '../../models/index.js';
+import { AutomationRun, Connection, Form, FormResponse, KnowledgeBase, Workflow } from '../../models/index.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { resolveResource } from './resourceResolver.js';
 import {
@@ -8,6 +8,7 @@ import { generateWorkflowTurn } from '../ai/workflow/pipeline/pipeline.js';
 import { createAgentCapabilityRegistry } from '../agent/agentCapabilityRegistry.js';
 import { projectFormResourceContext } from '../ai/form/context/formResourceContext.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
+import { getApprovalSummary } from '../engine/continuationService.js';
 
 const completed = output => ({ status: 'completed', output });
 
@@ -93,6 +94,21 @@ export const createChatCapabilityRegistry = ({
     } = services;
 
     return createAgentCapabilityRegistry([
+        tool(
+            'get_workspace_summary',
+            'Get safe account-level totals for forms, workflows, failed runs, and pending approvals.',
+            {},
+            async () => {
+                const [forms, workflows, activeWorkflows, failedRuns, approvals] = await Promise.all([
+                    Form.count({ where: { userId } }),
+                    Workflow.count({ where: { userId } }),
+                    Workflow.count({ where: { userId, isActive: true } }),
+                    AutomationRun.count({ where: { userId, status: 'failed' } }),
+                    getApprovalSummary(userId)
+                ]);
+                return completed({ forms, workflows, activeWorkflows, failedRuns, approvals });
+            }
+        ),
         tool(
             'list_forms',
             'List the user forms as compact summaries, newest first.',
@@ -291,6 +307,28 @@ export const createChatCapabilityRegistry = ({
                 });
                 return completed(log ? redactSensitive(log.toJSON ? log.toJSON() : log) : { error: 'Execution log not found' });
             }
+        ),
+        tool(
+            'list_connections',
+            'List connected accounts and their status without exposing credentials or tokens.',
+            {},
+            async () => completed((await Connection.findAll({
+                where: { userId },
+                attributes: ['id', 'provider', 'accountEmail', 'scopes', 'status', 'updatedAt'],
+                order: [['updatedAt', 'DESC']],
+                limit: 50
+            })).map(connection => redactSensitive(connection.toJSON ? connection.toJSON() : connection)))
+        ),
+        tool(
+            'list_knowledge_bases',
+            'List the user knowledge bases without reading their document contents.',
+            {},
+            async () => completed((await KnowledgeBase.findAll({
+                where: { userId },
+                attributes: ['id', 'name', 'description', 'createdAt', 'updatedAt'],
+                order: [['updatedAt', 'DESC']],
+                limit: 100
+            })).map(base => redactSensitive(base.toJSON ? base.toJSON() : base)))
         ),
         tool(
             'propose_form_change',

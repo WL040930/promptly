@@ -12,6 +12,7 @@ export const messagePresentation = (message = {}) => {
     if (message.sender === 'user') return 'message';
     if (message.isError || kind === 'error') return 'error';
     if (kind === 'assistant_work') {
+        if (message.payload?.work?.surface === 'ask_promptly') return 'proposal_work';
         return message.payload?.work?.outcomeKind === 'proposal' ? 'proposal_work' : 'work';
     }
     if (kind === 'clarification') return 'clarification';

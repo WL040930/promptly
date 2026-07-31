@@ -17,6 +17,7 @@ test('chat capability registry owns the complete typed tool surface', () => {
     });
 
     assert.deepEqual(registry.list().map(capability => capability.name), [
+        'get_workspace_summary',
         'list_forms',
         'list_workflows',
         'search_resources',
@@ -28,6 +29,8 @@ test('chat capability registry owns the complete typed tool surface', () => {
         'get_workflow_context',
         'get_execution_summary',
         'get_execution_details',
+        'list_connections',
+        'list_knowledge_bases',
         'propose_form_change',
         'propose_form_duplicate',
         'propose_form_delete',

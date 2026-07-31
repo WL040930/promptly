@@ -33,7 +33,7 @@ export const createAssistantWork = ({ requestId, surface, title, now = new Date(
     const startedAt = iso(now);
     return {
         requestId: clean(requestId, 'request'),
-        surface: surface === 'form' ? 'form' : 'workflow',
+        surface: ['form', 'workflow', 'ask_promptly'].includes(surface) ? surface : 'workflow',
         outcomeKind: null,
         status: 'drafting',
         title: clean(title, 'Preparing your request'),

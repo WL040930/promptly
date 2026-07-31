@@ -1,7 +1,9 @@
 import { apiBase } from './client.js';
 import { getAuthToken } from '../utils/storage.js';
+import { isMeaningfulTurnEvent } from '../../../shared/assistantTurnContract.js';
 
 const STREAM_INACTIVITY_TIMEOUT_MS = 45000;
+const STREAM_ABSOLUTE_TIMEOUT_MS = 10 * 60 * 1000;
 
 const createStreamError = (message, code) => {
     const error = new Error(message);
@@ -19,6 +21,7 @@ export const submitAssistantTurnStream = async ({ sessionId = null, message = ''
 
     const controller = new AbortController();
     let timeoutId;
+    let absoluteTimeoutId;
     const armInactivityTimeout = () => {
         clearTimeout(timeoutId);
         timeoutId = setTimeout(() => controller.abort(), STREAM_INACTIVITY_TIMEOUT_MS);
@@ -27,6 +30,7 @@ export const submitAssistantTurnStream = async ({ sessionId = null, message = ''
     externalSignal?.addEventListener('abort', abortExternal, { once: true });
     try {
         armInactivityTimeout();
+        absoluteTimeoutId = setTimeout(() => controller.abort(), STREAM_ABSOLUTE_TIMEOUT_MS);
         const response = await fetch(`${apiBase}/api/assistant/turns`, {
             method: 'POST',
             headers,
@@ -41,7 +45,6 @@ export const submitAssistantTurnStream = async ({ sessionId = null, message = ''
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            armInactivityTimeout();
             buffer += decoder.decode(value, { stream: true });
             const events = buffer.split('\n\n');
             buffer = events.pop() || '';
@@ -54,6 +57,7 @@ export const submitAssistantTurnStream = async ({ sessionId = null, message = ''
                     continue;
                 }
                 onEvent?.(data);
+                if (isMeaningfulTurnEvent(data)) armInactivityTimeout();
                 if (data.type === 'turn.completed') return data.result;
                 if (data.type === 'turn.failed') {
                     const error = createStreamError(data.message || 'Assistant turn failed.', data.code || 'ASSISTANT_TURN_FAILED');
@@ -68,6 +72,7 @@ export const submitAssistantTurnStream = async ({ sessionId = null, message = ''
         throw error;
     } finally {
         clearTimeout(timeoutId);
+        clearTimeout(absoluteTimeoutId);
         externalSignal?.removeEventListener('abort', abortExternal);
     }
 };
@@ -82,6 +87,7 @@ export const submitFormAITurnStream = async (formId, command, clarificationMode,
 
     const controller = new AbortController();
     let timeoutId;
+    let absoluteTimeoutId;
     let completed = false;
     const armInactivityTimeout = () => {
         clearTimeout(timeoutId);
@@ -90,6 +96,7 @@ export const submitFormAITurnStream = async (formId, command, clarificationMode,
 
     try {
         armInactivityTimeout();
+        absoluteTimeoutId = setTimeout(() => controller.abort(), options.absoluteTimeoutMs || STREAM_ABSOLUTE_TIMEOUT_MS);
         const response = await fetch(`${apiBase}/api/forms/${formId}/ai-turns`, {
             method: 'POST',
             headers,
@@ -111,7 +118,6 @@ export const submitFormAITurnStream = async (formId, command, clarificationMode,
         while (!completed) {
             const { done, value } = await reader.read();
             if (done) break;
-            armInactivityTimeout();
             buffer += decoder.decode(value, { stream: true });
             const events = buffer.split('\n\n');
             buffer = events.pop() || '';
@@ -124,6 +130,7 @@ export const submitFormAITurnStream = async (formId, command, clarificationMode,
                     console.error('Failed to parse form AI turn event:', error);
                     continue;
                 }
+                if (isMeaningfulTurnEvent(data)) armInactivityTimeout();
                 if (data.type === 'progress') onProgress?.(data);
                 if (data.type === 'complete') {
                     completed = true;
@@ -145,6 +152,7 @@ export const submitFormAITurnStream = async (formId, command, clarificationMode,
         throw error;
     } finally {
         clearTimeout(timeoutId);
+        clearTimeout(absoluteTimeoutId);
     }
 };
 
@@ -158,6 +166,7 @@ export const submitWorkflowAITurnStream = async (workflowId, command, clarificat
 
     const controller = new AbortController();
     let timeoutId;
+    let absoluteTimeoutId;
     const armInactivityTimeout = () => {
         clearTimeout(timeoutId);
         timeoutId = setTimeout(() => controller.abort(), options.timeoutMs || STREAM_INACTIVITY_TIMEOUT_MS);
@@ -165,6 +174,7 @@ export const submitWorkflowAITurnStream = async (workflowId, command, clarificat
 
     try {
         armInactivityTimeout();
+        absoluteTimeoutId = setTimeout(() => controller.abort(), options.absoluteTimeoutMs || STREAM_ABSOLUTE_TIMEOUT_MS);
         const response = await fetch(`${apiBase}/api/automations/${workflowId}/ai-turns`, {
             method: 'POST',
             headers,
@@ -189,7 +199,6 @@ export const submitWorkflowAITurnStream = async (workflowId, command, clarificat
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            armInactivityTimeout();
             buffer += decoder.decode(value, { stream: true });
             const events = buffer.split('\n\n');
             buffer = events.pop() || '';
@@ -197,6 +206,7 @@ export const submitWorkflowAITurnStream = async (workflowId, command, clarificat
                 if (!event.startsWith('data: ')) continue;
                 let data;
                 try { data = JSON.parse(event.substring(6)); } catch { continue; }
+                if (isMeaningfulTurnEvent(data)) armInactivityTimeout();
                 if (data.type === 'progress') onProgress?.(data);
                 if (data.type === 'complete') return data.result;
                 if (data.type === 'error') {
@@ -214,5 +224,6 @@ export const submitWorkflowAITurnStream = async (workflowId, command, clarificat
         throw error;
     } finally {
         clearTimeout(timeoutId);
+        clearTimeout(absoluteTimeoutId);
     }
 };

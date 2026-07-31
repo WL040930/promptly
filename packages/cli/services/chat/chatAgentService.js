@@ -7,7 +7,8 @@ import { AI_TASKS } from '../ai/core/aiTasks.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import env from '../../config/env.js';
 import { mergeAgentContext } from './resourceResolver.js';
-import { processAgenticTurn, resumeAgentAfterClarification, resumeAgentAfterForm, resumeAgentAfterPlanReview } from '../agent/agentOrchestrator.js';
+import { deterministicIntent, processAgenticTurn, resumeAgentAfterClarification, resumeAgentAfterForm, resumeAgentAfterPlanReview } from '../agent/agentOrchestrator.js';
+import { createAskPromptlyCoordinator } from '../agent/askPromptlyCoordinator.js';
 import { decidePendingTurn } from '../agent/turnCoordinator.js';
 import { createChatCapabilityRegistry } from './chatCapabilityRegistry.js';
 import { hasFallbackToolMarkup, parseFallbackToolCall } from './fallbackToolCall.js';
@@ -17,6 +18,12 @@ import { applyFormPatches } from '../ai/form/domain/formPatchEngine.js';
 import { validateFormSchema } from '../ai/form/domain/formSchemaValidator.js';
 import { validateWorkflow } from '../engine/workflowValidator.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
+import { resolveAssistantNavigation } from '../../../shared/assistantNavigation.js';
+
+const askPromptlyCoordinator = createAskPromptlyCoordinator({
+    processAgenticTurn,
+    classifyIntent: deterministicIntent
+});
 
 const messagePayload = (message) => {
     const json = message.toJSON();
@@ -552,6 +559,16 @@ export const processChatMessage = async ({ session, userId, context = {}, onEven
         order: [['createdAt', 'DESC']]
     });
     let pendingAgentState = session.state || {};
+    const navigation = resolveAssistantNavigation({ message: latestUserMessage?.text, context: effectiveContext });
+    if (navigation && !pendingAgentState.runId) {
+        const reply = await saveReply(session, {
+            text: 'Opening that workspace view.',
+            kind: 'status',
+            payload: { navigation }
+        });
+        onEvent?.({ type: 'navigation.ready', navigation, messageId: reply.id });
+        return { replyObj: reply, totalTokenUsage: null };
+    }
     // A pending clarification is scoped to its original question. An
     // unrelated sentence must start a fresh turn instead of being appended to
     // the old request (which previously caused greetings to reach the planner
@@ -631,7 +648,7 @@ export const processChatMessage = async ({ session, userId, context = {}, onEven
         return { replyObj: resumed.replyObj, totalTokenUsage: resumed.totalTokenUsage };
     }
 
-    const agenticResult = await processAgenticTurn({ session, userId, message: latestUserMessage?.text || '', context: effectiveContext, onEvent });
+    const agenticResult = await askPromptlyCoordinator.coordinate({ session, userId, message: latestUserMessage?.text || '', context: effectiveContext, onEvent });
     if (agenticResult.handled) return { replyObj: agenticResult.replyObj, totalTokenUsage: agenticResult.totalTokenUsage };
 
     const history = await AssistantMessage.findAll({

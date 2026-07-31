@@ -15,6 +15,7 @@ import ClarificationModeSelect from '../../components/chat/ClarificationModeSele
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
 import { getClarificationModePreference, setClarificationModePreference } from '../../utils/storage.js';
 import { getAgentProgressLabel } from '../../../../shared/agentProgress.js';
+import { advanceAssistantWork, createAssistantWork } from '../../../../shared/assistantWork.js';
 import { LoaderCircle } from 'lucide-react';
 import { useAIActivity, useAIStream } from '../../context/AIStreamContext.jsx';
 
@@ -29,6 +30,7 @@ export default function ChatTab({ conversationId = null }) {
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [progressLabel, setProgressLabel] = useState('Scanning node library');
+    const [activeRunWork, setActiveRunWork] = useState(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [sidebarSearch, setSidebarSearch] = useState('');
     const [chatToDelete, setChatToDelete] = useState(null);
@@ -81,6 +83,7 @@ export default function ChatTab({ conversationId = null }) {
     // any request that belongs to the conversation we left.
     useEffect(() => {
         setIsTyping(false);
+        setActiveRunWork(null);
     }, [sessionId]);
     const filteredSessions = useMemo(() => {
         return sidebarSearch
@@ -123,6 +126,7 @@ export default function ChatTab({ conversationId = null }) {
         if (text && /form/i.test(text)) setProgressLabel('Designing form');
         else setProgressLabel('Scanning available capabilities');
         setIsTyping(true);
+        setActiveRunWork(null);
         setStreamState({
             isTyping: true,
             progressLabel: text && /form/i.test(text) ? 'Designing form' : 'Scanning available capabilities',
@@ -139,10 +143,36 @@ export default function ChatTab({ conversationId = null }) {
                 },
                 event,
                 onEvent: data => {
+                    if (data.type === 'navigation.ready' && data.navigation) {
+                        navigateTo(data.navigation);
+                        return;
+                    }
+                    if (data.type === 'run.started' && data.runId) {
+                        setActiveRunWork(createAssistantWork({
+                            requestId: data.runId,
+                            surface: 'ask_promptly',
+                            title: text || 'Continuing your request'
+                        }));
+                    }
                     const label = getAgentProgressLabel(data);
                     if (label) {
                         setProgressLabel(label);
                         setStreamState({ isTyping: true, progressLabel: label, surface: 'ask-promptly', sessionId });
+                    }
+                    if (data.runId && (data.type === 'step.started' || data.type === 'step.completed' || data.type === 'plan.ready' || data.type === 'plan.revised' || data.type === 'approval.required')) {
+                        setActiveRunWork(previous => {
+                            const initial = previous || createAssistantWork({
+                                requestId: data.runId,
+                                surface: 'ask_promptly',
+                                title: text || 'Preparing your workspace task'
+                            });
+                            return advanceAssistantWork(initial, {
+                                id: data.step || data.type,
+                                status: data.type === 'approval.required' ? 'awaiting_review' : 'working',
+                                label: label || 'Coordinating your request',
+                                detail: data.type === 'plan.revised' ? 'Adjusted the plan after checking the workspace.' : label || 'Checking the next step'
+                            });
+                        });
                     }
                 }
             });
@@ -151,6 +181,7 @@ export default function ChatTab({ conversationId = null }) {
             setMessages(previous => [...previous, { id: `error_${Date.now()}`, sender: 'bot', kind: 'error', text: error.message || 'Sorry, I could not process that request.' }]);
         } finally {
             setIsTyping(false);
+            setActiveRunWork(null);
             clearStreamState();
         }
     };
@@ -270,6 +301,7 @@ export default function ChatTab({ conversationId = null }) {
     const newChat = () => { 
         setSessionId(null); 
         setIsTyping(false);
+        setActiveRunWork(null);
         setMessages([welcome]); 
         setClarificationMode(getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
         setPreviewFormId(null);
@@ -281,6 +313,7 @@ export default function ChatTab({ conversationId = null }) {
     const loadChat = (id) => {
         loadedSessionIdRef.current = null;
         setIsTyping(false);
+        setActiveRunWork(null);
         setSessionId(id);
         setMessages([welcome]);
         setClarificationMode(getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
@@ -303,6 +336,16 @@ export default function ChatTab({ conversationId = null }) {
 
     const effectiveIsTyping = isTyping || sharedIsTyping;
     const isCurrentConversationWorking = Boolean(sharedIsTyping && askActivity);
+    const renderedMessages = activeRunWork
+        ? [...messages, {
+            id: `active_run_${activeRunWork.requestId}`,
+            sender: 'bot',
+            kind: 'assistant_work',
+            text: activeRunWork.title,
+            isOptimistic: true,
+            payload: { work: activeRunWork }
+        }]
+        : messages;
 
     return (
         <div ref={container} className="surface-grid relative flex h-full min-h-0 w-full overflow-hidden font-sans">
@@ -427,7 +470,7 @@ export default function ChatTab({ conversationId = null }) {
                     </div>
                 </div>
                 <GenericChatWidget 
-                    messages={messages}
+                    messages={renderedMessages}
                     input={input}
                     setInput={setInput}
                     isTyping={effectiveIsTyping}

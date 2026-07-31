@@ -26,3 +26,9 @@ test('active work expands only after the planner identifies a proposal outcome',
         sender: 'bot', kind: 'assistant_work', payload: { work: { surface: 'workflow', outcomeKind: 'proposal' } }
     }), 'proposal_work');
 });
+
+test('Ask Promptly coordinator work uses the detailed run presentation from the first real run event', () => {
+    assert.equal(messagePresentation({
+        sender: 'bot', kind: 'assistant_work', payload: { work: { surface: 'ask_promptly' } }
+    }), 'proposal_work');
+});

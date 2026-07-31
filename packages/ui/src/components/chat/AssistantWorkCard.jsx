@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Check, ChevronDown, CircleAlert, FilePenLine, LoaderCircle, Sparkles, Wrench, Zap } from 'lucide-react';
+import { Check, ChevronDown, CircleAlert, FilePenLine, LoaderCircle, Route, Sparkles, Wrench, Zap } from 'lucide-react';
 
 const phases = [
     { id: 'understand', label: 'Understand' },
@@ -60,7 +60,8 @@ export default function AssistantWorkCard({ work, tokenUsage }) {
     const isTerminal = terminal.has(work?.status);
     const activities = work?.activities || [];
     const active = activities.find(activity => activity.status === 'active') || activities.at(-1);
-    const statusLabel = work?.status === 'failed' ? 'Couldn’t finish' : isTerminal ? 'Ready to review' : 'Drafting';
+    const isCoordinator = work?.surface === 'ask_promptly';
+    const statusLabel = work?.status === 'failed' ? 'Couldn’t finish' : isTerminal ? 'Ready to review' : isCoordinator ? 'Working' : 'Drafting';
 
     return (
         <section className="w-full min-w-0 overflow-hidden rounded-[22px] border border-violet-200/80 bg-white shadow-[0_12px_35px_rgba(58,34,118,0.08)]">
@@ -68,11 +69,11 @@ export default function AssistantWorkCard({ work, tokenUsage }) {
                 <div className="flex items-start gap-3">
                     <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-violet-200 bg-violet-100 text-violet-700">
                         {!isTerminal && <span className="absolute inset-[-3px] rounded-[18px] border-2 border-violet-400 border-t-transparent motion-safe:animate-spin" />}
-                        {work?.surface === 'form' ? <FilePenLine size={17} strokeWidth={2.2} /> : <Sparkles size={17} strokeWidth={2.2} />}
+                        {work?.surface === 'form' ? <FilePenLine size={17} strokeWidth={2.2} /> : isCoordinator ? <Route size={17} strokeWidth={2.2} /> : <Sparkles size={17} strokeWidth={2.2} />}
                     </span>
                     <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-3">
-                            <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-violet-700">{work?.surface === 'form' ? 'Form proposal' : 'Workflow proposal'}</span>
+                            <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-violet-700">{work?.surface === 'form' ? 'Form proposal' : isCoordinator ? 'Ask Promptly' : 'Workflow proposal'}</span>
                             <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-bold ${work?.status === 'failed' ? 'bg-rose-100 text-rose-700' : 'bg-violet-600 text-white'}`}>
                                 {work?.status === 'failed' ? <CircleAlert size={12} /> : <LoaderCircle size={12} className="motion-safe:animate-spin" />}
                                 {statusLabel}
@@ -83,7 +84,7 @@ export default function AssistantWorkCard({ work, tokenUsage }) {
                         <p className="mt-1 text-xs leading-5 text-slate-600">{active?.detail || 'Preparing the proposed changes…'}</p>
                     </div>
                 </div>
-                <div className="mt-4 grid grid-cols-4 gap-0" aria-label="Proposal progress">
+                {!isCoordinator && <div className="mt-4 grid grid-cols-4 gap-0" aria-label="Proposal progress">
                     {phases.map((phase, index) => {
                         const state = phaseState(phase, work?.currentPhase || 'understand', isTerminal);
                         return <div key={phase.id} className="relative min-w-0 text-center">
@@ -92,7 +93,7 @@ export default function AssistantWorkCard({ work, tokenUsage }) {
                             <span className={`mt-1.5 block truncate text-[9px] font-bold ${state === 'waiting' ? 'text-slate-400' : 'text-violet-800'}`}>{phase.label}</span>
                         </div>;
                     })}
-                </div>
+                </div>}
             </header>
             <div className="bg-slate-50/45 p-3.5">
                 <AssistantWorkDetails work={work} tokenUsage={tokenUsage} defaultExpanded label="Proposal progress" />
