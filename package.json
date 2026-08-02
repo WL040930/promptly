@@ -12,6 +12,9 @@
     "db:bootstrap": "cd packages/cli && node db/bootstrap.js",
     "perf:run-history": "cd packages/cli && node scripts/perf/runHistoryLoadTest.js",
     "test": "node --test packages/shared/*.test.js packages/cli/db/*.test.js packages/cli/models/*.test.js packages/cli/utils/*.test.js 'packages/cli/services/ai/**/*.test.js' packages/cli/services/chat/*.test.js packages/cli/services/agent/*.test.js packages/cli/services/engine/*.test.js packages/cli/services/nodes/*.test.js packages/cli/services/codeRunner/*.test.js packages/cli/services/triggers/*.test.js 'packages/cli/controllers/**/*.test.js' packages/nodes/*.test.js packages/ui/src/components/ui/*.test.js packages/ui/src/utils/*.test.js packages/ui/src/builder/utils/*.test.js",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui",
     "start": "cd packages/cli && node server.js",
     "cli:watch": "cd packages/cli && nodemon --watch . --watch ../nodes --ext js,json server.js"
   },
@@ -57,6 +60,7 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.20",
     "concurrently": "^8.2.2",

@@ -143,3 +143,17 @@ vite.config.ts.timestamp-*
 .agents/*
 
 improvements.md
+
+# Playwright artifacts
+test-results/
+playwright-report/
+blob-report/
+
+output/
+docs/
+.tmp/
+projects/
+scripts/
+tests/
+tmp/
+.venv-ppt/
