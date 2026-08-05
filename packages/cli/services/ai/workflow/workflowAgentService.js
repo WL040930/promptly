@@ -516,15 +516,24 @@ const mergeUsage = (...usages) => usages.reduce((total, usage) => ({
     totalTokens: total.totalTokens + (usage?.totalTokens || 0)
 }), { promptTokens: 0, completionTokens: 0, totalTokens: 0 });
 
+const safeIssueIdentifier = value => typeof value === 'string' ? value.slice(0, 160) : undefined;
+const safeIssueIdentifiers = values => Array.isArray(values)
+    ? values.filter(value => typeof value === 'string' && value).slice(0, 20).map(value => value.slice(0, 160))
+    : [];
+
 const throwEditError = (operation, message, details = {}) => {
     const error = new Error(message);
     error.code = details.code || 'WORKFLOW_EDIT_INVALID';
     error.operation = operation;
+    const value = safeIssueIdentifier(details.value);
+    const allowed = safeIssueIdentifiers(details.allowed);
     error.issues = [{
         code: error.code,
         operation,
         message,
-        ...(details.path ? { path: details.path } : {})
+        ...(details.path ? { path: details.path } : {}),
+        ...(value !== undefined ? { value } : {}),
+        ...(Array.isArray(details.allowed) ? { allowed } : {})
     }];
     throw error;
 };
@@ -537,7 +546,9 @@ const assertConnectionHandle = (node, handle, direction, operation) => {
         .filter(Boolean);
     if (!validHandles.includes(handle)) {
         throwEditError(operation, `Unknown ${direction === 'outputs' ? 'source' : 'target'} handle '${handle}'.`, {
-            code: 'WORKFLOW_HANDLE_INVALID'
+            code: 'WORKFLOW_HANDLE_INVALID',
+            value: handle,
+            allowed: validHandles
         });
     }
 };
@@ -597,7 +608,11 @@ const normalizeEndpoint = (endpoint, refs, operation, label) => {
         throwEditError(operation, `${label} must identify a nodeRef and optional handle.`, { code: 'WORKFLOW_ENDPOINT_INVALID' });
     }
     const nodeId = refs.get(endpoint.nodeRef);
-    if (!nodeId) throwEditError(operation, `${label} references an unknown nodeRef '${endpoint.nodeRef}'.`, { code: 'WORKFLOW_NODE_REF_INVALID' });
+    if (!nodeId) throwEditError(operation, `${label} references an unknown nodeRef '${endpoint.nodeRef}'.`, {
+        code: 'WORKFLOW_NODE_REF_INVALID',
+        value: endpoint.nodeRef,
+        allowed: [...refs.keys()]
+    });
     return { nodeId, handle: endpoint.handle || null };
 };
 
@@ -606,13 +621,25 @@ const addNodeFromEdit = ({ operation, nodeDefinition, nodes, refs, specsByNodeKe
         throwEditError(operation, 'create_node requires a new node ref.', { code: 'WORKFLOW_NODE_REF_INVALID' });
     }
     if (refs.has(nodeDefinition.ref)) {
-        throwEditError(operation, `Node ref '${nodeDefinition.ref}' is already in use.`, { code: 'WORKFLOW_NODE_REF_DUPLICATE' });
+        throwEditError(operation, `Node ref '${nodeDefinition.ref}' is already in use.`, {
+            code: 'WORKFLOW_NODE_REF_DUPLICATE',
+            value: nodeDefinition.ref,
+            allowed: [...refs.keys()]
+        });
     }
     const spec = specsByNodeKey.get(nodeDefinition.nodeKey);
-    if (!spec) throwEditError(operation, `Unknown nodeKey '${nodeDefinition.nodeKey}'.`, { code: 'WORKFLOW_NODE_KEY_INVALID' });
+    if (!spec) throwEditError(operation, `Unknown nodeKey '${nodeDefinition.nodeKey}'.`, {
+        code: 'WORKFLOW_NODE_KEY_INVALID',
+        value: nodeDefinition.nodeKey,
+        allowed: [...specsByNodeKey.keys()]
+    });
     const after = nodeDefinition.afterNodeRef ? refs.get(nodeDefinition.afterNodeRef) : null;
     if (nodeDefinition.afterNodeRef && !after) {
-        throwEditError(operation, `afterNodeRef '${nodeDefinition.afterNodeRef}' does not exist.`, { code: 'WORKFLOW_NODE_REF_INVALID' });
+        throwEditError(operation, `afterNodeRef '${nodeDefinition.afterNodeRef}' does not exist.`, {
+            code: 'WORKFLOW_NODE_REF_INVALID',
+            value: nodeDefinition.afterNodeRef,
+            allowed: [...refs.keys()]
+        });
     }
     const afterNode = after ? nodes.find(node => node.id === after) : null;
     const x = afterNode

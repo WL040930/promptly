@@ -6,18 +6,18 @@ Build semantic operations for the supplied workflow plan. Return JSON only:
 
 ## Allowed operations
 
-- `{"op":"create_node","node":{"ref":"new_step","nodeKey":"action:email","title":"...","description":"...","config":{},"afterNodeRef":"n1"}}`
-- `{"op":"remove_node","nodeRef":"n2"}`
-- `{"op":"update_node","nodeRef":"n2","updates":{"title":"...","config":{"field":"value"}}}`
-- `{"op":"connect","from":{"nodeRef":"n1","handle":null},"to":{"nodeRef":"new_step","handle":null}}`
-- `{"op":"disconnect","from":{"nodeRef":"n1","handle":null},"to":{"nodeRef":"n2","handle":null}}`
-- `{"op":"insert_between","connection":{"from":{"nodeRef":"n1","handle":null},"to":{"nodeRef":"n2","handle":null}},"node":{"ref":"new_step","nodeKey":"action:email","title":"...","config":{}},"inputHandle":null,"outputHandle":null}`
-- `{"op":"insert_after_route","from":{"nodeRef":"n1","handle":"approved"},"beforeNodeRef":"n2","node":{"ref":"new_step","nodeKey":"action:googleSheets","title":"...","config":{}},"inputHandle":null,"outputHandle":null}`
+- `{"op":"create_node","node":{"ref":"new_step","nodeKey":"action:email","title":"...","description":"...","config":{},"afterNodeRef":"form_trigger"}}`
+- `{"op":"remove_node","nodeRef":"existing_ref"}`
+- `{"op":"update_node","nodeRef":"existing_ref","updates":{"title":"...","config":{"field":"value"}}}`
+- `{"op":"connect","from":{"nodeRef":"form_trigger","handle":null},"to":{"nodeRef":"new_step","handle":null}}`
+- `{"op":"disconnect","from":{"nodeRef":"existing_ref","handle":null},"to":{"nodeRef":"another_existing_ref","handle":null}}`
+- `{"op":"insert_between","connection":{"from":{"nodeRef":"existing_ref","handle":null},"to":{"nodeRef":"another_existing_ref","handle":null}},"node":{"ref":"new_step","nodeKey":"action:email","title":"...","config":{}},"inputHandle":null,"outputHandle":null}`
+- `{"op":"insert_after_route","from":{"nodeRef":"existing_ref","handle":"approved"},"beforeNodeRef":"another_existing_ref","node":{"ref":"new_step","nodeKey":"action:googleSheets","title":"...","config":{}},"inputHandle":null,"outputHandle":null}`
 
 ## Rules
 
 1. Satisfy every planner requirement and make no unrelated change.
-2. Use exact node refs from the edit view and exact node keys, config names, and connection handles from the supplied specifications.
+2. Use exact node refs from the edit view and exact node keys, config names, and connection handles from the supplied specifications. If the edit view is empty, there are no existing refs: define new refs first and never use `n1`, `n2`, or a database ID.
 3. Never output database node IDs or edge IDs. The server generates internal IDs.
 4. Preserve existing configuration unless a requirement changes it.
 5. Use only exact account resource values supplied by the server. Every `resource-select` value must be the literal resource ID shown in Account Resources, never its label or an object. The only exception is a Google Sheet declared in Resource Changes: set its `spreadsheetId` to `{ "$provision": "the_resource_ref" }`; set `range` to that resource change's `sheetTitle` at `A1` (for example `'Responses'!A1`). Promptly canonicalizes this range and replaces it with the exact tab returned by Google when the proposal is applied. For a form-submission trigger, `formId` must be the literal attached form ID or form option value, never `$provision`. Never invent an ID.
@@ -26,3 +26,4 @@ Build semantic operations for the supplied workflow plan. Return JSON only:
 8. For owner approval, add an approval node and use its exact `approved` and `rejected` outputs when the requirements describe both outcomes. Do not configure an external approver.
 9. When adding a step to an existing branch, prefer `insert_after_route`. Give the source node and branch handle; include `beforeNodeRef` only when that branch has more than one destination. Do not manually disconnect and reconnect an existing edge for this case.
 10. If the plan has capability `per_submission_spreadsheet`, add `action:googleSheetsCreate` after approval and before `action:googleSheets` append. Do not add a Google Sheet Resource Change: that would create only one sheet at proposal apply time. Configure the create step title with the supplied form binding for `submission_response_id`; the server wires its runtime output to the append step and supplies the response headers.
+11. When a Linear Blueprint is supplied, preserve its step order, refs, and exact node keys. It is a server-validated fallback contract, not a suggestion to rename or replace.

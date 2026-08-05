@@ -2,6 +2,32 @@ const MAX_RANGE_LENGTH = 500;
 const MAX_ROWS = 1000;
 const MAX_COLUMNS = 100;
 
+const isScalarCellValue = value => value === null
+    || typeof value === 'string'
+    || typeof value === 'boolean'
+    || (typeof value === 'number' && Number.isFinite(value));
+
+const cellPath = (rowIndex, columnIndex) => `Values[${rowIndex}][${columnIndex}]`;
+
+const normalizeCellValue = (value, rowIndex, columnIndex) => {
+    const path = cellPath(rowIndex, columnIndex);
+
+    if (value === undefined || value === null) return '';
+    if (isScalarCellValue(value)) return value;
+
+    if (Array.isArray(value)) {
+        if (value.some(item => !isScalarCellValue(item))) {
+            throw new Error(`${path} must be a scalar value or a flat array of scalar values.`);
+        }
+        return value
+            .filter(item => item !== null)
+            .map(item => String(item))
+            .join(', ');
+    }
+
+    throw new Error(`${path} must be a scalar value or a flat array of scalar values.`);
+};
+
 export const parseJsonValue = (value, fieldName, fallback = null) => {
     if (value === undefined || value === null || value === '') return fallback;
     try {
@@ -35,7 +61,7 @@ export const validateValues = value => {
     if (rows.some(row => !Array.isArray(row) || row.length > MAX_COLUMNS)) {
         throw new Error(`Values must be rows with no more than ${MAX_COLUMNS} columns.`);
     }
-    return rows;
+    return rows.map((row, rowIndex) => row.map((cell, columnIndex) => normalizeCellValue(cell, rowIndex, columnIndex)));
 };
 
 export const buildSheetsUrl = ({ spreadsheetId, range, operation, query = {} }) => {
@@ -54,4 +80,3 @@ export const parseBoolean = (value, fallback = false) => {
     if (value === 'false' || value === '0') return false;
     throw new Error('Boolean configuration must be true or false.');
 };
-

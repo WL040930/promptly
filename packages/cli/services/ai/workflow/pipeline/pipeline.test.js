@@ -905,3 +905,183 @@ test('pipeline resolves a planner clarification when clarification mode is decid
     assert.equal(plannerAttempt, 2);
     assert.equal(result.nodes.find(node => node.id === 'email_1')?.config?.subject, 'Thank you');
 });
+
+test('pipeline falls back to a validated linear form-to-Sheets workflow after repeated invalid worker refs', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let workerCalls = 0;
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Save each submitted form response to a Google Sheet.',
+                    requirements: [{ id: 'req_1', description: 'Append each submitted form response to a Google Sheet.' }],
+                    selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
+                    linearSteps: [
+                        { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Form submitted', requirementIds: ['req_1'], config: { formId: 'form_1' } },
+                        { ref: 'save_response', nodeKey: 'action:googleSheets', title: 'Save response', requirementIds: ['req_1'], config: { operation: 'append', spreadsheetId: { $provision: 'response_spreadsheet' }, range: "'Responses'!A1" } }
+                    ],
+                    capabilities: []
+                }) };
+            }
+            if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
+                workerCalls++;
+                return { text: JSON.stringify({ operations: [
+                    { op: 'create_node', node: { ref: 'save_response', nodeKey: 'action:googleSheet', config: {} } },
+                    { op: 'connect', from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'save_response', handle: 'event' } }
+                ] }) };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'When a form is submitted, save the response to Google Sheets.',
+        currentWorkflow: { nodes: [], edges: [] },
+        formSchema: {
+            id: 'form_1',
+            title: 'Event Registration',
+            fields: [{ id: 'name', label: 'Name', type: 'text', required: true }]
+        },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec]),
+        resourceLoader: async () => ({
+            forms: { error: { message: 'Form list is temporarily unavailable.' }, options: [] }
+        })
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.ok(workerCalls > 0);
+    assert.deepEqual(result.nodes.map(node => node.nodeKey), ['trigger:form-submission', 'action:googleSheets']);
+    assert.equal(result.edges.length, 1);
+    assert.equal(result.nodes.find(node => node.nodeKey === 'action:googleSheets')?.config?.operation, 'append');
+});
+
+test('pipeline repairs an unknown planner node key before the worker is called', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const plannerPrompts = [];
+    let plannerCalls = 0;
+    const provider = {
+        async generateContent(contents, options) {
+            if (options.operation === 'workflow:planner' || options.operation === 'workflow:planner repair') {
+                plannerCalls++;
+                plannerPrompts.push(contents[0].parts[0].text);
+                return { text: JSON.stringify(plannerCalls === 1
+                    ? {
+                        type: 'plan_complete',
+                        summary: 'Create a webhook email workflow.',
+                        requirements: [{ id: 'req_1', description: 'Send an email after a webhook.' }],
+                        selectedNodeKeys: ['trigger:webhook', 'action:emails'],
+                        capabilities: []
+                    }
+                    : {
+                        type: 'plan_complete',
+                        summary: 'Create a webhook email workflow.',
+                        requirements: [{ id: 'req_1', description: 'Send an email after a webhook.' }],
+                        selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                        capabilities: []
+                    }) };
+            }
+            if (options.operation === 'workflow:worker') {
+                return { text: JSON.stringify({ operations: [
+                    { op: 'create_node', node: { ref: 'webhook_trigger', nodeKey: 'trigger:webhook', config: {} } },
+                    { op: 'create_node', node: { ref: 'send_email', nodeKey: 'action:email', afterNodeRef: 'webhook_trigger', config: { to: 'team@example.com' } } },
+                    { op: 'connect', from: { nodeRef: 'webhook_trigger', handle: 'event' }, to: { nodeRef: 'send_email', handle: 'event' } }
+                ] }) };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'Create a webhook that emails the team.',
+        currentWorkflow: { nodes: [], edges: [] },
+        provider,
+        registry: makeRegistry(),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(plannerCalls, 2);
+    assert.match(plannerPrompts[1], /Unknown nodeKey 'action:emails'/);
+    assert.match(plannerPrompts[1], /action:email/);
+});
+
+test('pipeline fallback supports repeated actions in a generic linear workflow', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Send two notifications after a webhook.',
+                    requirements: [
+                        { id: 'req_1', description: 'Receive a webhook.' },
+                        { id: 'req_2', description: 'Send two notification emails.' }
+                    ],
+                    selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                    linearSteps: [
+                        { ref: 'webhook_trigger', nodeKey: 'trigger:webhook', requirementIds: ['req_1'], config: {} },
+                        { ref: 'notify_team', nodeKey: 'action:email', requirementIds: ['req_2'], config: { to: 'team@example.com', subject: 'New webhook' } },
+                        { ref: 'notify_owner', nodeKey: 'action:email', requirementIds: ['req_2'], config: { to: 'owner@example.com', subject: 'New webhook' } }
+                    ],
+                    capabilities: []
+                }) };
+            }
+            if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
+                return { text: JSON.stringify({ operations: [
+                    { op: 'create_node', node: { ref: 'notify_team', nodeKey: 'action:emails', config: {} } }
+                ] }) };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'When a webhook arrives, email the team and then the owner.',
+        currentWorkflow: { nodes: [], edges: [] },
+        provider,
+        registry: makeRegistry(),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.nodes.filter(node => node.nodeKey === 'action:email').length, 2);
+    assert.equal(result.edges.length, 2);
+    assert.ok(result.warnings.some(warning => warning.code === 'WORKFLOW_DETERMINISTIC_FALLBACK_USED'));
+});
+
+test('pipeline does not use the linear fallback for a branching workflow', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Ask for approval after a webhook.',
+                    requirements: [{ id: 'req_1', description: 'Route the webhook through approval.' }],
+                    selectedNodeKeys: ['trigger:webhook', 'logic:approval'],
+                    linearSteps: [
+                        { ref: 'webhook_trigger', nodeKey: 'trigger:webhook', requirementIds: ['req_1'], config: {} },
+                        { ref: 'approval_step', nodeKey: 'logic:approval', requirementIds: ['req_1'], config: {} }
+                    ],
+                    capabilities: []
+                }) };
+            }
+            if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
+                return { text: JSON.stringify({ operations: [
+                    { op: 'create_node', node: { ref: 'approval_step', nodeKey: 'logic:approvals', config: {} } }
+                ] }) };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    await assert.rejects(() => generateWorkflowTurn({
+        request: 'When a webhook arrives, ask me to approve it.',
+        currentWorkflow: { nodes: [], edges: [] },
+        provider,
+        registry: makeRegistry([triggerSpec, approvalSpec]),
+        resourceLoader
+    }), error => error.code === 'WORKFLOW_AI_UNSAFE_PROPOSAL');
+});

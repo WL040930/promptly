@@ -21,5 +21,5 @@ The LLM must configure this node with the following JSON schema:
 - `spreadsheetId`: Google spreadsheet ID.
 - `range`: A1 notation such as `Sheet1!A1:D20`.
 - `operation`: `read`, `append`, `update`, or `clear`.
-- `values`: JSON rows for `append` and `update`, for example `[["Name", "Status"], ["Ada", "Active"]]`.
+- `values`: JSON rows for `append` and `update`, for example `[["Name", "Status"], ["Ada", "Active"]]`. Each cell must be a scalar; flat arrays such as form multi-select answers are written as comma-separated text, while nested arrays and objects are rejected before the Google request.
 - `valueInputOption`: `RAW` or `USER_ENTERED`.

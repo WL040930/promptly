@@ -74,7 +74,16 @@ const compactCatalogue = catalogue => (catalogue || []).map(item => ({
     type: item.type,
     subType: item.subType,
     title: item.title,
-    description: clamp(item.description, MAX_DESCRIPTION_TEXT)
+    description: clamp(item.description, MAX_DESCRIPTION_TEXT),
+    // Keep this intentionally smaller than a full node schema, while giving
+    // the planner enough configuration information for a safe linear draft.
+    configInputs: (item.inputs || []).slice(0, 12).map(input => ({
+        name: input.name,
+        required: input.required === true,
+        ...(input.defaultValue !== undefined ? { defaultValue: compactValue(input.defaultValue) } : {}),
+        ...(input.resource ? { resource: input.resource } : {})
+    })),
+    connectionOutputs: (item.outputs || []).slice(0, 4).map(output => output.name)
 }));
 
 const compactResources = resources => Object.fromEntries(Object.entries(resources || {}).map(([key, entry]) => [
@@ -173,6 +182,12 @@ export const buildWorkflowPlannerContext = ({
     };
 };
 
+const describeRepairIssue = item => [
+    `${item.code || 'INVALID'} at ${item.path || 'response'}: ${item.message || 'Invalid output.'}`,
+    ...(item.value !== undefined ? [`Provided value: ${JSON.stringify(item.value)}`] : []),
+    ...(Array.isArray(item.allowed) && item.allowed.length ? [`Allowed values: ${item.allowed.join(', ')}`] : [])
+].join(' ');
+
 export const buildWorkflowWorkerContext = ({
     workflow,
     specs,
@@ -182,11 +197,21 @@ export const buildWorkflowWorkerContext = ({
     resourceContext,
     resourceSelections = {},
     formSchema = null,
+    linearSteps = [],
     priorResponse = null,
     repairIssues = []
-}) => [
+}) => {
+    const editView = buildWorkflowEditView(workflow);
+    return [
     'Current Workflow Edit View:',
-    JSON.stringify(buildWorkflowEditView(workflow)),
+    JSON.stringify(editView),
+    '',
+    'Valid Existing Node Refs:',
+    JSON.stringify(editView.nodes.map(node => node.ref)),
+    editView.nodes.length === 0 ? 'This workflow is empty. No existing refs such as n1 or n2 exist; create and connect only the new refs you define in this response.' : '',
+    '',
+    'Allowed Node Keys:',
+    JSON.stringify((specs || []).map(spec => spec.nodeKey)),
     '',
     'Node Specifications:',
     JSON.stringify((specs || []).map(spec => ({
@@ -200,6 +225,8 @@ export const buildWorkflowWorkerContext = ({
     '',
     'Planner Requirements:',
     JSON.stringify(requirements || []),
+    'Linear Blueprint (when supplied, preserve its ordered refs and node keys):',
+    JSON.stringify(linearSteps || []),
     'Machine Capabilities:',
     JSON.stringify(capabilities || []),
     '',
@@ -221,9 +248,10 @@ export const buildWorkflowWorkerContext = ({
         'Previous Invalid Operations:',
         clamp(typeof priorResponse === 'string' ? priorResponse : JSON.stringify(priorResponse)),
         'Repair Issues:',
-        clamp(repairIssues.map(item => `${item.code || 'INVALID'}: ${item.message}`).join('\n'), 6000)
+        clamp(repairIssues.map(describeRepairIssue).join('\n'), 6000)
     ] : [])
 ].join('\n');
+};
 
 export const buildWorkflowVerifierContext = ({ requirements, operations, diff, workflow, resourceChanges = [] }) => [
     'Planner Requirements:',
@@ -246,7 +274,7 @@ export const buildWorkflowOutputRepairContext = ({ stage, rawText, issues }) => 
     `Repair the ${stage} JSON response. Return a complete corrected response only.`,
     '',
     'Validation Issues:',
-    clamp((issues || []).map(item => `${item.code || 'INVALID'} at ${item.path || 'response'}: ${item.message}`).join('\n'), 6000),
+    clamp((issues || []).map(describeRepairIssue).join('\n'), 6000),
     '',
     'Invalid Response:',
     clamp(rawText)

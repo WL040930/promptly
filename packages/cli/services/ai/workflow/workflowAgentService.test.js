@@ -131,3 +131,43 @@ test('a provisioned Google Sheet always uses its declared tab range in the propo
     assert.equal(result.nodes[0].config.range, "'Responses'!A1");
     assert.ok(result.repairs.some(repair => repair.code === 'WORKFLOW_PROVISIONED_SHEET_RANGE_RESOLVED'));
 });
+
+test('compiler exposes safe invalid node keys and refs for a worker repair', () => {
+    const specs = [{
+        nodeKey: 'trigger:webhook',
+        type: 'trigger',
+        subType: 'webhook',
+        schema: { inputs: [], outputs: [{ name: 'event', isConnection: true }] }
+    }];
+    const registry = {
+        getDefinition: (type, subType) => {
+            const spec = specs.find(item => item.type === type && item.subType === subType);
+            return spec ? { implementationStatus: 'experimental', configSchema: spec.schema } : null;
+        }
+    };
+
+    assert.throws(() => compileWorkflowEdits({
+        currentWorkflow: { nodes: [], edges: [] },
+        specs,
+        registry,
+        operations: [{ op: 'create_node', node: { ref: 'trigger', nodeKey: 'trigger:webhooks' } }]
+    }), error => {
+        const issue = error.issues?.[0];
+        return issue?.code === 'WORKFLOW_NODE_KEY_INVALID'
+            && issue.value === 'trigger:webhooks'
+            && issue.allowed?.includes('trigger:webhook');
+    });
+
+    assert.throws(() => compileWorkflowEdits({
+        currentWorkflow: { nodes: [], edges: [] },
+        specs,
+        registry,
+        operations: [{ op: 'connect', from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'n2', handle: null } }]
+    }), error => {
+        const issue = error.issues?.[0];
+        return issue?.code === 'WORKFLOW_NODE_REF_INVALID'
+            && issue.value === 'n1'
+            && Array.isArray(issue.allowed)
+            && issue.allowed.length === 0;
+    });
+});

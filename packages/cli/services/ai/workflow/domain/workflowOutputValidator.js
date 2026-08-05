@@ -118,6 +118,62 @@ const validateResourceChanges = changes => {
     return issues;
 };
 
+const LINEAR_STEP_REF = /^[a-z][a-z0-9_]{0,63}$/;
+
+/**
+ * A linear blueprint is optional because branching and existing-workflow
+ * edits still need the full worker. When present, it gives the server a
+ * safe, ordered fallback for a fresh workflow.
+ */
+const validateLinearSteps = (steps, requirements = []) => {
+    if (steps === undefined) return [];
+    if (!Array.isArray(steps)) return [issue('INVALID_LINEAR_STEPS', 'linearSteps', 'linearSteps must be an array.')];
+    const issues = [];
+    if (steps.length < 2 || steps.length > 8) {
+        issues.push(issue('INVALID_LINEAR_STEP_COUNT', 'linearSteps', 'A linear workflow must contain between 2 and 8 steps.'));
+    }
+    const refs = new Set();
+    const mappedRequirementIds = new Set();
+    steps.forEach((step, index) => {
+        const path = `linearSteps[${index}]`;
+        if (!isObject(step)) {
+            issues.push(issue('INVALID_LINEAR_STEP', path, 'Each linear step must be an object.'));
+            return;
+        }
+        issues.push(...textIssues(step.ref, `${path}.ref`, { required: true, max: 64 }));
+        if (typeof step.ref === 'string' && step.ref && !LINEAR_STEP_REF.test(step.ref)) {
+            issues.push(issue('INVALID_LINEAR_STEP_REF', `${path}.ref`, 'Use a lowercase letter followed by lowercase letters, numbers, or underscores.'));
+        }
+        if (step.ref && refs.has(step.ref)) issues.push(issue('DUPLICATE_LINEAR_STEP_REF', `${path}.ref`, 'Each linear step ref must be unique.'));
+        refs.add(step.ref);
+        issues.push(...textIssues(step.nodeKey, `${path}.nodeKey`, { required: true, max: 150 }));
+        if (step.title !== undefined) issues.push(...textIssues(step.title, `${path}.title`, { max: 180 }));
+        if (step.config !== undefined && !isObject(step.config)) {
+            issues.push(issue('INVALID_LINEAR_STEP_CONFIG', `${path}.config`, 'A linear step config must be an object.'));
+        }
+        if (!Array.isArray(step.requirementIds) || step.requirementIds.length === 0) {
+            issues.push(issue('INVALID_LINEAR_STEP_REQUIREMENTS', `${path}.requirementIds`, 'Each linear step must map at least one requirement.'));
+        } else {
+            step.requirementIds.forEach((requirementId, requirementIndex) => {
+                issues.push(...textIssues(requirementId, `${path}.requirementIds[${requirementIndex}]`, { required: true, max: 100 }));
+                if (typeof requirementId === 'string' && requirementId) mappedRequirementIds.add(requirementId);
+            });
+        }
+    });
+    const declaredRequirementIds = new Set((requirements || []).map(requirement => requirement?.id).filter(Boolean));
+    for (const requirementId of mappedRequirementIds) {
+        if (!declaredRequirementIds.has(requirementId)) {
+            issues.push(issue('UNKNOWN_LINEAR_STEP_REQUIREMENT', 'linearSteps', `Linear steps reference unknown requirement '${requirementId}'.`));
+        }
+    }
+    for (const requirementId of declaredRequirementIds) {
+        if (!mappedRequirementIds.has(requirementId)) {
+            issues.push(issue('LINEAR_STEP_REQUIREMENT_UNMAPPED', 'linearSteps', `Requirement '${requirementId}' is not mapped to a linear step.`));
+        }
+    }
+    return issues;
+};
+
 export const validateWorkflowPlannerResult = result => {
     if (!isObject(result)) return [issue('INVALID_PLANNER_RESPONSE', '', 'Planner response must be an object.')];
     const issues = [];
@@ -153,6 +209,7 @@ export const validateWorkflowPlannerResult = result => {
             });
         }
         if (result.type === 'direct_plan') issues.push(...validateWorkflowWorkerResult(result));
+        if (result.type === 'plan_complete') issues.push(...validateLinearSteps(result.linearSteps, result.requirements));
         issues.push(...validateContextDelta(result.contextDelta));
         issues.push(...validateResourceChanges(result.resourceChanges));
     }

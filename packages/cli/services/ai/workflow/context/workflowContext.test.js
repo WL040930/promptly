@@ -90,3 +90,38 @@ test('worker context gives the model server-issued form field bindings', () => {
     assert.match(context, /"fieldId":"field_email"/);
     assert.doesNotMatch(context, /semanticToken|runtimeToken|formField:/);
 });
+
+test('worker context makes empty-workflow refs and repair options explicit', () => {
+    const context = buildWorkflowWorkerContext({
+        workflow: { nodes: [], edges: [] },
+        specs: [{
+            nodeKey: 'trigger:webhook',
+            type: 'trigger',
+            subType: 'webhook',
+            schema: { inputs: [], outputs: [{ name: 'event', isConnection: true }] }
+        }, {
+            nodeKey: 'action:email',
+            type: 'action',
+            subType: 'email',
+            schema: { inputs: [{ name: 'event', isConnection: true }], outputs: [] }
+        }],
+        requirements: [{ id: 'req_1', description: 'Send an email.' }],
+        linearSteps: [{ ref: 'webhook_trigger', nodeKey: 'trigger:webhook', requirementIds: ['req_1'], config: {} }],
+        capabilities: [],
+        resourceContext: {},
+        priorResponse: { operations: [] },
+        repairIssues: [{
+            code: 'WORKFLOW_NODE_KEY_INVALID',
+            path: 'operations[0].node.nodeKey',
+            message: 'Unknown node key.',
+            value: 'action:emails',
+            allowed: ['action:email']
+        }]
+    });
+
+    assert.match(context, /This workflow is empty/);
+    assert.match(context, /no existing refs such as n1 or n2/i);
+    assert.match(context, /"trigger:webhook"/);
+    assert.match(context, /Provided value: "action:emails"/);
+    assert.match(context, /Allowed values: action:email/);
+});

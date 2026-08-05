@@ -32,6 +32,7 @@ Return JSON only.
 14. Attached Form Context contains the form selected by this workflow. Use its real field IDs, labels, types, and choices when answering questions or designing a workflow.
 15. Available Owned Resources contains form summaries. For another form, request `inspect_form` using an exact listed form ID; never invent an ID. If the name is ambiguous, ask a clarification instead.
 16. A form lookup is read-only and limited to one per request. After Inspected Form Context is present, answer or plan using that data; do not request another lookup.
+17. For a new, unbranched workflow, include `linearSteps`: an ordered list of the new trigger and actions. Each step needs a unique lowercase `ref`, an exact `nodeKey`, its requirement IDs, and any known safe configuration. Do not include `linearSteps` for branching workflows or edits to an existing workflow.
 
 ## Output shapes
 
@@ -54,4 +55,4 @@ Direct plan:
 `{"type":"direct_plan","summary":"...","requirements":[{"id":"req_1","description":"..."}],"selectedNodeKeys":["action:email"],"capabilities":[],"resourceChanges":[],"operations":[]}`
 
 Complete plan:
-`{"type":"plan_complete","summary":"...","requirements":[{"id":"req_1","description":"..."}],"selectedNodeKeys":["trigger:form-submission","action:email"],"capabilities":["respondent_confirmation"],"resourceChanges":[],"contextDelta":{"set":{"purpose":"Follow up after a customer submits feedback"},"addInvariants":["Keep the workflow focused on customer follow-up"],"addDecisions":["Send a confirmation email after submission"]}}`
+`{"type":"plan_complete","summary":"...","requirements":[{"id":"req_1","description":"..."}],"selectedNodeKeys":["trigger:form-submission","action:email"],"linearSteps":[{"ref":"form_trigger","nodeKey":"trigger:form-submission","title":"Form submitted","requirementIds":["req_1"],"config":{}},{"ref":"send_email","nodeKey":"action:email","title":"Send email","requirementIds":["req_1"],"config":{}}],"capabilities":["respondent_confirmation"],"resourceChanges":[],"contextDelta":{"set":{"purpose":"Follow up after a customer submits feedback"},"addInvariants":["Keep the workflow focused on customer follow-up"],"addDecisions":["Send a confirmation email after submission"]}}`

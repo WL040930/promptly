@@ -1,6 +1,3 @@
-const isProvisionReference = value => value !== null && typeof value === 'object' && !Array.isArray(value)
-    && typeof value.$provision === 'string' && Object.keys(value).length === 1;
-
 const activeFields = form => (form?.fields || []).filter(field => field?.id && !field.deleted && field.type !== 'heading');
 
 const reference = (nodeId, path) => ({ $expr: 'reference', v: 1, nodeId, path });
@@ -43,7 +40,14 @@ export const applyFormResponseSpreadsheetContract = ({ nodes = [], resourceChang
     return {
         nodes: nodes.map(node => {
             if (matchedRefs.has(node?.config?.spreadsheetId?.$provision) || runtimeAppends.some(append => append.id === node.id)) {
-                return { ...node, config: { ...(node.config || {}), values: contract.values } };
+                return {
+                    ...node,
+                    config: {
+                        ...(node.config || {}),
+                        values: contract.values,
+                        valueInputOption: 'RAW'
+                    }
+                };
             }
             if (node.id === runtimeCreator?.id) {
                 return { ...node, config: { ...(node.config || {}), headers: [contract.headers] } };

@@ -78,10 +78,60 @@ const createPipelineError = (message, code, issues = []) => {
 
 const unique = values => [...new Set(values.filter(Boolean))];
 const nodeKeyFor = node => node?.nodeKey || (node?.type && node?.subType ? `${node.type}:${node.subType}` : null);
+const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const isBlank = value => value === undefined || value === null || value === '';
+const cloneValue = value => isObject(value) || Array.isArray(value) ? JSON.parse(JSON.stringify(value)) : value;
 
-const spreadsheetRequestPattern = /\b(?:save|store|record|write|append|add)\b[\s\S]{0,120}\b(?:excel|spreadsheet|google\s*sheet|sheet)\b|\b(?:excel|spreadsheet|google\s*sheet)\b[\s\S]{0,120}\b(?:save|store|record|write|append|add)\b/i;
+const withTrustedFormResource = (resourceContext, formSchema) => {
+    if (!formSchema?.id) return resourceContext || {};
+    const context = resourceContext || {};
+    const forms = context.forms || { resource: 'forms', options: [] };
+    const options = Array.isArray(forms.options) ? forms.options : [];
+    if (options.some(option => option?.value === formSchema.id) && !forms.error) return context;
+    return {
+        ...context,
+        forms: {
+            ...forms,
+            resource: forms.resource || 'forms',
+            // The selected form has already been loaded through an
+            // ownership-checked server path, so it remains trusted even if a
+            // broad resource listing is temporarily unavailable.
+            error: null,
+            options: [...options, { value: formSchema.id, label: formSchema.title || 'Selected form' }]
+        }
+    };
+};
+
+const enabledCatalogue = registry => (registry.getCompactCatalogue() || []).filter(node => !['disabled', 'coming_soon', 'retired'].includes(node?.implementationStatus));
+
+const plannerNodeKeyIssues = (result, catalogue) => {
+    const issues = validateWorkflowPlannerResult(result);
+    if (!isObject(result) || !['direct_plan', 'plan_complete'].includes(result.type)) return issues;
+    const allowed = catalogue.map(node => node.nodeKey).filter(Boolean).sort();
+    const known = new Set(allowed);
+    const validateNodeKey = (key, path) => {
+        if (typeof key === 'string' && key && !known.has(key)) {
+            issues.push({
+                code: 'WORKFLOW_NODE_KEY_INVALID',
+                path,
+                value: key,
+                allowed,
+                message: `Unknown nodeKey '${key}'. Choose an exact nodeKey from the available catalogue.`
+            });
+        }
+    };
+    if (Array.isArray(result.selectedNodeKeys)) {
+        result.selectedNodeKeys.forEach((key, index) => validateNodeKey(key, `selectedNodeKeys[${index}]`));
+    }
+    if (Array.isArray(result.linearSteps)) {
+        result.linearSteps.forEach((step, index) => validateNodeKey(step?.nodeKey, `linearSteps[${index}].nodeKey`));
+    }
+    return issues;
+};
+
+const spreadsheetRequestPattern = /\b(?:save|store|record|write|append|add)\b[\s\S]{0,120}\b(?:excel|spreadsheets?|google\s*sheets?|sheets?)\b|\b(?:excel|spreadsheets?|google\s*sheets?)\b[\s\S]{0,120}\b(?:save|store|record|write|append|add)\b/i;
 const explicitSpreadsheetIdPattern = /(?:docs\.google\.com\/spreadsheets\/d\/|\b[a-zA-Z0-9_-]{20,200}\b)/;
-const perSubmissionSpreadsheetPattern = /\b(?:new|separate|individual)\s+(?:google\s*)?(?:sheet|spreadsheet)\s+(?:(?:for|per)\s+)?(?:each|every|per)\s+(?:form\s+)?(?:submission|response)\b|\b(?:each|every|per)\s+(?:form\s+)?(?:submission|response)\b[\s\S]{0,80}\b(?:new|separate|individual)\s+(?:google\s*)?(?:sheet|spreadsheet)\b/i;
+const perSubmissionSpreadsheetPattern = /\b(?:new|separate|individual)\s+(?:google\s*)?(?:sheets?|spreadsheets?)\s+(?:(?:for|per)\s+)?(?:each|every|per)\s+(?:form\s+)?(?:submission|response)\b|\b(?:each|every|per)\s+(?:form\s+)?(?:submission|response)\b[\s\S]{0,80}\b(?:new|separate|individual)\s+(?:google\s*)?(?:sheets?|spreadsheets?)\b/i;
 
 const defaultSpreadsheetTitle = ({ workflow, formSchema }) => {
     const source = String(formSchema?.title || workflow?.name || workflow?.title || 'Workflow').trim() || 'Workflow';
@@ -117,7 +167,7 @@ const addDefaultSpreadsheetIntent = ({ plan, request, workflow, formSchema }) =>
     if (explicitSpreadsheetIdPattern.test(String(request || ''))) return plan;
     if ((plan.resourceChanges || []).some(change => change?.type === 'create_google_spreadsheet')) return plan;
     const requirements = [...(plan.requirements || [])];
-    if (!requirements.some(requirement => /(?:google\s*sheet|spreadsheet|excel)/i.test(requirement?.description || ''))) {
+    if (!requirements.some(requirement => /(?:google\s*sheets?|spreadsheets?|excel)/i.test(requirement?.description || ''))) {
         requirements.push({
             id: 'req_response_spreadsheet',
             description: 'Append the submitted form response to a new Google Sheet before the next approved-route action.'
@@ -206,11 +256,130 @@ const bindPerSubmissionSpreadsheet = ({ nodes = [], edges = [], capabilities = [
 };
 
 const specsForPlan = ({ workflow, planner, registry }) => {
-    const catalogue = registry.getCompactCatalogue().filter(node => node.implementationStatus !== 'disabled');
+    const catalogue = enabledCatalogue(registry);
     const knownKeys = new Set(catalogue.map(node => node.nodeKey));
-    const requested = (planner.selectedNodeKeys || []).filter(key => knownKeys.has(key));
+    const selectedNodeKeys = unique(planner.selectedNodeKeys || []);
+    const unknownKeys = selectedNodeKeys.filter(key => !knownKeys.has(key));
+    if (unknownKeys.length > 0) {
+        throw createPipelineError(
+            'The workflow plan contains an unavailable node type. No changes were applied.',
+            'WORKFLOW_AI_NODE_SELECTION_INVALID',
+            unknownKeys.map((key, index) => ({
+                code: 'WORKFLOW_NODE_KEY_INVALID',
+                path: `selectedNodeKeys[${index}]`,
+                value: key,
+                allowed: [...knownKeys].sort(),
+                message: `Unknown nodeKey '${key}'. Choose an exact nodeKey from the available catalogue.`
+            }))
+        );
+    }
+    const requested = selectedNodeKeys;
     const keys = unique([...(workflow.nodes || []).map(nodeKeyFor), ...requested]);
     return { specs: registry.getSchemasFor(keys), catalogue, requested };
+};
+
+const connectionPorts = (spec, direction) => (spec?.schema?.[direction] || [])
+    .filter(port => port?.isConnection && port.name)
+    .map(port => port.name);
+
+const defaultConfigFor = spec => Object.fromEntries((spec?.schema?.inputs || [])
+    .filter(input => !input?.isConnection && input.defaultValue !== undefined)
+    .map(input => [input.name, cloneValue(input.defaultValue)]));
+
+const missingRequiredConfig = (spec, config) => (spec?.schema?.inputs || [])
+    .filter(input => input?.required === true && !input.isConnection && isBlank(config?.[input.name]))
+    .map(input => input.name);
+
+const unavailableLinearFallback = reason => ({ operations: null, reason });
+
+/**
+ * Build only a new, unbranched chain. The planner supplies intent and safe
+ * config; the server owns refs, port selection, graph shape, and form/sheet
+ * bindings. Existing graph edits remain model-driven because insertion point
+ * selection is not deterministic.
+ */
+const buildDeterministicLinearOperations = ({ workflow = {}, plan = {}, specs = [], formSchema = null }) => {
+    if ((workflow.nodes || []).length > 0 || (workflow.edges || []).length > 0) {
+        return unavailableLinearFallback('The deterministic fallback only builds a new workflow.');
+    }
+    const steps = plan.linearSteps;
+    if (!Array.isArray(steps) || steps.length < 2 || steps.length > 8) {
+        return unavailableLinearFallback('No valid linear workflow blueprint was supplied.');
+    }
+    const specsByNodeKey = new Map(specs.map(spec => [spec.nodeKey, spec]));
+    const selectedNodeKeys = new Set(plan.selectedNodeKeys || []);
+    const refs = new Set();
+    const resolvedSteps = [];
+    for (const [index, step] of steps.entries()) {
+        if (!isObject(step) || typeof step.ref !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(step.ref) || refs.has(step.ref)) {
+            return unavailableLinearFallback('The linear workflow blueprint contains invalid or duplicate step refs.');
+        }
+        const spec = specsByNodeKey.get(step.nodeKey);
+        if (!spec || !selectedNodeKeys.has(step.nodeKey)) {
+            return unavailableLinearFallback('The linear workflow blueprint references a node that was not validated by the plan.');
+        }
+        refs.add(step.ref);
+        resolvedSteps.push({ step, spec, index });
+    }
+    const triggers = resolvedSteps.filter(item => item.spec.type === 'trigger');
+    if (triggers.length !== 1 || resolvedSteps[0].spec.type !== 'trigger' || resolvedSteps.slice(1).some(item => item.spec.type === 'trigger')) {
+        return unavailableLinearFallback('A linear fallback requires exactly one trigger as the first step.');
+    }
+    for (const [index, item] of resolvedSteps.entries()) {
+        const outputs = connectionPorts(item.spec, 'outputs');
+        const inputs = connectionPorts(item.spec, 'inputs');
+        if (outputs.length > 1 || inputs.length > 1) {
+            return unavailableLinearFallback('The requested workflow needs branching or multiple inputs, so it cannot use the linear fallback.');
+        }
+        if (index < resolvedSteps.length - 1 && outputs.length !== 1) {
+            return unavailableLinearFallback('A non-terminal linear step must expose exactly one output route.');
+        }
+    }
+
+    const responseSheetChanges = (plan.resourceChanges || []).filter(change => change?.type === 'create_google_spreadsheet' && change?.ref);
+    const sheetSteps = resolvedSteps.filter(item => item.spec.nodeKey === 'action:googleSheets');
+    if (responseSheetChanges.length > 1 || (responseSheetChanges.length === 1 && sheetSteps.length !== 1)) {
+        return unavailableLinearFallback('The response spreadsheet destination is ambiguous for the linear fallback.');
+    }
+    const responseSheet = responseSheetChanges[0] || null;
+    const operations = [];
+    for (const { step, spec, index } of resolvedSteps) {
+        const config = { ...defaultConfigFor(spec), ...(isObject(step.config) ? cloneValue(step.config) : {}) };
+        if (spec.nodeKey === 'trigger:form-submission') {
+            if (!formSchema?.id) return unavailableLinearFallback('A form trigger needs a loaded form before the linear fallback can be used.');
+            config.formId = formSchema.id;
+        }
+        if (spec.nodeKey === 'action:googleSheets' && responseSheet) {
+            const sheetTitle = String(responseSheet.sheetTitle || 'Responses').replace(/'/g, "''");
+            config.operation = 'append';
+            config.spreadsheetId = { $provision: responseSheet.ref };
+            config.range = `'${sheetTitle}'!A1`;
+        }
+        const missing = missingRequiredConfig(spec, config);
+        if (missing.length > 0) {
+            return unavailableLinearFallback(`The ${spec.nodeKey} step is missing required configuration: ${missing.join(', ')}.`);
+        }
+        operations.push({
+            op: 'create_node',
+            node: {
+                ref: step.ref,
+                nodeKey: spec.nodeKey,
+                title: step.title || spec.title,
+                ...(index > 0 ? { afterNodeRef: resolvedSteps[index - 1].step.ref } : {}),
+                config
+            }
+        });
+    }
+    for (let index = 0; index < resolvedSteps.length - 1; index += 1) {
+        const from = resolvedSteps[index];
+        const to = resolvedSteps[index + 1];
+        operations.push({
+            op: 'connect',
+            from: { nodeRef: from.step.ref, handle: connectionPorts(from.spec, 'outputs')[0] || null },
+            to: { nodeRef: to.step.ref, handle: connectionPorts(to.spec, 'inputs')[0] || null }
+        });
+    }
+    return { operations, reason: null };
 };
 
 const proposalDiff = ({ before, after, operations }) => {
@@ -406,7 +575,8 @@ export const generateWorkflowTurn = async ({
     resourceLoader = loadWorkflowResourceContext
 } = {}) => {
     const budget = { calls: 0, maxCalls: WORKFLOW_COMPLEXITY_BUDGETS.simple.maxProviderCalls };
-    const catalogue = registry.getCompactCatalogue().filter(node => node.implementationStatus !== 'disabled');
+    const catalogue = enabledCatalogue(registry);
+    const validatePlannerForCatalogue = result => plannerNodeKeyIssues(result, catalogue);
     let usage = {};
     const reportProviderActivity = event => {
         const phase = /planner/.test(event.operation) ? 'plan' : /verifier/.test(event.operation) ? 'check' : 'draft';
@@ -454,7 +624,7 @@ export const generateWorkflowTurn = async ({
         label: 'planner',
         prompt: plannerContext.prompt,
         instruction: workflowPlannerInstruction,
-        validate: validateWorkflowPlannerResult,
+        validate: validatePlannerForCatalogue,
         provider,
         budget,
         usage,
@@ -507,7 +677,7 @@ export const generateWorkflowTurn = async ({
             label: 'planner',
             prompt: plannerContext.prompt,
             instruction: workflowPlannerInstruction,
-            validate: validateWorkflowPlannerResult,
+            validate: validatePlannerForCatalogue,
             provider,
             budget,
             usage,
@@ -554,7 +724,7 @@ export const generateWorkflowTurn = async ({
         plannerContext = buildPlannerContext({ inspectedFormSchema, formLookupUsed });
         plannerResult = await requestAndValidate({
             label: 'planner', prompt: plannerContext.prompt, instruction: workflowPlannerInstruction,
-            validate: validateWorkflowPlannerResult, provider, budget, usage, onActivity: reportProviderActivity
+            validate: validatePlannerForCatalogue, provider, budget, usage, onActivity: reportProviderActivity
         });
         usage = plannerResult.usage;
         plan = plannerResult.call.value;
@@ -590,7 +760,7 @@ export const generateWorkflowTurn = async ({
             label: 'planner',
             prompt: plannerContext.prompt,
             instruction: `${workflowPlannerInstruction}\nThe user delegated safe defaults. Resolve defaultable choices now.`,
-            validate: validateWorkflowPlannerResult,
+            validate: validatePlannerForCatalogue,
             provider,
             budget,
             usage,
@@ -647,7 +817,8 @@ export const generateWorkflowTurn = async ({
         status: 'loading_resources', phase: 'understand', label: 'Checking available workflow resources',
         message: 'Loading workflow resources…', detail: `${specs.length} selected step type${specs.length === 1 ? '' : 's'} ready to configure.`
     });
-    const resourceContext = await resourceLoader({ userId, specs, nodes: currentWorkflow.nodes || [], selections: resourceSelections });
+    const loadedResourceContext = await resourceLoader({ userId, specs, nodes: currentWorkflow.nodes || [], selections: resourceSelections });
+    const resourceContext = withTrustedFormResource(loadedResourceContext, resolvedFormSchema);
     let previousResponse = null;
     let repairIssues = [];
     let unverifiedProposal = null;
@@ -666,6 +837,7 @@ export const generateWorkflowTurn = async ({
             workerCall = { value: { operations: plan.operations }, rawText: JSON.stringify({ operations: plan.operations }), response: null };
         } else {
             const label = attempt === 0 ? 'worker' : 'worker repair';
+            try {
             workerCall = await requestWorkflowJson({
                 label,
                 prompt: buildWorkflowWorkerContext({
@@ -677,6 +849,7 @@ export const generateWorkflowTurn = async ({
                     resourceContext,
                     resourceSelections,
                     formSchema: resolvedFormSchema,
+                    linearSteps: plan.linearSteps || [],
                     priorResponse: previousResponse,
                     repairIssues
                 }),
@@ -687,6 +860,16 @@ export const generateWorkflowTurn = async ({
                 maxAttempts: complexity.providerAttempts
             });
             usage = addWorkflowUsage(usage, workerCall.response, label);
+            } catch (error) {
+                if (!['WORKFLOW_AI_BUDGET_EXCEEDED', 'WORKFLOW_AI_PROVIDER_TIMEOUT', 'WORKFLOW_AI_PROVIDER_UNAVAILABLE', 'WORKFLOW_AI_RATE_LIMITED'].includes(error.code)) throw error;
+                repairIssues = error.issues || [{ code: error.code, message: error.message }];
+                await recordAiDiagnostic({
+                    event: 'workflow_worker_unavailable_for_linear_fallback',
+                    attempt: attempt + 1,
+                    issues: repairIssues.slice(0, 20).map(item => ({ code: item.code, path: item.path }))
+                });
+                break;
+            }
         }
 
         const workerIssues = workflowOutputIssues({ call: workerCall, validate: validateWorkflowWorkerResult });
@@ -718,7 +901,7 @@ export const generateWorkflowTurn = async ({
             await recordAiDiagnostic({
                 event: 'workflow_proposal_rejected',
                 attempt: attempt + 1,
-                issues: repairIssues.slice(0, 20).map(item => ({ code: item.code, path: item.path }))
+                issues: repairIssues.slice(0, 20).map(item => ({ code: item.code, path: item.path, value: item.value, allowed: item.allowed }))
             });
             continue;
         }
@@ -819,6 +1002,119 @@ export const generateWorkflowTurn = async ({
                 fulfilledRequirements: plan.requirements.map(requirement => requirement.id)
             }
         });
+    }
+
+    if (!unverifiedProposal) {
+        const fallback = buildDeterministicLinearOperations({
+            workflow: currentWorkflow,
+            plan,
+            specs,
+            formSchema: resolvedFormSchema
+        });
+        if (fallback.operations) {
+            onProgress?.({
+                status: 'building',
+                phase: 'draft',
+                label: 'Building a safe linear workflow',
+                message: 'Using the validated workflow blueprint',
+                detail: 'Promptly is assembling the unbranched workflow directly after the AI draft could not be compiled.'
+            });
+            let compiled;
+            try {
+                compiled = await applyAndValidate({
+                    workflow: currentWorkflow,
+                    operations: fallback.operations,
+                    specs,
+                    capabilities,
+                    formSchema: resolvedFormSchema,
+                    formLoader,
+                    userId,
+                    resourceContext,
+                    resourceChanges: plan.resourceChanges || [],
+                    registry
+                });
+            } catch (error) {
+                repairIssues = error.issues || [{ code: error.code || 'WORKFLOW_LINEAR_FALLBACK_INVALID', message: error.message }];
+                await recordAiDiagnostic({
+                    event: 'workflow_linear_fallback_rejected',
+                    issues: repairIssues.slice(0, 20).map(item => ({ code: item.code, path: item.path, value: item.value }))
+                });
+            }
+            if (compiled) {
+                const fallbackCompiled = {
+                    ...compiled,
+                    repairs: [...(compiled.repairs || []), { code: 'WORKFLOW_DETERMINISTIC_FALLBACK_USED' }]
+                };
+                const proposal = {
+                    plan,
+                    capabilities,
+                    operations: fallback.operations,
+                    compiled: fallbackCompiled,
+                    usage
+                };
+                await recordAiDiagnostic({
+                    event: 'workflow_deterministic_fallback_used',
+                    nodeCount: fallbackCompiled.finalWorkflow.nodes.length,
+                    operationCount: fallback.operations.length,
+                    priorIssueCodes: repairIssues.slice(0, 8).map(item => item.code)
+                });
+                let verification;
+                try {
+                    const verifier = await requestAndValidate({
+                        label: 'verifier',
+                        prompt: buildWorkflowVerifierContext({
+                            requirements: plan.requirements,
+                            operations: fallback.operations,
+                            diff: fallbackCompiled.diff,
+                            workflow: fallbackCompiled.finalWorkflow,
+                            resourceChanges: plan.resourceChanges || []
+                        }),
+                        instruction: workflowVerifierInstruction,
+                        validate: validateWorkflowVerifierResult,
+                        provider,
+                        budget,
+                        usage,
+                        onActivity: reportProviderActivity,
+                        maxAttempts: complexity.providerAttempts
+                    });
+                    usage = verifier.usage;
+                    verification = verifier.call.value.status === 'pass'
+                        ? {
+                            status: 'pass',
+                            issues: [],
+                            fulfilledRequirements: plan.requirements.map(requirement => requirement.id)
+                        }
+                        : {
+                            status: 'unverified',
+                            skippedReason: 'DETERMINISTIC_FALLBACK_VERIFICATION_REJECTED',
+                            issues: verifier.call.value.issues.map(item => ({
+                                code: 'REQUIREMENT_NOT_SATISFIED',
+                                path: item.requirementId || 'requirements',
+                                message: item.message
+                            }))
+                        };
+                } catch (error) {
+                    if (!['WORKFLOW_AI_INVALID_VERIFIER', 'WORKFLOW_AI_BUDGET_EXCEEDED', 'WORKFLOW_AI_PROVIDER_TIMEOUT', 'WORKFLOW_AI_PROVIDER_UNAVAILABLE', 'WORKFLOW_AI_RATE_LIMITED'].includes(error.code)) throw error;
+                    verification = {
+                        status: 'unverified',
+                        skippedReason: 'DETERMINISTIC_FALLBACK_USED',
+                        issues: error.issues || [{ code: error.code, message: error.message }]
+                    };
+                }
+                return buildProposalResult({
+                    ...proposal,
+                    diagnosis: plan.diagnosis || null,
+                    usage: { ...usage, requestCalls: budget.calls },
+                    verification
+                });
+            }
+        } else if (repairIssues.length > 0) {
+            await recordAiDiagnostic({
+                event: 'workflow_deterministic_fallback_skipped',
+                reason: fallback.reason,
+                priorIssueCodes: repairIssues.slice(0, 8).map(item => item.code)
+            });
+        }
     }
 
     if (unverifiedProposal) {

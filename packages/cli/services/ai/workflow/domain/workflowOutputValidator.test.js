@@ -58,6 +58,35 @@ test('planner validator accepts a valid plan_complete result', () => {
     assert.deepEqual(issues, []);
 });
 
+test('planner validator accepts a valid linear blueprint and rejects an unmapped requirement', () => {
+    const valid = validateWorkflowPlannerResult({
+        type: 'plan_complete',
+        summary: 'Build a webhook workflow.',
+        requirements: [{ id: 'req_1', description: 'Receive a webhook and send an email.' }],
+        selectedNodeKeys: ['trigger:webhook', 'action:email'],
+        linearSteps: [
+            { ref: 'webhook_trigger', nodeKey: 'trigger:webhook', requirementIds: ['req_1'], config: {} },
+            { ref: 'send_email', nodeKey: 'action:email', requirementIds: ['req_1'], config: { subject: 'New request' } }
+        ],
+        capabilities: []
+    });
+    assert.deepEqual(valid, []);
+
+    const invalid = validateWorkflowPlannerResult({
+        type: 'plan_complete',
+        summary: 'Build a webhook workflow.',
+        requirements: [{ id: 'req_1', description: 'Receive a webhook.' }],
+        selectedNodeKeys: ['trigger:webhook', 'action:email'],
+        linearSteps: [
+            { ref: 'webhook_trigger', nodeKey: 'trigger:webhook', requirementIds: ['req_2'], config: {} },
+            { ref: 'send_email', nodeKey: 'action:email', requirementIds: ['req_2'], config: {} }
+        ],
+        capabilities: []
+    });
+    assert.ok(invalid.some(item => item.code === 'UNKNOWN_LINEAR_STEP_REQUIREMENT'));
+    assert.ok(invalid.some(item => item.code === 'LINEAR_STEP_REQUIREMENT_UNMAPPED'));
+});
+
 test('planner validator accepts a proposed Google Sheet creation', () => {
     const issues = validateWorkflowPlannerResult({
         type: 'plan_complete',
