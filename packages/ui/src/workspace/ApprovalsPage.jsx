@@ -4,8 +4,6 @@ import { useGSAP } from "@gsap/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
-  ArrowUpRight,
-  Check,
   CheckCircle2,
   ChevronDown,
   Clock3,
@@ -510,7 +508,7 @@ export default function ApprovalsPage() {
     const { item, decision } = decisionModal;
     try {
       const path = `/api/continuations/approvals/id/${encodeURIComponent(item.id)}/resolve`;
-      const result = await apiRequest(path, {
+      await apiRequest(path, {
         method: "POST",
         body: JSON.stringify({
           decision,

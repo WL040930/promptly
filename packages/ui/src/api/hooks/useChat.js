@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { approveAgentRun, decideChatProposal, deleteChatSession, getChatSession, getChatSessions, rejectAgentRun, sendChatMessage } from '../backend.js';
+import { approveAgentRun, decideChatProposal, deleteChatSession, getChatSession, getChatSessions, rejectAgentRun } from '../backend.js';
 import { submitAssistantTurnStream } from '../aiStream.js';
 
 const CHAT_SESSIONS_KEY = ['chatSessions'];
@@ -17,20 +17,6 @@ export function useChatSession(sessionId) {
         queryFn: () => getChatSession(sessionId),
         enabled: Boolean(sessionId),
         retry: false
-    });
-}
-
-export function useSendChatMessage() {
-    const queryClient = useQueryClient();
-
-    return useMutation({
-        mutationFn: ({ sessionId, message, context, event }) =>
-            sendChatMessage(sessionId, message, context, event),
-        onSuccess: (response) => {
-            if (response?.sessionId) {
-                queryClient.invalidateQueries({ queryKey: CHAT_SESSIONS_KEY });
-            }
-        }
     });
 }
 

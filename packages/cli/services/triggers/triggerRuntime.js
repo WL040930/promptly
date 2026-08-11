@@ -14,7 +14,6 @@ const MAX_ATTEMPTS = 5;
 const MAX_TRIGGER_DEPTH = 10;
 const adapters = new Map();
 let workerTimer = null;
-let renewalTimer = null;
 
 const registerTriggerAdapter = (provider, adapter) => {
     if (!provider || !adapter?.reconcile || !adapter?.remove) throw new Error(`Invalid trigger adapter for ${provider}.`);
@@ -227,6 +226,6 @@ const renewSubscriptions = async () => {
 export const startTriggerRuntime = async () => {
     if (workerTimer) return;
     workerTimer = setInterval(() => processPendingEvents().catch(error => console.error('[TriggerRuntime] Worker failed:', error.message)), 1000);
-    renewalTimer = setInterval(() => renewSubscriptions().catch(error => console.error('[TriggerRuntime] Renewal failed:', error.message)), 15 * 60 * 1000);
+    setInterval(() => renewSubscriptions().catch(error => console.error('[TriggerRuntime] Renewal failed:', error.message)), 15 * 60 * 1000);
     await renewSubscriptions();
 };

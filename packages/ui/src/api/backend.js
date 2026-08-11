@@ -76,10 +76,6 @@ export const getDashboardMetrics = () => apiRequest('/api/dashboard/metrics');
 
 // --- Chat ---
 export const getChatSessions = () => apiRequest('/api/conversations');
-export const sendChatMessage = (sessionId, message, context = {}, event = null) => apiRequest('/api/conversations/message', {
-    method: 'POST',
-    body: JSON.stringify({ sessionId, message, context, ...(event ? { event } : {}) })
-});
 export const getChatSession = (sessionId) => apiRequest(`/api/conversations/${sessionId}`);
 export const deleteChatSession = (sessionId) => apiRequest(`/api/conversations/${sessionId}`, { method: 'DELETE' });
 export const approveAgentRun = (runId, idempotencyKey) => apiRequest(`/api/conversations/agent-runs/${runId}/approve`, {

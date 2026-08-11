@@ -90,11 +90,6 @@ function clamp(value, min = 0, max = 1) {
   return Math.min(max, Math.max(min, value))
 }
 
-function ease(value) {
-  const t = clamp(value)
-  return t * t * (3 - 2 * t)
-}
-
 function SceneVisual({ type }) {
   if (type === 'intent') {
     return (

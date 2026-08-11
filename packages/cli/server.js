@@ -1,5 +1,4 @@
 import app from './app.js';
-import sequelize from './db/index.js';
 import env from './config/env.js';
 import './models/index.js';
 import NodeRegistry from './utils/NodeRegistry.js';

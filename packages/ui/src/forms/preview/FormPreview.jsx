@@ -108,9 +108,8 @@ const FormPreview = ({ form, accentColor = '#5b4ee8', onSubmitCallback, embedded
                             )}
 
                             <div className="flex flex-col gap-10">
-                                {pages[currentPage].map((field, idx) => {
+                                {pages[currentPage].map((field) => {
                                     const isHeading = field.type === 'heading';
-                                    const isLast = idx === pages[currentPage].length - 1;
                                     return (
                                     <div key={field.id} className={`group relative ${isHeading ? 'mb-4' : ''}`}>
                                         {!isHeading && (

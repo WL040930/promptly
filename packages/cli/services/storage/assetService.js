@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-import path from 'node:path';
 import env from '../../config/env.js';
 import { Asset } from '../../models/index.js';
 

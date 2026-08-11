@@ -69,7 +69,6 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
     const presentation = messagePresentation(message);
     const isCompactWork = presentation === 'work';
     const isProposalWork = presentation === 'proposal_work';
-    const isWorkMessage = isCompactWork || isProposalWork;
     const workLabel = work?.activities?.find(activity => activity.status === 'active')?.label
         || work?.activities?.at(-1)?.label
         || 'Thinking';

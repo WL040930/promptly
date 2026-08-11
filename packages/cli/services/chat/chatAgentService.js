@@ -326,48 +326,6 @@ const formForRequest = async (userId, formId) => {
     return Form.findOne({ where: { id: formId, userId } });
 };
 
-const compactWorkflowContext = (workflow) => {
-    if (!workflow) return { error: 'Workflow not found' };
-    const value = workflow.toJSON ? workflow.toJSON() : workflow;
-    return {
-        id: value.id,
-        name: value.name,
-        status: value.status,
-        isActive: value.isActive,
-        revision: value.revision,
-        updatedAt: value.updatedAt,
-        nodes: (value.nodes || []).map(node => ({
-            id: node.id,
-            title: node.title,
-            type: node.type,
-            subType: node.subType
-        })),
-        edges: (value.edges || []).map(edge => ({
-            source: edge.source,
-            target: edge.target,
-            sourceHandle: edge.sourceHandle || null,
-            targetHandle: edge.targetHandle || null
-        }))
-    };
-};
-
-const compactFormContext = (form) => {
-    if (!form) return { error: 'Form not found' };
-    const value = form.toJSON ? form.toJSON() : form;
-    return {
-        id: value.id,
-        title: value.title,
-        description: value.description || '',
-        updatedAt: value.updatedAt,
-        fields: (value.fields || []).map(field => ({
-            id: field.id,
-            label: field.label || field.name || '',
-            type: field.type,
-            required: Boolean(field.required)
-        }))
-    };
-};
-
 const formHistory = async (sessionId) => {
     const rows = await AssistantMessage.findAll({
         where: { threadId: sessionId },
