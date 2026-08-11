@@ -22,7 +22,6 @@ import {
     buildWorkflowWorkerContext
 } from '../context/workflowContext.js';
 import {
-    summarizeWorkflowOutputIssues,
     validateWorkflowPlannerResult,
     validateWorkflowVerifierResult,
     validateWorkflowWorkerResult

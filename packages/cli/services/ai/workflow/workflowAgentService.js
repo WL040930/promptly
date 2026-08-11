@@ -84,23 +84,6 @@ export const loadWorkflowResourceContext = async ({ userId, specs = [], nodes = 
     return context;
 };
 
-const compactResource = value => ({
-    account: value?.account || null,
-    options: (value?.options || []).map(option => ({ value: option.value, label: option.label, description: option.description || null })),
-    emptyMessage: value?.emptyMessage || null,
-    error: value?.error || null
-});
-
-const resourceContextBlock = resourceContext => {
-    const entries = Object.entries(resourceContext || {});
-    if (entries.length === 0) return 'No account resources were loaded. Leave resource-select values empty rather than inventing IDs.';
-    return entries.map(([resource, value]) => JSON.stringify({
-        resource,
-        ...compactResource(value),
-        variants: Object.values(value.variants || {}).map(variant => ({ params: variant.params || {}, ...compactResource(variant) }))
-    })).join('\n');
-};
-
 const resourceContextForInput = (input, node, resourceContext) => {
     const entry = resourceContext[input.resource];
     if (!entry) return null;
@@ -509,12 +492,6 @@ const assertWorkflowDefinition = (nodes, edges, isActive = false, registry = Nod
 };
 
 const newId = (prefix) => `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`;
-
-const mergeUsage = (...usages) => usages.reduce((total, usage) => ({
-    promptTokens: total.promptTokens + (usage?.promptTokens || 0),
-    completionTokens: total.completionTokens + (usage?.completionTokens || 0),
-    totalTokens: total.totalTokens + (usage?.totalTokens || 0)
-}), { promptTokens: 0, completionTokens: 0, totalTokens: 0 });
 
 const safeIssueIdentifier = value => typeof value === 'string' ? value.slice(0, 160) : undefined;
 const safeIssueIdentifiers = values => Array.isArray(values)

@@ -6,7 +6,7 @@ import { assistantMessageToJSON, createAssistantStateView, ensureAssistantThread
 import { saveAutomationDraft } from '../../automations/automationService.js';
 import { runWorkflowTurn } from '../workflowAIService.js';
 import { normalizeWorkflowCommand, resolveWorkflowTurnContext } from './domain/workflowTurnContext.js';
-import { applyResourceContextDelta, buildResourceIdentity, resourceContextForPrompt } from '../../assistant/resourceContext.js';
+import { buildResourceIdentity, resourceContextForPrompt } from '../../assistant/resourceContext.js';
 import { buildWorkflowPresentation } from '../../assistant/proposalPresentation.js';
 import { buildAssistantRecovery } from '../../../../shared/assistantRecovery.js';
 import { supersedePendingWorkflowProposals } from '../../proposalLifecycle.js';

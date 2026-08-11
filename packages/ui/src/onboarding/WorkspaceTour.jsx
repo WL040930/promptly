@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useCompleteOnboarding } from '../api/hooks/useAuth.js';
 import { navigateTo } from '../utils/router.js';
 

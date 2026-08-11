@@ -1,5 +1,4 @@
 import { ai } from '../../index.js';
-import { AI_TASKS } from '../../core/aiTasks.js';
 import { AIError } from '../../core/aiErrors.js';
 import {
     createAIOutputError,

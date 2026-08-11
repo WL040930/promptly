@@ -1,9 +1,5 @@
 import { AutomationRun, Connection, Form, FormResponse, KnowledgeBase, Workflow } from '../../models/index.js';
-import NodeRegistry from '../../utils/NodeRegistry.js';
 import { resolveResource } from './resourceResolver.js';
-import {
-    requiredCapabilitiesForRequest
-} from '../ai/workflow/workflowAgentService.js';
 import { generateWorkflowTurn } from '../ai/workflow/pipeline/pipeline.js';
 import { createAgentCapabilityRegistry } from '../agent/agentCapabilityRegistry.js';
 import { projectFormResourceContext } from '../ai/form/context/formResourceContext.js';

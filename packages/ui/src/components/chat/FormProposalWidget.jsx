@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Eye, Settings2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Eye, X } from 'lucide-react';
 import Button from '../ui/Button.jsx';
 import { formatFormSettingValue, getFormSettingLabel } from '../../forms/settings/formSettingPresentation.js';
 import { isAcceptedProposalStatus, isRejectedProposalStatus, isStaleProposalStatus } from './proposalStatus.js';

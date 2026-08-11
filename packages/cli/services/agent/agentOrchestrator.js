@@ -4,7 +4,6 @@ import {
     requiredCapabilitiesForRequest
 } from '../ai/workflow/workflowAgentService.js';
 import { generateWorkflowTurn } from '../ai/workflow/pipeline/pipeline.js';
-import NodeRegistry from '../../utils/NodeRegistry.js';
 import { resolveResource } from '../chat/resourceResolver.js';
 import { addUsage, requestAgentJson } from './agentAi.js';
 import { createAgentCapabilityRegistry } from './agentCapabilityRegistry.js';

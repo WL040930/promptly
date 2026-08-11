@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useRef, useState } from 'react';
+import { Fragment, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import {
@@ -92,10 +92,6 @@ const getHealth = (workflow, logs) => {
     if (workflowLogs.length === 0) return 'No runs';
     return workflowLogs.slice(0, 5).some(log => String(log.status || '').toLowerCase() === 'failed') ? 'Needs attention' : 'Healthy';
 };
-
-const getLatestLog = (workflow, logs) => logs
-    .filter(log => log.workflowId === workflow.id || log.workflow?.id === workflow.id)
-    .sort((a, b) => new Date(b.time || 0) - new Date(a.time || 0))[0] || null;
 
 const getHealthStyles = (health) => {
     if (health === 'Healthy') return 'bg-emerald-50 text-emerald-700 border-emerald-200';

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import CatchErrorNode, { findCatchableError } from './core-logic/flow-control/catch-error/index.js';
 import MergeNode, { mergeInputs } from './core-logic/flow-control/merge/index.js';
-import DelayNode, { resolveDelay } from './core-logic/flow-control/delay/index.js';
+import { resolveDelay } from './core-logic/flow-control/delay/index.js';
 import ApprovalNode from './core-logic/flow-control/approval/index.js';
 
 test('catch error selects only unhandled errors and exposes recovery routing', async () => {
