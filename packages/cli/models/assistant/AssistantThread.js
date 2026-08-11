@@ -13,6 +13,7 @@ const initialState = () => ({
     activeProposalMessageId: null,
     inFlightRequestId: null,
     inFlightStartedAt: null,
+    inFlightLastActivityAt: null,
     progress: null
 });
 

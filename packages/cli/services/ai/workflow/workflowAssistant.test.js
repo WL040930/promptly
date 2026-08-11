@@ -218,8 +218,9 @@ test('workflow progress is persisted and emitted with its retry attempt', async 
         onProgress: event => events.push(event)
     });
 
-    assert.equal(events[0].attempt, 2);
-    assert.equal(events[0].work.activities.at(-1).attempt, 2);
+    assert.equal(events[0].id, 'turn:started');
+    assert.equal(events.at(-1).attempt, 2);
+    assert.equal(events.at(-1).work.activities.at(-1).attempt, 2);
 });
 
 test('proposal validation resolves a form from a newly proposed form trigger', () => {

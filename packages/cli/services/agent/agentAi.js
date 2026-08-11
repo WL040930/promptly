@@ -10,7 +10,7 @@ const instructionDir = path.join(__dirname, 'instructions');
 
 const getAgentTask = label => label === 'intent' ? AI_TASKS.AGENT_INTENT : AI_TASKS.AGENT_PLAN;
 
-export const requestAgentJson = async ({ label, prompt, instruction, provider = null }) => {
+export const requestAgentJson = async ({ label, prompt, instruction, provider = null, onActivity = null }) => {
     const systemInstruction = instruction || await fs.readFile(path.join(instructionDir, `${label}.md`), 'utf8');
     try {
         const response = await ai.run({
@@ -18,7 +18,8 @@ export const requestAgentJson = async ({ label, prompt, instruction, provider = 
             messages: [{ role: 'user', parts: [{ text: prompt }] }],
             systemInstruction,
             operation: `agent:${label}`,
-            providerOverride: provider
+            providerOverride: provider,
+            onActivity
         });
         return { value: response.json, tokenUsage: response.usage };
     } catch (error) {

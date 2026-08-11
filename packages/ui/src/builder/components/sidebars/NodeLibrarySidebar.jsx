@@ -3,6 +3,9 @@ import { getIconByName, resolveNodeUi } from '../../utils/iconMap.jsx';
 import { useNodeLibrary } from '../../hooks/useNodeLibrary.js';
 import NodeLibrarySkeleton from './NodeLibrarySkeleton.jsx';
 
+const hiddenFromLibraryStatuses = new Set(['retired', 'coming_soon', 'hidden']);
+const unavailableNodeStatuses = new Set(['disabled', 'coming_soon', 'retired', 'hidden']);
+
 /**
  * The left-hand node library sidebar in the workflow builder.
  * Handles its own search state, loading state, and drag initiation.
@@ -42,7 +45,7 @@ const NodeLibrarySidebar = ({ isOpen, onClose, onDragStart, onDragEnd }) => {
                     nodeLibrary.map((section) => {
                         const filteredGroups = section.groups.map(group => {
                             const filteredItems = group.items.filter(item => (
-                                !['retired', 'coming_soon'].includes(item.implementationStatus) && (
+                                !hiddenFromLibraryStatuses.has(item.implementationStatus) && (
                                     item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                                     item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
                                     group.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -74,7 +77,7 @@ const NodeLibrarySidebar = ({ isOpen, onClose, onDragStart, onDragEnd }) => {
                                                 {group.items.map(node => {
                                                     const nodeUi = resolveNodeUi(node);
                                                     const nodeIcon = getIconByName(nodeUi.icon, { size: 14, strokeWidth: 2.8 });
-                                                    const isDisabled = ['disabled', 'coming_soon', 'retired'].includes(node.implementationStatus);
+                                                    const isDisabled = unavailableNodeStatuses.has(node.implementationStatus);
 
                                                     return (
                                                         <div

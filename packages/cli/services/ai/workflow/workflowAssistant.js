@@ -17,10 +17,10 @@ import { normalizeClarificationMode } from '../../../../shared/agentContract.js'
 import { createWorkflowProposalApplier } from './workflowProposalApplier.js';
 import nodeResourceService from '../../nodes/nodeResourceService.js';
 import { buildRunDiagnosticReport } from './runDiagnostics.js';
+import { isAssistantTurnStale } from '../../assistant/assistantTurnLiveness.js';
 
 const MAX_HISTORY = 100;
 const AI_CONTEXT_HISTORY = 30;
-const IN_FLIGHT_TIMEOUT_MS = 10 * 60 * 1000;
 
 const makeId = prefix => `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`;
 const toWorkflowJson = workflow => workflow?.toJSON ? workflow.toJSON() : workflow;
@@ -114,6 +114,46 @@ export const createWorkflowAssistant = ({
         surface: 'workflow', workflowId: workflow.id, userId: workflow.userId, title: workflow.name || 'Workflow AI',
         models: { AssistantThread: models.AssistantThread }, transaction, lock: Boolean(transaction?.LOCK?.UPDATE)
     }));
+    const recoverStaleTurn = async ({ state, workflow, transaction }) => {
+        if (!isAssistantTurnStale(publicState(state), { now: now().getTime() })) return false;
+
+        const requestId = state.inFlightRequestId;
+        const messages = await models.AssistantMessage.findAll({
+            where: { threadId: state.threadId, sender: 'bot' },
+            order: [['createdAt', 'DESC']],
+            transaction
+        });
+        const workMessage = messages.find(message => message.payload?.work?.requestId === requestId) || null;
+        const retryText = workMessage?.payload?.work?.title || '';
+        const recovery = buildAssistantRecovery({
+            surface: 'workflow',
+            code: 'WORKFLOW_AI_TURN_STALLED',
+            context: { formId: formIdForWorkflowNodes(workflow.nodes || []), retryText }
+        });
+        const errorMetadata = { code: 'WORKFLOW_AI_TURN_STALLED', retryable: true, recovery };
+        if (workMessage) {
+            await workMessage.update({
+                text: recovery.summary,
+                kind: 'error',
+                payload: {
+                    ...errorMetadata,
+                    work: finishAssistantWork(workMessage.payload?.work, { status: 'failed', detail: recovery.summary }, now())
+                },
+                isError: true,
+                errorMetadata
+            }, { transaction });
+        }
+        await state.update({
+            phase: state.activeProposalMessageId ? 'awaiting_proposal' : 'idle',
+            activeWork: null,
+            openClarification: null,
+            inFlightRequestId: null,
+            inFlightStartedAt: null,
+            inFlightLastActivityAt: null,
+            progress: null
+        }, { transaction });
+        return true;
+    };
     const attachedForm = async (workflow, userId, transaction, nodes = workflow.nodes || []) => {
         const formId = formIdForWorkflowNodes(nodes);
         return formId ? models.Form.findOne({ where: { id: formId, userId }, transaction }) : null;
@@ -127,6 +167,7 @@ export const createWorkflowAssistant = ({
         const workflow = await findWorkflow(workflowId, userId);
         return db.transaction(async transaction => {
             const state = await ensureState({ workflow, transaction });
+            await recoverStaleTurn({ state, workflow, transaction });
             const where = { threadId: state.threadId };
             if (before) {
                 const cursor = await models.AssistantMessage.findOne({ where: { id: before, threadId: state.threadId }, transaction });
@@ -155,7 +196,7 @@ export const createWorkflowAssistant = ({
                 const workMessage = await models.AssistantMessage.findOne({ where: { id: reservation.workMessage.id, threadId: state.threadId }, transaction });
                 const work = advanceAssistantWork(workMessage?.payload?.work, snapshot, now());
                 if (workMessage) await workMessage.update({ payload: { ...(workMessage.payload || {}), work } }, { transaction });
-                await state.update({ phase: 'processing', progress: snapshot }, { transaction });
+                await state.update({ phase: 'processing', progress: snapshot, inFlightLastActivityAt: now() }, { transaction });
                 return { ...snapshot, work, messageId: workMessage?.id || null };
             }));
             void progressChain.then(event => onProgress?.(event)).catch(() => {});
@@ -164,8 +205,9 @@ export const createWorkflowAssistant = ({
         try {
             await db.transaction(async transaction => {
                 const state = await ensureState({ workflow, transaction });
+                await recoverStaleTurn({ state, workflow, transaction });
                 if (Number.isInteger(expectedStateVersion) && expectedStateVersion !== state.version) throw errorWith('WORKFLOW_AI_STATE_CONFLICT', 'This workflow assistant changed in another tab. Refresh the conversation and try again.', 409, { currentStateVersion: state.version });
-                if (state.inFlightRequestId && state.inFlightStartedAt && now().getTime() - new Date(state.inFlightStartedAt).getTime() < IN_FLIGHT_TIMEOUT_MS && state.inFlightRequestId !== requestId) throw errorWith('WORKFLOW_AI_TURN_IN_PROGRESS', 'This workflow assistant is already processing a request.', 409, { currentStateVersion: state.version });
+                if (state.inFlightRequestId && state.inFlightRequestId !== requestId) throw errorWith('WORKFLOW_AI_TURN_IN_PROGRESS', 'This workflow assistant is already processing a request.', 409, { currentStateVersion: state.version });
                 if (!state.inFlightRequestId && state.phase === 'processing') throw errorWith('WORKFLOW_AI_TURN_IN_PROGRESS', 'This workflow assistant is already processing a request.', 409, { currentStateVersion: state.version });
                 const pending = state.activeProposalMessageId ? await models.AssistantMessage.findOne({ where: { id: state.activeProposalMessageId, threadId: state.threadId }, transaction }) : null;
                 if (state.openClarification && ['submit_clarification', 'decide_for_me'].includes(normalizedCommand.type)) {
@@ -179,10 +221,20 @@ export const createWorkflowAssistant = ({
                 const context = resolveWorkflowTurnContext({ command: normalizedCommand, activeWork: state.activeWork, clarification: state.openClarification, pendingProposal: pending ? publicMessage(pending) : null, clarificationMode: mode });
                 const userMessage = await models.AssistantMessage.create({ id: idFactory('wmsg'), threadId: state.threadId, sender: 'user', text: displayText, kind: 'text' }, { transaction });
                 const workMessage = await models.AssistantMessage.create({ id: idFactory('wmsg'), threadId: state.threadId, sender: 'bot', text: 'Drafting your workflow', kind: 'assistant_work', payload: { work: createAssistantWork({ requestId, surface: 'workflow', title: displayText, now: now() }) } }, { transaction });
-                await state.update({ version: state.version + 1, phase: 'processing', mode, inFlightRequestId: requestId, inFlightStartedAt: now(), progress: progressSnapshot({ status: 'starting', message: 'Preparing workflow changes…' }, now), openClarification: null }, { transaction });
+                const startedAt = now();
+                await state.update({ version: state.version + 1, phase: 'processing', mode, inFlightRequestId: requestId, inFlightStartedAt: startedAt, inFlightLastActivityAt: startedAt, progress: progressSnapshot({ status: 'starting', message: 'Preparing workflow changes…' }, now), openClarification: null }, { transaction });
                 reservation = { state, pending, context, userMessage, workMessage };
             });
 
+            reportProgress({
+                id: 'turn:started',
+                status: 'starting',
+                phase: 'understand',
+                label: 'Preparing the workflow request',
+                message: 'Preparing workflow changes',
+                detail: 'Saved your request and loading the current workflow context.'
+            });
+            await progressChain;
             const rawHistory = await models.AssistantMessage.findAll({ where: { threadId: reservation.state.threadId }, order: [['createdAt', 'DESC']], limit: AI_CONTEXT_HISTORY + 2 });
             const history = rawHistory.reverse().filter(message => ![reservation.userMessage.id, reservation.workMessage.id].includes(message.id)).map(publicMessage);
         const form = await attachedForm(workflow, userId);
@@ -215,6 +267,9 @@ export const createWorkflowAssistant = ({
             const reply = messageFromResult({ result, workflow, idFactory });
             return db.transaction(async transaction => {
                 const state = await ensureState({ workflow, transaction });
+                if (state.inFlightRequestId !== requestId) {
+                    return { userMsg: publicMessage(reservation.userMessage), botMsg: null, state: publicState(state), superseded: true };
+                }
                 const supersededMessageIds = reply.kind === 'workflow_proposal' ? await supersedePendingWorkflowProposals({ threadId: state.threadId, transaction, messageModel: models.AssistantMessage }) : [];
                 const botMessage = await models.AssistantMessage.findOne({ where: { id: reservation.workMessage.id, threadId: state.threadId }, transaction });
                 const work = finishAssistantWork(botMessage?.payload?.work, { status: reply.kind === 'workflow_proposal' ? 'awaiting_review' : reply.kind === 'clarification' ? 'needs_input' : 'completed', detail: reply.text }, now());
@@ -224,7 +279,7 @@ export const createWorkflowAssistant = ({
                     statePatch.openClarification = reply.payload;
                     statePatch.activeWork = { ...statePatch.activeWork, sourceText: reservation.context.intent.sourceText || request, requestId, relationToPending: reservation.context.intent.relationToPending };
                 }
-                await state.update({ ...statePatch, version: state.version + 1, inFlightRequestId: null, inFlightStartedAt: null, progress: null }, { transaction });
+                await state.update({ ...statePatch, version: state.version + 1, inFlightRequestId: null, inFlightStartedAt: null, inFlightLastActivityAt: null, progress: null }, { transaction });
                 return { userMsg: publicMessage(reservation.userMessage), botMsg: { ...publicMessage(botMessage), supersededMessageIds }, state: publicState(state) };
             });
         } catch (error) {
@@ -234,10 +289,13 @@ export const createWorkflowAssistant = ({
             const recovery = buildAssistantRecovery({ surface: 'workflow', code: error.code || 'WORKFLOW_AI_FAILED', issues: error.issues || [], context: { formId, retryText: displayText } });
             return db.transaction(async transaction => {
                 const state = await ensureState({ workflow, transaction });
+                if (state.inFlightRequestId !== requestId) {
+                    return { userMsg: publicMessage(reservation.userMessage), botMsg: null, state: publicState(state), superseded: true };
+                }
                 const botMessage = await models.AssistantMessage.findOne({ where: { id: reservation.workMessage.id, threadId: state.threadId }, transaction });
                 const errorMetadata = { code: error.code || 'WORKFLOW_AI_FAILED', retryable: recovery.retryable, recovery };
                 await botMessage.update({ text: recovery.summary, kind: 'error', payload: { ...errorMetadata, work: finishAssistantWork(botMessage?.payload?.work, { status: 'failed', detail: recovery.summary }, now()) }, isError: true, errorMetadata }, { transaction });
-                await state.update({ version: state.version + 1, phase: state.activeProposalMessageId ? 'awaiting_proposal' : 'idle', activeWork: null, openClarification: null, inFlightRequestId: null, inFlightStartedAt: null, progress: null }, { transaction });
+                await state.update({ version: state.version + 1, phase: state.activeProposalMessageId ? 'awaiting_proposal' : 'idle', activeWork: null, openClarification: null, inFlightRequestId: null, inFlightStartedAt: null, inFlightLastActivityAt: null, progress: null }, { transaction });
                 return { userMsg: publicMessage(reservation.userMessage), botMsg: publicMessage(botMessage), state: publicState(state), error: { code: errorMetadata.code, message: recovery.summary } };
             });
         }
@@ -248,7 +306,7 @@ export const createWorkflowAssistant = ({
         const state = await ensureState({ workflow, transaction });
         if (state.inFlightRequestId) throw errorWith('WORKFLOW_AI_TURN_IN_PROGRESS', 'The workflow AI is still processing a request. Wait for it to finish before clearing the chat.', 409);
         const deletedMessages = await models.AssistantMessage.destroy({ where: { threadId: state.threadId }, transaction });
-        await state.update({ version: state.version + 1, phase: 'idle', activeWork: null, openClarification: null, activeProposalMessageId: null, inFlightRequestId: null, inFlightStartedAt: null, progress: null }, { transaction });
+        await state.update({ version: state.version + 1, phase: 'idle', activeWork: null, openClarification: null, activeProposalMessageId: null, inFlightRequestId: null, inFlightStartedAt: null, inFlightLastActivityAt: null, progress: null }, { transaction });
         return { cleared: true, deletedMessages, state: publicState(state) };
     });
 

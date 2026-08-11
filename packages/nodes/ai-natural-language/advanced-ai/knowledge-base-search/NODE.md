@@ -2,7 +2,7 @@
 title: "Knowledge Base Search"
 type: ai
 subType: rag
-implementationStatus: beta
+implementationStatus: hidden
 description: "RAG over documents"
 ui:
   icon: rag

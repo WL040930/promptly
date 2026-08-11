@@ -32,11 +32,11 @@ export const submitWorkflowAITurn = asyncHandler(async (req, res) => {
         res.setHeader('X-Accel-Buffering', 'no');
         res.flushHeaders?.();
     }
-    const heartbeat = useSSE ? setInterval(() => {
-        if (!res.writableEnded) res.write(': keepalive\n\n');
-    }, 15000) : null;
     const emit = data => {
-        if (useSSE && !res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`);
+        if (useSSE && !res.writableEnded) {
+            res.write(`data: ${JSON.stringify(data)}\n\n`);
+            res.flush?.();
+        }
     };
     try {
         const result = await workflowAssistant.submitTurn({
@@ -66,8 +66,6 @@ export const submitWorkflowAITurn = asyncHandler(async (req, res) => {
             return res.end();
         }
         throw error;
-    } finally {
-        if (heartbeat) clearInterval(heartbeat);
     }
 });
 

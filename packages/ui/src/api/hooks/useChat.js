@@ -23,9 +23,12 @@ export function useChatSession(sessionId) {
 export function useSendAssistantTurnStream() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: ({ sessionId, message, context, event, onEvent }) => submitAssistantTurnStream({ sessionId, message, context, event, onEvent }),
+        mutationFn: ({ sessionId, message, context, event, requestId, onEvent }) => submitAssistantTurnStream({ sessionId, message, context, event, requestId, onEvent }),
         onSuccess: response => {
-            if (response?.sessionId) queryClient.invalidateQueries({ queryKey: CHAT_SESSIONS_KEY });
+            if (response?.sessionId) {
+                queryClient.invalidateQueries({ queryKey: CHAT_SESSIONS_KEY });
+                queryClient.invalidateQueries({ queryKey: ['chatSessions', response.sessionId] });
+            }
         }
     });
 }

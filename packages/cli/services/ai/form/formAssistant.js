@@ -13,8 +13,8 @@ import { supersedePendingFormChatProposals } from '../../proposalLifecycle.js';
 import { applyResourceContextDelta, buildResourceIdentity, resourceContextForPrompt } from '../../assistant/resourceContext.js';
 import { buildFormPresentation } from '../../assistant/proposalPresentation.js';
 import { advanceAssistantWork, createAssistantWork, finishAssistantWork } from '../../../../shared/assistantWork.js';
+import { isAssistantTurnStale } from '../../assistant/assistantTurnLiveness.js';
 
-const IN_FLIGHT_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_HISTORY = 100;
 
 const makeId = prefix => `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`;
@@ -132,6 +132,48 @@ export const createFormAssistant = ({
         return createAssistantStateView(thread);
     };
 
+    const recoverStaleTurn = async ({ state, formId, transaction }) => {
+        if (!isAssistantTurnStale(state.toJSON(), { now: now().getTime() })) return false;
+
+        const requestId = state.inFlightRequestId;
+        const messages = await models.AssistantMessage.findAll({
+            where: { threadId: state.threadId, sender: 'bot' },
+            order: [['createdAt', 'DESC']],
+            transaction
+        });
+        const workMessage = messages.find(message => message.payload?.work?.requestId === requestId) || null;
+        const recovery = buildAssistantRecovery({
+            surface: 'form',
+            code: 'FORM_AI_TURN_STALLED',
+            context: { formId, retryText: workMessage?.payload?.work?.title || '' }
+        });
+        const errorMetadata = { code: 'FORM_AI_TURN_STALLED', retryable: true, recovery };
+
+        if (workMessage) {
+            await workMessage.update({
+                text: recovery.summary,
+                kind: 'error',
+                payload: {
+                    ...errorMetadata,
+                    work: finishAssistantWork(workMessage.payload?.work, { status: 'failed', detail: recovery.summary }, now())
+                },
+                isError: true,
+                errorMetadata
+            }, { transaction });
+        }
+
+        await state.update({
+            phase: state.activeProposalMessageId ? 'awaiting_proposal' : 'idle',
+            activeWork: null,
+            openClarification: null,
+            inFlightRequestId: null,
+            inFlightStartedAt: null,
+            inFlightLastActivityAt: null,
+            progress: null
+        }, { transaction });
+        return true;
+    };
+
     const submitTurn = async ({
         userId,
         formId,
@@ -161,6 +203,7 @@ export const createFormAssistant = ({
             }
 
             const state = await loadState(formId, transaction, userId);
+            await recoverStaleTurn({ state, formId, transaction });
             if (Number.isInteger(expectedStateVersion) && state.version !== expectedStateVersion) {
                 const error = new Error('The form AI conversation changed. Refresh and try again.');
                 error.code = 'FORM_AI_STATE_CONFLICT';
@@ -168,14 +211,11 @@ export const createFormAssistant = ({
                 error.currentStateVersion = state.version;
                 throw error;
             }
-            if (state.inFlightRequestId && state.inFlightStartedAt) {
-                const age = now().getTime() - new Date(state.inFlightStartedAt).getTime();
-                if (age < IN_FLIGHT_TIMEOUT_MS && state.inFlightRequestId !== requestId) {
-                    const error = new Error('Another form AI request is already being processed.');
-                    error.code = 'FORM_AI_TURN_IN_PROGRESS';
-                    error.status = 409;
-                    throw error;
-                }
+            if (state.inFlightRequestId && state.inFlightRequestId !== requestId) {
+                const error = new Error('Another form AI request is already being processed.');
+                error.code = 'FORM_AI_TURN_IN_PROGRESS';
+                error.status = 409;
+                throw error;
             }
 
             const pending = state.activeProposalMessageId
@@ -226,12 +266,14 @@ export const createFormAssistant = ({
                 }) }
             }, { transaction });
 
+            const startedAt = now();
             await state.update({
                 version: state.version + 1,
                 phase: 'processing',
                 mode,
                 inFlightRequestId: requestId,
-                inFlightStartedAt: now(),
+                inFlightStartedAt: startedAt,
+                inFlightLastActivityAt: startedAt,
                 progress: progressSnapshot({ status: 'starting', message: 'Preparing form changes…' }, now)
             }, { transaction });
 
@@ -251,12 +293,21 @@ export const createFormAssistant = ({
                 const workMessage = await models.AssistantMessage.findOne({ where: { id: reservation.workMessage.id, threadId: freshState.threadId }, transaction });
                 const work = advanceAssistantWork(workMessage?.payload?.work, snapshot, now());
                 if (workMessage) await workMessage.update({ payload: { ...(workMessage.payload || {}), work } }, { transaction });
-                await freshState.update({ phase: 'processing', progress: snapshot }, { transaction });
+                await freshState.update({ phase: 'processing', progress: snapshot, inFlightLastActivityAt: now() }, { transaction });
                 return { ...snapshot, work, messageId: workMessage?.id || null };
             }));
             void progressChain.then(event => onProgress?.(event)).catch(() => {});
         };
         try {
+            reportProgress({
+                id: 'turn:started',
+                status: 'starting',
+                phase: 'understand',
+                label: 'Preparing the form request',
+                message: 'Preparing form changes',
+                detail: 'Saved your request and loading the current form context.'
+            });
+            await progressChain;
             const rawHistory = await models.AssistantMessage.findAll({
                 where: { threadId: state.threadId },
                 order: [['createdAt', 'DESC']],
@@ -290,6 +341,11 @@ export const createFormAssistant = ({
 
             let response;
             await db.transaction(async transaction => {
+                const freshState = await loadState(formId, transaction, form.userId);
+                if (freshState.inFlightRequestId !== requestId) {
+                    response = { userMsg: asJson(userMessage), botMsg: null, state: asJson(freshState), superseded: true };
+                    return;
+                }
                 let supersededMessageIds = [];
                 if (messageData.proposal) {
                     supersededMessageIds = await supersedePendingFormChatProposals({
@@ -319,13 +375,13 @@ export const createFormAssistant = ({
                     proposalMessageId: assistantMessage.id,
                     previousActiveProposalMessageId: state.activeProposalMessageId
                 });
-                const freshState = await loadState(formId, transaction, form.userId);
                 await freshState.update({
                     ...statePatch,
                     version: freshState.version + 1,
                     mode,
                     inFlightRequestId: null,
                     inFlightStartedAt: null,
+                    inFlightLastActivityAt: null,
                     progress: null
                 }, { transaction });
                 response = {
@@ -350,6 +406,11 @@ export const createFormAssistant = ({
             const safeMessage = recovery.summary;
             let response;
             await db.transaction(async transaction => {
+                const freshState = await loadState(formId, transaction, form.userId);
+                if (freshState.inFlightRequestId !== requestId) {
+                    response = { userMsg: asJson(userMessage), botMsg: null, state: asJson(freshState), superseded: true };
+                    return;
+                }
                 const assistantMessage = await models.AssistantMessage.findOne({ where: { id: reservation.workMessage.id, threadId: state.threadId }, transaction });
                 const errorMetadata = {
                     code: error.code || 'FORM_AI_GENERATION_FAILED',
@@ -363,7 +424,6 @@ export const createFormAssistant = ({
                     isError: true,
                     errorMetadata
                 }, { transaction });
-                const freshState = await loadState(formId, transaction, form.userId);
                 await freshState.update({
                     // A failed follow-up must never discard an earlier proposal
                     // that is still awaiting the user's decision.
@@ -373,6 +433,7 @@ export const createFormAssistant = ({
                     version: freshState.version + 1,
                     inFlightRequestId: null,
                     inFlightStartedAt: null,
+                    inFlightLastActivityAt: null,
                     progress: null
                 }, { transaction });
                 response = {
@@ -395,6 +456,7 @@ export const createFormAssistant = ({
         }
         return db.transaction(async transaction => {
             const state = await loadState(formId, transaction, userId);
+            await recoverStaleTurn({ state, formId, transaction });
             const where = { threadId: state.threadId };
             if (before) {
                 const cursor = await models.AssistantMessage.findOne({ where: { id: before, threadId: state.threadId }, transaction });
@@ -442,6 +504,7 @@ export const createFormAssistant = ({
                 activeProposalMessageId: null,
                 inFlightRequestId: null,
                 inFlightStartedAt: null,
+                inFlightLastActivityAt: null,
                 progress: null
             }, { transaction });
             return { cleared: true, deletedMessages, state: asJson(state) };

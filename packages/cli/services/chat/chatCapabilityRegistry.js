@@ -5,6 +5,7 @@ import { createAgentCapabilityRegistry } from '../agent/agentCapabilityRegistry.
 import { projectFormResourceContext } from '../ai/form/context/formResourceContext.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 import { getApprovalSummary } from '../engine/continuationService.js';
+import { replaceChatSessionState } from './chatTurnLifecycle.js';
 
 const completed = output => ({ status: 'completed', output });
 
@@ -86,7 +87,8 @@ export const createChatCapabilityRegistry = ({
         saveReply,
         formForRequest,
         workflowForRequest,
-        formResult
+        formResult,
+        onEvent = null
     } = services;
 
     return createAgentCapabilityRegistry([
@@ -131,11 +133,9 @@ export const createChatCapabilityRegistry = ({
                     .reverse()
                     .find(message => message.sender === 'user' && message.kind === 'text')?.text;
                 if (args.purpose === 'choose_target' && workflows.length > 0 && request) {
-                    await session.update({
-                        state: {
-                            status: 'awaiting_workflow_target',
-                            continuation: { request }
-                        }
+                    await replaceChatSessionState(session, {
+                        status: 'awaiting_workflow_target',
+                        continuation: { request }
                     });
                     return clarification(await saveReply(session, {
                         text: 'Which workflow would you like me to work on?',
@@ -167,11 +167,9 @@ export const createChatCapabilityRegistry = ({
                     const request = [...history]
                         .reverse()
                         .find(message => message.sender === 'user' && message.kind === 'text')?.text;
-                    await session.update({
-                        state: {
-                            status: `awaiting_${type}_target`,
-                            continuation: { request }
-                        }
+                    await replaceChatSessionState(session, {
+                        status: `awaiting_${type}_target`,
+                        continuation: { request }
                     });
                     return clarification(await saveReply(session, {
                         text: `I found multiple ${type}s that match. Which one should I use?`,
@@ -344,7 +342,7 @@ export const createChatCapabilityRegistry = ({
                     state: { action: formId ? 'edit_form' : 'create_form' }
                 });
                 if (result.reply?.kind === 'form_proposal') {
-                    await session.update({ state: { proposalMessageId: result.reply.id } });
+                    await replaceChatSessionState(session, { proposalMessageId: result.reply.id });
                     return approval(result.reply);
                 }
                 if (result.reply?.kind === 'text') return completed(result.reply);
@@ -380,7 +378,7 @@ export const createChatCapabilityRegistry = ({
                     },
                     proposalStatus: 'pending'
                 });
-                    await session.update({ state: { status: 'awaiting_form_approval', formId: form.id, proposalMessageId: reply.id } });
+                await replaceChatSessionState(session, { status: 'awaiting_form_approval', formId: form.id, proposalMessageId: reply.id });
                 return approval(reply);
             },
             'proposal'
@@ -416,7 +414,7 @@ export const createChatCapabilityRegistry = ({
                     },
                     proposalStatus: 'pending'
                 });
-                    await session.update({ state: { status: 'awaiting_form_delete_approval', formId: form.id, proposalMessageId: reply.id } });
+                await replaceChatSessionState(session, { status: 'awaiting_form_delete_approval', formId: form.id, proposalMessageId: reply.id });
                 return approval(reply);
             },
             'proposal'
@@ -476,12 +474,10 @@ export const createChatCapabilityRegistry = ({
                     },
                     proposalStatus: 'pending'
                 });
-                await session.update({
-                    state: {
-                        status: 'awaiting_form_bulk_delete_approval',
-                        formIds: forms.map(form => form.id),
-                        proposalMessageId: reply.id
-                    }
+                await replaceChatSessionState(session, {
+                    status: 'awaiting_form_bulk_delete_approval',
+                    formIds: forms.map(form => form.id),
+                    proposalMessageId: reply.id
                 });
                 return approval(reply);
             },
@@ -506,7 +502,7 @@ export const createChatCapabilityRegistry = ({
                     },
                     proposalStatus: 'pending'
                 });
-                    await session.update({ state: { status: 'awaiting_form_response_clear_approval', formId: form.id, proposalMessageId: reply.id } });
+                await replaceChatSessionState(session, { status: 'awaiting_form_response_clear_approval', formId: form.id, proposalMessageId: reply.id });
                 return approval(reply);
             },
             'proposal'
@@ -527,7 +523,8 @@ export const createChatCapabilityRegistry = ({
                     request: args.prompt,
                     currentWorkflow: workflow?.toJSON?.() || workflow || { nodes: [], edges: [] },
                     userId,
-                    formSchema: selectedForm?.toJSON?.() || selectedForm || null
+                    formSchema: selectedForm?.toJSON?.() || selectedForm || null,
+                    onProgress: progress => onEvent?.({ type: 'workflow.design.progress', progress })
                 });
 
                 if (result.type === 'reply' || result.type === 'message') {
@@ -561,11 +558,11 @@ export const createChatCapabilityRegistry = ({
                     proposalStatus: 'pending'
                 });
                 
-                await session.update({ state: {
+                await replaceChatSessionState(session, {
                     status: 'awaiting_workflow_approval',
                     workflowId: workflow ? workflow.id : null,
                     proposalMessageId: reply.id
-                } });
+                });
                 
                 return approval(reply);
             },

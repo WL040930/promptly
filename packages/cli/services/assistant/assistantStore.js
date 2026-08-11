@@ -11,6 +11,7 @@ export const DEFAULT_ASSISTANT_STATE = Object.freeze({
     activeProposalMessageId: null,
     inFlightRequestId: null,
     inFlightStartedAt: null,
+    inFlightLastActivityAt: null,
     progress: null
 });
 
@@ -45,6 +46,7 @@ export const createAssistantStateView = thread => {
         get activeProposalMessageId() { return stateForThread(thread).activeProposalMessageId; },
         get inFlightRequestId() { return stateForThread(thread).inFlightRequestId; },
         get inFlightStartedAt() { return stateForThread(thread).inFlightStartedAt; },
+        get inFlightLastActivityAt() { return stateForThread(thread).inFlightLastActivityAt; },
         get progress() { return stateForThread(thread).progress; },
         get context() { return thread.context || {}; },
         async update(updates = {}, options = {}) {

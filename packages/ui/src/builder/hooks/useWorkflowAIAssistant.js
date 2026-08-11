@@ -3,7 +3,8 @@ import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-q
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
 import { getClarificationModePreference, setClarificationModePreference } from '../../utils/storage.js';
 import { clearWorkflowAIChat, decideWorkflowAIProposal, getWorkflowAIChat, resetWorkflowAIContext } from '../../api/backend.js';
-import { submitWorkflowAITurnStream } from '../../api/aiStream.js';
+import { isDurableStreamDetachError, submitWorkflowAITurnStream } from '../../api/aiStream.js';
+import { useDurableTurnMonitor } from '../../api/hooks/useDurableTurnMonitor.js';
 import { useAIStream } from '../../context/AIStreamContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
 import { navigateTo } from '../../utils/router.js';
@@ -69,6 +70,8 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
     const [isSubmittingTurn, setIsSubmittingTurn] = useState(false);
+    const [streamDetached, setStreamDetached] = useState(false);
+    const [recoveryMode, setRecoveryMode] = useState(false);
     const stateVersionRef = useRef(null);
     const { isTyping, setStreamState, clearStreamState } = useAIStream(workflowId);
 
@@ -122,15 +125,28 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
     }, [assistantState?.version, syncStateVersion]);
 
     useEffect(() => {
-        if (!workflowId || !serverProcessing) return undefined;
-        const interval = setInterval(() => refetchHistory(), 2000);
-        return () => clearInterval(interval);
-    }, [workflowId, serverProcessing, refetchHistory]);
+        if (serverProcessing && !isSubmittingTurn && !isTyping && !streamDetached) setRecoveryMode(true);
+        if (!serverProcessing && !streamDetached) setRecoveryMode(false);
+    }, [isSubmittingTurn, isTyping, serverProcessing, streamDetached]);
+
+    const handleRecoverySnapshot = useCallback(snapshot => {
+        const recoveredState = snapshot?.pages?.[0]?.state;
+        if (!streamDetached || !recoveredState || recoveredState.phase === 'processing') return;
+        setStreamDetached(false);
+        setRecoveryMode(false);
+        clearStreamState();
+    }, [clearStreamState, streamDetached]);
+
+    useDurableTurnMonitor({
+        enabled: Boolean(workflowId && (streamDetached || (serverProcessing && recoveryMode))),
+        refetch: refetchHistory,
+        onSnapshot: handleRecoverySnapshot
+    });
 
     useEffect(() => {
         if (serverProcessing && !isTyping) setStreamState({ isTyping: true });
-        else if (!serverProcessing && !isSubmittingTurn && isTyping) clearStreamState();
-    }, [serverProcessing, isSubmittingTurn, isTyping, setStreamState, clearStreamState]);
+        else if (!serverProcessing && !isSubmittingTurn && isTyping && !streamDetached) clearStreamState();
+    }, [serverProcessing, isSubmittingTurn, isTyping, streamDetached, setStreamState, clearStreamState]);
 
     const sendMutation = useMutation({
         mutationFn: ({ command, requestId, optimisticWorkId }) => submitWorkflowAITurnStream(
@@ -139,6 +155,8 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
             clarificationMode,
             progress => {
                 setStreamState({ isTyping: true, requestId });
+                setStreamDetached(false);
+                setRecoveryMode(false);
                 if (!progress.work) return;
                 queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({
                     ...page,
@@ -151,6 +169,8 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         ),
         onMutate: async ({ text, requestId, optimisticWorkId }) => {
             setIsSubmittingTurn(true);
+            setStreamDetached(false);
+            setRecoveryMode(false);
             setStreamState({ isTyping: true, requestId });
             setInput('');
             await queryClient.cancelQueries({ queryKey });
@@ -183,6 +203,8 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         },
         onSuccess: (result, _variables, context) => {
             setIsSubmittingTurn(false);
+            setStreamDetached(false);
+            setRecoveryMode(false);
             clearStreamState();
             syncStateVersion(result.state?.version);
             queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => {
@@ -206,9 +228,17 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         },
         onError: async (error, _variables, context) => {
             setIsSubmittingTurn(false);
-            clearStreamState();
             const errorCode = error?.code || error?.payload?.code;
             if (errorCode === 'WORKFLOW_AI_STATE_CONFLICT') syncStateVersion(error.currentStateVersion || error.payload?.currentStateVersion);
+            if (isDurableStreamDetachError(error)) {
+                setStreamDetached(true);
+                setRecoveryMode(true);
+                setStreamState({ isTyping: true });
+                await queryClient.invalidateQueries({ queryKey });
+                toast.info('Still working in the background — reconnecting.');
+                return;
+            }
+            clearStreamState();
             if (context?.previousData) queryClient.setQueryData(queryKey, context.previousData);
             setInput(context?.text || '');
             await queryClient.invalidateQueries({ queryKey });

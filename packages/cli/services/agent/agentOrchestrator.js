@@ -20,6 +20,7 @@ import {
 import { DEFAULT_CLARIFICATION_MODE, getClarificationModeInstruction, normalizeClarificationMode } from '../../../shared/agentContract.js';
 import { supersedePendingChatFormProposals } from '../proposalLifecycle.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
+import { replaceChatSessionState } from '../chat/chatTurnLifecycle.js';
 import {
     completeStep,
     createArtifact,
@@ -145,7 +146,7 @@ const deterministicIntent = ({ message, context = {} }) => {
 
 export { deterministicIntent };
 
-const analyzeIntent = async ({ message, context }) => {
+const analyzeIntent = async ({ message, context, onActivity = null }) => {
     const fallback = deterministicIntent({ message, context });
     if (fallback.goal === 'delete') return { intent: fallback, tokenUsage: {} };
     try {
@@ -158,7 +159,8 @@ const analyzeIntent = async ({ message, context }) => {
                 'Answers already provided for this run:', JSON.stringify(context.clarificationAnswers || []),
                 '',
                 'Return the typed intent. Keep requirements concise.'
-            ].join('\n')
+            ].join('\n'),
+            onActivity
         });
         const intent = makeIntent(result.value);
         if (intent.domains.length === 0 && intent.requestedOperations.length === 0) return { intent: fallback, tokenUsage: result.tokenUsage };
@@ -224,7 +226,7 @@ const research = async ({ userId, intent, context }) => {
 
 const resourceByType = (resources, type) => resources.find(item => item.type === type)?.full || null;
 
-const planSolution = async ({ intent, resources, availableCapabilities = [], clarificationMode = DEFAULT_CLARIFICATION_MODE }) => {
+const planSolution = async ({ intent, resources, availableCapabilities = [], clarificationMode = DEFAULT_CLARIFICATION_MODE, onActivity = null }) => {
     const needsModelPlan = intent.goal === 'modify'
         || intent.risk === 'high'
         || intent.domains.length > 1
@@ -243,7 +245,8 @@ const planSolution = async ({ intent, resources, availableCapabilities = [], cla
                 'Clarification:', `${clarificationMode} - ${getClarificationModeInstruction(clarificationMode)}`,
                 '',
                 'Create a short outcome plan and flexible executable capability steps. Preserve useful step IDs and dependencies. Do not add a verify or approval step; verification and approval are runtime policies.'
-            ].join('\n')
+            ].join('\n'),
+            onActivity
         });
         return { plan: makeAdaptivePlan(result.value, intent), tokenUsage: result.tokenUsage };
     } catch {
@@ -261,7 +264,7 @@ const formHistory = async sessionId => {
     return messages.reverse().map(message => ({ sender: message.sender, text: message.text }));
 };
 
-const designForm = async ({ run, session, message, form, clarificationMode = DEFAULT_CLARIFICATION_MODE }) => {
+const designForm = async ({ run, session, message, form, clarificationMode = DEFAULT_CLARIFICATION_MODE, onEvent = null }) => {
     const step = await createStep(run, { stepKey: 'design_form', type: 'design_form' });
     await startStep(step);
     try {
@@ -279,7 +282,8 @@ const designForm = async ({ run, session, message, form, clarificationMode = DEF
             request,
             currentSchema: form?.toJSON?.() || form || {},
             history: await formHistory(session.id),
-            clarificationMode
+            clarificationMode,
+            onProgress: progress => onEvent?.({ type: 'form.design.progress', runId: run.id, progress })
         });
         if (result.kind === 'reply' && form && /\b(already|current|existing|no changes? needed|nothing to change|no further changes?)\b/i.test(String(result.message || ''))) {
             const reused = { disposition: 'reused', formId: form.id, message: result.message || 'The existing form already satisfies the request.' };
@@ -329,7 +333,13 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
             userId,
             formSchema: form?.toJSON?.() || form || formSchema || null,
             onProgress: (progress) => {
-                onEvent?.({ type: 'workflow.design.progress', runId: run.id, stage: progress.status, message: progress.message });
+                onEvent?.({
+                    type: 'workflow.design.progress',
+                    runId: run.id,
+                    stage: progress.status,
+                    message: progress.message,
+                    progress
+                });
             }
         });
 
@@ -440,7 +450,7 @@ const createSolutionCapabilityRegistry = ({
         risk: 'proposal',
         produces: ['form_proposal', 'form_resource'],
         execute: async () => {
-            const result = await designForm({ run, session, message, form, clarificationMode });
+            const result = await designForm({ run, session, message, form, clarificationMode, onEvent });
             if (result.status === 'clarification') {
                 return {
                     status: 'awaiting_clarification',
@@ -532,7 +542,7 @@ const verifySolutionArtifacts = (run, intent = null) => {
     };
 };
 
-const repairExecutionPlan = async ({ plan, intent, issues, preserveOutcomes = true }) => {
+const repairExecutionPlan = async ({ plan, intent, issues, preserveOutcomes = true, onActivity = null }) => {
     const result = await requestAgentJson({
         label: 'plan',
         prompt: [
@@ -546,7 +556,8 @@ const repairExecutionPlan = async ({ plan, intent, issues, preserveOutcomes = tr
             'Validation issues:', JSON.stringify(issues),
             '',
             'Return the complete plan JSON.'
-        ].join('\n')
+        ].join('\n'),
+        onActivity
     });
     return {
         plan: makeAdaptivePlan({ ...result.value, ...(preserveOutcomes ? { outcomes: plan.outcomes } : {}) }, intent),
@@ -554,7 +565,7 @@ const repairExecutionPlan = async ({ plan, intent, issues, preserveOutcomes = tr
     };
 };
 
-const compilePlanWithRepair = async ({ plan, intent, registry }) => {
+const compilePlanWithRepair = async ({ plan, intent, registry, onActivity = null }) => {
     let currentPlan = plan;
     let tokenUsage = {};
     let lastResult = null;
@@ -565,7 +576,7 @@ const compilePlanWithRepair = async ({ plan, intent, registry }) => {
         }
         if (attempt === 2) break;
         try {
-            const repaired = await repairExecutionPlan({ plan: currentPlan, intent, issues: lastResult.issues });
+            const repaired = await repairExecutionPlan({ plan: currentPlan, intent, issues: lastResult.issues, onActivity });
             currentPlan = repaired.plan;
             tokenUsage = addUsage(tokenUsage, repaired.tokenUsage);
         } catch {
@@ -587,7 +598,7 @@ const savePlanCapabilityClarification = async ({ session, run, plan, error, toke
         tokenUsage,
         plan
     });
-    await session.update({ state: { status: 'awaiting_agent_clarification', runId: run.id } });
+    await replaceChatSessionState(session, { status: 'awaiting_agent_clarification', runId: run.id });
     const capabilities = [...new Set((error.issues || [])
         .map(item => item.capability)
         .filter(Boolean))];
@@ -604,7 +615,7 @@ const savePlanCapabilityClarification = async ({ session, run, plan, error, toke
 
 const saveClarification = async ({ session, run, type, candidates, text }) => {
     await updateRun(run, { status: 'awaiting_clarification', currentStep: 'research' });
-    await session.update({ state: { status: 'awaiting_agent_clarification', runId: run.id } });
+    await replaceChatSessionState(session, { status: 'awaiting_agent_clarification', runId: run.id });
     return saveReply(session, {
         text,
         kind: 'clarification',
@@ -627,7 +638,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
     // a fixed keyword gate here, which made natural-language requests fall
     // into a different agent. Keep the exported predicate for compatibility,
     // but let the typed classifier decide whether this is an agentic turn.
-    const preAnalyzed = !force ? await analyzeIntent({ message, context }) : null;
+    const preAnalyzed = !force ? await analyzeIntent({ message, context, onActivity: event => onEvent?.(event) }) : null;
     const isActionable = ['create', 'modify', 'connect'].includes(preAnalyzed?.intent?.goal)
         && preAnalyzed?.intent?.domains?.length > 0;
     if (!force && !isActionable) return { handled: false };
@@ -659,7 +670,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         onEvent?.({ type: 'step.started', runId: run.id, step: 'understand' });
         const intentStep = await createStep(run, { stepKey: 'understand', type: 'understand' });
         await startStep(intentStep);
-        const analyzed = preAnalyzed || await analyzeIntent({ message, context });
+        const analyzed = preAnalyzed || await analyzeIntent({ message, context, onActivity: event => onEvent?.(event) });
         totalUsage = addUsage(totalUsage, analyzed.tokenUsage);
         await updateRun(run, { intent: analyzed.intent, tokenUsage: totalUsage });
         await completeStep(intentStep, { result: analyzed.intent, tokenUsage: analyzed.tokenUsage });
@@ -711,7 +722,8 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
                 intent: analyzed.intent,
                 resources: researched.resources,
                 availableCapabilities: capabilityRegistry.list().map(capability => ({ name: capability.name, description: capability.description, risk: capability.risk, produces: capability.produces })),
-                clarificationMode: persistedContext.clarificationMode
+                clarificationMode: persistedContext.clarificationMode,
+                onActivity: event => onEvent?.(event)
             });
         const plan = planned.plan;
         const planUsage = planned.tokenUsage;
@@ -728,7 +740,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
                 currentStep: 'plan_review',
                 metadata: { ...(run.metadata || {}), planReviewRequested: true }
             });
-            await session.update({ state: { status: 'awaiting_agent_plan_review', runId: run.id } });
+            await replaceChatSessionState(session, { status: 'awaiting_agent_plan_review', runId: run.id });
             const reply = await saveReply(session, {
                 text: plan.summary || 'I prepared a plan for your review before continuing.',
                 kind: 'agent_plan_review',
@@ -742,7 +754,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         onEvent?.({ type: 'step.started', runId: run.id, step: 'design' });
         let compiled;
         try {
-            compiled = await compilePlanWithRepair({ plan, intent: analyzed.intent, registry: capabilityRegistry });
+            compiled = await compilePlanWithRepair({ plan, intent: analyzed.intent, registry: capabilityRegistry, onActivity: event => onEvent?.(event) });
         } catch (error) {
             totalUsage = addUsage(totalUsage, error.tokenUsage || {});
             if (error.code === 'AGENT_PLAN_UNSUPPORTED') {
@@ -765,7 +777,8 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
                     plan: currentPlan,
                     intent: analyzed.intent,
                     issues: observation?.issues || [{ code: 'RUNTIME_REPLAN_REQUESTED', message: observation?.message || 'The runtime requested a new plan.' }],
-                    preserveOutcomes: false
+                    preserveOutcomes: false,
+                    onActivity: event => onEvent?.(event)
                 });
                 const next = compileExecutionPlan({ plan: repaired.plan, registry: capabilityRegistry });
                 if (!next.valid) {
@@ -837,7 +850,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
             }
             const formTurn = clarificationResult.result || clarificationResult;
             await updateRun(run, { status: 'awaiting_clarification', tokenUsage: totalUsage });
-            await session.update({ state: { status: 'awaiting_agent_clarification', runId: run.id } });
+            await replaceChatSessionState(session, { status: 'awaiting_agent_clarification', runId: run.id });
             const reply = await saveReply(session, {
                 text: formTurn.message,
                 kind: 'clarification',
@@ -861,7 +874,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
                 plan: runtimeResult.plan,
                 metadata: { ...(run.metadata || {}), planReviewRequested: true }
             });
-            await session.update({ state: { status: 'awaiting_agent_plan_review', runId: run.id } });
+            await replaceChatSessionState(session, { status: 'awaiting_agent_plan_review', runId: run.id });
             const reply = await saveReply(session, {
                 text: 'The runtime found a material change in the approach. Please review the updated outcome plan before I continue.',
                 kind: 'agent_plan_review',
@@ -894,7 +907,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
 
         await updateRun(run, { status: 'awaiting_approval', currentStep: null, tokenUsage: totalUsage });
         onEvent?.({ type: 'approval.required', runId: run.id, artifactIds });
-        await session.update({ state: { status: 'awaiting_agent_approval', runId: run.id } });
+        await replaceChatSessionState(session, { status: 'awaiting_agent_approval', runId: run.id });
         const firstArtifact = artifacts.find(artifact => artifact.type === 'form_proposal') || artifacts[0];
         const kind = artifacts.length > 1 ? 'solution_proposal' : firstArtifact.type === 'form_proposal' ? 'form_proposal' : 'workflow_proposal';
         const content = firstArtifact.content;
@@ -944,7 +957,7 @@ export const resumeAgentAfterForm = async ({ run, session, userId, formId, onEve
     const result = await designWorkflow({ run, userId, message: request, workflow: existingWorkflow, form, formArtifactId: null, onEvent });
     if (result.status === 'clarification') {
         await updateRun(run, { status: 'awaiting_clarification', currentStep: 'design_workflow', tokenUsage: result.tokenUsage || {} });
-        await session.update({ state: { status: 'awaiting_agent_clarification', runId: run.id } });
+        await replaceChatSessionState(session, { status: 'awaiting_agent_clarification', runId: run.id });
         const reply = await saveReply(session, {
             text: result.result.message,
             kind: 'clarification',

@@ -8,6 +8,7 @@ import { reconcileWorkflow } from '../triggers/triggerRuntime.js';
 import { createApproval, getRunArtifacts, getRunForUser, serializeRun } from './agentRunStore.js';
 import { makeError } from './agentContracts.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
+import { clearChatSessionState, replaceChatSessionState } from '../chat/chatTurnLifecycle.js';
 
 const revisionMatches = (current, expected) => !expected || new Date(current).getTime() === new Date(expected).getTime();
 const workflowRevisionMatches = (current, expected) => expected === undefined || expected === null || Number(current) === Number(expected);
@@ -162,7 +163,7 @@ export const approveAgentRun = async ({ runId, userId, idempotencyKey }) => {
                 metadata: { ...(run.metadata || {}), setupRequired: true }
             });
             const session = await AssistantThread.findByPk(run.threadId);
-            if (session) await session.update({ state: {} });
+            if (session) await clearChatSessionState(session);
             return serializeRun(await getRunForUser(runId, userId));
         }
 
@@ -171,13 +172,13 @@ export const approveAgentRun = async ({ runId, userId, idempotencyKey }) => {
             if (session) {
                 const { resumeAgentAfterForm } = await import('./agentOrchestrator.js');
                 const resumed = await resumeAgentAfterForm({ run, session, userId, formId: form.id });
-                await session.update({ state: { status: 'awaiting_agent_approval', runId } });
+                await replaceChatSessionState(session, { status: 'awaiting_agent_approval', runId });
                 return { ...serializeRun(await getRunForUser(runId, userId)), followUpReply: resumed.reply };
             }
         }
 
         const session = await AssistantThread.findByPk(run.threadId);
-        if (session) await session.update({ state: {} });
+        if (session) await clearChatSessionState(session);
         return serializeRun(await getRunForUser(runId, userId));
     } catch (error) {
         const failure = makeError(error);
@@ -201,6 +202,6 @@ export const rejectAgentRun = async ({ runId, userId }) => {
     await markProposalMessage(run, 'ignored');
     await run.update({ status: 'blocked', currentStep: null, artifacts, approval });
     const session = await AssistantThread.findByPk(run.threadId);
-    if (session) await session.update({ state: {} });
+    if (session) await clearChatSessionState(session);
     return serializeRun(await getRunForUser(runId, userId));
 };

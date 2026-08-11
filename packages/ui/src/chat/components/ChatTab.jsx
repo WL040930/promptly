@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useToast } from '../../context/ToastContext.jsx';
@@ -15,9 +15,10 @@ import ClarificationModeSelect from '../../components/chat/ClarificationModeSele
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
 import { getClarificationModePreference, setClarificationModePreference } from '../../utils/storage.js';
 import { getAgentProgressLabel } from '../../../../shared/agentProgress.js';
-import { advanceAssistantWork, createAssistantWork } from '../../../../shared/assistantWork.js';
 import { LoaderCircle } from 'lucide-react';
 import { useAIActivity, useAIStream } from '../../context/AIStreamContext.jsx';
+import { isDurableStreamDetachError } from '../../api/aiStream.js';
+import { useDurableTurnMonitor } from '../../api/hooks/useDurableTurnMonitor.js';
 
 const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I can build automations and forms from a description. What would you like to automate?' };
 
@@ -30,7 +31,8 @@ export default function ChatTab({ conversationId = null }) {
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [progressLabel, setProgressLabel] = useState('Scanning node library');
-    const [activeRunWork, setActiveRunWork] = useState(null);
+    const [streamDetached, setStreamDetached] = useState(false);
+    const [recoveryMode, setRecoveryMode] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [sidebarSearch, setSidebarSearch] = useState('');
     const [chatToDelete, setChatToDelete] = useState(null);
@@ -38,7 +40,6 @@ export default function ChatTab({ conversationId = null }) {
     const [previewFormId, setPreviewFormId] = useState(null);
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
-    const loadedSessionIdRef = useRef(null);
     const activityKey = sessionId ? `ask-promptly:${sessionId}` : 'ask-promptly:new';
     const {
         isTyping: sharedIsTyping,
@@ -50,7 +51,7 @@ export default function ChatTab({ conversationId = null }) {
     const askActivity = activeStreams.find(stream => stream.id === activityKey);
 
     const { data: sessions = [], isPending: isSessionsPending } = useChatSessions();
-    const { data: session, isPending: isSessionPending } = useChatSession(sessionId);
+    const { data: session, isPending: isSessionPending, refetch: refetchSession } = useChatSession(sessionId);
     const { data: previewForm } = useForm(previewFormId);
     const sendAssistantTurnMutation = useSendAssistantTurnStream();
     const approveAgentRunMutation = useApproveAgentRun();
@@ -71,8 +72,7 @@ export default function ChatTab({ conversationId = null }) {
     }, []);
 
     useEffect(() => {
-        if (!session || loadedSessionIdRef.current === sessionId) return;
-        loadedSessionIdRef.current = sessionId;
+        if (!session || session.id !== sessionId) return;
         setMessages(session.messages?.length ? session.messages : [welcome]);
         setClarificationMode(getClarificationModePreference() || session.agentContext?.clarificationMode || DEFAULT_CLARIFICATION_MODE);
         setIsSidebarOpen(false);
@@ -83,8 +83,29 @@ export default function ChatTab({ conversationId = null }) {
     // any request that belongs to the conversation we left.
     useEffect(() => {
         setIsTyping(false);
-        setActiveRunWork(null);
+        setStreamDetached(false);
+        setRecoveryMode(false);
     }, [sessionId]);
+
+    const durableProcessing = session?.agentState?.turn?.status === 'processing';
+    useEffect(() => {
+        if (durableProcessing && !isTyping && !sharedIsTyping && !streamDetached) setRecoveryMode(true);
+        if (!durableProcessing && !streamDetached) setRecoveryMode(false);
+    }, [durableProcessing, isTyping, sharedIsTyping, streamDetached]);
+
+    const handleRecoverySnapshot = useCallback(snapshot => {
+        const recoveredTurn = snapshot?.agentState?.turn;
+        if (!streamDetached || !recoveredTurn || recoveredTurn.status === 'processing') return;
+        setStreamDetached(false);
+        setRecoveryMode(false);
+        clearStreamState();
+    }, [clearStreamState, streamDetached]);
+
+    useDurableTurnMonitor({
+        enabled: Boolean(sessionId && (streamDetached || (durableProcessing && recoveryMode))),
+        refetch: refetchSession,
+        onSnapshot: handleRecoverySnapshot
+    });
     const filteredSessions = useMemo(() => {
         return sidebarSearch
             ? sessions.filter(s => s.title?.toLowerCase().includes(sidebarSearch.toLowerCase()))
@@ -120,13 +141,16 @@ export default function ChatTab({ conversationId = null }) {
 
     const send = async (text, event = null) => {
         if (!text?.trim() && !event) return;
-        if (isTyping || sharedIsTyping) return;
-        if (text?.trim()) setMessages(previous => [...previous, { id: `local_${Date.now()}`, sender: 'user', kind: 'text', text }]);
+        if (isTyping || sharedIsTyping || durableProcessing) return;
+        const requestId = globalThis.crypto?.randomUUID?.() || `chat_turn_${Date.now()}`;
+        let detached = false;
+        if (text?.trim()) setMessages(previous => [...previous, { id: `local_${requestId}`, sender: 'user', kind: 'text', text, isOptimistic: true }]);
         setInput('');
         if (text && /form/i.test(text)) setProgressLabel('Designing form');
         else setProgressLabel('Scanning available capabilities');
         setIsTyping(true);
-        setActiveRunWork(null);
+        setStreamDetached(false);
+        setRecoveryMode(false);
         setStreamState({
             isTyping: true,
             progressLabel: text && /form/i.test(text) ? 'Designing form' : 'Scanning available capabilities',
@@ -142,47 +166,55 @@ export default function ChatTab({ conversationId = null }) {
                     clarificationMode
                 },
                 event,
+                requestId,
                 onEvent: data => {
+                    if (data.type === 'turn.started') {
+                        if (data.sessionId && data.sessionId !== sessionId) setSessionId(data.sessionId);
+                        void refetchSession();
+                    }
+                    if (data.type === 'run.progress' && data.work && data.messageId) {
+                        setMessages(previous => {
+                            const message = {
+                                id: data.messageId,
+                                sender: 'bot',
+                                kind: 'assistant_work',
+                                text: data.work.title || 'Preparing your request',
+                                payload: { work: data.work }
+                            };
+                            return previous.some(item => item.id === data.messageId)
+                                ? previous.map(item => item.id === data.messageId ? { ...item, ...message } : item)
+                                : [...previous, message];
+                        });
+                    }
                     if (data.type === 'navigation.ready' && data.navigation) {
                         navigateTo(data.navigation);
                         return;
-                    }
-                    if (data.type === 'run.started' && data.runId) {
-                        setActiveRunWork(createAssistantWork({
-                            requestId: data.runId,
-                            surface: 'ask_promptly',
-                            title: text || 'Continuing your request'
-                        }));
                     }
                     const label = getAgentProgressLabel(data);
                     if (label) {
                         setProgressLabel(label);
                         setStreamState({ isTyping: true, progressLabel: label, surface: 'ask-promptly', sessionId });
                     }
-                    if (data.runId && (data.type === 'step.started' || data.type === 'step.completed' || data.type === 'plan.ready' || data.type === 'plan.revised' || data.type === 'approval.required')) {
-                        setActiveRunWork(previous => {
-                            const initial = previous || createAssistantWork({
-                                requestId: data.runId,
-                                surface: 'ask_promptly',
-                                title: text || 'Preparing your workspace task'
-                            });
-                            return advanceAssistantWork(initial, {
-                                id: data.step || data.type,
-                                status: data.type === 'approval.required' ? 'awaiting_review' : 'working',
-                                label: label || 'Coordinating your request',
-                                detail: data.type === 'plan.revised' ? 'Adjusted the plan after checking the workspace.' : label || 'Checking the next step'
-                            });
-                        });
-                    }
                 }
             });
             appendResponse(response);
         } catch (error) {
+            const errorCode = error?.code || error?.payload?.code;
+            if (isDurableStreamDetachError(error) || ['ASSISTANT_TURN_IN_PROGRESS', 'ASSISTANT_TURN_ALREADY_RUNNING'].includes(errorCode)) {
+                detached = true;
+                setStreamDetached(true);
+                setRecoveryMode(true);
+                setStreamState({ isTyping: true, progressLabel: 'Still working in the background', surface: 'ask-promptly', sessionId });
+                void refetchSession();
+                toast.info(errorCode === 'ASSISTANT_TURN_IN_PROGRESS' || errorCode === 'ASSISTANT_TURN_ALREADY_RUNNING'
+                    ? 'This conversation is already working in the background — reconnecting.'
+                    : 'Still working in the background — reconnecting.');
+                return;
+            }
             setMessages(previous => [...previous, { id: `error_${Date.now()}`, sender: 'bot', kind: 'error', text: error.message || 'Sorry, I could not process that request.' }]);
         } finally {
             setIsTyping(false);
-            setActiveRunWork(null);
-            clearStreamState();
+            if (!detached) clearStreamState();
         }
     };
 
@@ -301,19 +333,19 @@ export default function ChatTab({ conversationId = null }) {
     const newChat = () => { 
         setSessionId(null); 
         setIsTyping(false);
-        setActiveRunWork(null);
+        setStreamDetached(false);
+        setRecoveryMode(false);
         setMessages([welcome]); 
         setClarificationMode(getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
         setPreviewFormId(null);
-        loadedSessionIdRef.current = null;
         setIsSidebarOpen(false); 
         navigateTo({ page: 'assistant' });
     };
     
     const loadChat = (id) => {
-        loadedSessionIdRef.current = null;
         setIsTyping(false);
-        setActiveRunWork(null);
+        setStreamDetached(false);
+        setRecoveryMode(false);
         setSessionId(id);
         setMessages([welcome]);
         setClarificationMode(getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
@@ -334,18 +366,9 @@ export default function ChatTab({ conversationId = null }) {
         }
     };
 
-    const effectiveIsTyping = isTyping || sharedIsTyping;
-    const isCurrentConversationWorking = Boolean(sharedIsTyping && askActivity);
-    const renderedMessages = activeRunWork
-        ? [...messages, {
-            id: `active_run_${activeRunWork.requestId}`,
-            sender: 'bot',
-            kind: 'assistant_work',
-            text: activeRunWork.title,
-            isOptimistic: true,
-            payload: { work: activeRunWork }
-        }]
-        : messages;
+    const effectiveIsTyping = isTyping || sharedIsTyping || durableProcessing;
+    const isCurrentConversationWorking = Boolean((sharedIsTyping && askActivity) || durableProcessing);
+    const renderedMessages = messages;
 
     return (
         <div ref={container} className="surface-grid relative flex h-full min-h-0 w-full overflow-hidden font-sans">

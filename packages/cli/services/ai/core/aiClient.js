@@ -4,6 +4,7 @@ import { resolveProviderRoutes } from './routeResolver.js';
 import { getTaskPolicy } from './taskPolicies.js';
 import { AIError, createBudgetError, normalizeAIError } from './aiErrors.js';
 import { shouldFailover } from './retryPolicy.js';
+import { runWithProviderLiveness } from './providerLiveness.js';
 
 const defaultLogger = {
     info: (...args) => console.info(...args),
@@ -103,7 +104,8 @@ export const createAIClient = ({
     registry = createProviderRegistry(),
     logger = defaultLogger,
     profiles = undefined,
-    fallbackProviders = undefined
+    fallbackProviders = undefined,
+    providerLiveness = runWithProviderLiveness
 } = {}) => {
     const run = async ({
         task,
@@ -145,21 +147,29 @@ export const createAIClient = ({
                     model: route.model
                 }));
 
-                const rawResponse = await runWithDeadline({
+                const rawResponse = await providerLiveness({
                     operation,
-                    signal,
-                    timeoutMs: registry.timeoutMs || 30_000,
-                    execute: attemptSignal => route.provider.generateContent(messages, {
-                        systemInstruction,
-                        model: route.model,
-                        responseMimeType: policy.responseFormat === 'json' ? 'application/json' : undefined,
-                        maxCompletionTokens: policy.maxCompletionTokens,
+                    attempt,
+                    maxAttempts: routes.length,
+                    provider: route.providerName,
+                    model: route.model,
+                    onActivity,
+                    execute: () => runWithDeadline({
                         operation,
-                        ...(policy.allowTools && Array.isArray(tools) && route.provider.supportsToolCalls === true
-                            ? { tools }
-                            : {}),
-                        signal: attemptSignal,
-                        timeoutMs: registry.timeoutMs || 30_000
+                        signal,
+                        timeoutMs: registry.timeoutMs || 30_000,
+                        execute: attemptSignal => route.provider.generateContent(messages, {
+                            systemInstruction,
+                            model: route.model,
+                            responseMimeType: policy.responseFormat === 'json' ? 'application/json' : undefined,
+                            maxCompletionTokens: policy.maxCompletionTokens,
+                            operation,
+                            ...(policy.allowTools && Array.isArray(tools) && route.provider.supportsToolCalls === true
+                                ? { tools }
+                                : {}),
+                            signal: attemptSignal,
+                            timeoutMs: registry.timeoutMs || 30_000
+                        })
                     })
                 });
 

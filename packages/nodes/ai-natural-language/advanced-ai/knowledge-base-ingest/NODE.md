@@ -3,7 +3,7 @@ title: "Add to Knowledge Base"
 type: action
 subType: knowledgeIngest
 description: "Index a file asset for grounded search"
-implementationStatus: beta
+implementationStatus: hidden
 ui:
   icon: book-open
   color: text-violet-600

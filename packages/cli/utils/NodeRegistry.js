@@ -4,6 +4,7 @@ import matter from 'gray-matter';
 import { validateNodeDefinition } from './nodeDefinitionValidator.js';
 
 const nodeKeyFor = (type, subType) => `${type}:${subType}`;
+const unavailableForNewWorkflows = new Set(['disabled', 'coming_soon', 'retired', 'hidden']);
 
 const compactInput = input => {
     if (!input || input.isConnection) return null;
@@ -213,7 +214,9 @@ class NodeRegistry {
      */
     getCompactCatalogue() {
         return Array.from(this.nodesByNodeKey.values())
-            .filter(entry => !['disabled', 'coming_soon', 'retired'].includes(entry.implementationStatus))
+            // Hidden nodes stay registered so existing saved workflows can still
+            // resolve them, but they must not be proposed for new workflows.
+            .filter(entry => !unavailableForNewWorkflows.has(entry.implementationStatus))
             .map(entry => ({
             nodeKey: entry.nodeKey,
             subType: entry.metadata.subType,

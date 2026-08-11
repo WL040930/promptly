@@ -101,7 +101,7 @@ const withTrustedFormResource = (resourceContext, formSchema) => {
     };
 };
 
-const enabledCatalogue = registry => (registry.getCompactCatalogue() || []).filter(node => !['disabled', 'coming_soon', 'retired'].includes(node?.implementationStatus));
+const enabledCatalogue = registry => (registry.getCompactCatalogue() || []).filter(node => !['disabled', 'coming_soon', 'retired', 'hidden'].includes(node?.implementationStatus));
 
 const plannerNodeKeyIssues = (result, catalogue) => {
     const issues = validateWorkflowPlannerResult(result);
@@ -581,6 +581,14 @@ export const generateWorkflowTurn = async ({
         const phase = /planner/.test(event.operation) ? 'plan' : /verifier/.test(event.operation) ? 'check' : 'draft';
         if (event.type === 'provider_fallback') onProgress?.({ id: `${event.operation}:fallback:${event.attempt}`, status: 'retrying', phase, label: 'Trying another AI route', message: 'Retrying with another available AI route', detail: 'The first route did not finish in time, so Promptly is continuing automatically.' });
         if (event.type === 'provider_attempt') onProgress?.({ id: `${event.operation}:attempt:${event.attempt}`, status: 'awaiting_model', phase, label: phase === 'plan' ? 'Preparing the workflow plan' : phase === 'check' ? 'Checking the workflow proposal' : 'Drafting workflow changes', message: 'AI is working on this step', detail: `Attempt ${event.attempt} of ${event.maxAttempts}.` });
+        if (event.type === 'provider_waiting') onProgress?.({
+            id: `${event.operation}:attempt:${event.attempt}`,
+            status: 'awaiting_model',
+            phase,
+            label: phase === 'plan' ? 'Preparing the workflow plan' : phase === 'check' ? 'Checking the workflow proposal' : 'Drafting workflow changes',
+            message: 'AI is still working on this step',
+            detail: `The AI model is still working (about ${Math.max(1, Math.round((event.elapsedMs || 0) / 1000))} seconds so far).`
+        });
     };
 
     onProgress?.({

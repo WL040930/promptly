@@ -38,7 +38,6 @@ export const submitFormAITurn = asyncHandler(async (req, res) => {
     const { formId } = req.params;
     const { command, clarificationMode, requestId, expectedStateVersion } = req.body || {};
     const useSSE = String(req.headers.accept || '').includes('text/event-stream');
-    let heartbeat = null;
 
     if (useSSE) {
         res.setHeader('Content-Type', 'text/event-stream');
@@ -46,13 +45,13 @@ export const submitFormAITurn = asyncHandler(async (req, res) => {
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('X-Accel-Buffering', 'no');
         res.flushHeaders?.();
-        heartbeat = setInterval(() => {
-            if (!res.writableEnded) res.write(': keepalive\n\n');
-        }, 15000);
     }
 
     const emit = data => {
-        if (useSSE && !res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`);
+        if (useSSE && !res.writableEnded) {
+            res.write(`data: ${JSON.stringify(data)}\n\n`);
+            res.flush?.();
+        }
     };
     try {
         const result = await formAssistant.submitTurn({
@@ -82,8 +81,6 @@ export const submitFormAITurn = asyncHandler(async (req, res) => {
             return res.end();
         }
         throw error;
-    } finally {
-        if (heartbeat) clearInterval(heartbeat);
     }
 });
 

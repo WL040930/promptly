@@ -11,7 +11,16 @@ const createStreamError = (message, code) => {
     return error;
 };
 
-export const submitAssistantTurnStream = async ({ sessionId = null, message = '', context = {}, event = null, onEvent, signal: externalSignal } = {}) => {
+export const isDurableStreamDetachError = error => [
+    'ASSISTANT_STREAM_TIMEOUT',
+    'ASSISTANT_STREAM_INCOMPLETE',
+    'FORM_AI_STREAM_TIMEOUT',
+    'FORM_AI_STREAM_INCOMPLETE',
+    'WORKFLOW_AI_STREAM_TIMEOUT',
+    'WORKFLOW_AI_STREAM_INCOMPLETE'
+].includes(error?.code);
+
+export const submitAssistantTurnStream = async ({ sessionId = null, message = '', context = {}, event = null, requestId = null, onEvent, signal: externalSignal } = {}) => {
     const headers = {
         'Content-Type': 'application/json',
         'Accept': 'text/event-stream'
@@ -34,7 +43,7 @@ export const submitAssistantTurnStream = async ({ sessionId = null, message = ''
         const response = await fetch(`${apiBase}/api/assistant/turns`, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ sessionId, message, context, ...(event ? { event } : {}) }),
+            body: JSON.stringify({ sessionId, message, context, requestId: requestId || (globalThis.crypto?.randomUUID?.() || `chat_turn_${Date.now()}`), ...(event ? { event } : {}) }),
             signal: controller.signal
         });
         if (!response.ok || !response.body) throw createStreamError('Failed to start assistant turn.', 'ASSISTANT_STREAM_START_FAILED');

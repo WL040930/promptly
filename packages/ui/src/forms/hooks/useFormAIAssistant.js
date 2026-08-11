@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clearFormAIChat, decideFormProposal, getFormChatHistory, resetFormAIContext } from '../../api/backend.js';
-import { submitFormAITurnStream } from '../../api/aiStream.js';
+import { isDurableStreamDetachError, submitFormAITurnStream } from '../../api/aiStream.js';
+import { useDurableTurnMonitor } from '../../api/hooks/useDurableTurnMonitor.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useAIStream } from '../../context/AIStreamContext.jsx';
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
@@ -68,6 +69,8 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
     const [isSubmittingTurn, setIsSubmittingTurn] = useState(false);
+    const [streamDetached, setStreamDetached] = useState(false);
+    const [recoveryMode, setRecoveryMode] = useState(false);
     const stateVersionRef = useRef(null);
     const { isTyping, setStreamState, clearStreamState } = useAIStream(formId);
 
@@ -121,15 +124,28 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
     }, [assistantState?.version, syncStateVersion]);
 
     useEffect(() => {
-        if (!formId || !serverProcessing) return undefined;
-        const interval = setInterval(() => refetchHistory(), 2000);
-        return () => clearInterval(interval);
-    }, [formId, serverProcessing, refetchHistory]);
+        if (serverProcessing && !isSubmittingTurn && !isTyping && !streamDetached) setRecoveryMode(true);
+        if (!serverProcessing && !streamDetached) setRecoveryMode(false);
+    }, [isSubmittingTurn, isTyping, serverProcessing, streamDetached]);
+
+    const handleRecoverySnapshot = useCallback(snapshot => {
+        const recoveredState = snapshot?.pages?.[0]?.state;
+        if (!streamDetached || !recoveredState || recoveredState.phase === 'processing') return;
+        setStreamDetached(false);
+        setRecoveryMode(false);
+        clearStreamState();
+    }, [clearStreamState, streamDetached]);
+
+    useDurableTurnMonitor({
+        enabled: Boolean(formId && (streamDetached || (serverProcessing && recoveryMode))),
+        refetch: refetchHistory,
+        onSnapshot: handleRecoverySnapshot
+    });
 
     useEffect(() => {
         if (serverProcessing && !isTyping) setStreamState({ isTyping: true });
-        else if (!serverProcessing && !isSubmittingTurn && isTyping) clearStreamState();
-    }, [serverProcessing, isSubmittingTurn, isTyping, setStreamState, clearStreamState]);
+        else if (!serverProcessing && !isSubmittingTurn && isTyping && !streamDetached) clearStreamState();
+    }, [serverProcessing, isSubmittingTurn, isTyping, streamDetached, setStreamState, clearStreamState]);
 
     const sendMutation = useMutation({
         mutationFn: ({ command, requestId, optimisticWorkId }) => submitFormAITurnStream(
@@ -138,6 +154,8 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
             clarificationMode,
             progress => {
                 setStreamState({ isTyping: true, requestId });
+                setStreamDetached(false);
+                setRecoveryMode(false);
                 if (!progress.work) return;
                 queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({
                     ...page,
@@ -150,6 +168,8 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
         ),
         onMutate: async ({ text, requestId, optimisticWorkId }) => {
             setIsSubmittingTurn(true);
+            setStreamDetached(false);
+            setRecoveryMode(false);
             setStreamState({ isTyping: true, requestId });
             setInput('');
             await queryClient.cancelQueries({ queryKey });
@@ -182,6 +202,8 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
         },
         onSuccess: (result, _variables, context) => {
             setIsSubmittingTurn(false);
+            setStreamDetached(false);
+            setRecoveryMode(false);
             clearStreamState();
             syncStateVersion(result.state?.version);
             queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => {
@@ -205,9 +227,17 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
         },
         onError: async (error, _variables, context) => {
             setIsSubmittingTurn(false);
-            clearStreamState();
             const errorCode = error?.code || error?.payload?.code;
             if (errorCode === 'FORM_AI_STATE_CONFLICT') syncStateVersion(error.currentStateVersion || error.payload?.currentStateVersion);
+            if (isDurableStreamDetachError(error)) {
+                setStreamDetached(true);
+                setRecoveryMode(true);
+                setStreamState({ isTyping: true });
+                await queryClient.invalidateQueries({ queryKey });
+                toast.info('Still working in the background — reconnecting.');
+                return;
+            }
+            clearStreamState();
             if (context?.previousData) queryClient.setQueryData(queryKey, context.previousData);
             setInput(context?.text || '');
             await queryClient.invalidateQueries({ queryKey });
