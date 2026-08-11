@@ -1,9 +1,10 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
     changePassword,
     completeOnboarding,
     disconnectGoogle,
-    getGoogleConnectUrl
+    getGoogleConnectUrl,
+    getGoogleConnectionStatus
 } from '../auth.js';
 
 const ME_QUERY_KEY = ['me'];
@@ -37,4 +38,16 @@ export function useDisconnectGoogle() {
 
 export function useGoogleConnect() {
     return useMutation({ mutationFn: getGoogleConnectUrl });
+}
+
+export function useGoogleConnectionHealth({ enabled = true } = {}) {
+    return useQuery({
+        queryKey: ['google-connection-health'],
+        queryFn: getGoogleConnectionStatus,
+        enabled,
+        staleTime: 5 * 60 * 1000,
+        refetchOnMount: 'always',
+        refetchOnWindowFocus: true,
+        retry: false
+    });
 }

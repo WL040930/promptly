@@ -55,6 +55,7 @@ const disconnectGoogle = () => apiRequest('/api/auth/google/disconnect', {
 });
 
 const getGoogleConnectUrl = () => apiRequest('/api/auth/google/connect');
+const getGoogleConnectionStatus = () => apiRequest('/api/auth/google/status');
 
 export {
     login,
@@ -64,5 +65,6 @@ export {
     completeOnboarding,
     changePassword,
     disconnectGoogle,
-    getGoogleConnectUrl
+    getGoogleConnectUrl,
+    getGoogleConnectionStatus
 };

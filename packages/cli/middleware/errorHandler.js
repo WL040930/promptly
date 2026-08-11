@@ -23,6 +23,7 @@ const errorHandler = (err, req, res, next) => {
     const payload = { error: message };
     if (err.code) payload.code = err.code;
     if (err.issues) payload.issues = err.issues;
+    if (err.action) payload.action = err.action;
     res.status(status).json(payload);
 };
 

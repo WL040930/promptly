@@ -337,8 +337,7 @@ export const compileWorkflowDraft = ({
     const repairs = [...compiledBindings.repairs];
     let bindingIssues = [...compiledBindings.issues];
     const wantsRespondentConfirmation = requiredCapabilities.includes('respondent_confirmation');
-    const wantsLegacyApplicationReview = requiredCapabilities.includes('application_review_decision');
-    const wantsOwnerApproval = wantsLegacyApplicationReview || requiredCapabilities.includes('owner_approval');
+    const wantsOwnerApproval = requiredCapabilities.includes('owner_approval');
     const formTriggers = nextNodes.filter(node => node?.subType === 'form-submission');
     const emailActions = nextNodes.filter(isEmailAction);
     const respondentEmail = resolveRespondentEmailField({ formSchema, preferredFieldId: respondentEmailFieldId });
@@ -390,8 +389,7 @@ export const validateGeneratedWorkflowCapabilities = ({
     edges = []
 } = {}) => {
     const wantsRespondentConfirmation = requiredCapabilities.includes('respondent_confirmation');
-    const wantsLegacyApplicationReview = requiredCapabilities.includes('application_review_decision');
-    const wantsOwnerApproval = wantsLegacyApplicationReview || requiredCapabilities.includes('owner_approval');
+    const wantsOwnerApproval = requiredCapabilities.includes('owner_approval');
     if (!wantsRespondentConfirmation && !wantsOwnerApproval) return [];
 
     const issues = [];
@@ -449,15 +447,6 @@ export const validateGeneratedWorkflowCapabilities = ({
     if (wantsOwnerApproval) {
         const approvalNodes = nodes.filter(node => node?.subType === 'approval');
         if (approvalNodes.length === 0) issues.push({ code: 'APPROVAL_NODE_MISSING', path: 'nodes', message: 'An approval node is required to review each application.' });
-        if (wantsLegacyApplicationReview && formTriggers.length === 0) issues.push({ code: 'FORM_SUBMISSION_TRIGGER_MISSING', path: 'nodes', message: 'A form-submission trigger is required before application review.' });
-        if (wantsLegacyApplicationReview && emailActions.length < 2) issues.push({ code: 'APPROVAL_BRANCH_EMAILS_MISSING', path: 'nodes', message: 'Approved and rejected branches each need an email action.' });
-        if (wantsLegacyApplicationReview && approvalNodes.length > 0) {
-            const approval = approvalNodes[0];
-            const approvedReachable = reachableFrom([approval], edges.filter(edge => !edge.sourceHandle || edge.sourceHandle === 'approved'));
-            const rejectedReachable = reachableFrom([approval], edges.filter(edge => !edge.sourceHandle || edge.sourceHandle === 'rejected'));
-            if (!emailActions.some(action => approvedReachable.has(action.id))) issues.push({ code: 'APPROVED_BRANCH_EMAIL_MISSING', path: 'edges', message: 'The approved branch must reach an interview email.' });
-            if (!emailActions.some(action => rejectedReachable.has(action.id))) issues.push({ code: 'REJECTED_BRANCH_EMAIL_MISSING', path: 'edges', message: 'The rejected branch must reach a thank-you email.' });
-        }
     }
 
     return issues;

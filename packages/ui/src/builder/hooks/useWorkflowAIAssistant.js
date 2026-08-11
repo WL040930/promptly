@@ -69,6 +69,7 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
     const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
+    const inFlightAppliesRef = useRef(new Map());
     const [isSubmittingTurn, setIsSubmittingTurn] = useState(false);
     const [streamDetached, setStreamDetached] = useState(false);
     const [recoveryMode, setRecoveryMode] = useState(false);
@@ -335,18 +336,30 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
 
     const handleApply = useCallback(async message => {
         if (message.kind !== 'workflow_proposal') return;
-        setAcceptingProposalId(message.id);
-        try {
-            const result = await decideMutation.mutateAsync({ messageId: message.id, action: 'accept' });
-            const created = result?.createdResources || [];
-            toast.success(created.length ? `Workflow updated and Google Sheet “${created[0].name}” is ready.` : 'Workflow updated successfully!');
-            return result;
-        } catch (error) {
-            toast.error(error.message || 'Failed to apply changes.');
-            throw error;
-        } finally {
-            setAcceptingProposalId(null);
-        }
+        const existingApply = inFlightAppliesRef.current.get(message.id);
+        if (existingApply) return existingApply;
+
+        const applyPromise = (async () => {
+            setAcceptingProposalId(message.id);
+            try {
+                const result = await decideMutation.mutateAsync({ messageId: message.id, action: 'accept' });
+                const created = result?.createdResources || [];
+                toast.success(created.length ? `Workflow updated and Google Sheet “${created[0].name}” is ready.` : 'Workflow updated successfully!');
+                return result;
+            } catch (error) {
+                const code = error?.code || error?.payload?.code;
+                const needsGoogleReconnect = ['GOOGLE_RECONNECT_REQUIRED', 'GOOGLE_CONNECTION_REQUIRED'].includes(code);
+                toast.error(error.message || 'Failed to apply changes.', needsGoogleReconnect ? {
+                    action: { label: code === 'GOOGLE_CONNECTION_REQUIRED' ? 'Connect Google' : 'Reconnect Google', onClick: () => navigateTo({ page: 'settings', section: 'connections' }) }
+                } : undefined);
+                throw error;
+            } finally {
+                setAcceptingProposalId(null);
+                if (inFlightAppliesRef.current.get(message.id) === applyPromise) inFlightAppliesRef.current.delete(message.id);
+            }
+        })();
+        inFlightAppliesRef.current.set(message.id, applyPromise);
+        return applyPromise;
     }, [decideMutation, toast]);
 
     const handleIgnore = useCallback(async message => {

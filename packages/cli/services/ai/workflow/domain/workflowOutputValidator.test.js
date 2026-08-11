@@ -141,6 +141,18 @@ test('planner validator rejects an unknown capability', () => {
     assert.ok(issues.some(i => i.code === 'UNKNOWN_CAPABILITY'));
 });
 
+test('planner validator rejects the removed application review capability', () => {
+    const issues = validateWorkflowPlannerResult({
+        type: 'plan_complete',
+        summary: 'Review applications.',
+        requirements: [{ id: 'req_1', description: 'Review submitted applications.' }],
+        selectedNodeKeys: ['trigger:form-submission', 'logic:approval'],
+        capabilities: ['application_review_decision']
+    });
+
+    assert.ok(issues.some(item => item.code === 'UNKNOWN_CAPABILITY'));
+});
+
 test('planner validator rejects missing requirements for plan types', () => {
     const issues = validateWorkflowPlannerResult({
         type: 'plan_complete',

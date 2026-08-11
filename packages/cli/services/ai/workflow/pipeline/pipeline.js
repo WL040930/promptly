@@ -15,6 +15,8 @@ import {
 import { explicitRunIdFromRequest } from '../runDiagnostics.js';
 import { applyFormResponseSpreadsheetContract } from '../formSpreadsheetContract.js';
 import { discoverResource } from '../resourceDiscovery.js';
+import { resolveFormReference } from '../domain/formReferenceResolver.js';
+import { assembleLinearWorkflow } from '../domain/linearWorkflowAssembler.js';
 import {
     buildWorkflowOutputRepairContext,
     buildWorkflowPlannerContext,
@@ -78,8 +80,6 @@ const createPipelineError = (message, code, issues = []) => {
 const unique = values => [...new Set(values.filter(Boolean))];
 const nodeKeyFor = node => node?.nodeKey || (node?.type && node?.subType ? `${node.type}:${node.subType}` : null);
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const isBlank = value => value === undefined || value === null || value === '';
-const cloneValue = value => isObject(value) || Array.isArray(value) ? JSON.parse(JSON.stringify(value)) : value;
 
 const withTrustedFormResource = (resourceContext, formSchema) => {
     if (!formSchema?.id) return resourceContext || {};
@@ -275,110 +275,6 @@ const specsForPlan = ({ workflow, planner, registry }) => {
     const requested = selectedNodeKeys;
     const keys = unique([...(workflow.nodes || []).map(nodeKeyFor), ...requested]);
     return { specs: registry.getSchemasFor(keys), catalogue, requested };
-};
-
-const connectionPorts = (spec, direction) => (spec?.schema?.[direction] || [])
-    .filter(port => port?.isConnection && port.name)
-    .map(port => port.name);
-
-const defaultConfigFor = spec => Object.fromEntries((spec?.schema?.inputs || [])
-    .filter(input => !input?.isConnection && input.defaultValue !== undefined)
-    .map(input => [input.name, cloneValue(input.defaultValue)]));
-
-const missingRequiredConfig = (spec, config) => (spec?.schema?.inputs || [])
-    .filter(input => input?.required === true && !input.isConnection && isBlank(config?.[input.name]))
-    .map(input => input.name);
-
-const unavailableLinearFallback = reason => ({ operations: null, reason });
-
-/**
- * Build only a new, unbranched chain. The planner supplies intent and safe
- * config; the server owns refs, port selection, graph shape, and form/sheet
- * bindings. Existing graph edits remain model-driven because insertion point
- * selection is not deterministic.
- */
-const buildDeterministicLinearOperations = ({ workflow = {}, plan = {}, specs = [], formSchema = null }) => {
-    if ((workflow.nodes || []).length > 0 || (workflow.edges || []).length > 0) {
-        return unavailableLinearFallback('The deterministic fallback only builds a new workflow.');
-    }
-    const steps = plan.linearSteps;
-    if (!Array.isArray(steps) || steps.length < 2 || steps.length > 8) {
-        return unavailableLinearFallback('No valid linear workflow blueprint was supplied.');
-    }
-    const specsByNodeKey = new Map(specs.map(spec => [spec.nodeKey, spec]));
-    const selectedNodeKeys = new Set(plan.selectedNodeKeys || []);
-    const refs = new Set();
-    const resolvedSteps = [];
-    for (const [index, step] of steps.entries()) {
-        if (!isObject(step) || typeof step.ref !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(step.ref) || refs.has(step.ref)) {
-            return unavailableLinearFallback('The linear workflow blueprint contains invalid or duplicate step refs.');
-        }
-        const spec = specsByNodeKey.get(step.nodeKey);
-        if (!spec || !selectedNodeKeys.has(step.nodeKey)) {
-            return unavailableLinearFallback('The linear workflow blueprint references a node that was not validated by the plan.');
-        }
-        refs.add(step.ref);
-        resolvedSteps.push({ step, spec, index });
-    }
-    const triggers = resolvedSteps.filter(item => item.spec.type === 'trigger');
-    if (triggers.length !== 1 || resolvedSteps[0].spec.type !== 'trigger' || resolvedSteps.slice(1).some(item => item.spec.type === 'trigger')) {
-        return unavailableLinearFallback('A linear fallback requires exactly one trigger as the first step.');
-    }
-    for (const [index, item] of resolvedSteps.entries()) {
-        const outputs = connectionPorts(item.spec, 'outputs');
-        const inputs = connectionPorts(item.spec, 'inputs');
-        if (outputs.length > 1 || inputs.length > 1) {
-            return unavailableLinearFallback('The requested workflow needs branching or multiple inputs, so it cannot use the linear fallback.');
-        }
-        if (index < resolvedSteps.length - 1 && outputs.length !== 1) {
-            return unavailableLinearFallback('A non-terminal linear step must expose exactly one output route.');
-        }
-    }
-
-    const responseSheetChanges = (plan.resourceChanges || []).filter(change => change?.type === 'create_google_spreadsheet' && change?.ref);
-    const sheetSteps = resolvedSteps.filter(item => item.spec.nodeKey === 'action:googleSheets');
-    if (responseSheetChanges.length > 1 || (responseSheetChanges.length === 1 && sheetSteps.length !== 1)) {
-        return unavailableLinearFallback('The response spreadsheet destination is ambiguous for the linear fallback.');
-    }
-    const responseSheet = responseSheetChanges[0] || null;
-    const operations = [];
-    for (const { step, spec, index } of resolvedSteps) {
-        const config = { ...defaultConfigFor(spec), ...(isObject(step.config) ? cloneValue(step.config) : {}) };
-        if (spec.nodeKey === 'trigger:form-submission') {
-            if (!formSchema?.id) return unavailableLinearFallback('A form trigger needs a loaded form before the linear fallback can be used.');
-            config.formId = formSchema.id;
-        }
-        if (spec.nodeKey === 'action:googleSheets' && responseSheet) {
-            const sheetTitle = String(responseSheet.sheetTitle || 'Responses').replace(/'/g, "''");
-            config.operation = 'append';
-            config.spreadsheetId = { $provision: responseSheet.ref };
-            config.range = `'${sheetTitle}'!A1`;
-        }
-        const missing = missingRequiredConfig(spec, config);
-        if (missing.length > 0) {
-            return unavailableLinearFallback(`The ${spec.nodeKey} step is missing required configuration: ${missing.join(', ')}.`);
-        }
-        operations.push({
-            op: 'create_node',
-            node: {
-                ref: step.ref,
-                nodeKey: spec.nodeKey,
-                title: step.title || spec.title,
-                ...(index > 0 ? { afterNodeRef: resolvedSteps[index - 1].step.ref } : {}),
-                config
-            }
-        });
-    }
-    for (let index = 0; index < resolvedSteps.length - 1; index += 1) {
-        const from = resolvedSteps[index];
-        const to = resolvedSteps[index + 1];
-        operations.push({
-            op: 'connect',
-            from: { nodeRef: from.step.ref, handle: connectionPorts(from.spec, 'outputs')[0] || null },
-            to: { nodeRef: to.step.ref, handle: connectionPorts(to.spec, 'inputs')[0] || null }
-        });
-    }
-    return { operations, reason: null };
 };
 
 const proposalDiff = ({ before, after, operations }) => {
@@ -598,6 +494,47 @@ export const generateWorkflowTurn = async ({
     let inspectedRun = null;
     let inspectedResource = null;
     let resourceSelections = {};
+    let inspectedFormSchema = null;
+    let resolvedFormSchema = formSchema;
+    let formLookupUsed = false;
+
+    // A form selected from a previous clarification, or already attached to
+    // this workflow, is more authoritative than a name inferred from prose.
+    const attachedFormId = (currentWorkflow.nodes || []).find(node => node?.subType === 'form-submission')?.config?.formId || null;
+    const selectedFormId = turnContext?.command?.state?.formId || null;
+    const initialFormId = resolvedFormSchema ? null : (selectedFormId || attachedFormId);
+    if (initialFormId) {
+        const availableFormIds = new Set((userContext?.forms || []).map(form => form?.id).filter(Boolean));
+        if (availableFormIds.size > 0 && !availableFormIds.has(initialFormId)) {
+            return {
+                type: 'reply',
+                message: 'Please choose one of your available forms before I continue.',
+                tokenUsage: { ...usage, requestCalls: budget.calls }
+            };
+        }
+        if (!formLoader) {
+            return {
+                type: 'reply',
+                message: 'I cannot load that form in this workflow right now. Please select the form in the workflow, then try again.',
+                tokenUsage: { ...usage, requestCalls: budget.calls }
+            };
+        }
+        resolvedFormSchema = await formLoader({ formId: initialFormId, userId });
+        if (!resolvedFormSchema) {
+            return {
+                type: 'reply',
+                message: 'I could not access that form. Please choose one of your available forms and try again.',
+                tokenUsage: { ...usage, requestCalls: budget.calls }
+            };
+        }
+        inspectedFormSchema = resolvedFormSchema;
+        formLookupUsed = true;
+        await recordAiDiagnostic({
+            event: 'workflow_form_context_loaded',
+            source: selectedFormId ? 'clarification' : 'attached_workflow',
+            fieldCount: resolvedFormSchema.fields?.length || 0
+        });
+    }
     const selectedSpreadsheetId = turnContext?.command?.state?.spreadsheetId;
     if (selectedSpreadsheetId && resourceLookup) {
         const result = await resourceLookup({ userId, resource: 'google-spreadsheets' });
@@ -626,7 +563,7 @@ export const generateWorkflowTurn = async ({
         formLookupUsed,
         forceDecision
     });
-    let plannerContext = buildPlannerContext();
+    let plannerContext = buildPlannerContext({ inspectedFormSchema, formLookupUsed });
     let plannerResult = await requestAndValidate({
         label: 'planner',
         prompt: plannerContext.prompt,
@@ -639,9 +576,6 @@ export const generateWorkflowTurn = async ({
     });
     usage = plannerResult.usage;
     let plan = plannerResult.call.value;
-    let inspectedFormSchema = null;
-    let resolvedFormSchema = formSchema;
-    let formLookupUsed = false;
 
     if (plan.type === 'inspect_form') {
         const availableFormIds = new Set((userContext?.forms || []).map(form => form?.id).filter(Boolean));
@@ -806,6 +740,62 @@ export const generateWorkflowTurn = async ({
     if (plan.type === 'reply') return { type: 'reply', message: plan.message, tokenUsage: { ...usage, requestCalls: budget.calls } };
     if (plan.type === 'message') return { type: 'message', message: plan.message, inputs: plan.inputs, tokenUsage: { ...usage, requestCalls: budget.calls } };
 
+    const requestedNodeKeys = [
+        ...(plan.selectedNodeKeys || []),
+        ...(plan.linearSteps || []).map(step => step?.nodeKey)
+    ];
+    const needsFormContext = requestedNodeKeys.includes('trigger:form-submission');
+    if (needsFormContext && !resolvedFormSchema) {
+        const formSelection = resolveFormReference({ request, forms: userContext?.forms || [] });
+        const availableForms = (formSelection.status === 'ambiguous' ? formSelection.options : userContext?.forms || [])
+            .filter(form => form?.id && form?.title)
+            .slice(0, 8);
+        if (formSelection.status === 'selected') {
+            if (!formLoader) {
+                return {
+                    type: 'reply',
+                    message: 'I cannot load the requested form in this workflow right now. Please select the form in the workflow, then try again.',
+                    tokenUsage: { ...usage, requestCalls: budget.calls }
+                };
+            }
+            resolvedFormSchema = await formLoader({ formId: formSelection.form.id, userId });
+            if (!resolvedFormSchema) {
+                return {
+                    type: 'reply',
+                    message: 'I could not access the form that best matches your request. Please choose one of your available forms and try again.',
+                    tokenUsage: { ...usage, requestCalls: budget.calls }
+                };
+            }
+            inspectedFormSchema = resolvedFormSchema;
+            formLookupUsed = true;
+            await recordAiDiagnostic({
+                event: 'workflow_form_context_loaded',
+                source: 'name_match',
+                fieldCount: resolvedFormSchema.fields?.length || 0
+            });
+        } else if (availableForms.length > 0) {
+            return {
+                type: 'message',
+                message: formSelection.status === 'ambiguous'
+                    ? 'I found more than one form that could match this workflow. Which form should start it?'
+                    : 'Which form should start this workflow?',
+                inputs: [{
+                    id: 'formId',
+                    type: 'resource_choice',
+                    label: 'Form',
+                    options: availableForms.map(form => ({ id: form.id, name: form.title, description: form.description || null }))
+                }],
+                tokenUsage: { ...usage, requestCalls: budget.calls }
+            };
+        } else {
+            return {
+                type: 'reply',
+                message: 'Please create or select a form before adding a form-submission trigger.',
+                tokenUsage: { ...usage, requestCalls: budget.calls }
+            };
+        }
+    }
+
     plan = addDefaultSpreadsheetIntent({ plan, request, workflow: currentWorkflow, formSchema: resolvedFormSchema });
     const complexity = workflowComplexityFor({ workflow: currentWorkflow, plan, formSchema: resolvedFormSchema });
     budget.maxCalls = Math.max(budget.calls, complexity.maxProviderCalls);
@@ -826,6 +816,9 @@ export const generateWorkflowTurn = async ({
     });
     const loadedResourceContext = await resourceLoader({ userId, specs, nodes: currentWorkflow.nodes || [], selections: resourceSelections });
     const resourceContext = withTrustedFormResource(loadedResourceContext, resolvedFormSchema);
+    const linearAssembly = plan.type === 'plan_complete'
+        ? assembleLinearWorkflow({ workflow: currentWorkflow, plan, specs, formSchema: resolvedFormSchema })
+        : { operations: null, reason: 'Only complete plans can provide a linear workflow blueprint.' };
     let previousResponse = null;
     let repairIssues = [];
     let unverifiedProposal = null;
@@ -840,7 +833,16 @@ export const generateWorkflowTurn = async ({
         });
 
         let workerCall;
-        if (attempt === 0 && plan.type === 'direct_plan') {
+        if (attempt === 0 && linearAssembly.operations) {
+            onProgress?.({
+                status: 'building',
+                phase: 'draft',
+                label: 'Assembling the workflow graph',
+                message: 'Connecting the workflow steps',
+                detail: 'Promptly is applying the validated linear blueprint and binding the selected resources.'
+            });
+            workerCall = { value: { operations: linearAssembly.operations }, rawText: JSON.stringify({ operations: linearAssembly.operations }), response: null };
+        } else if (attempt === 0 && plan.type === 'direct_plan') {
             workerCall = { value: { operations: plan.operations }, rawText: JSON.stringify({ operations: plan.operations }), response: null };
         } else {
             const label = attempt === 0 ? 'worker' : 'worker repair';
@@ -1012,7 +1014,7 @@ export const generateWorkflowTurn = async ({
     }
 
     if (!unverifiedProposal) {
-        const fallback = buildDeterministicLinearOperations({
+        const fallback = assembleLinearWorkflow({
             workflow: currentWorkflow,
             plan,
             specs,

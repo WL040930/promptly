@@ -75,6 +75,21 @@ test('assistant recovery explains an AI connection missing its route', () => {
     assert.doesNotMatch(result.details[0].message, /input route/i);
 });
 
+test('assistant recovery hides internal IDs for unreachable workflow nodes', () => {
+    const result = buildAssistantRecovery({
+        surface: 'workflow',
+        code: 'WORKFLOW_AI_UNSAFE_PROPOSAL',
+        issues: [{ code: 'UNREACHABLE_NODE', path: 'nodes[1]', message: 'Node "node_16695a0382d544babb28f1d79856e432" cannot be reached from the trigger.' }],
+        context: { retryText: 'Save the form response to Sheets.' }
+    });
+
+    assert.equal(result.type, 'workflow_graph_invalid');
+    assert.equal(result.title, 'Promptly could not connect all workflow steps');
+    assert.equal(result.action.type, 'retry');
+    assert.equal(result.details[0].message, 'Promptly could not connect all workflow steps to the trigger.');
+    assert.doesNotMatch(result.details[0].message, /node_16695/i);
+});
+
 test('assistant recovery explains when AI returns no workflow operations', () => {
     const result = buildAssistantRecovery({
         surface: 'workflow',

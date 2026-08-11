@@ -8,6 +8,7 @@ const safeIssueMessage = issue => {
         WORKFLOW_ROUTE_NOT_FOUND: 'Promptly could not find the selected workflow route.',
         WORKFLOW_ROUTE_AMBIGUOUS: 'Promptly found more than one destination on this route.',
         WORKFLOW_AI_NODE_SELECTION_REQUIRED: 'Promptly could not select the workflow steps needed for this request.',
+        UNREACHABLE_NODE: 'Promptly could not connect all workflow steps to the trigger.',
         INVALID_WORKER_RESPONSE: 'The AI response was incomplete before any workflow steps were generated.',
         INVALID_OPERATIONS: 'The AI response did not include a list of workflow steps.',
         EMPTY_OPERATIONS: 'The AI response did not include any workflow steps to apply.',
@@ -123,7 +124,20 @@ export const buildAssistantRecovery = ({ surface = 'assistant', code, issues = [
         });
     }
 
-    if (has(safeIssues, 'FORM_SUBMISSION_TRIGGER_MISSING', 'EMAIL_ACTION_MISSING', 'APPROVAL_NODE_MISSING', 'APPROVAL_BRANCH_EMAILS_MISSING', 'APPROVED_BRANCH_EMAIL_MISSING', 'REJECTED_BRANCH_EMAIL_MISSING', 'RESPONDENT_CONFIRMATION_DISCONNECTED', 'RESPONDENT_RECIPIENT_FIELD_INVALID', 'RESPONDENT_RECIPIENT_NOT_DYNAMIC')) {
+    if (has(safeIssues, 'UNREACHABLE_NODE')) {
+        return recovery({
+            type: 'workflow_graph_invalid',
+            title: 'Promptly could not connect all workflow steps',
+            summary: 'The proposed workflow contained a step that was not connected to its trigger. No changes were made.',
+            steps: ['Try the same request again so Promptly can rebuild the workflow connections.', 'If it keeps happening, describe the trigger and the next action in one short request.'],
+            action: retryAction,
+            location: 'Workflow graph validation — no workflow node was changed.',
+            details: safeIssues,
+            retryable: true
+        });
+    }
+
+    if (has(safeIssues, 'FORM_SUBMISSION_TRIGGER_MISSING', 'EMAIL_ACTION_MISSING', 'APPROVAL_NODE_MISSING', 'RESPONDENT_CONFIRMATION_DISCONNECTED', 'RESPONDENT_RECIPIENT_FIELD_INVALID', 'RESPONDENT_RECIPIENT_NOT_DYNAMIC')) {
         return recovery({
             type: 'workflow_setup_needed',
             title: 'This automation needs more setup',

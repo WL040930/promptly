@@ -175,6 +175,52 @@ test('workflow proposal application is blocked only when setup is required', asy
     assert.equal(memory.messages[0].proposalStatus, 'pending');
 });
 
+test('a repeated apply while a Google Sheet is being provisioned does not report that the proposal is gone', async () => {
+    const memory = createMemoryModels();
+    await memory.models.AssistantThread.create({
+        id: 'thread_1', userId: 'user_1', surface: 'workflow', workflowId: 'workflow_1',
+        state: { version: 1, phase: 'awaiting_proposal', activeProposalMessageId: 'proposal_1' }, context: {}
+    });
+    await memory.models.AssistantMessage.create({
+        id: 'proposal_1', threadId: 'thread_1', sender: 'bot', kind: 'workflow_proposal', proposalStatus: 'pending', text: 'Create a response sheet.',
+        payload: {
+            workflowId: 'workflow_1', baseWorkflowRevision: 1, nodes: [], edges: [],
+            readiness: { canApply: true },
+            resourceChanges: [{ type: 'create_google_spreadsheet', ref: 'responses_sheet', title: 'Event Registration', sheetTitle: 'Responses', headers: ['Name'] }]
+        }
+    });
+
+    let releaseProvisioning;
+    let provisioningStarted;
+    let provisioningCalls = 0;
+    const started = new Promise(resolve => { provisioningStarted = resolve; });
+    const waitForRelease = new Promise(resolve => { releaseProvisioning = resolve; });
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({ LOCK: { UPDATE: 'UPDATE' } }) },
+        saveDraft: async ({ nodes, edges }) => ({ automation: { ...memory.workflows[0], nodes, edges, revision: 2 } }),
+        spreadsheetService: {
+            createAndInitialize: async () => {
+                provisioningCalls += 1;
+                provisioningStarted();
+                await waitForRelease;
+                return { id: 'spreadsheet_1', name: 'Event Registration', range: "'Responses'!A1", webViewLink: 'https://docs.google.com/spreadsheets/d/spreadsheet_1' };
+            }
+        }
+    });
+
+    const firstApply = assistant.decideProposal({ userId: 'user_1', workflowId: 'workflow_1', proposalMessageId: 'proposal_1' });
+    await started;
+    assert.equal(memory.messages[0].proposalStatus, 'applying');
+
+    const repeatedApply = assistant.decideProposal({ userId: 'user_1', workflowId: 'workflow_1', proposalMessageId: 'proposal_1' });
+    releaseProvisioning();
+    await firstApply;
+
+    await assert.doesNotReject(repeatedApply);
+    assert.equal(provisioningCalls, 1);
+});
+
 test('workflow applies a locally valid unverified proposal after user review', async () => {
     const memory = createMemoryModels();
     await memory.models.AssistantThread.create({

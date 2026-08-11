@@ -125,7 +125,15 @@ export const createWorkflowProposalApplier = ({
                     transaction,
                     lock: transaction.LOCK.UPDATE
                 });
-                if (!lockedMessage || lockedMessage.proposalStatus !== 'pending') throw errorWith('WORKFLOW_PROPOSAL_NOT_PENDING', 'This workflow proposal is no longer pending.', 409);
+                if (!lockedMessage || lockedMessage.proposalStatus !== 'pending') {
+                    throw errorWith(
+                        lockedMessage?.proposalStatus === 'applying' ? 'WORKFLOW_PROPOSAL_APPLYING' : 'WORKFLOW_PROPOSAL_NOT_PENDING',
+                        lockedMessage?.proposalStatus === 'applying'
+                            ? 'This workflow proposal is already being applied. Wait for the current Apply request to finish.'
+                            : 'This workflow proposal is no longer pending.',
+                        409
+                    );
+                }
                 if (Number.isInteger(expectedStateVersion) && expectedStateVersion !== state.version) {
                     throw errorWith('WORKFLOW_AI_STATE_CONFLICT', 'The workflow assistant changed in another tab. Refresh the conversation and try again.', 409, { currentStateVersion: state.version });
                 }

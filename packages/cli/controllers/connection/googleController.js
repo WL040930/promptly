@@ -4,6 +4,7 @@ import Connection from '../../models/core/Connection.js';
 import env from '../../config/env.js';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
+import googleConnectionHealthChecker from '../../services/triggers/googleConnectionHealth.js';
 
 const oauth2Client = new OAuth2Client(
     env.google.clientId,
@@ -12,6 +13,12 @@ const oauth2Client = new OAuth2Client(
 );
 
 const getConnectionsPath = () => '/app/settings/connections';
+
+const getGoogleConnectionStatus = async (req, res) => {
+    const connection = await Connection.findOne({ where: { userId: req.user.id, provider: 'google', status: 'active' } });
+    const status = await googleConnectionHealthChecker({ userId: req.user.id, connection });
+    return res.json(status);
+};
 
 const redirectToConnections = (res, params, user = null) => {
     const redirectUrl = new URL(getConnectionsPath(), env.app.clientOrigin);
@@ -127,4 +134,4 @@ const googleDisconnect = async (req, res) => {
     }
 };
 
-export { googleConnect, googleCallback, googleDisconnect };
+export { googleConnect, googleCallback, googleDisconnect, getGoogleConnectionStatus };

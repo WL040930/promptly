@@ -2,7 +2,9 @@ import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { navigateTo } from '../utils/router.js';
 import { apiRequest } from '../api/client.js';
+import { useGoogleConnectionHealth } from '../api/hooks/useAuth.js';
 import Button from '../components/ui/Button.jsx';
+import GoogleConnectionHealthModal from '../components/modals/GoogleConnectionHealthModal.jsx';
 
 const SettingsModal = lazy(() => import('../dashboard/SettingsModal.jsx'));
 
@@ -43,6 +45,10 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
     const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem('promptly.sidebar.collapsed') === 'true');
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [settingsTab, setSettingsTab] = useState('general');
+    const [dismissedGoogleHealthKey, setDismissedGoogleHealthKey] = useState(null);
+    const googleHealthQuery = useGoogleConnectionHealth({ enabled: Boolean(user?.id) });
+    const googleHealth = googleHealthQuery.data;
+    const googleHealthKey = googleHealth?.requiresReconnect ? `${googleHealth.status}:${googleHealth.reason || 'unknown'}` : null;
     const activePage = route ? pageForRoute(route) : 'home';
     const approvalSummaryQuery = useQuery({
         queryKey: ['approval-summary'],
@@ -55,6 +61,10 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
         refetchOnWindowFocus: true
     });
     const pendingApprovalCount = Number(approvalSummaryQuery.data?.pendingCount || 0);
+
+    useEffect(() => {
+        if (!googleHealthKey && dismissedGoogleHealthKey) setDismissedGoogleHealthKey(null);
+    }, [googleHealthKey, dismissedGoogleHealthKey]);
 
     useEffect(() => {
         if (route?.page === 'settings') {
@@ -131,6 +141,7 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
             <main className="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#f5f6fb]">{content}</main>
 
             {settingsOpen && <Suspense fallback={null}><SettingsModal user={user} onClose={() => setSettingsOpen(false)} onLogout={onLogout} initialTab={settingsTab} /></Suspense>}
+            {googleHealthKey && !settingsOpen && dismissedGoogleHealthKey !== googleHealthKey && <GoogleConnectionHealthModal status={googleHealth} onClose={() => setDismissedGoogleHealthKey(googleHealthKey)} />}
         </div>
     );
 }

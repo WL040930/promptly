@@ -906,7 +906,7 @@ test('pipeline resolves a planner clarification when clarification mode is decid
     assert.equal(result.nodes.find(node => node.id === 'email_1')?.config?.subject, 'Thank you');
 });
 
-test('pipeline falls back to a validated linear form-to-Sheets workflow after repeated invalid worker refs', async () => {
+test('pipeline assembles a validated linear form-to-Sheets workflow without worker graph edits', async () => {
     const { generateWorkflowTurn } = await import('./pipeline.js');
     let workerCalls = 0;
     const provider = {
@@ -951,10 +951,146 @@ test('pipeline falls back to a validated linear form-to-Sheets workflow after re
     });
 
     assert.equal(result.type, 'proposal');
-    assert.ok(workerCalls > 0);
+    assert.equal(workerCalls, 0);
     assert.deepEqual(result.nodes.map(node => node.nodeKey), ['trigger:form-submission', 'action:googleSheets']);
     assert.equal(result.edges.length, 1);
     assert.equal(result.nodes.find(node => node.nodeKey === 'action:googleSheets')?.config?.operation, 'append');
+});
+
+test('pipeline resolves a named owned form and assembles a connected form-to-Sheets proposal', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let workerCalls = 0;
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Save each Event Registration response to a Google Sheet.',
+                    requirements: [{ id: 'req_1', description: 'Append each submitted Event Registration response to a Google Sheet.' }],
+                    selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
+                    linearSteps: [
+                        { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Form submitted', requirementIds: ['req_1'], config: {} },
+                        { ref: 'save_response', nodeKey: 'action:googleSheets', title: 'Save response', requirementIds: ['req_1'], config: {} }
+                    ],
+                    capabilities: []
+                }) };
+            }
+            if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
+                workerCalls += 1;
+                return { text: JSON.stringify({ operations: [
+                    { op: 'create_node', node: { ref: 'form_trigger', nodeKey: 'trigger:form-submission', config: { formId: 'form_event' } } },
+                    { op: 'create_node', node: { ref: 'save_response', nodeKey: 'action:googleSheets', config: { operation: 'append', spreadsheetId: { $provision: 'response_spreadsheet' }, range: "'Responses'!A1" } } }
+                ] }) };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'When the Event Registration form is submitted, save the response to the Event Registration Google Sheet.',
+        currentWorkflow: { nodes: [], edges: [] },
+        userContext: { forms: [
+            { id: 'form_event', title: 'Event Registration', updatedAt: '2026-08-12T00:00:00.000Z' },
+            { id: 'form_contact', title: 'Contact Us', updatedAt: '2026-08-11T00:00:00.000Z' }
+        ] },
+        formLoader: async ({ formId }) => formId === 'form_event'
+            ? { id: formId, title: 'Event Registration', fields: [{ id: 'name', label: 'Name', type: 'text', required: true }] }
+            : null,
+        provider,
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec]),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(workerCalls, 0);
+    assert.equal(result.nodes.find(node => node.nodeKey === 'trigger:form-submission')?.config?.formId, 'form_event');
+    assert.equal(result.nodes.find(node => node.nodeKey === 'action:googleSheets')?.config?.operation, 'append');
+    assert.equal(result.edges.length, 1);
+    assert.equal(result.edges[0].source, result.nodes.find(node => node.nodeKey === 'trigger:form-submission')?.id);
+    assert.equal(result.edges[0].target, result.nodes.find(node => node.nodeKey === 'action:googleSheets')?.id);
+});
+
+test('pipeline returns a form choice when named-form matching is ambiguous', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Save the registration response.',
+                    requirements: [{ id: 'req_1', description: 'Append the submitted registration response to a Google Sheet.' }],
+                    selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
+                    linearSteps: [
+                        { ref: 'form_trigger', nodeKey: 'trigger:form-submission', requirementIds: ['req_1'], config: {} },
+                        { ref: 'save_response', nodeKey: 'action:googleSheets', requirementIds: ['req_1'], config: {} }
+                    ],
+                    capabilities: []
+                }) };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'When the registration form is submitted, save the response.',
+        currentWorkflow: { nodes: [], edges: [] },
+        userContext: { forms: [
+            { id: 'form_event', title: 'Event Registration' },
+            { id: 'form_member', title: 'Member Registration' }
+        ] },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec]),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'message');
+    assert.match(result.message, /more than one form/i);
+    assert.deepEqual(result.inputs, [{
+        id: 'formId',
+        type: 'resource_choice',
+        label: 'Form',
+        options: [
+            { id: 'form_event', name: 'Event Registration', description: null },
+            { id: 'form_member', name: 'Member Registration', description: null }
+        ]
+    }]);
+});
+
+test('pipeline resumes a form choice clarification with the selected owned form', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Save the Event Registration response.',
+                    requirements: [{ id: 'req_1', description: 'Append the submitted Event Registration response to a Google Sheet.' }],
+                    selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
+                    linearSteps: [
+                        { ref: 'form_trigger', nodeKey: 'trigger:form-submission', requirementIds: ['req_1'], config: {} },
+                        { ref: 'save_response', nodeKey: 'action:googleSheets', requirementIds: ['req_1'], config: {} }
+                    ],
+                    capabilities: []
+                }) };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'When the Event Registration form is submitted, save the response.',
+        currentWorkflow: { nodes: [], edges: [] },
+        turnContext: { command: { type: 'submit_clarification', state: { formId: 'form_event' } } },
+        userContext: { forms: [{ id: 'form_event', title: 'Event Registration' }] },
+        formLoader: async ({ formId }) => ({ id: formId, title: 'Event Registration', fields: [{ id: 'name', label: 'Name', type: 'text', required: true }] }),
+        provider,
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec]),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.nodes.find(node => node.nodeKey === 'trigger:form-submission')?.config?.formId, 'form_event');
+    assert.equal(result.edges.length, 1);
 });
 
 test('pipeline repairs an unknown planner node key before the worker is called', async () => {
@@ -1007,7 +1143,7 @@ test('pipeline repairs an unknown planner node key before the worker is called',
     assert.match(plannerPrompts[1], /action:email/);
 });
 
-test('pipeline fallback supports repeated actions in a generic linear workflow', async () => {
+test('pipeline assembles repeated actions in a generic linear workflow', async () => {
     const { generateWorkflowTurn } = await import('./pipeline.js');
     const provider = {
         async generateContent(_contents, options) {
@@ -1048,7 +1184,7 @@ test('pipeline fallback supports repeated actions in a generic linear workflow',
     assert.equal(result.type, 'proposal');
     assert.equal(result.nodes.filter(node => node.nodeKey === 'action:email').length, 2);
     assert.equal(result.edges.length, 2);
-    assert.ok(result.warnings.some(warning => warning.code === 'WORKFLOW_DETERMINISTIC_FALLBACK_USED'));
+    assert.equal(result.warnings.some(warning => warning.code === 'WORKFLOW_DETERMINISTIC_FALLBACK_USED'), false);
 });
 
 test('pipeline does not use the linear fallback for a branching workflow', async () => {

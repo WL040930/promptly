@@ -163,6 +163,12 @@ export const createWorkflowAssistant = ({
         publicMessage, toWorkflowJson, saveDraft, spreadsheetService, now, errorWith
     });
 
+    // Applying a proposal can spend time in an external provider (for
+    // example, creating and initialising a Google Sheet). Keep duplicate
+    // requests in the same process attached to the original promise so a
+    // double-click cannot start a second provisioning attempt.
+    const inFlightProposalApplies = new Map();
+
     const getHistory = async ({ workflowId, userId, limit = 50, before = null }) => {
         const workflow = await findWorkflow(workflowId, userId);
         return db.transaction(async transaction => {
@@ -324,16 +330,46 @@ export const createWorkflowAssistant = ({
         const workflow = await findWorkflow(workflowId, userId);
         const message = await models.AssistantMessage.findOne({ where: { id: proposalMessageId, kind: 'workflow_proposal' }, include: [{ model: models.AssistantThread, as: 'thread', where: { surface: 'workflow', workflowId, userId } }] });
         if (!message) throw errorWith('WORKFLOW_PROPOSAL_NOT_FOUND', 'Workflow proposal not found.', 404);
-        if (message.proposalStatus !== 'pending') throw errorWith('WORKFLOW_PROPOSAL_NOT_PENDING', 'This workflow proposal is no longer pending.', 409);
         const payload = message.payload || {};
-        if (action === 'reject') return db.transaction(async transaction => {
-            const state = await ensureState({ workflow, transaction });
-            if (Number.isInteger(expectedStateVersion) && expectedStateVersion !== state.version) throw errorWith('WORKFLOW_AI_STATE_CONFLICT', 'The workflow assistant changed in another tab. Refresh the conversation and try again.', 409, { currentStateVersion: state.version });
-            await message.update({ proposalStatus: 'rejected', payload: { ...payload, work: finishAssistantWork(payload.work, { status: 'ignored', detail: 'Proposal ignored' }, now()) } }, { transaction });
-            await state.update({ version: state.version + 1, phase: state.activeProposalMessageId === message.id ? 'idle' : state.phase, activeProposalMessageId: state.activeProposalMessageId === message.id ? null : state.activeProposalMessageId }, { transaction });
-            return { message: publicMessage(message), state: publicState(state) };
-        });
-        return proposalApplier.apply({ workflowId, userId, proposalMessageId, expectedStateVersion, workflow, message, payload });
+        if (action === 'reject') {
+            if (message.proposalStatus !== 'pending') {
+                throw errorWith(
+                    message.proposalStatus === 'applying' ? 'WORKFLOW_PROPOSAL_APPLYING' : 'WORKFLOW_PROPOSAL_NOT_PENDING',
+                    message.proposalStatus === 'applying'
+                        ? 'This workflow proposal is already being applied. Wait for the current Apply request to finish.'
+                        : 'This workflow proposal is no longer pending.',
+                    409
+                );
+            }
+            return db.transaction(async transaction => {
+                const state = await ensureState({ workflow, transaction });
+                if (Number.isInteger(expectedStateVersion) && expectedStateVersion !== state.version) throw errorWith('WORKFLOW_AI_STATE_CONFLICT', 'The workflow assistant changed in another tab. Refresh the conversation and try again.', 409, { currentStateVersion: state.version });
+                await message.update({ proposalStatus: 'rejected', payload: { ...payload, work: finishAssistantWork(payload.work, { status: 'ignored', detail: 'Proposal ignored' }, now()) } }, { transaction });
+                await state.update({ version: state.version + 1, phase: state.activeProposalMessageId === message.id ? 'idle' : state.phase, activeProposalMessageId: state.activeProposalMessageId === message.id ? null : state.activeProposalMessageId }, { transaction });
+                return { message: publicMessage(message), state: publicState(state) };
+            });
+        }
+
+        const applyKey = `${userId}:${workflowId}:${proposalMessageId}`;
+        const inFlight = inFlightProposalApplies.get(applyKey);
+        if (inFlight) return inFlight;
+        if (message.proposalStatus !== 'pending') {
+            throw errorWith(
+                message.proposalStatus === 'applying' ? 'WORKFLOW_PROPOSAL_APPLYING' : 'WORKFLOW_PROPOSAL_NOT_PENDING',
+                message.proposalStatus === 'applying'
+                    ? 'This workflow proposal is already being applied. Wait for the current Apply request to finish.'
+                    : 'This workflow proposal is no longer pending.',
+                409
+            );
+        }
+
+        const applyPromise = proposalApplier.apply({ workflowId, userId, proposalMessageId, expectedStateVersion, workflow, message, payload });
+        inFlightProposalApplies.set(applyKey, applyPromise);
+        try {
+            return await applyPromise;
+        } finally {
+            if (inFlightProposalApplies.get(applyKey) === applyPromise) inFlightProposalApplies.delete(applyKey);
+        }
     };
 
     return { getHistory, submitTurn, clearChat, resetContext, decideProposal };
