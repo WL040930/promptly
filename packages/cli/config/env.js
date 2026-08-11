@@ -24,6 +24,21 @@ const getJwtSecret = () => {
     return secret;
 };
 
+const readIntegerEnv = (key, fallback, { min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER } = {}) => {
+    const rawValue = process.env[key];
+    const value = rawValue === undefined || rawValue === '' ? fallback : Number(rawValue);
+    if (!Number.isInteger(value) || value < min || value > max) {
+        throw new Error(`${key} must be an integer between ${min} and ${max}.`);
+    }
+    return value;
+};
+
+const dbPoolMax = readIntegerEnv('DB_POOL_MAX', 5, { min: 1, max: 50 });
+const dbPoolMin = readIntegerEnv('DB_POOL_MIN', 0, { min: 0, max: dbPoolMax });
+const dbPoolAcquireMs = readIntegerEnv('DB_POOL_ACQUIRE_MS', 10_000, { min: 100, max: 300_000 });
+const dbPoolIdleMs = readIntegerEnv('DB_POOL_IDLE_MS', 10_000, { min: 1_000, max: 600_000 });
+const dbIdleInTransactionTimeoutMs = readIntegerEnv('DB_IDLE_IN_TRANSACTION_TIMEOUT_MS', 15_000, { min: 1_000, max: 600_000 });
+
 const aiConfig = createAIConfig();
 
 const env = {
@@ -35,10 +50,18 @@ const env = {
     },
     db: {
         host: requireEnv('DB_HOST'),
-        port: Number(process.env.DB_PORT || 5432),
+        port: readIntegerEnv('DB_PORT', 5432, { min: 1, max: 65_535 }),
         user: requireEnv('DB_USER'),
         password: requireEnv('DB_PASSWORD'),
-        database: requireEnv('DB_DATABASE')
+        database: requireEnv('DB_DATABASE'),
+        applicationName: process.env.DB_APPLICATION_NAME || 'promptly-api',
+        idleInTransactionTimeoutMs: dbIdleInTransactionTimeoutMs,
+        pool: {
+            max: dbPoolMax,
+            min: dbPoolMin,
+            acquire: dbPoolAcquireMs,
+            idle: dbPoolIdleMs
+        }
     },
     jwt: {
         secret: getJwtSecret(),

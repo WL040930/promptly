@@ -1,4 +1,5 @@
 import { Op } from 'sequelize';
+import { getDatabasePoolStats } from '../../db/index.js';
 import TriggerSubscription from '../../models/triggers/TriggerSubscription.js';
 import TriggerEvent from '../../models/triggers/TriggerEvent.js';
 import Workflow from '../../models/workflows/Workflow.js';
@@ -9,12 +10,12 @@ import databaseAdapter from './databaseAdapter.js';
 import gmailAdapter from './gmailTriggerAdapter.js';
 import sheetsAdapter from './googleSheetsTriggerAdapter.js';
 import { syncLiveTriggerBindings } from './workflowTriggerBindingService.js';
+import { createBackgroundWorkerPoller } from '../backgroundWorkerPoller.js';
+import { claimQueueRow, TRIGGER_EVENT_CLAIM_SQL } from '../queueClaim.js';
 
 const MAX_ATTEMPTS = 5;
 const MAX_TRIGGER_DEPTH = 10;
 const adapters = new Map();
-let workerTimer = null;
-let renewalTimer = null;
 
 const registerTriggerAdapter = (provider, adapter) => {
     if (!provider || !adapter?.reconcile || !adapter?.remove) throw new Error(`Invalid trigger adapter for ${provider}.`);
@@ -150,29 +151,7 @@ export const ingestEvent = async ({ provider, eventType, externalEventId, payloa
 };
 
 const claimEvent = async () => {
-    const transaction = await TriggerEvent.sequelize.transaction();
-    try {
-        const event = await TriggerEvent.findOne({
-            where: {
-                status: 'pending',
-                availableAt: { [Op.lte]: new Date() }
-            },
-            order: [['availableAt', 'ASC'], ['createdAt', 'ASC']],
-            transaction,
-            lock: transaction.LOCK.UPDATE,
-            skipLocked: true
-        });
-        if (!event) {
-            await transaction.commit();
-            return null;
-        }
-        await event.update({ status: 'processing', lockedAt: new Date(), attempts: event.attempts + 1 }, { transaction });
-        await transaction.commit();
-        return event;
-    } catch (error) {
-        await transaction.rollback();
-        throw error;
-    }
+    return claimQueueRow({ model: TriggerEvent, query: TRIGGER_EVENT_CLAIM_SQL });
 };
 
 const processPendingEvents = async ({ limit = 10 } = {}) => {
@@ -183,7 +162,7 @@ const processPendingEvents = async ({ limit = 10 } = {}) => {
         try {
             const workflow = await Workflow.findOne({ where: { id: event.workflowId, userId: event.userId, isActive: true } });
             if (!workflow) {
-                await event.update({ status: 'discarded', processedAt: new Date(), lastError: 'Workflow is no longer active.' });
+                await event.update({ status: 'discarded', processedAt: new Date(), lockedAt: null, lastError: 'Workflow is no longer active.' });
             } else {
                 const execution = await executeWorkflow(event.workflowId, event.userId, event.payload, {
                     runType: 'production',
@@ -194,7 +173,7 @@ const processPendingEvents = async ({ limit = 10 } = {}) => {
                     depth: event.depth
                 });
                 if (String(execution.status || '').toLowerCase() === 'failed') throw new Error(execution.error || 'Triggered workflow execution failed.');
-                await event.update({ status: 'succeeded', processedAt: new Date(), lastError: null });
+                await event.update({ status: 'succeeded', processedAt: new Date(), lockedAt: null, lastError: null });
             }
         } catch (error) {
             const attempts = event.attempts;
@@ -202,6 +181,7 @@ const processPendingEvents = async ({ limit = 10 } = {}) => {
             await event.update({
                 status: terminal ? 'dead' : 'pending',
                 availableAt: terminal ? event.availableAt : new Date(Date.now() + (2 ** attempts) * 1000),
+                lockedAt: null,
                 lastError: error.message
             });
         }
@@ -224,9 +204,27 @@ const renewSubscriptions = async () => {
     }
 };
 
+const logWorkerFailure = (label, error) => {
+    console.error(label, error.message, getDatabasePoolStats());
+};
+
+const eventWorker = createBackgroundWorkerPoller({
+    task: processPendingEvents,
+    onError: error => logWorkerFailure('[TriggerRuntime] Worker failed:', error)
+});
+
+const subscriptionRenewalWorker = createBackgroundWorkerPoller({
+    task: renewSubscriptions,
+    intervalMs: 15 * 60 * 1000,
+    maxBackoffMs: 15 * 60 * 1000,
+    onError: error => logWorkerFailure('[TriggerRuntime] Renewal failed:', error)
+});
+
 export const startTriggerRuntime = async () => {
-    if (workerTimer) return;
-    workerTimer = setInterval(() => processPendingEvents().catch(error => console.error('[TriggerRuntime] Worker failed:', error.message)), 1000);
-    renewalTimer = setInterval(() => renewSubscriptions().catch(error => console.error('[TriggerRuntime] Renewal failed:', error.message)), 15 * 60 * 1000);
-    await renewSubscriptions();
+    await eventWorker.start();
+    await subscriptionRenewalWorker.start({ immediate: true });
+};
+
+export const stopTriggerRuntime = async () => {
+    await Promise.all([eventWorker.stop(), subscriptionRenewalWorker.stop()]);
 };

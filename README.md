@@ -52,9 +52,17 @@ PORT=3000
 
 # Database (PostgreSQL)
 DB_HOST=localhost
+DB_PORT=5432
 DB_USER=your_postgres_user
 DB_PASSWORD=your_postgres_password
 DB_DATABASE=promptly_db
+# Persistent Supabase session-pool settings; tune per production replica count.
+DB_POOL_MAX=5
+DB_POOL_MIN=0
+DB_POOL_ACQUIRE_MS=10000
+DB_POOL_IDLE_MS=10000
+DB_IDLE_IN_TRANSACTION_TIMEOUT_MS=15000
+DB_APPLICATION_NAME=promptly-api
 
 # Google OAuth
 GOOGLE_CLIENT_ID=your_google_client_id

@@ -1,15 +1,15 @@
 import DatabaseChangeEvent from '../../models/triggers/DatabaseChangeEvent.js';
 import TriggerSubscription from '../../models/triggers/TriggerSubscription.js';
+import { getDatabasePoolStats } from '../../db/index.js';
 import { ingestEvent } from './triggerRuntime.js';
 import { matchesDatabaseSubscription } from './triggerContracts.js';
+import { createBackgroundWorkerPoller } from '../backgroundWorkerPoller.js';
 
 const WATCHED_TABLES = [
     ['forms', 'forms'],
     ['automations', 'automations'],
     ['automation_runs', 'automationRuns']
 ];
-
-let publisherTimer = null;
 
 export const ensureDatabaseChangeTriggers = async sequelize => {
     await sequelize.query(`
@@ -110,9 +110,15 @@ const publishPendingDatabaseChanges = async ({ limit = 100 } = {}) => {
     return changes.length;
 };
 
+const databaseChangePublisher = createBackgroundWorkerPoller({
+    task: publishPendingDatabaseChanges,
+    onError: error => console.error('[DatabaseTrigger] Publisher failed:', error.message, getDatabasePoolStats())
+});
+
 export const startDatabaseChangePublisher = () => {
-    if (publisherTimer) return;
-    publisherTimer = setInterval(() => publishPendingDatabaseChanges().catch(error => {
-        console.error('[DatabaseTrigger] Publisher failed:', error.message);
-    }), 1000);
+    return databaseChangePublisher.start();
+};
+
+export const stopDatabaseChangePublisher = async () => {
+    await databaseChangePublisher.stop();
 };

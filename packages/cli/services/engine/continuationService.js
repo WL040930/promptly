@@ -1,8 +1,9 @@
 import { Op, where as sqlWhere, fn, cast, json } from 'sequelize';
+import { getDatabasePoolStats } from '../../db/index.js';
 import { User, WorkflowContinuation, AutomationRun, Workflow, FormResponse, Form } from '../../models/index.js';
 import { resumeWorkflowRun } from './executionEngine.js';
-
-let timer = null;
+import { createBackgroundWorkerPoller } from '../backgroundWorkerPoller.js';
+import { claimQueueRow, WAIT_CONTINUATION_CLAIM_SQL } from '../queueClaim.js';
 
 const SENSITIVE_KEY = /(authorization|cookie|password|secret|token|api[-_]?key|private[-_]?key)/i;
 const serviceError = (message, status, code) => Object.assign(new Error(message), { status, code });
@@ -88,26 +89,7 @@ const assertDecisionNote = note => {
 };
 
 const claimDueWait = async () => {
-    const transaction = await WorkflowContinuation.sequelize.transaction();
-    try {
-        const continuation = await WorkflowContinuation.findOne({
-            where: { kind: 'wait', status: 'pending', availableAt: { [Op.lte]: new Date() } },
-            order: [['availableAt', 'ASC'], ['createdAt', 'ASC']],
-            transaction,
-            lock: transaction.LOCK.UPDATE,
-            skipLocked: true
-        });
-        if (!continuation) {
-            await transaction.commit();
-            return null;
-        }
-        await continuation.update({ status: 'resuming' }, { transaction });
-        await transaction.commit();
-        return continuation;
-    } catch (error) {
-        await transaction.rollback();
-        throw error;
-    }
+    return claimQueueRow({ model: WorkflowContinuation, query: WAIT_CONTINUATION_CLAIM_SQL });
 };
 
 const resumeWait = async continuation => {
@@ -127,8 +109,7 @@ const resumeWait = async continuation => {
 };
 
 const claimApproval = async ({ id, userId, decision, note }) => {
-    const transaction = await WorkflowContinuation.sequelize.transaction();
-    try {
+    return WorkflowContinuation.sequelize.transaction(async transaction => {
         const continuation = await WorkflowContinuation.findOne({
             where: { id, userId, kind: 'approval' },
             transaction,
@@ -149,12 +130,8 @@ const claimApproval = async ({ id, userId, decision, note }) => {
         const resolvedAt = new Date();
         const resolution = { decision, ...(note ? { note } : {}), resolvedAt: resolvedAt.toISOString() };
         await continuation.update({ status: 'resuming', resolution, resolvedAt, resolvedBy: userId, lastError: null }, { transaction });
-        await transaction.commit();
         return { continuation, run, resolution };
-    } catch (error) {
-        await transaction.rollback();
-        throw error;
-    }
+    });
 };
 
 export const resolveApprovalForUser = async ({ id, decision, note = null, userId }) => {
@@ -213,13 +190,15 @@ export const processDueContinuations = async ({ limit = 10 } = {}) => {
     return processed;
 };
 
+const continuationWorker = createBackgroundWorkerPoller({
+    task: processDueContinuations,
+    onError: error => console.error('[ContinuationRuntime] Worker failed:', error.message, getDatabasePoolStats())
+});
+
 export const startContinuationRuntime = async () => {
-    if (timer) return;
-    timer = setInterval(() => processDueContinuations().catch(error => console.error('[ContinuationRuntime] Worker failed:', error.message)), 1000);
-    await processDueContinuations();
+    await continuationWorker.start({ immediate: true });
 };
 
-export const stopContinuationRuntime = () => {
-    if (timer) clearInterval(timer);
-    timer = null;
+export const stopContinuationRuntime = async () => {
+    await continuationWorker.stop();
 };

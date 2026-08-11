@@ -10,13 +10,37 @@ const sequelize = new Sequelize(
         port: env.db.port,
         dialect: 'postgres',
         logging: false,
-        pool: {
-            max: 10,    // Stay comfortably under PgBouncer/session-mode limits
-            min: 2,     // Keep 2 connections warm — avoids cold-start latency on intermittent traffic
-            acquire: 30000,
-            idle: 30000 // 30s before eviction — reduces churn under intermittent load
-        }
+        dialectOptions: {
+            application_name: env.db.applicationName,
+            idle_in_transaction_session_timeout: env.db.idleInTransactionTimeoutMs,
+            connectionTimeoutMillis: env.db.pool.acquire,
+            keepAlive: true
+        },
+        pool: env.db.pool
     }
 );
+
+sequelize.addHook('afterConnect', async connection => {
+    await connection.query('SELECT set_config($1, $2, false)', [
+        'application_name',
+        env.db.applicationName
+    ]);
+    await connection.query('SELECT set_config($1, $2, false)', [
+        'idle_in_transaction_session_timeout',
+        `${env.db.idleInTransactionTimeoutMs}ms`
+    ]);
+});
+
+export const getDatabasePoolStats = () => {
+    const pool = sequelize.connectionManager.pool;
+    return {
+        size: pool.size,
+        max: pool.maxSize,
+        min: pool.minSize,
+        available: pool.available,
+        using: pool.using,
+        waiting: pool.waiting
+    };
+};
 
 export default sequelize;

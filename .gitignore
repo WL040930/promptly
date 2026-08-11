@@ -157,3 +157,4 @@ scripts/
 tests/
 tmp/
 .venv-ppt/
+.codex-tmp-fyp/
