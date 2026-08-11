@@ -70,9 +70,24 @@ export const compactFormSchema = (schema = {}) => {
         title: clampText(title, 255),
         description: clampText(description, 1000),
         settings: compactSettings,
-        fields: Array.isArray(fields) ? fields.map(compactField) : []
+        fields: Array.isArray(fields) ? fields.filter(field => field && !field.deleted).map(compactField) : []
     };
 };
+
+/**
+ * Return the form shape that the AI is allowed to edit.
+ *
+ * The editor keeps deleted fields in the persisted array as soft-deleted
+ * records so existing responses remain addressable. They are not part of the
+ * form a user can see or edit, so they must not be presented to the planner,
+ * worker, or proposal preview as active fields.
+ */
+export const activeFormSchemaForAI = (schema = {}) => ({
+    ...schema,
+    fields: Array.isArray(schema?.fields)
+        ? schema.fields.filter(field => field && !field.deleted).map(field => ({ ...field }))
+        : []
+});
 
 export const getActiveQuestionCount = (schema = {}) => (Array.isArray(schema.fields) ? schema.fields : [])
     .filter(countsAsQuestion)
@@ -249,7 +264,7 @@ export const buildWorkerContext = ({ schema, requirements = [], cardinality = nu
     'If Current Form Schema.title is "Untitled Form", treat this as a new form. Include an update_meta patch with a concise, non-empty title when the request identifies the form; otherwise keep the safe title.',
     '',
     'Existing Field IDs (these are the only valid targets for update/remove):',
-    JSON.stringify((Array.isArray(schema.fields) ? schema.fields : []).map(field => field.id).filter(Boolean)),
+    JSON.stringify((Array.isArray(schema.fields) ? schema.fields : []).filter(field => field && !field.deleted).map(field => field.id).filter(Boolean)),
     'The form ID is not a field ID. Never use it as a patch id.',
     'Every add patch must include a complete field object with non-empty id, type, and label.',
     'For layout headings, use type "heading" and store the visible heading text in label. Headings are not questions.',
@@ -395,7 +410,7 @@ export const buildWorkerRepairContext = ({ schema, requirements = [], response, 
     'If Current Form Schema.title is "Untitled Form", treat this as a new form. Include an update_meta patch with a concise, non-empty title when the request identifies the form; otherwise keep the safe title.',
     '',
     'Existing Field IDs (these are the only valid targets for update/remove):',
-    JSON.stringify((Array.isArray(schema.fields) ? schema.fields : []).map(field => field.id).filter(Boolean)),
+    JSON.stringify((Array.isArray(schema.fields) ? schema.fields : []).filter(field => field && !field.deleted).map(field => field.id).filter(Boolean)),
     'The form ID is not a field ID. Never use it as a patch id. If a requested field is not listed, use an add patch instead of update/remove.',
     'Repair every listed issue. Every add patch must include a complete field object with non-empty id, type, and label. Do not repeat an omitted label.',
     `Supported form-level setting keys: ${FORM_SETTINGS_KEYS.join(', ')}. Only use these keys in update_settings; remove unsupported optional settings instead of inventing replacements.`,

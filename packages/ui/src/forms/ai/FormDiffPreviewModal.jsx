@@ -70,7 +70,7 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal, onApply,
         const list = [];
         
         // 1. Render all proposed fields in order
-        for (const field of (proposedSchema.fields || [])) {
+        for (const field of (proposedSchema.fields || []).filter(field => !field?.deleted)) {
             const patch = patches.find(p => (p.op === 'update' && p.id === field.id) || (p.op === 'add' && p.field?.id === field.id));
             if (patch) {
                 list.push({ ...field, _diffStatus: patch.op === 'add' ? 'added' : 'updated' });
@@ -82,8 +82,13 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal, onApply,
         // 2. Append removed fields at the end so they are visible
         const removes = patches.filter(p => p.op === 'remove');
         for (const patch of removes) {
-            const originalField = currentForm?.fields?.find(f => f.id === patch.id) || { id: patch.id, type: 'text', label: patch.label || 'Removed Field' };
-            list.push({ ...originalField, _diffStatus: 'removed' });
+            const originalField = currentForm?.fields?.find(f => f.id === patch.id);
+            // A proposal created before a manual delete can still carry a
+            // remove patch for that field. It is already absent from the
+            // user-visible form, so do not render it as a second removal.
+            if (originalField?.deleted) continue;
+            const visibleField = originalField || { id: patch.id, type: 'text', label: patch.label || 'Removed Field' };
+            list.push({ ...visibleField, _diffStatus: 'removed' });
         }
 
         return list;

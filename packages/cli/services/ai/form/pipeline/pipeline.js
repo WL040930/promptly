@@ -2,7 +2,8 @@ import { normalizeClarificationMode } from '../../../../../shared/agentContract.
 import {
     buildPlannerContext,
     buildWorkerContext,
-    getQuestionCardinality
+    getQuestionCardinality,
+    activeFormSchemaForAI
 } from '../context/formContext.js';
 import { validatePlannerResult } from '../domain/formSchemaValidator.js';
 import { evaluatePlannerOutcome } from '../domain/formClarificationPolicy.js';
@@ -63,6 +64,7 @@ export const generateFormFromPrompt = async (
     options = {}
 ) => {
     try {
+        const aiSchema = activeFormSchemaForAI(currentSchema || {});
         const provider = options.provider || null;
         const budget = createRequestBudget();
         const reportProviderActivity = event => {
@@ -80,7 +82,7 @@ export const generateFormFromPrompt = async (
             });
         };
         const cardinality = getQuestionCardinality({
-            schema: currentSchema || {},
+            schema: aiSchema,
             prompt,
             chatHistory
         });
@@ -95,7 +97,7 @@ export const generateFormFromPrompt = async (
         const buildPlannerContents = (forceDecision = false) => [{
             role: 'user',
             parts: [{ text: buildPlannerContext({
-                schema: currentSchema || {},
+                schema: aiSchema,
                 chatHistory,
                 prompt,
                 clarificationMode: normalizeClarificationMode(options.clarificationMode),
@@ -229,6 +231,9 @@ export const generateFormFromPrompt = async (
                 status: 'building', phase: 'draft', label: 'Drafting form changes',
                 message: 'Preparing form changes…', detail: `${(plannerResult.requirements || []).length} requested requirement${(plannerResult.requirements || []).length === 1 ? '' : 's'} are being turned into form changes.`
             });
+            // Keep soft-deleted field records in the patch-engine source so
+            // their IDs remain reserved, while the AI-facing contexts above
+            // only expose fields the user can currently see.
             const sourceSchema = currentSchema || {};
             const needsTitlePatch = !hasUsableFormTitle(sourceSchema);
             // New-form turns start with an empty schema. Give the patch engine a

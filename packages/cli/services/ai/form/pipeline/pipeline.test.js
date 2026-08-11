@@ -77,6 +77,51 @@ test('new forms remain valid when the worker returns field-only patches', async 
     assert.equal(progress.find(event => event.status === 'plan_ready')?.outcomeKind, 'proposal');
 });
 
+test('proposal generation excludes fields deleted in the editor', async () => {
+    const { generateFormFromPrompt } = await import('./pipeline.js');
+    const provider = {
+        async generateContent(contents, options) {
+            const context = contents?.[0]?.parts?.[0]?.text || '';
+            assert.doesNotMatch(context, /old_email|Old email/);
+            if (options.operation === 'form:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Add a phone field.',
+                    requirements: [{ id: 'req_phone', description: 'Collect a phone number.' }],
+                    memoryUpdate: { action: 'none' }
+                }) };
+            }
+            if (options.operation === 'form:worker') {
+                return { text: JSON.stringify({
+                    patches: [{ op: 'add', field: { id: 'phone', type: 'phone', label: 'Phone' } }]
+                }) };
+            }
+            assert.equal(options.operation, 'form:verifier');
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Add a phone field.',
+        {
+            id: 'form_1',
+            title: 'Contact form',
+            description: '',
+            settings: {},
+            fields: [
+                { id: 'name', type: 'text', label: 'Name' },
+                { id: 'old_email', type: 'email', label: 'Old email', deleted: true }
+            ]
+        },
+        [],
+        null,
+        { provider }
+    );
+
+    assert.deepEqual(result.schema.fields.filter(field => !field.deleted).map(field => field.id), ['name', 'phone']);
+    assert.equal(result.schema.fields.find(field => field.id === 'old_email')?.deleted, true);
+});
+
 test('decide_everything resolves a section-heading clarification and rejects unrelated field scope', async () => {
     const { generateFormFromPrompt } = await import('./pipeline.js');
     const outputs = [

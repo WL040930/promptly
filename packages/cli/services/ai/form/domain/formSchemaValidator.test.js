@@ -62,6 +62,24 @@ test('validateFormPatches identifies when the form ID is used as a field target'
     assert.ok(issues.some(issue => issue.code === 'FORM_ID_USED_AS_FIELD_ID'));
 });
 
+test('validateFormPatches keeps soft-deleted field IDs reserved and non-editable', () => {
+    const schema = {
+        ...form,
+        fields: [
+            ...form.fields,
+            { id: 'removed_email', type: 'email', label: 'Removed email', deleted: true }
+        ]
+    };
+    const issues = validateFormPatches(schema, [
+        { op: 'add', field: { id: 'removed_email', type: 'email', label: 'New email' } },
+        { op: 'update', id: 'removed_email', updates: { required: true } },
+        { op: 'remove', id: 'removed_email' }
+    ]);
+
+    assert.ok(issues.some(issue => issue.code === 'DUPLICATE_FIELD_ID'));
+    assert.equal(issues.filter(issue => issue.code === 'UNKNOWN_FIELD').length, 2);
+});
+
 test('validateFormPatches accepts safe form settings updates and rejects unknown settings', () => {
     const validIssues = validateFormPatches({ id: 'form_1', fields: [], settings: {} }, [
         { op: 'update_settings', updates: { acceptingResponses: true } }

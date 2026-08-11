@@ -13,6 +13,7 @@ import {
     getActiveQuestionCount,
     getMemoryUpdate,
     getQuestionCardinality,
+    activeFormSchemaForAI,
     readFormMemory,
     validateQuestionCardinality
 } from './formContext.js';
@@ -66,6 +67,26 @@ test('buildPlannerContext keeps recent conversation bounded and separates memory
     assert.equal(compact.fields[0].internalNotes, undefined);
     assert.equal(compact.fields[0].description.length, 300);
     assert.deepEqual(compact.fields[0].choices, ['One']);
+    assert.deepEqual(compactFormSchema({ fields: [{ id: 'removed', type: 'text', label: 'Removed', deleted: true }] }).fields, []);
+});
+
+test('AI form context stays aligned with fields deleted in the editor', () => {
+    const schema = {
+        title: 'Application',
+        description: '',
+        settings: {},
+        fields: [
+            { id: 'name', type: 'text', label: 'Name' },
+            { id: 'old_email', type: 'email', label: 'Old email', deleted: true }
+        ]
+    };
+
+    const aiSchema = activeFormSchemaForAI(schema);
+
+    assert.deepEqual(aiSchema.fields.map(field => field.id), ['name']);
+    assert.equal(aiSchema.fields.some(field => field.deleted), false);
+    assert.equal(schema.fields.length, 2);
+    assert.equal(schema.fields[1].deleted, true);
 });
 
 test('worker contexts expose the shared form settings contract', () => {

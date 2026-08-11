@@ -148,7 +148,7 @@ const normalizeOptionalSettings = patches => {
 };
 
 const normalizePlacementAnchors = (patches, schema) => {
-    const availableFieldIds = new Set((schema?.fields || []).map(field => field?.id).filter(Boolean));
+    const availableFieldIds = new Set((schema?.fields || []).filter(field => field && !field.deleted).map(field => field.id).filter(Boolean));
     const warnings = [];
     const normalized = (Array.isArray(patches) ? patches : []).map((patch, index) => {
         if (patch?.op !== 'add') return patch;

@@ -4,6 +4,10 @@ import { useGSAP } from '@gsap/react';
 
 const ToastContext = createContext(null);
 
+// Keep notifications above the highest modal layer currently used by the UI
+// (the workflow confirmation layer is 100300).
+const TOAST_Z_INDEX = 100400;
+
 export const useToast = () => {
     const context = useContext(ToastContext);
     if (!context) {
@@ -40,7 +44,10 @@ export const ToastProvider = ({ children }) => {
 
 const ToastContainer = ({ toasts, removeToast }) => {
     return (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 flex flex-col gap-3 z-[100] pointer-events-none">
+        <div
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 flex flex-col gap-3 pointer-events-none"
+            style={{ zIndex: TOAST_Z_INDEX }}
+        >
             {toasts.map(toast => (
                 <ToastItem key={toast.id} toast={toast} removeToast={removeToast} />
             ))}

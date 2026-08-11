@@ -212,7 +212,10 @@ export const validateFormPatches = (currentSchema, patches = []) => {
     if (patches.length > FORM_MAX_PATCHES) issues.push(issue('TOO_MANY_PATCHES', 'patches', `A proposal cannot contain more than ${FORM_MAX_PATCHES} patches.`));
 
     const fields = Array.isArray(currentSchema?.fields) ? currentSchema.fields : [];
-    const fieldIds = new Set(fields.map(field => field.id));
+    const fieldIds = new Set(fields.filter(field => field && !field.deleted).map(field => field.id));
+    // Soft-deleted IDs remain reserved even though they are not valid update
+    // or remove targets in the user-visible form.
+    const reservedFieldIds = new Set(fields.map(field => field?.id).filter(Boolean));
     const addedIds = new Set();
     const touchedIds = new Set();
 
@@ -222,8 +225,11 @@ export const validateFormPatches = (currentSchema, patches = []) => {
         if (!patch || typeof patch !== 'object') return;
 
         if (patch.op === 'add' && patch.field?.id) {
-            if (fieldIds.has(patch.field.id) || addedIds.has(patch.field.id)) issues.push(issue('DUPLICATE_FIELD_ID', `${path}.field.id`, `Field ID '${patch.field.id}' already exists.`));
-            addedIds.add(patch.field.id);
+            if (reservedFieldIds.has(patch.field.id) || addedIds.has(patch.field.id)) {
+                issues.push(issue('DUPLICATE_FIELD_ID', `${path}.field.id`, `Field ID '${patch.field.id}' already exists.`));
+            } else {
+                addedIds.add(patch.field.id);
+            }
         }
         if (patch.op === 'add') {
             const anchor = patch.insertAfter || patch.insertBefore;
