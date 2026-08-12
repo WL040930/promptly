@@ -26,7 +26,9 @@ const markerFor = patch => patch.op === 'add' ? '+' : patch.op === 'remove' ? '�
 
 export default function FormProposalWidget({ proposal, status, summary, tokenUsage, onIgnore, onPreview, onPreviewUpdate, onRegenerate, rejecting }) {
     const isAccepted = isAcceptedProposalStatus(status);
-    const locked = isAccepted || isRejectedProposalStatus(status) || isStaleProposalStatus(status);
+    const isRejected = isRejectedProposalStatus(status);
+    const isStale = isStaleProposalStatus(status);
+    const locked = isAccepted || isRejected || isStale;
     const [selected, setSelected] = useState({});
     const [expanded, setExpanded] = useState({});
     const [showAppliedDetails, setShowAppliedDetails] = useState(false);
@@ -78,6 +80,22 @@ export default function FormProposalWidget({ proposal, status, summary, tokenUsa
         {proposal?.work && <div className="border-t border-slate-100 bg-slate-50/40 px-4 py-3"><AssistantWorkDetails work={proposal.work} tokenUsage={tokenUsage} /></div>}
     </section>;
 
+    if (isRejected) return <section className="mt-2 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5">
+        <div className="flex items-center gap-3 px-4 py-3.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500"><X size={17} strokeWidth={3} /></span>
+            <span className="min-w-0 flex-1"><span className="block text-[10px] font-extrabold uppercase tracking-[0.14em] text-slate-600">Proposal ignored</span><span className="mt-0.5 block truncate text-sm font-extrabold text-slate-900">{proposal?.schema?.title || 'Form changes'}</span><span className="mt-0.5 block text-xs text-slate-500">No form changes were applied.</span></span>
+        </div>
+        {proposal?.work && <div className="border-t border-slate-100 bg-slate-50/40 px-4 py-3"><AssistantWorkDetails work={proposal.work} tokenUsage={tokenUsage} /></div>}
+    </section>;
+
+    if (isStale) return <section className="mt-2 w-full overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm shadow-amber-900/5">
+        <div className="flex items-center gap-3 px-4 py-3.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-amber-200 bg-amber-50 text-amber-700"><X size={17} strokeWidth={3} /></span>
+            <span className="min-w-0 flex-1"><span className="block text-[10px] font-extrabold uppercase tracking-[0.14em] text-amber-700">Proposal outdated</span><span className="mt-0.5 block truncate text-sm font-extrabold text-slate-900">{proposal?.schema?.title || 'Form changes'}</span><span className="mt-0.5 block text-xs text-slate-500">Generate a new suggestion before applying changes.</span></span>
+        </div>
+        {proposal?.work && <div className="border-t border-slate-100 bg-slate-50/40 px-4 py-3"><AssistantWorkDetails work={proposal.work} tokenUsage={tokenUsage} /></div>}
+    </section>;
+
     return <section className="w-full overflow-hidden rounded-2xl border border-violet-100 bg-white shadow-sm shadow-slate-900/5">
         <div className="border-b border-violet-100 bg-violet-50/45 px-4 py-3.5">
             <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-violet-700">Review form changes</p><h3 className="mt-1 text-sm font-extrabold text-slate-900">{proposal?.schema?.title || 'Untitled form'}</h3></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${isUnverified ? 'bg-amber-100 text-amber-800' : locked ? 'bg-slate-100 text-slate-600' : 'bg-violet-600 text-white'}`}>{isUnverified ? 'Review carefully' : locked ? 'Locked' : 'Ready to review'}</span></div>
@@ -95,6 +113,6 @@ export default function FormProposalWidget({ proposal, status, summary, tokenUsa
             })}</div></div>)}</div>
             {proposal?.work && <div className="mt-4"><AssistantWorkDetails work={proposal.work} tokenUsage={tokenUsage} /></div>}
         </div>
-        {!locked && <footer className="border-t border-violet-100 bg-slate-50/60 p-3.5"><div className="flex gap-2"><Button variant="ghost" size="sm" className="flex-1 whitespace-nowrap" onClick={onIgnore} isLoading={rejecting} loadingText="Discarding…" iconLeft={<X size={15} />}>Discard</Button>{isUnverified && <Button variant="outline" size="sm" className="flex-1 whitespace-nowrap" onClick={onRegenerate}>Generate new</Button>}<Button variant="primary" size="sm" className="flex-[1.5] whitespace-nowrap" disabled={selectedCount === 0} onClick={() => onPreview(filtered())} iconLeft={<Eye size={15} />}>Preview {selectedCount || ''} selected</Button></div></footer>}
+        {!locked && <footer className="border-t border-violet-100 bg-slate-50/60 p-3.5"><div className="flex gap-2"><Button variant="ghost" size="sm" className="flex-1 whitespace-nowrap" onClick={onIgnore} isLoading={rejecting} loadingText="Ignoring…" iconLeft={<X size={15} />}>Ignore</Button>{isUnverified && <Button variant="outline" size="sm" className="flex-1 whitespace-nowrap" onClick={onRegenerate}>Generate new</Button>}<Button variant="primary" size="sm" className="flex-[1.5] whitespace-nowrap" disabled={selectedCount === 0} onClick={() => onPreview(filtered())} iconLeft={<Eye size={15} />}>Preview {selectedCount || ''} selected</Button></div></footer>}
     </section>;
 }

@@ -18,6 +18,8 @@ export default function WorkflowAIAssistant({ workflow, onBeforeSend, initialPro
                 setInput={assistant.setInput}
                 isTyping={assistant.isTyping}
                 isLoadingHistory={assistant.isLoadingHistory}
+                hasMore={assistant.hasMore}
+                loadMoreHistory={assistant.loadMoreHistory}
                 handleSend={assistant.handleSend}
                 handleApply={assistant.handleApply}
                 handleIgnore={assistant.handleIgnore}

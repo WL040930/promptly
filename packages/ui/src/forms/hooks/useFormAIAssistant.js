@@ -355,7 +355,7 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
                     ? { ...message, payload: result.message?.payload || message.payload, proposalStatus: result.message?.proposalStatus || 'rejected' }
                     : message)
             })));
-            toast.success('Proposal rejected.');
+            toast.success('Proposal ignored.');
         } catch (error) {
             toast.error(error.message || 'Failed to reject proposal.');
         } finally {
