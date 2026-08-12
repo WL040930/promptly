@@ -21,11 +21,20 @@ import { isAssistantTurnStale } from '../../assistant/assistantTurnLiveness.js';
 
 const MAX_HISTORY = 100;
 const AI_CONTEXT_HISTORY = 30;
+export const DEFAULT_PROPOSAL_APPLY_STALE_AFTER_MS = 5 * 60 * 1000;
 
 const makeId = prefix => `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`;
 const toWorkflowJson = workflow => workflow?.toJSON ? workflow.toJSON() : workflow;
 const publicMessage = message => assistantMessageToJSON(message);
 const publicState = state => state?.toJSON?.() || null;
+
+const proposalApplyStartedAt = message => message?.payload?.apply?.startedAt || message?.updatedAt || null;
+
+const isProposalApplyStale = (message, { now = Date.now(), staleAfterMs = DEFAULT_PROPOSAL_APPLY_STALE_AFTER_MS } = {}) => {
+    if (message?.proposalStatus !== 'applying') return false;
+    const startedAt = new Date(proposalApplyStartedAt(message)).getTime();
+    return Number.isFinite(startedAt) && now - startedAt >= staleAfterMs;
+};
 
 const errorWith = (code, message, status = 400, details = {}) => {
     const error = new Error(message);
@@ -103,7 +112,8 @@ export const createWorkflowAssistant = ({
     saveDraft = saveAutomationDraft,
     spreadsheetService = googleSpreadsheetService,
     now = () => new Date(),
-    idFactory = makeId
+    idFactory = makeId,
+    proposalApplyStaleAfterMs = DEFAULT_PROPOSAL_APPLY_STALE_AFTER_MS
 } = {}) => {
     const findWorkflow = async (workflowId, userId, options = {}) => {
         const workflow = await models.Workflow.findOne({ where: { id: workflowId, userId }, ...options });
@@ -154,6 +164,34 @@ export const createWorkflowAssistant = ({
         }, { transaction });
         return true;
     };
+    const recoverStaleProposal = async ({ state, transaction, proposalMessageId = state.activeProposalMessageId }) => {
+        if (!proposalMessageId) return { recovered: false };
+        const message = await models.AssistantMessage.findOne({
+            where: { id: proposalMessageId, threadId: state.threadId, kind: 'workflow_proposal' },
+            transaction,
+            ...(transaction?.LOCK?.UPDATE ? { lock: transaction.LOCK.UPDATE } : {})
+        });
+        if (!isProposalApplyStale(message, { now: now().getTime(), staleAfterMs: proposalApplyStaleAfterMs })) return { recovered: false };
+
+        const payload = message.payload || {};
+        const recoveredAt = now().toISOString();
+        const recoveredPayload = {
+            ...payload,
+            apply: {
+                ...(payload.apply || {}),
+                status: 'recovered',
+                recoveredAt,
+                detail: 'The previous Apply request stopped before completion. The proposal can be retried safely.'
+            }
+        };
+        await message.update({ proposalStatus: 'pending', payload: recoveredPayload }, { transaction });
+        await state.update({
+            phase: 'awaiting_proposal',
+            activeWork: null,
+            openClarification: null
+        }, { transaction });
+        return { recovered: true, payload: recoveredPayload };
+    };
     const attachedForm = async (workflow, userId, transaction, nodes = workflow.nodes || []) => {
         const formId = formIdForWorkflowNodes(nodes);
         return formId ? models.Form.findOne({ where: { id: formId, userId }, transaction }) : null;
@@ -174,6 +212,7 @@ export const createWorkflowAssistant = ({
         return db.transaction(async transaction => {
             const state = await ensureState({ workflow, transaction });
             await recoverStaleTurn({ state, workflow, transaction });
+            await recoverStaleProposal({ state, transaction });
             const where = { threadId: state.threadId };
             if (before) {
                 const cursor = await models.AssistantMessage.findOne({ where: { id: before, threadId: state.threadId }, transaction });
@@ -353,6 +392,16 @@ export const createWorkflowAssistant = ({
         const applyKey = `${userId}:${workflowId}:${proposalMessageId}`;
         const inFlight = inFlightProposalApplies.get(applyKey);
         if (inFlight) return inFlight;
+        if (message.proposalStatus === 'applying') {
+            const recovery = await db.transaction(async transaction => {
+                const state = await ensureState({ workflow, transaction });
+                return recoverStaleProposal({ state, transaction, proposalMessageId });
+            });
+            if (recovery.recovered) {
+                message.proposalStatus = 'pending';
+                message.payload = recovery.payload;
+            }
+        }
         if (message.proposalStatus !== 'pending') {
             throw errorWith(
                 message.proposalStatus === 'applying' ? 'WORKFLOW_PROPOSAL_APPLYING' : 'WORKFLOW_PROPOSAL_NOT_PENDING',

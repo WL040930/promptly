@@ -5,7 +5,6 @@ import { Form, FormResponse } from './forms/index.js';
 import { Workflow, WorkflowVersion } from './workflows/index.js';
 import { AutomationRun, EmailDelivery, WorkflowContinuation, Asset, DashboardRunMetric } from './execution/index.js';
 import { TriggerSubscription, TriggerEvent, DatabaseChangeEvent, WorkflowTriggerBinding } from './triggers/index.js';
-import { KnowledgeBase, KnowledgeDocument, KnowledgeChunk } from './knowledge/index.js';
 
 Connection.belongsTo(User, { foreignKey: 'userId', as: 'user', onDelete: 'CASCADE' });
 User.hasMany(Connection, { foreignKey: 'userId', as: 'connections', onDelete: 'CASCADE' });
@@ -44,13 +43,6 @@ WorkflowContinuation.belongsTo(Workflow, { foreignKey: 'workflowId', as: 'workfl
 WorkflowContinuation.belongsTo(User, { foreignKey: 'resolvedBy', as: 'resolver', onDelete: 'SET NULL' });
 Asset.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 User.hasMany(Asset, { foreignKey: 'userId', as: 'assets', onDelete: 'CASCADE' });
-KnowledgeBase.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-User.hasMany(KnowledgeBase, { foreignKey: 'userId', as: 'knowledgeBases', onDelete: 'CASCADE' });
-KnowledgeDocument.belongsTo(KnowledgeBase, { foreignKey: 'knowledgeBaseId', as: 'knowledgeBase', onDelete: 'CASCADE' });
-KnowledgeBase.hasMany(KnowledgeDocument, { foreignKey: 'knowledgeBaseId', as: 'documents', onDelete: 'CASCADE' });
-KnowledgeChunk.belongsTo(KnowledgeDocument, { foreignKey: 'documentId', as: 'document', onDelete: 'CASCADE' });
-KnowledgeDocument.hasMany(KnowledgeChunk, { foreignKey: 'documentId', as: 'chunks', onDelete: 'CASCADE' });
-
 // --- Assistant associations ---
 AssistantThread.belongsTo(User, { foreignKey: 'userId', as: 'user', onDelete: 'CASCADE' });
 User.hasMany(AssistantThread, { foreignKey: 'userId', as: 'assistantThreads', onDelete: 'CASCADE' });
@@ -78,9 +70,6 @@ export {
     DashboardRunMetric,
     WorkflowContinuation,
     Asset,
-    KnowledgeBase,
-    KnowledgeDocument,
-    KnowledgeChunk,
     AssistantThread,
     AssistantMessage,
     WorkflowVersion,

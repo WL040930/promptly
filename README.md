@@ -81,7 +81,7 @@ JWT_SECRET=your_super_secret_jwt_key
 # Storage
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your_supabase_anon_key
-# Required for private workflow assets, Drive transfers, and knowledge-base files.
+# Required for private workflow assets and Drive transfers.
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 
 # AI Integration
@@ -106,7 +106,7 @@ AI_DEFAULT_MODEL=nvidia/nemotron-3-super-120b-a12b:free
 # Or use one finite cap for every task (overrides per-task defaults):
 # AI_MAX_COMPLETION_TOKENS=4096
 # GEMINI_API_KEY=your_gemini_api_key
-# Required for managed transcription and knowledge-base embeddings.
+# Required for managed transcription.
 OPENAI_API_KEY=your_openai_api_key
 ```
 
@@ -118,7 +118,7 @@ OPENAI_API_KEY=your_openai_api_key
 npm run db:bootstrap
 ```
 
-It creates the Sequelize model tables and indexes, then provisions the PostgreSQL-only pieces that models cannot express (pgvector, database-change triggers, and storage buckets/policy). It is intentionally separate from server startup.
+It creates the Sequelize model tables and indexes, then provisions the PostgreSQL-only pieces that models cannot express (database-change triggers and storage buckets/policy). It is intentionally separate from server startup.
 
 ### 4. Running the Application
 

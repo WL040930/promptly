@@ -218,24 +218,30 @@ test('pipeline unwraps an exact form resource ID accidentally wrapped as provisi
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
                 plannerCalls++;
-                return { text: JSON.stringify(plannerCalls === 1
-                    ? { type: 'inspect_form', formId: 'form_1' }
-                    : {
-                        type: 'plan_complete',
-                        summary: 'Send a thank-you email after owner approval.',
-                        requirements: [{ id: 'req_1', description: 'Send a thank-you email to the respondent after approval.' }],
-                        selectedNodeKeys: ['trigger:form-submission', 'logic:approval', 'action:email'],
-                        capabilities: ['owner_approval', 'respondent_confirmation']
-                    }) };
+                return {
+                    text: JSON.stringify(plannerCalls === 1
+                        ? { type: 'inspect_form', formId: 'form_1' }
+                        : {
+                            type: 'plan_complete',
+                            summary: 'Send a thank-you email after owner approval.',
+                            requirements: [{ id: 'req_1', description: 'Send a thank-you email to the respondent after approval.' }],
+                            selectedNodeKeys: ['trigger:form-submission', 'logic:approval', 'action:email'],
+                            capabilities: ['owner_approval', 'respondent_confirmation']
+                        })
+                };
             }
             if (options.operation === 'workflow:worker') {
-                return { text: JSON.stringify({ operations: [
-                    { op: 'create_node', node: { ref: 'form', nodeKey: 'trigger:form-submission', title: 'Form submitted', config: { formId: { $provision: 'form_1' } } } },
-                    { op: 'create_node', node: { ref: 'approval', nodeKey: 'logic:approval', title: 'Owner approval', config: {}, afterNodeRef: 'form' } },
-                    { op: 'create_node', node: { ref: 'email', nodeKey: 'action:email', title: 'Thank you', config: { to: { $binding: 'form_field_1' }, subject: 'Thank you' }, afterNodeRef: 'approval' } },
-                    { op: 'connect', from: { nodeRef: 'form', handle: 'event' }, to: { nodeRef: 'approval', handle: 'event' } },
-                    { op: 'connect', from: { nodeRef: 'approval', handle: 'approved' }, to: { nodeRef: 'email', handle: 'event' } }
-                ] }) };
+                return {
+                    text: JSON.stringify({
+                        operations: [
+                            { op: 'create_node', node: { ref: 'form', nodeKey: 'trigger:form-submission', title: 'Form submitted', config: { formId: { $provision: 'form_1' } } } },
+                            { op: 'create_node', node: { ref: 'approval', nodeKey: 'logic:approval', title: 'Owner approval', config: {}, afterNodeRef: 'form' } },
+                            { op: 'create_node', node: { ref: 'email', nodeKey: 'action:email', title: 'Thank you', config: { to: { $binding: 'form_field_1' }, subject: 'Thank you' }, afterNodeRef: 'approval' } },
+                            { op: 'connect', from: { nodeRef: 'form', handle: 'event' }, to: { nodeRef: 'approval', handle: 'event' } },
+                            { op: 'connect', from: { nodeRef: 'approval', handle: 'approved' }, to: { nodeRef: 'email', handle: 'event' } }
+                        ]
+                    })
+                };
             }
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
         }
@@ -293,9 +299,11 @@ test('pipeline performs one safe lookup for another owned form before replying',
     const provider = {
         async generateContent(contents) {
             prompts.push(contents[0].parts[0].text);
-            return { text: JSON.stringify(prompts.length === 1
-                ? { type: 'inspect_form', formId: 'form_other' }
-                : { type: 'reply', message: 'The other form collects a Work email field.' }) };
+            return {
+                text: JSON.stringify(prompts.length === 1
+                    ? { type: 'inspect_form', formId: 'form_other' }
+                    : { type: 'reply', message: 'The other form collects a Work email field.' })
+            };
         }
     };
 
@@ -329,25 +337,31 @@ test('pipeline carries an inspected form into the worker that creates its trigge
     const provider = {
         async generateContent(contents, options) {
             if (options.operation === 'workflow:planner') {
-                return { text: JSON.stringify(
-                    contents[0].parts[0].text.includes('"label":"Email address"')
-                        ? {
-                            type: 'plan_complete',
-                            summary: 'Send a thank-you email after form submission.',
-                            requirements: [{ id: 'req_1', description: 'Send a thank-you email to the respondent.' }],
-                            selectedNodeKeys: ['trigger:form-submission', 'action:email'],
-                            capabilities: ['respondent_confirmation']
-                        }
-                        : { type: 'inspect_form', formId: 'form_1' }
-                ) };
+                return {
+                    text: JSON.stringify(
+                        contents[0].parts[0].text.includes('"label":"Email address"')
+                            ? {
+                                type: 'plan_complete',
+                                summary: 'Send a thank-you email after form submission.',
+                                requirements: [{ id: 'req_1', description: 'Send a thank-you email to the respondent.' }],
+                                selectedNodeKeys: ['trigger:form-submission', 'action:email'],
+                                capabilities: ['respondent_confirmation']
+                            }
+                            : { type: 'inspect_form', formId: 'form_1' }
+                    )
+                };
             }
             if (options.operation === 'workflow:worker') {
                 workerPrompt = contents[0].parts[0].text;
-                return { text: JSON.stringify({ operations: [
-                    { op: 'create_node', node: { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Promptly Form', config: { formId: 'form_1' } } },
-                    { op: 'create_node', node: { ref: 'email', nodeKey: 'action:email', title: 'Send thank-you email', config: { to: { $binding: 'form_field_1' }, subject: 'Thank you' }, afterNodeRef: 'form_trigger' } },
-                    { op: 'connect', from: { nodeRef: 'form_trigger', handle: 'event' }, to: { nodeRef: 'email', handle: 'event' } }
-                ] }) };
+                return {
+                    text: JSON.stringify({
+                        operations: [
+                            { op: 'create_node', node: { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Promptly Form', config: { formId: 'form_1' } } },
+                            { op: 'create_node', node: { ref: 'email', nodeKey: 'action:email', title: 'Send thank-you email', config: { to: { $binding: 'form_field_1' }, subject: 'Thank you' }, afterNodeRef: 'form_trigger' } },
+                            { op: 'connect', from: { nodeRef: 'form_trigger', handle: 'event' }, to: { nodeRef: 'email', handle: 'event' } }
+                        ]
+                    })
+                };
             }
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
         }
@@ -454,14 +468,16 @@ test('pipeline compiles a direct_plan using at most 2 AI calls (planner + verifi
         async generateContent(_contents, options) {
             callCount++;
             if (options.operation === 'workflow:planner') {
-                return { text: JSON.stringify({
-                    type: 'direct_plan',
-                    summary: 'Update the email subject.',
-                    requirements: [{ id: 'req_1', description: 'Set the email subject to "Hello".' }],
-                    selectedNodeKeys: ['trigger:webhook', 'action:email'],
-                    capabilities: [],
-                    operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { subject: 'Hello' } } }]
-                }) };
+                return {
+                    text: JSON.stringify({
+                        type: 'direct_plan',
+                        summary: 'Update the email subject.',
+                        requirements: [{ id: 'req_1', description: 'Set the email subject to "Hello".' }],
+                        selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                        capabilities: [],
+                        operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { subject: 'Hello' } } }]
+                    })
+                };
             }
             // verifier
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
@@ -524,18 +540,22 @@ test('pipeline calls worker and verifier for a plan_complete and returns a propo
     const provider = {
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
-                return { text: JSON.stringify({
-                    type: 'plan_complete',
-                    summary: 'Set email recipient.',
-                    requirements: [{ id: 'req_1', description: 'Set email to field to user@example.com.' }],
-                    selectedNodeKeys: ['trigger:webhook', 'action:email'],
-                    capabilities: []
-                }) };
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Set email recipient.',
+                        requirements: [{ id: 'req_1', description: 'Set email to field to user@example.com.' }],
+                        selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                        capabilities: []
+                    })
+                };
             }
             if (options.operation === 'workflow:worker') {
-                return { text: JSON.stringify({
-                    operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { to: 'user@example.com', subject: 'Hi' } } }]
-                }) };
+                return {
+                    text: JSON.stringify({
+                        operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { to: 'user@example.com', subject: 'Hi' } } }]
+                    })
+                };
             }
             // verifier
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
@@ -561,30 +581,36 @@ test('pipeline proposes a new Google Sheet without browsing an unavailable Googl
     const provider = {
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
-                return { text: JSON.stringify({
-                    type: 'plan_complete',
-                    summary: 'Record each response before emailing.',
-                    requirements: [{ id: 'req_1', description: 'Record the response before the email.' }],
-                    selectedNodeKeys: ['trigger:webhook', 'action:email'],
-                    capabilities: []
-                }) };
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Record each response before emailing.',
+                        requirements: [{ id: 'req_1', description: 'Record the response before the email.' }],
+                        selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                        capabilities: []
+                    })
+                };
             }
             if (options.operation === 'workflow:worker') {
-                return { text: JSON.stringify({ operations: [{
-                    op: 'insert_after_route',
-                    from: { nodeRef: 'n1', handle: 'event' },
-                    node: {
-                        ref: 'response_sheet',
-                        nodeKey: 'action:googleSheets',
-                        title: 'Save response',
-                        config: {
-                            operation: 'append',
-                            spreadsheetId: { $provision: 'response_spreadsheet' },
-                            range: "'Responses'!A1",
-                            values: [['saved']]
-                        }
-                    }
-                }] }) };
+                return {
+                    text: JSON.stringify({
+                        operations: [{
+                            op: 'insert_after_route',
+                            from: { nodeRef: 'n1', handle: 'event' },
+                            node: {
+                                ref: 'response_sheet',
+                                nodeKey: 'action:googleSheets',
+                                title: 'Save response',
+                                config: {
+                                    operation: 'append',
+                                    spreadsheetId: { $provision: 'response_spreadsheet' },
+                                    range: "'Responses'!A1",
+                                    values: [['saved']]
+                                }
+                            }
+                        }]
+                    })
+                };
             }
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
         }
@@ -615,19 +641,25 @@ test('pipeline uses a runtime sheet for every approved form submission', async (
     const { generateWorkflowTurn } = await import('./pipeline.js');
     const provider = {
         async generateContent(_contents, options) {
-            if (options.operation === 'workflow:planner') return { text: JSON.stringify({
-                type: 'plan_complete', summary: 'Save approved responses.',
-                requirements: [{ id: 'req_approval', description: 'Ask the owner to approve every response.' }],
-                selectedNodeKeys: ['trigger:form-submission', 'logic:approval', 'action:googleSheets'], capabilities: ['owner_approval']
-            }) };
-            if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') return { text: JSON.stringify({ operations: [
-                { op: 'create_node', node: { ref: 'approval', nodeKey: 'logic:approval', title: 'Review required', config: {} } },
-                { op: 'create_node', node: { ref: 'create', nodeKey: 'action:googleSheetsCreate', title: 'Create response sheet', config: {} } },
-                { op: 'create_node', node: { ref: 'append', nodeKey: 'action:googleSheets', title: 'Append approved response', config: { operation: 'append', range: "'Responses'!A1", values: [['wrong']] } } },
-                { op: 'connect', from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'approval', handle: 'event' } },
-                { op: 'connect', from: { nodeRef: 'approval', handle: 'approved' }, to: { nodeRef: 'create', handle: 'event' } },
-                { op: 'connect', from: { nodeRef: 'create', handle: 'done' }, to: { nodeRef: 'append', handle: 'event' } }
-            ] }) };
+            if (options.operation === 'workflow:planner') return {
+                text: JSON.stringify({
+                    type: 'plan_complete', summary: 'Save approved responses.',
+                    requirements: [{ id: 'req_approval', description: 'Ask the owner to approve every response.' }],
+                    selectedNodeKeys: ['trigger:form-submission', 'logic:approval', 'action:googleSheets'], capabilities: ['owner_approval']
+                })
+            };
+            if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') return {
+                text: JSON.stringify({
+                    operations: [
+                        { op: 'create_node', node: { ref: 'approval', nodeKey: 'logic:approval', title: 'Review required', config: {} } },
+                        { op: 'create_node', node: { ref: 'create', nodeKey: 'action:googleSheetsCreate', title: 'Create response sheet', config: {} } },
+                        { op: 'create_node', node: { ref: 'append', nodeKey: 'action:googleSheets', title: 'Append approved response', config: { operation: 'append', range: "'Responses'!A1", values: [['wrong']] } } },
+                        { op: 'connect', from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'approval', handle: 'event' } },
+                        { op: 'connect', from: { nodeRef: 'approval', handle: 'approved' }, to: { nodeRef: 'create', handle: 'event' } },
+                        { op: 'connect', from: { nodeRef: 'create', handle: 'done' }, to: { nodeRef: 'append', handle: 'event' } }
+                    ]
+                })
+            };
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
         }
     };
@@ -655,13 +687,15 @@ test('pipeline repairs a malformed worker response and produces a valid proposal
     const provider = {
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
-                return { text: JSON.stringify({
-                    type: 'plan_complete',
-                    summary: 'Update email.',
-                    requirements: [{ id: 'req_1', description: 'Update email config.' }],
-                    selectedNodeKeys: ['trigger:webhook', 'action:email'],
-                    capabilities: []
-                }) };
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Update email.',
+                        requirements: [{ id: 'req_1', description: 'Update email config.' }],
+                        selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                        capabilities: []
+                    })
+                };
             }
             if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
                 workerAttempt++;
@@ -670,9 +704,11 @@ test('pipeline repairs a malformed worker response and produces a valid proposal
                     return { text: JSON.stringify({ invalid: true }) };
                 }
                 // Second attempt (repair): valid
-                return { text: JSON.stringify({
-                    operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { to: 'test@example.com' } } }]
-                }) };
+                return {
+                    text: JSON.stringify({
+                        operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { to: 'test@example.com' } } }]
+                    })
+                };
             }
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
         }
@@ -701,20 +737,24 @@ test('pipeline retries the worker when the verifier requests repair, then passes
     const provider = {
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
-                return { text: JSON.stringify({
-                    type: 'plan_complete',
-                    summary: 'Set subject to Welcome.',
-                    requirements: [{ id: 'req_1', description: 'Set subject to "Welcome".' }],
-                    selectedNodeKeys: ['trigger:webhook', 'action:email'],
-                    capabilities: []
-                }) };
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Set subject to Welcome.',
+                        requirements: [{ id: 'req_1', description: 'Set subject to "Welcome".' }],
+                        selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                        capabilities: []
+                    })
+                };
             }
             if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
                 buildAttempt++;
                 const subject = buildAttempt >= 2 ? 'Welcome' : undefined;
-                return { text: JSON.stringify({
-                    operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { to: 'user@example.com', ...(subject ? { subject } : {}) } } }]
-                }) };
+                return {
+                    text: JSON.stringify({
+                        operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { to: 'user@example.com', ...(subject ? { subject } : {}) } } }]
+                    })
+                };
             }
             if (options.operation === 'workflow:verifier' || options.operation === 'workflow:verifier repair') {
                 verifyAttempt++;
@@ -744,18 +784,22 @@ test('pipeline returns a locally valid proposal as unverified when verifier outp
     const provider = {
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
-                return { text: JSON.stringify({
-                    type: 'plan_complete',
-                    summary: 'Set the email recipient.',
-                    requirements: [{ id: 'req_1', description: 'Set the email recipient.' }],
-                    selectedNodeKeys: ['trigger:webhook', 'action:email'],
-                    capabilities: []
-                }) };
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Set the email recipient.',
+                        requirements: [{ id: 'req_1', description: 'Set the email recipient.' }],
+                        selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                        capabilities: []
+                    })
+                };
             }
             if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
-                return { text: JSON.stringify({
-                    operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { to: 'team@example.com' } } }]
-                }) };
+                return {
+                    text: JSON.stringify({
+                        operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { to: 'team@example.com' } } }]
+                    })
+                };
             }
             return { text: 'null' };
         }
@@ -784,23 +828,29 @@ test('pipeline produces a complete connected workflow from an empty start', asyn
     const provider = {
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
-                return { text: JSON.stringify({
-                    type: 'plan_complete',
-                    summary: 'Create a webhook → email workflow.',
-                    requirements: [
-                        { id: 'req_1', description: 'Add a webhook trigger.' },
-                        { id: 'req_2', description: 'Add an email action connected to the trigger.' }
-                    ],
-                    selectedNodeKeys: ['trigger:webhook', 'action:email'],
-                    capabilities: []
-                }) };
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Create a webhook → email workflow.',
+                        requirements: [
+                            { id: 'req_1', description: 'Add a webhook trigger.' },
+                            { id: 'req_2', description: 'Add an email action connected to the trigger.' }
+                        ],
+                        selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                        capabilities: []
+                    })
+                };
             }
             if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
-                return { text: JSON.stringify({ operations: [
-                    { op: 'create_node', node: { ref: 'trigger_new', nodeKey: 'trigger:webhook', title: 'Receive webhook', config: {} } },
-                    { op: 'create_node', node: { ref: 'email_new', nodeKey: 'action:email', title: 'Send email', config: { to: 'team@example.com', subject: 'New event' }, afterNodeRef: 'trigger_new' } },
-                    { op: 'connect', from: { nodeRef: 'trigger_new', handle: 'event' }, to: { nodeRef: 'email_new', handle: 'event' } }
-                ] }) };
+                return {
+                    text: JSON.stringify({
+                        operations: [
+                            { op: 'create_node', node: { ref: 'trigger_new', nodeKey: 'trigger:webhook', title: 'Receive webhook', config: {} } },
+                            { op: 'create_node', node: { ref: 'email_new', nodeKey: 'action:email', title: 'Send email', config: { to: 'team@example.com', subject: 'New event' }, afterNodeRef: 'trigger_new' } },
+                            { op: 'connect', from: { nodeRef: 'trigger_new', handle: 'event' }, to: { nodeRef: 'email_new', handle: 'event' } }
+                        ]
+                    })
+                };
             }
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
         }
@@ -831,18 +881,22 @@ test('pipeline asks the planner to choose defaults on its first call when author
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner' || options.operation === 'workflow:planner repair') {
                 plannerAttempt++;
-                return { text: JSON.stringify({
-                    type: 'plan_complete',
-                    summary: 'Add email using default provider.',
-                    requirements: [{ id: 'req_1', description: 'Add email step.' }],
-                    selectedNodeKeys: ['trigger:webhook', 'action:email'],
-                    capabilities: []
-                }) };
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Add email using default provider.',
+                        requirements: [{ id: 'req_1', description: 'Add email step.' }],
+                        selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                        capabilities: []
+                    })
+                };
             }
             if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
-                return { text: JSON.stringify({
-                    operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { to: 'default@example.com' } } }]
-                }) };
+                return {
+                    text: JSON.stringify({
+                        operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { to: 'default@example.com' } } }]
+                    })
+                };
             }
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
         }
@@ -868,24 +922,28 @@ test('pipeline resolves a planner clarification when clarification mode is decid
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
                 plannerAttempt++;
-                return { text: JSON.stringify(plannerAttempt === 1
-                    ? {
-                        type: 'message',
-                        message: 'Which subject should the email use?',
-                        inputs: [{ id: 'subject', type: 'text', label: 'Email subject' }]
-                    }
-                    : {
-                        type: 'plan_complete',
-                        summary: 'Use a default thank-you subject.',
-                        requirements: [{ id: 'req_1', description: 'Update the thank-you email subject.' }],
-                        selectedNodeKeys: ['trigger:webhook', 'action:email'],
-                        capabilities: []
-                    }) };
+                return {
+                    text: JSON.stringify(plannerAttempt === 1
+                        ? {
+                            type: 'message',
+                            message: 'Which subject should the email use?',
+                            inputs: [{ id: 'subject', type: 'text', label: 'Email subject' }]
+                        }
+                        : {
+                            type: 'plan_complete',
+                            summary: 'Use a default thank-you subject.',
+                            requirements: [{ id: 'req_1', description: 'Update the thank-you email subject.' }],
+                            selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                            capabilities: []
+                        })
+                };
             }
             if (options.operation === 'workflow:worker') {
-                return { text: JSON.stringify({
-                    operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { subject: 'Thank you' } } }]
-                }) };
+                return {
+                    text: JSON.stringify({
+                        operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { subject: 'Thank you' } } }]
+                    })
+                };
             }
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
         }
@@ -912,24 +970,30 @@ test('pipeline assembles a validated linear form-to-Sheets workflow without work
     const provider = {
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
-                return { text: JSON.stringify({
-                    type: 'plan_complete',
-                    summary: 'Save each submitted form response to a Google Sheet.',
-                    requirements: [{ id: 'req_1', description: 'Append each submitted form response to a Google Sheet.' }],
-                    selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
-                    linearSteps: [
-                        { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Form submitted', requirementIds: ['req_1'], config: { formId: 'form_1' } },
-                        { ref: 'save_response', nodeKey: 'action:googleSheets', title: 'Save response', requirementIds: ['req_1'], config: { operation: 'append', spreadsheetId: { $provision: 'response_spreadsheet' }, range: "'Responses'!A1" } }
-                    ],
-                    capabilities: []
-                }) };
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Save each submitted form response to a Google Sheet.',
+                        requirements: [{ id: 'req_1', description: 'Append each submitted form response to a Google Sheet.' }],
+                        selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
+                        linearSteps: [
+                            { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Form submitted', requirementIds: ['req_1'], config: { formId: 'form_1' } },
+                            { ref: 'save_response', nodeKey: 'action:googleSheets', title: 'Save response', requirementIds: ['req_1'], config: { operation: 'append', spreadsheetId: { $provision: 'response_spreadsheet' }, range: "'Responses'!A1" } }
+                        ],
+                        capabilities: []
+                    })
+                };
             }
             if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
                 workerCalls++;
-                return { text: JSON.stringify({ operations: [
-                    { op: 'create_node', node: { ref: 'save_response', nodeKey: 'action:googleSheet', config: {} } },
-                    { op: 'connect', from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'save_response', handle: 'event' } }
-                ] }) };
+                return {
+                    text: JSON.stringify({
+                        operations: [
+                            { op: 'create_node', node: { ref: 'save_response', nodeKey: 'action:googleSheet', config: {} } },
+                            { op: 'connect', from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'save_response', handle: 'event' } }
+                        ]
+                    })
+                };
             }
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
         }
@@ -963,24 +1027,30 @@ test('pipeline resolves a named owned form and assembles a connected form-to-She
     const provider = {
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
-                return { text: JSON.stringify({
-                    type: 'plan_complete',
-                    summary: 'Save each Event Registration response to a Google Sheet.',
-                    requirements: [{ id: 'req_1', description: 'Append each submitted Event Registration response to a Google Sheet.' }],
-                    selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
-                    linearSteps: [
-                        { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Form submitted', requirementIds: ['req_1'], config: {} },
-                        { ref: 'save_response', nodeKey: 'action:googleSheets', title: 'Save response', requirementIds: ['req_1'], config: {} }
-                    ],
-                    capabilities: []
-                }) };
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Save each Event Registration response to a Google Sheet.',
+                        requirements: [{ id: 'req_1', description: 'Append each submitted Event Registration response to a Google Sheet.' }],
+                        selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
+                        linearSteps: [
+                            { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Form submitted', requirementIds: ['req_1'], config: {} },
+                            { ref: 'save_response', nodeKey: 'action:googleSheets', title: 'Save response', requirementIds: ['req_1'], config: {} }
+                        ],
+                        capabilities: []
+                    })
+                };
             }
             if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
                 workerCalls += 1;
-                return { text: JSON.stringify({ operations: [
-                    { op: 'create_node', node: { ref: 'form_trigger', nodeKey: 'trigger:form-submission', config: { formId: 'form_event' } } },
-                    { op: 'create_node', node: { ref: 'save_response', nodeKey: 'action:googleSheets', config: { operation: 'append', spreadsheetId: { $provision: 'response_spreadsheet' }, range: "'Responses'!A1" } } }
-                ] }) };
+                return {
+                    text: JSON.stringify({
+                        operations: [
+                            { op: 'create_node', node: { ref: 'form_trigger', nodeKey: 'trigger:form-submission', config: { formId: 'form_event' } } },
+                            { op: 'create_node', node: { ref: 'save_response', nodeKey: 'action:googleSheets', config: { operation: 'append', spreadsheetId: { $provision: 'response_spreadsheet' }, range: "'Responses'!A1" } } }
+                        ]
+                    })
+                };
             }
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
         }
@@ -989,10 +1059,12 @@ test('pipeline resolves a named owned form and assembles a connected form-to-She
     const result = await generateWorkflowTurn({
         request: 'When the Event Registration form is submitted, save the response to the Event Registration Google Sheet.',
         currentWorkflow: { nodes: [], edges: [] },
-        userContext: { forms: [
-            { id: 'form_event', title: 'Event Registration', updatedAt: '2026-08-12T00:00:00.000Z' },
-            { id: 'form_contact', title: 'Contact Us', updatedAt: '2026-08-11T00:00:00.000Z' }
-        ] },
+        userContext: {
+            forms: [
+                { id: 'form_event', title: 'Event Registration', updatedAt: '2026-08-12T00:00:00.000Z' },
+                { id: 'form_contact', title: 'Contact Us', updatedAt: '2026-08-11T00:00:00.000Z' }
+            ]
+        },
         formLoader: async ({ formId }) => formId === 'form_event'
             ? { id: formId, title: 'Event Registration', fields: [{ id: 'name', label: 'Name', type: 'text', required: true }] }
             : null,
@@ -1015,17 +1087,19 @@ test('pipeline returns a form choice when named-form matching is ambiguous', asy
     const provider = {
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
-                return { text: JSON.stringify({
-                    type: 'plan_complete',
-                    summary: 'Save the registration response.',
-                    requirements: [{ id: 'req_1', description: 'Append the submitted registration response to a Google Sheet.' }],
-                    selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
-                    linearSteps: [
-                        { ref: 'form_trigger', nodeKey: 'trigger:form-submission', requirementIds: ['req_1'], config: {} },
-                        { ref: 'save_response', nodeKey: 'action:googleSheets', requirementIds: ['req_1'], config: {} }
-                    ],
-                    capabilities: []
-                }) };
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Save the registration response.',
+                        requirements: [{ id: 'req_1', description: 'Append the submitted registration response to a Google Sheet.' }],
+                        selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
+                        linearSteps: [
+                            { ref: 'form_trigger', nodeKey: 'trigger:form-submission', requirementIds: ['req_1'], config: {} },
+                            { ref: 'save_response', nodeKey: 'action:googleSheets', requirementIds: ['req_1'], config: {} }
+                        ],
+                        capabilities: []
+                    })
+                };
             }
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
         }
@@ -1034,10 +1108,12 @@ test('pipeline returns a form choice when named-form matching is ambiguous', asy
     const result = await generateWorkflowTurn({
         request: 'When the registration form is submitted, save the response.',
         currentWorkflow: { nodes: [], edges: [] },
-        userContext: { forms: [
-            { id: 'form_event', title: 'Event Registration' },
-            { id: 'form_member', title: 'Member Registration' }
-        ] },
+        userContext: {
+            forms: [
+                { id: 'form_event', title: 'Event Registration' },
+                { id: 'form_member', title: 'Member Registration' }
+            ]
+        },
         provider,
         registry: makeRegistry([formSubmissionSpec, googleSheetsSpec]),
         resourceLoader
@@ -1061,17 +1137,19 @@ test('pipeline resumes a form choice clarification with the selected owned form'
     const provider = {
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
-                return { text: JSON.stringify({
-                    type: 'plan_complete',
-                    summary: 'Save the Event Registration response.',
-                    requirements: [{ id: 'req_1', description: 'Append the submitted Event Registration response to a Google Sheet.' }],
-                    selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
-                    linearSteps: [
-                        { ref: 'form_trigger', nodeKey: 'trigger:form-submission', requirementIds: ['req_1'], config: {} },
-                        { ref: 'save_response', nodeKey: 'action:googleSheets', requirementIds: ['req_1'], config: {} }
-                    ],
-                    capabilities: []
-                }) };
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Save the Event Registration response.',
+                        requirements: [{ id: 'req_1', description: 'Append the submitted Event Registration response to a Google Sheet.' }],
+                        selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
+                        linearSteps: [
+                            { ref: 'form_trigger', nodeKey: 'trigger:form-submission', requirementIds: ['req_1'], config: {} },
+                            { ref: 'save_response', nodeKey: 'action:googleSheets', requirementIds: ['req_1'], config: {} }
+                        ],
+                        capabilities: []
+                    })
+                };
             }
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
         }
@@ -1102,28 +1180,34 @@ test('pipeline repairs an unknown planner node key before the worker is called',
             if (options.operation === 'workflow:planner' || options.operation === 'workflow:planner repair') {
                 plannerCalls++;
                 plannerPrompts.push(contents[0].parts[0].text);
-                return { text: JSON.stringify(plannerCalls === 1
-                    ? {
-                        type: 'plan_complete',
-                        summary: 'Create a webhook email workflow.',
-                        requirements: [{ id: 'req_1', description: 'Send an email after a webhook.' }],
-                        selectedNodeKeys: ['trigger:webhook', 'action:emails'],
-                        capabilities: []
-                    }
-                    : {
-                        type: 'plan_complete',
-                        summary: 'Create a webhook email workflow.',
-                        requirements: [{ id: 'req_1', description: 'Send an email after a webhook.' }],
-                        selectedNodeKeys: ['trigger:webhook', 'action:email'],
-                        capabilities: []
-                    }) };
+                return {
+                    text: JSON.stringify(plannerCalls === 1
+                        ? {
+                            type: 'plan_complete',
+                            summary: 'Create a webhook email workflow.',
+                            requirements: [{ id: 'req_1', description: 'Send an email after a webhook.' }],
+                            selectedNodeKeys: ['trigger:webhook', 'action:emails'],
+                            capabilities: []
+                        }
+                        : {
+                            type: 'plan_complete',
+                            summary: 'Create a webhook email workflow.',
+                            requirements: [{ id: 'req_1', description: 'Send an email after a webhook.' }],
+                            selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                            capabilities: []
+                        })
+                };
             }
             if (options.operation === 'workflow:worker') {
-                return { text: JSON.stringify({ operations: [
-                    { op: 'create_node', node: { ref: 'webhook_trigger', nodeKey: 'trigger:webhook', config: {} } },
-                    { op: 'create_node', node: { ref: 'send_email', nodeKey: 'action:email', afterNodeRef: 'webhook_trigger', config: { to: 'team@example.com' } } },
-                    { op: 'connect', from: { nodeRef: 'webhook_trigger', handle: 'event' }, to: { nodeRef: 'send_email', handle: 'event' } }
-                ] }) };
+                return {
+                    text: JSON.stringify({
+                        operations: [
+                            { op: 'create_node', node: { ref: 'webhook_trigger', nodeKey: 'trigger:webhook', config: {} } },
+                            { op: 'create_node', node: { ref: 'send_email', nodeKey: 'action:email', afterNodeRef: 'webhook_trigger', config: { to: 'team@example.com' } } },
+                            { op: 'connect', from: { nodeRef: 'webhook_trigger', handle: 'event' }, to: { nodeRef: 'send_email', handle: 'event' } }
+                        ]
+                    })
+                };
             }
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
         }
@@ -1148,26 +1232,32 @@ test('pipeline assembles repeated actions in a generic linear workflow', async (
     const provider = {
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
-                return { text: JSON.stringify({
-                    type: 'plan_complete',
-                    summary: 'Send two notifications after a webhook.',
-                    requirements: [
-                        { id: 'req_1', description: 'Receive a webhook.' },
-                        { id: 'req_2', description: 'Send two notification emails.' }
-                    ],
-                    selectedNodeKeys: ['trigger:webhook', 'action:email'],
-                    linearSteps: [
-                        { ref: 'webhook_trigger', nodeKey: 'trigger:webhook', requirementIds: ['req_1'], config: {} },
-                        { ref: 'notify_team', nodeKey: 'action:email', requirementIds: ['req_2'], config: { to: 'team@example.com', subject: 'New webhook' } },
-                        { ref: 'notify_owner', nodeKey: 'action:email', requirementIds: ['req_2'], config: { to: 'owner@example.com', subject: 'New webhook' } }
-                    ],
-                    capabilities: []
-                }) };
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Send two notifications after a webhook.',
+                        requirements: [
+                            { id: 'req_1', description: 'Receive a webhook.' },
+                            { id: 'req_2', description: 'Send two notification emails.' }
+                        ],
+                        selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                        linearSteps: [
+                            { ref: 'webhook_trigger', nodeKey: 'trigger:webhook', requirementIds: ['req_1'], config: {} },
+                            { ref: 'notify_team', nodeKey: 'action:email', requirementIds: ['req_2'], config: { to: 'team@example.com', subject: 'New webhook' } },
+                            { ref: 'notify_owner', nodeKey: 'action:email', requirementIds: ['req_2'], config: { to: 'owner@example.com', subject: 'New webhook' } }
+                        ],
+                        capabilities: []
+                    })
+                };
             }
             if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
-                return { text: JSON.stringify({ operations: [
-                    { op: 'create_node', node: { ref: 'notify_team', nodeKey: 'action:emails', config: {} } }
-                ] }) };
+                return {
+                    text: JSON.stringify({
+                        operations: [
+                            { op: 'create_node', node: { ref: 'notify_team', nodeKey: 'action:emails', config: {} } }
+                        ]
+                    })
+                };
             }
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
         }
@@ -1192,22 +1282,28 @@ test('pipeline does not use the linear fallback for a branching workflow', async
     const provider = {
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
-                return { text: JSON.stringify({
-                    type: 'plan_complete',
-                    summary: 'Ask for approval after a webhook.',
-                    requirements: [{ id: 'req_1', description: 'Route the webhook through approval.' }],
-                    selectedNodeKeys: ['trigger:webhook', 'logic:approval'],
-                    linearSteps: [
-                        { ref: 'webhook_trigger', nodeKey: 'trigger:webhook', requirementIds: ['req_1'], config: {} },
-                        { ref: 'approval_step', nodeKey: 'logic:approval', requirementIds: ['req_1'], config: {} }
-                    ],
-                    capabilities: []
-                }) };
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Ask for approval after a webhook.',
+                        requirements: [{ id: 'req_1', description: 'Route the webhook through approval.' }],
+                        selectedNodeKeys: ['trigger:webhook', 'logic:approval'],
+                        linearSteps: [
+                            { ref: 'webhook_trigger', nodeKey: 'trigger:webhook', requirementIds: ['req_1'], config: {} },
+                            { ref: 'approval_step', nodeKey: 'logic:approval', requirementIds: ['req_1'], config: {} }
+                        ],
+                        capabilities: []
+                    })
+                };
             }
             if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
-                return { text: JSON.stringify({ operations: [
-                    { op: 'create_node', node: { ref: 'approval_step', nodeKey: 'logic:approvals', config: {} } }
-                ] }) };
+                return {
+                    text: JSON.stringify({
+                        operations: [
+                            { op: 'create_node', node: { ref: 'approval_step', nodeKey: 'logic:approvals', config: {} } }
+                        ]
+                    })
+                };
             }
             return { text: JSON.stringify({ status: 'pass', issues: [] }) };
         }

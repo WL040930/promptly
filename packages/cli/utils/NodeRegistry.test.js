@@ -12,8 +12,4 @@ test('node registry loads every node with a validated UI contract', async () => 
     assert.ok(catalogue.some(node => node.nodeKey === 'action:googleSheets' && node.inputs.some(input => input.resource === 'google-spreadsheets')));
     assert.ok(catalogue.some(node => node.nodeKey === 'logic:customCode' && node.implementationStatus === 'beta'));
     assert.ok(!catalogue.some(node => node.nodeKey === 'ai:image'));
-    assert.ok(!catalogue.some(node => node.nodeKey === 'ai:rag'));
-    assert.ok(!catalogue.some(node => node.nodeKey === 'action:knowledgeIngest'));
-    assert.ok(NodeRegistry.getDefinition('ai', 'rag'));
-    assert.ok(NodeRegistry.getDefinition('action', 'knowledgeIngest'));
 });

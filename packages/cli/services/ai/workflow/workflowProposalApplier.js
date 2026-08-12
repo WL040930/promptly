@@ -40,6 +40,19 @@ export const resolveProvisionedGoogleSheetConfigs = (nodes = [], resources, erro
 
 const formIdForWorkflowNodes = (nodes = []) => nodes.find(node => node?.subType === 'form-submission')?.config?.formId || null;
 
+const payloadWithProvisionedFile = (payload, ref, resource) => ({
+    ...payload,
+    resourceChanges: (payload.resourceChanges || []).map(change => change?.ref === ref
+        ? {
+            ...change,
+            status: 'provisioning',
+            spreadsheetId: resource.id,
+            webViewLink: resource.webViewLink,
+            range: resource.range
+        }
+        : change)
+});
+
 export const createWorkflowProposalApplier = ({
     db,
     models,
@@ -78,7 +91,7 @@ export const createWorkflowProposalApplier = ({
         return { form, normalizedBindings };
     };
 
-    const provisionGoogleSheets = async ({ changes = [], userId, workflowId, proposalMessageId }) => {
+    const provisionGoogleSheets = async ({ changes = [], userId, workflowId, proposalMessageId, onFileReady }) => {
         const resources = new Map();
         const resolvedChanges = [];
         for (const change of changes) {
@@ -92,7 +105,12 @@ export const createWorkflowProposalApplier = ({
                 sheetTitle: change.sheetTitle || 'Responses',
                 headers: change.headers || [],
                 provisioningKey: `workflow-proposal:${workflowId}:${proposalMessageId}:${change.ref}`,
-                folderId: change.folderId || null
+                folderId: change.folderId || null,
+                // Only reuse an ID that Promptly persisted after Drive returned
+                // it; never trust an AI-authored spreadsheet ID as a provider
+                // resource identity.
+                existingSpreadsheetId: change.status === 'provisioning' ? change.spreadsheetId || null : null,
+                onFileReady: resource => onFileReady?.({ change, resource })
             });
             resources.set(change.ref, created);
             resolvedChanges.push({ ...change, status: 'ready', spreadsheetId: created.id, webViewLink: created.webViewLink, range: created.range });
@@ -110,6 +128,25 @@ export const createWorkflowProposalApplier = ({
                 { issues: payload.readiness.issues || [], setupActions: payload.readiness.setupActions || [] }
             );
         }
+
+        // The initial status lock happens through a separate Sequelize
+        // instance. Reload before each later write so a stale outer instance
+        // cannot decide that `pending` is unchanged while the database row is
+        // actually `applying`.
+        const updateFreshProposal = async makePatch => {
+            const current = await AssistantMessage.findOne({
+                where: {
+                    id: proposalMessageId,
+                    kind: 'workflow_proposal',
+                    ...(message.threadId ? { threadId: message.threadId } : {})
+                }
+            });
+            if (!current) throw errorWith('WORKFLOW_PROPOSAL_NOT_FOUND', 'This workflow proposal could not be found.', 404);
+            const patch = makePatch(current);
+            await current.update(patch);
+            Object.assign(message, patch);
+            return current;
+        };
 
         let resolvedPayload = payload;
         let provisionedResources = new Map();
@@ -139,8 +176,31 @@ export const createWorkflowProposalApplier = ({
                 }
                 if (Number(payload.baseWorkflowRevision) !== Number(lockedWorkflow.revision)) throw errorWith('WORKFLOW_PROPOSAL_STALE', 'This workflow changed after the proposal was prepared. Generate a new proposal.', 409);
                 await validateBindings({ workflow: lockedWorkflow, userId, transaction, nodes: payload.nodes || [] });
-                await lockedMessage.update({ proposalStatus: 'applying' }, { transaction });
+                await lockedMessage.update({
+                    proposalStatus: 'applying',
+                    payload: {
+                        ...payload,
+                        apply: { status: 'applying', startedAt: now().toISOString() }
+                    }
+                }, { transaction });
             });
+            const markRetryable = async error => {
+                await updateFreshProposal(current => {
+                    const currentPayload = current.payload || payload;
+                    return {
+                        proposalStatus: 'pending',
+                        payload: {
+                            ...currentPayload,
+                            apply: {
+                                ...(currentPayload.apply || {}),
+                                status: 'retryable',
+                                failedAt: now().toISOString(),
+                                ...(error?.code ? { code: error.code } : {})
+                            }
+                        }
+                    };
+                }).catch(() => {});
+            };
             try {
                 const form = await attachedForm(workflow, userId, null, payload.nodes || []);
                 const responseSheetContract = applyFormResponseSpreadsheetContract({
@@ -148,7 +208,17 @@ export const createWorkflowProposalApplier = ({
                     resourceChanges: payload.resourceChanges || [],
                     form: form?.toJSON?.() || form
                 });
-                const provisioned = await provisionGoogleSheets({ changes: responseSheetContract.resourceChanges, userId, workflowId, proposalMessageId });
+                const provisioned = await provisionGoogleSheets({
+                    changes: responseSheetContract.resourceChanges,
+                    userId,
+                    workflowId,
+                    proposalMessageId,
+                    onFileReady: async ({ change, resource }) => {
+                        await updateFreshProposal(current => ({
+                            payload: payloadWithProvisionedFile(current.payload || payload, change.ref, resource)
+                        }));
+                    }
+                });
                 provisionedResources = provisioned.resources;
                 createdResources = [...provisionedResources.values()];
                 resolvedPayload = {
@@ -156,9 +226,9 @@ export const createWorkflowProposalApplier = ({
                     nodes: resolveProvisionedGoogleSheetConfigs(responseSheetContract.nodes, provisionedResources, errorWith),
                     resourceChanges: provisioned.resolvedChanges
                 };
-                await message.update({ payload: resolvedPayload });
+                await updateFreshProposal(() => ({ payload: resolvedPayload }));
             } catch (error) {
-                await message.update({ proposalStatus: 'pending' }).catch(() => {});
+                await markRetryable(error);
                 throw error;
             }
         }
@@ -213,8 +283,24 @@ export const createWorkflowProposalApplier = ({
                 return { workflow: toWorkflowJson(saved.automation), message: publicMessage(lockedMessage), state: state.toJSON(), createdResources };
             });
         } catch (error) {
-            if (error.code === 'WORKFLOW_PROPOSAL_STALE') await message.update({ proposalStatus: 'stale' }).catch(() => {});
-            else if (needsProvisioning) await message.update({ proposalStatus: 'pending' }).catch(() => {});
+            if (error.code === 'WORKFLOW_PROPOSAL_STALE') await updateFreshProposal(() => ({ proposalStatus: 'stale' })).catch(() => {});
+            else if (needsProvisioning) {
+                await updateFreshProposal(current => {
+                    const currentPayload = current.payload || resolvedPayload || payload;
+                    return {
+                        proposalStatus: 'pending',
+                        payload: {
+                            ...currentPayload,
+                            apply: {
+                                ...(currentPayload.apply || {}),
+                                status: 'retryable',
+                                failedAt: now().toISOString(),
+                                ...(error?.code ? { code: error.code } : {})
+                            }
+                        }
+                    };
+                }).catch(() => {});
+            }
             throw error;
         }
     };

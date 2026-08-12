@@ -847,28 +847,28 @@ export const generateWorkflowTurn = async ({
         } else {
             const label = attempt === 0 ? 'worker' : 'worker repair';
             try {
-            workerCall = await requestWorkflowJson({
-                label,
-                prompt: buildWorkflowWorkerContext({
-                    workflow: currentWorkflow,
-                    specs,
-                    requirements: plan.requirements,
-                    capabilities,
-                    resourceChanges: plan.resourceChanges || [],
-                    resourceContext,
-                    resourceSelections,
-                    formSchema: resolvedFormSchema,
-                    linearSteps: plan.linearSteps || [],
-                    priorResponse: previousResponse,
-                    repairIssues
-                }),
-                systemInstruction: workflowWorkerInstruction,
-                provider,
-                budget,
-                onActivity: reportProviderActivity,
-                maxAttempts: complexity.providerAttempts
-            });
-            usage = addWorkflowUsage(usage, workerCall.response, label);
+                workerCall = await requestWorkflowJson({
+                    label,
+                    prompt: buildWorkflowWorkerContext({
+                        workflow: currentWorkflow,
+                        specs,
+                        requirements: plan.requirements,
+                        capabilities,
+                        resourceChanges: plan.resourceChanges || [],
+                        resourceContext,
+                        resourceSelections,
+                        formSchema: resolvedFormSchema,
+                        linearSteps: plan.linearSteps || [],
+                        priorResponse: previousResponse,
+                        repairIssues
+                    }),
+                    systemInstruction: workflowWorkerInstruction,
+                    provider,
+                    budget,
+                    onActivity: reportProviderActivity,
+                    maxAttempts: complexity.providerAttempts
+                });
+                usage = addWorkflowUsage(usage, workerCall.response, label);
             } catch (error) {
                 if (!['WORKFLOW_AI_BUDGET_EXCEEDED', 'WORKFLOW_AI_PROVIDER_TIMEOUT', 'WORKFLOW_AI_PROVIDER_UNAVAILABLE', 'WORKFLOW_AI_RATE_LIMITED'].includes(error.code)) throw error;
                 repairIssues = error.issues || [{ code: error.code, message: error.message }];

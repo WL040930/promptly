@@ -1,8 +1,0 @@
-{
-  "inputs": [
-    { "name": "knowledgeBaseId", "type": "resource-select", "resource": "knowledge-bases", "label": "Knowledge base", "required": true },
-    { "name": "assetId", "type": "resource-select", "resource": "workflow-assets", "label": "Document asset", "required": true },
-    { "name": "title", "type": "text", "label": "Document title", "placeholder": "Defaults to filename" }
-  ],
-  "outputs": [{ "name": "outputData", "type": "object", "label": "Indexed document", "isConnection": true }, { "name": "documentId", "type": "string", "label": "Document ID" }]
-}

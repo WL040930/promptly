@@ -348,9 +348,12 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
                 return result;
             } catch (error) {
                 const code = error?.code || error?.payload?.code;
-                const needsGoogleReconnect = ['GOOGLE_RECONNECT_REQUIRED', 'GOOGLE_CONNECTION_REQUIRED'].includes(code);
+                const needsGoogleReconnect = ['GOOGLE_RECONNECT_REQUIRED', 'GOOGLE_CONNECTION_REQUIRED', 'GOOGLE_PERMISSION_REQUIRED'].includes(code);
                 toast.error(error.message || 'Failed to apply changes.', needsGoogleReconnect ? {
-                    action: { label: code === 'GOOGLE_CONNECTION_REQUIRED' ? 'Connect Google' : 'Reconnect Google', onClick: () => navigateTo({ page: 'settings', section: 'connections' }) }
+                    action: {
+                        label: code === 'GOOGLE_CONNECTION_REQUIRED' ? 'Connect Google' : code === 'GOOGLE_PERMISSION_REQUIRED' ? 'Review Google access' : 'Reconnect Google',
+                        onClick: () => navigateTo({ page: 'settings', section: 'connections' })
+                    }
                 } : undefined);
                 throw error;
             } finally {

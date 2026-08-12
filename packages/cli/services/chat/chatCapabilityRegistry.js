@@ -1,4 +1,4 @@
-import { AutomationRun, Connection, Form, FormResponse, KnowledgeBase, Workflow } from '../../models/index.js';
+import { AutomationRun, Connection, Form, FormResponse, Workflow } from '../../models/index.js';
 import { resolveResource } from './resourceResolver.js';
 import { generateWorkflowTurn } from '../ai/workflow/pipeline/pipeline.js';
 import { createAgentCapabilityRegistry } from '../agent/agentCapabilityRegistry.js';
@@ -312,17 +312,6 @@ export const createChatCapabilityRegistry = ({
                 order: [['updatedAt', 'DESC']],
                 limit: 50
             })).map(connection => redactSensitive(connection.toJSON ? connection.toJSON() : connection)))
-        ),
-        tool(
-            'list_knowledge_bases',
-            'List the user knowledge bases without reading their document contents.',
-            {},
-            async () => completed((await KnowledgeBase.findAll({
-                where: { userId },
-                attributes: ['id', 'name', 'description', 'createdAt', 'updatedAt'],
-                order: [['updatedAt', 'DESC']],
-                limit: 100
-            })).map(base => redactSensitive(base.toJSON ? base.toJSON() : base)))
         ),
         tool(
             'propose_form_change',

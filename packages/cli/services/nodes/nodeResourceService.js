@@ -1,4 +1,4 @@
-import { Asset, AutomationRun, Connection, Form, KnowledgeBase, Workflow } from '../../models/index.js';
+import { Asset, AutomationRun, Connection, Form, Workflow } from '../../models/index.js';
 import { getGoogleClientForUser } from '../triggers/googleTriggerClient.js';
 
 const GOOGLE_CONNECT_ACTION = Object.freeze({
@@ -74,7 +74,7 @@ const listModel = async (model, query, mapper) => {
 };
 
 export const createNodeResourceService = ({
-    models = { Asset, AutomationRun, Connection, Form, KnowledgeBase, Workflow },
+    models = { Asset, AutomationRun, Connection, Form, Workflow },
     getGoogleClient = getGoogleClientForUser
 } = {}) => {
     const executionModel = models.AutomationRun;
@@ -178,15 +178,6 @@ export const createNodeResourceService = ({
                 limit: 100
             }, record => option(record.id, record.originalName, `${record.mimeType} · ${record.byteSize} bytes`)),
             emptyMessage: 'Upload a file asset first.'
-        }),
-        'knowledge-bases': async ({ userId }) => ({
-            options: await listModel(models.KnowledgeBase, {
-                where: { userId },
-                attributes: ['id', 'name', 'description', 'updatedAt'],
-                order: [['updatedAt', 'DESC']],
-                limit: 100
-            }, record => option(record.id, record.name, record.description || 'Knowledge base')),
-            emptyMessage: 'Create a knowledge base first.'
         }),
         'promptly-records': async ({ userId, params }) => {
             const resource = String(params.resource || 'forms');

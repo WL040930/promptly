@@ -4,7 +4,7 @@ import { createWorkflowAssistant, workflowAssistantInternals } from './workflowA
 
 const { formIdForWorkflowNodes, normalizeWorkflowCommand, resolveWorkflowTurnContext, statePatchForResult } = workflowAssistantInternals;
 
-const createMemoryModels = () => {
+const createMemoryModels = ({ emulateSequelizeDirtyUpdates = false } = {}) => {
     const workflows = [{ id: 'workflow_1', userId: 'user_1', name: 'Registration flow', revision: 1, nodes: [], edges: [] }];
     const forms = [];
     const messages = [];
@@ -12,7 +12,14 @@ const createMemoryModels = () => {
     const instance = value => ({
         ...value,
         toJSON() { return { ...this }; },
-        async update(patch) { Object.assign(value, patch); Object.assign(this, patch); return this; }
+        async update(patch) {
+            const persistedPatch = emulateSequelizeDirtyUpdates
+                ? Object.fromEntries(Object.entries(patch).filter(([key, nextValue]) => this[key] !== nextValue))
+                : patch;
+            Object.assign(value, persistedPatch);
+            Object.assign(this, patch);
+            return this;
+        }
     });
     const matchesWhere = (row, where) => Object.entries(where || {}).every(([key, value]) => {
         if (value && typeof value === 'object') {
@@ -219,6 +226,112 @@ test('a repeated apply while a Google Sheet is being provisioned does not report
 
     await assert.doesNotReject(repeatedApply);
     assert.equal(provisioningCalls, 1);
+});
+
+test('workflow history recovers an orphaned applying spreadsheet proposal', async () => {
+    const memory = createMemoryModels();
+    await memory.models.AssistantThread.create({
+        id: 'thread_1', userId: 'user_1', surface: 'workflow', workflowId: 'workflow_1',
+        state: { version: 4, phase: 'awaiting_proposal', activeProposalMessageId: 'proposal_1' }, context: {}
+    });
+    await memory.models.AssistantMessage.create({
+        id: 'proposal_1', threadId: 'thread_1', sender: 'bot', kind: 'workflow_proposal', proposalStatus: 'applying', text: 'Create a response sheet.',
+        payload: {
+            workflowId: 'workflow_1', baseWorkflowRevision: 1, nodes: [], edges: [],
+            readiness: { canApply: true },
+            resourceChanges: [{ type: 'create_google_spreadsheet', ref: 'responses_sheet', title: 'Event Registration' }],
+            apply: { status: 'applying', startedAt: '2026-01-01T00:00:00.000Z' }
+        }
+    });
+
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({ LOCK: { UPDATE: 'UPDATE' } }) },
+        now: () => new Date('2026-01-01T00:10:00.000Z'),
+        proposalApplyStaleAfterMs: 60_000
+    });
+
+    const history = await assistant.getHistory({ userId: 'user_1', workflowId: 'workflow_1' });
+
+    assert.equal(memory.messages[0].proposalStatus, 'pending');
+    assert.equal(memory.messages[0].payload.apply.status, 'recovered');
+    assert.equal(history.state.phase, 'awaiting_proposal');
+});
+
+test('deciding a stale applying proposal recovers it before the status guard', async () => {
+    const memory = createMemoryModels();
+    await memory.models.AssistantThread.create({
+        id: 'thread_1', userId: 'user_1', surface: 'workflow', workflowId: 'workflow_1',
+        state: { version: 2, phase: 'awaiting_proposal', activeProposalMessageId: 'proposal_1' }, context: {}
+    });
+    await memory.models.AssistantMessage.create({
+        id: 'proposal_1', threadId: 'thread_1', sender: 'bot', kind: 'workflow_proposal', proposalStatus: 'applying', text: 'Add a manual step.',
+        payload: {
+            workflowId: 'workflow_1', baseWorkflowRevision: 1, nodes: [], edges: [], readiness: { canApply: true },
+            apply: { status: 'applying', startedAt: '2026-01-01T00:00:00.000Z' }
+        }
+    });
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({ LOCK: { UPDATE: 'UPDATE' } }) },
+        saveDraft: async () => ({ automation: memory.workflows[0] }),
+        now: () => new Date('2026-01-01T00:10:00.000Z'),
+        proposalApplyStaleAfterMs: 60_000
+    });
+
+    const result = await assistant.decideProposal({ userId: 'user_1', workflowId: 'workflow_1', proposalMessageId: 'proposal_1' });
+
+    assert.equal(result.message.proposalStatus, 'applied');
+    assert.equal(memory.messages[0].proposalStatus, 'applied');
+});
+
+test('workflow preserves a Drive-created Sheet after a Sheets 403 so retry cannot duplicate it', async () => {
+    // The locked record changes status to "applying", while the outer instance
+    // still sees "pending". Sequelize will not persist that same stale value
+    // unless the retry cleanup reloads the record first.
+    const memory = createMemoryModels({ emulateSequelizeDirtyUpdates: true });
+    await memory.models.AssistantThread.create({
+        id: 'thread_1', userId: 'user_1', surface: 'workflow', workflowId: 'workflow_1',
+        state: { version: 1, phase: 'awaiting_proposal', activeProposalMessageId: 'proposal_1' }, context: {}
+    });
+    await memory.models.AssistantMessage.create({
+        id: 'proposal_1', threadId: 'thread_1', sender: 'bot', kind: 'workflow_proposal', proposalStatus: 'pending', text: 'Create a response sheet.',
+        payload: {
+            workflowId: 'workflow_1', baseWorkflowRevision: 1, nodes: [], edges: [], readiness: { canApply: true },
+            resourceChanges: [{ type: 'create_google_spreadsheet', ref: 'responses_sheet', title: 'Event Registration' }]
+        }
+    });
+
+    const calls = [];
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({ LOCK: { UPDATE: 'UPDATE' } }) },
+        saveDraft: async ({ nodes, edges }) => ({ automation: { ...memory.workflows[0], nodes, edges, revision: 2 } }),
+        spreadsheetService: {
+            createAndInitialize: async options => {
+                calls.push(options);
+                await options.onFileReady({ id: 'spreadsheet_1', name: 'Event Registration', sheetTitle: 'Responses', range: "'Responses'!A1", webViewLink: 'https://sheet.test' });
+                if (calls.length === 1) {
+                    const error = new Error('Google denied Sheets access.');
+                    error.code = 'GOOGLE_PERMISSION_REQUIRED';
+                    throw error;
+                }
+                return { id: 'spreadsheet_1', name: 'Event Registration', range: "'Responses'!A1", webViewLink: 'https://sheet.test' };
+            }
+        }
+    });
+
+    await assert.rejects(
+        () => assistant.decideProposal({ userId: 'user_1', workflowId: 'workflow_1', proposalMessageId: 'proposal_1' }),
+        error => error.code === 'GOOGLE_PERMISSION_REQUIRED'
+    );
+    assert.equal(memory.messages[0].proposalStatus, 'pending');
+    assert.equal(memory.messages[0].payload.resourceChanges[0].spreadsheetId, 'spreadsheet_1');
+
+    await assistant.decideProposal({ userId: 'user_1', workflowId: 'workflow_1', proposalMessageId: 'proposal_1' });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].existingSpreadsheetId, 'spreadsheet_1');
+    assert.equal(memory.messages[0].proposalStatus, 'applied');
 });
 
 test('workflow applies a locally valid unverified proposal after user review', async () => {
