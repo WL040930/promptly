@@ -49,6 +49,8 @@ Create a `.env` file in the root directory and configure the following variables
 ```env
 # Server
 PORT=3000
+# Canonical public URL used in robots.txt and sitemap.xml, for example:
+SITE_URL=https://app.example.com
 
 # Database (PostgreSQL)
 DB_HOST=localhost

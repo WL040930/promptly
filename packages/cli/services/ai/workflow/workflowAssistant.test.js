@@ -382,6 +382,138 @@ test('workflow progress is persisted and emitted with its retry attempt', async 
     assert.equal(events.at(-1).work.activities.at(-1).attempt, 2);
 });
 
+test('workflow AI rejects an empty request before it creates chat history', async () => {
+    const memory = createMemoryModels();
+    let runTurnCalls = 0;
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async () => { runTurnCalls += 1; return { kind: 'reply', message: 'Unexpected.' }; }
+    });
+
+    await assert.rejects(
+        () => assistant.submitTurn({ userId: 'user_1', workflowId: 'workflow_1', command: { type: 'submit_text', text: '   ' } }),
+        error => error.code === 'WORKFLOW_AI_INPUT_REQUIRED'
+    );
+
+    assert.equal(runTurnCalls, 0);
+    assert.equal(memory.threads.length, 0);
+    assert.equal(memory.messages.length, 0);
+});
+
+test('workflow AI rejects a turn from an out-of-date browser state without invoking the model', async () => {
+    const memory = createMemoryModels();
+    await memory.models.AssistantThread.create({
+        id: 'thread_1', userId: 'user_1', surface: 'workflow', workflowId: 'workflow_1',
+        state: { version: 3, phase: 'idle' }, context: {}
+    });
+    let runTurnCalls = 0;
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async () => { runTurnCalls += 1; return { kind: 'reply', message: 'Unexpected.' }; }
+    });
+
+    await assert.rejects(
+        () => assistant.submitTurn({
+            userId: 'user_1', workflowId: 'workflow_1', requestId: 'request_stale', expectedStateVersion: 2,
+            command: { type: 'submit_text', text: 'Add an email step.' }
+        }),
+        error => error.code === 'WORKFLOW_AI_STATE_CONFLICT' && error.currentStateVersion === 3
+    );
+
+    assert.equal(runTurnCalls, 0);
+    assert.equal(memory.messages.length, 0);
+});
+
+test('workflow AI records a structured clarification answer before continuing the original request', async () => {
+    const memory = createMemoryModels();
+    const turnContexts = [];
+    let call = 0;
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async args => {
+            turnContexts.push(args.turnContext);
+            call += 1;
+            return call === 1
+                ? { kind: 'clarification', message: 'Which provider?', inputs: [{ id: 'provider', type: 'single_choice', label: 'Provider', options: ['Gmail', 'Outlook'] }] }
+                : { kind: 'reply', message: 'I will use Gmail.' };
+        },
+        idFactory: (() => { let count = 0; return prefix => `${prefix}_${++count}`; })()
+    });
+
+    await assistant.submitTurn({
+        userId: 'user_1', workflowId: 'workflow_1', command: { type: 'submit_text', text: 'Add an email notification.' }
+    });
+    const result = await assistant.submitTurn({
+        userId: 'user_1', workflowId: 'workflow_1',
+        command: { type: 'submit_clarification', text: 'Gmail', state: { provider: ['Gmail'] } }
+    });
+    const clarification = memory.messages.find(message => message.kind === 'clarification');
+
+    assert.deepEqual(clarification.payload.selectedState, { provider: ['Gmail'] });
+    assert.equal(clarification.payload.resolution.type, 'answered');
+    assert.equal(turnContexts[1].sourceText, 'Add an email notification.');
+    assert.deepEqual(turnContexts[1].latestText, 'Gmail');
+    assert.equal(result.state.phase, 'idle');
+});
+
+test('rejecting the active workflow proposal marks it ignored and returns the assistant to idle', async () => {
+    const memory = createMemoryModels();
+    await memory.models.AssistantThread.create({
+        id: 'thread_1', userId: 'user_1', surface: 'workflow', workflowId: 'workflow_1',
+        state: { version: 3, phase: 'awaiting_proposal', activeProposalMessageId: 'proposal_1' }, context: {}
+    });
+    await memory.models.AssistantMessage.create({
+        id: 'proposal_1', threadId: 'thread_1', sender: 'bot', kind: 'workflow_proposal', proposalStatus: 'pending', text: 'Add an email step.',
+        payload: { workflowId: 'workflow_1', baseWorkflowRevision: 1, nodes: [], edges: [] }
+    });
+    const assistant = createWorkflowAssistant({ models: memory.models, db: { transaction: async callback => callback({}) } });
+
+    const result = await assistant.decideProposal({
+        userId: 'user_1', workflowId: 'workflow_1', proposalMessageId: 'proposal_1', action: 'reject', expectedStateVersion: 3
+    });
+
+    assert.equal(result.message.proposalStatus, 'rejected');
+    assert.equal(result.state.phase, 'idle');
+    assert.equal(result.state.activeProposalMessageId, null);
+    assert.equal(memory.messages[0].payload.work.status, 'ignored');
+});
+
+test('workflow AI refuses a second request while the first is still generating', async () => {
+    const memory = createMemoryModels();
+    let releaseTurn;
+    let generationStarted;
+    const started = new Promise(resolve => { generationStarted = resolve; });
+    const release = new Promise(resolve => { releaseTurn = resolve; });
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async () => {
+            generationStarted();
+            await release;
+            return { kind: 'reply', message: 'First request completed.' };
+        }
+    });
+
+    const firstTurn = assistant.submitTurn({
+        userId: 'user_1', workflowId: 'workflow_1', requestId: 'request_one', command: { type: 'submit_text', text: 'Add an email step.' }
+    });
+    await started;
+
+    await assert.rejects(
+        () => assistant.submitTurn({
+            userId: 'user_1', workflowId: 'workflow_1', requestId: 'request_two', command: { type: 'submit_text', text: 'Add a delay step.' }
+        }),
+        error => error.code === 'WORKFLOW_AI_TURN_IN_PROGRESS'
+    );
+
+    releaseTurn();
+    await firstTurn;
+    assert.equal(memory.messages.length, 2);
+});
+
 test('proposal validation resolves a form from a newly proposed form trigger', () => {
     assert.equal(formIdForWorkflowNodes([]), null);
     assert.equal(formIdForWorkflowNodes([{

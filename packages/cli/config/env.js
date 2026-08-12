@@ -46,6 +46,7 @@ const env = {
         port: Number(process.env.PORT || 3000),
         clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
         publicOrigin: process.env.TRIGGER_PUBLIC_ORIGIN || null,
+        siteUrl: process.env.SITE_URL || process.env.TRIGGER_PUBLIC_ORIGIN || null,
         slowRequestMs: Number(process.env.PERF_SLOW_REQUEST_MS || 750)
     },
     db: {

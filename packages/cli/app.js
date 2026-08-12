@@ -9,11 +9,23 @@ import routes from './routes/routes.js';
 import errorHandler from './middleware/errorHandler.js';
 import requestTiming from './middleware/requestTiming.js';
 import env from './config/env.js';
+import { robotsDirectiveForPath, sitemapPaths } from '../shared/siteSeo.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
+
+const publicOriginFor = req => {
+    const configuredOrigin = env.app.siteUrl || env.app.publicOrigin;
+    if (configuredOrigin) return configuredOrigin.replace(/\/$/, '');
+    return `${req.protocol}://${req.get('host')}`;
+};
+
+const sitemapXmlFor = origin => {
+    const urls = sitemapPaths().map(path => `  <url><loc>${origin}${path}</loc></url>`).join('\n');
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
+};
 
 app.use(helmet({
     contentSecurityPolicy: false, // Disabling CSP locally to avoid blocking frontend assets
@@ -29,6 +41,14 @@ app.use(compression({
         return compression.filter(req, res);
     }
 }));
+
+app.use((req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD') {
+        const directive = robotsDirectiveForPath(req.path);
+        if (directive.startsWith('noindex')) res.setHeader('X-Robots-Tag', directive);
+    }
+    next();
+});
 
 // Rate limiters
 const generalLimiter = rateLimit({
@@ -48,6 +68,30 @@ app.get('/api', (req, res) => {
 });
 
 app.use('/api', routes);
+
+app.get('/robots.txt', (req, res) => {
+    const origin = publicOriginFor(req);
+    res.type('text/plain').send([
+        'User-agent: *',
+        'Allow: /',
+        'Disallow: /app/',
+        'Disallow: /onboarding',
+        'Disallow: /login',
+        'Disallow: /register',
+        'Disallow: /forgot-password',
+        'Disallow: /reset-password/',
+        'Disallow: /f/',
+        `Sitemap: ${origin}/sitemap.xml`
+    ].join('\n'));
+});
+
+app.get('/sitemap.xml', (req, res) => {
+    res.type('application/xml').send(sitemapXmlFor(publicOriginFor(req)));
+});
+
+app.get('/landing/security', (req, res) => {
+    res.redirect(301, '/security');
+});
 
 const frontendDir = join(__dirname, '../ui/dist');
 app.use(express.static(frontendDir, {

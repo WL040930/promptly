@@ -7,6 +7,7 @@ import AppLoadingSkeleton from './components/ui/AppLoadingSkeleton.jsx';
 import WorkspaceShell from './workspace/WorkspaceShell.jsx';
 import WorkspacePageRouter from './workspace/WorkspacePageRouter.jsx';
 import { getAuthRedirect } from './utils/authNavigation.js';
+import { applySiteMetadata } from './utils/siteMetadata.js';
 
 const LandingPage = React.lazy(() => import('./landing/LandingPage.jsx'));
 const LoginPage = React.lazy(() => import('./auth/LoginPage.jsx'));
@@ -37,6 +38,10 @@ function App() {
 
     const routeState = useMemo(() => getRouteState(window.location.pathname), [locationKey]);
     const route = useMemo(() => parsePath(window.location.href), [locationKey]);
+
+    useEffect(() => {
+        applySiteMetadata(routeState.pathname);
+    }, [routeState.pathname]);
 
     useEffect(() => {
         const redirect = getAuthRedirect({ user, isLoading, routeState });
@@ -88,7 +93,7 @@ function App() {
     if (routeState.isForgotPassword) return <ForgotPasswordPage onLogin={() => navigate('/login')} />;
     if (routeState.isResetPassword) return <ResetPasswordPage token={routeState.pathname.split('/').pop()} onLogin={() => navigate('/login')} />;
     if (routeState.isSecurity) return <SecurityPage onHome={() => navigate('/')} onLogin={() => navigate('/login')} />;
-    return <LandingPage onLogin={() => navigate('/login')} onSecurity={() => navigate('/landing/security')} />;
+    return <LandingPage onLogin={() => navigate('/login')} onSecurity={() => navigate('/security')} />;
 }
 
 export default function RootApp() {

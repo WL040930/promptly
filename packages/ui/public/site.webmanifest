@@ -1,0 +1,16 @@
+{
+  "name": "Promptly",
+  "short_name": "Promptly",
+  "description": "Build trusted automations with AI.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f4fb",
+  "theme_color": "#6353e8",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "any",
+      "type": "image/jpeg"
+    }
+  ]
+}
