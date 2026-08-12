@@ -25,3 +25,16 @@ test('workflow presentation derives visible changes and flow from the compiled g
     assert.deepEqual(presentation.flow, ['Form submitted', 'Send confirmation email']);
     assert.equal(presentation.changes.length, 2);
 });
+
+test('workflow presentation exposes a workflow rename as a visible change', () => {
+    const presentation = buildWorkflowPresentation({
+        workflow: { name: 'New Automation' },
+        proposal: {
+            diff: { metadata: { name: { from: 'New Automation', to: 'Event Registration Automation' } } },
+            nodes: [],
+            readiness: { ready: true }
+        }
+    });
+    assert.match(presentation.outcome, /updates 1/i);
+    assert.deepEqual(presentation.changes, [{ id: 'workflow_name', type: 'update', label: 'Workflow name', detail: 'Rename to Event Registration Automation' }]);
+});

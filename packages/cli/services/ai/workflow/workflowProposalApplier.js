@@ -40,6 +40,22 @@ export const resolveProvisionedGoogleSheetConfigs = (nodes = [], resources, erro
 
 const formIdForWorkflowNodes = (nodes = []) => nodes.find(node => node?.subType === 'form-submission')?.config?.formId || null;
 
+export const applyWorkflowMetadataUpdates = async ({ workflow, updates = null, transaction, errorWith }) => {
+    if (updates === null || updates === undefined) return workflow;
+    if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+        throw errorWith('WORKFLOW_PROPOSAL_METADATA_INVALID', 'The workflow details update is invalid.', 400);
+    }
+    if (Object.keys(updates).some(key => key !== 'name')) {
+        throw errorWith('WORKFLOW_PROPOSAL_METADATA_INVALID', 'Only the workflow name can be changed by this proposal.', 400);
+    }
+    if (updates.name === undefined) return workflow;
+    if (typeof updates.name !== 'string' || !updates.name.trim() || updates.name.trim().length > 255) {
+        throw errorWith('WORKFLOW_PROPOSAL_METADATA_INVALID', 'Workflow name must be between 1 and 255 characters.', 400);
+    }
+    await workflow.update({ name: updates.name.trim() }, { transaction });
+    return workflow;
+};
+
 const payloadWithProvisionedFile = (payload, ref, resource) => ({
     ...payload,
     resourceChanges: (payload.resourceChanges || []).map(change => change?.ref === ref
@@ -248,16 +264,29 @@ export const createWorkflowProposalApplier = ({
                 }
                 if (Number(resolvedPayload.baseWorkflowRevision) !== Number(lockedWorkflow.revision)) throw errorWith('WORKFLOW_PROPOSAL_STALE', 'This workflow changed after the proposal was prepared. Generate a new proposal.', 409);
                 const proposalNodes = resolveProvisionReferences(resolvedPayload.nodes || [], provisionedResources, errorWith);
-                const { normalizedBindings } = await validateBindings({ workflow: lockedWorkflow, userId, transaction, nodes: proposalNodes });
-                const saved = await saveDraft({
-                    automationId: lockedWorkflow.id,
-                    userId,
-                    nodes: normalizedBindings.nodes,
-                    edges: resolvedPayload.edges,
-                    expectedRevision: resolvedPayload.baseWorkflowRevision,
-                    source: 'ai',
-                    summary: 'Applied workflow AI proposal',
-                    transaction
+                const proposalEdges = resolvedPayload.edges || [];
+                const graphChanged = JSON.stringify(proposalNodes) !== JSON.stringify(lockedWorkflow.nodes || [])
+                    || JSON.stringify(proposalEdges) !== JSON.stringify(lockedWorkflow.edges || []);
+                let normalizedBindings = { nodes: proposalNodes, repairs: [] };
+                let saved = { automation: lockedWorkflow };
+                if (graphChanged) {
+                    ({ normalizedBindings } = await validateBindings({ workflow: lockedWorkflow, userId, transaction, nodes: proposalNodes }));
+                    saved = await saveDraft({
+                        automationId: lockedWorkflow.id,
+                        userId,
+                        nodes: normalizedBindings.nodes,
+                        edges: proposalEdges,
+                        expectedRevision: resolvedPayload.baseWorkflowRevision,
+                        source: 'ai',
+                        summary: 'Applied workflow AI proposal',
+                        transaction
+                    });
+                }
+                await applyWorkflowMetadataUpdates({
+                    workflow: saved.automation,
+                    updates: resolvedPayload.workflowUpdates,
+                    transaction,
+                    errorWith
                 });
                 const appliedPayload = {
                     ...resolvedPayload,

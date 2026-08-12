@@ -32,3 +32,25 @@ test('resolves canonical expressions without exposing template syntax to nodes',
     assert.equal(resolveWorkflowExpression(expression, { trigger_1: { fields: { f_real_name: 'Sam' } } }).value, 'Hi Sam');
     assert.equal(validateWorkflowExpressions({ nodes: [trigger, { id: 'email_1', config: { body: expression } }], formSchema: form }).length, 0);
 });
+
+test('resolves an omitted optional form field as an empty value', () => {
+    const expression = { $expr: 'reference', v: 1, nodeId: 'trigger_1', path: ['fields', 'f_optional_comments'] };
+    const result = resolveWorkflowExpression(expression, {
+        trigger_1: {
+            success: true,
+            triggerData: { fields: { f_real_name: 'Sam' } },
+            fields: { f_real_name: 'Sam' },
+            responseId: 'response_1',
+            submittedAt: '2026-08-12T15:22:41.280Z'
+        }
+    });
+
+    assert.equal(result.value, '');
+    assert.deepEqual(result.unresolved, []);
+
+    const missingMetadata = resolveWorkflowExpression(
+        { $expr: 'reference', v: 1, nodeId: 'trigger_1', path: ['missing'] },
+        { trigger_1: { success: true, triggerData: { fields: {} }, fields: {} } }
+    );
+    assert.deepEqual(missingMetadata.unresolved, [{ $expr: 'reference', v: 1, nodeId: 'trigger_1', path: ['missing'] }]);
+});

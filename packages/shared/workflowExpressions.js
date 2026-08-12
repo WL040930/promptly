@@ -147,10 +147,25 @@ export const validateWorkflowExpressions = ({ nodes = [], formSchema = null } = 
 
 const getContextValue = (context, nodeId, path) => path.reduce((current, key) => current === undefined || current === null ? undefined : current[key], context?.[nodeId]);
 
+const isOmittedFormField = (expression, context) => {
+    const path = expression.path;
+    if (path.length !== 2 || path[0] !== 'fields') return false;
+
+    // Form submissions may omit unanswered optional fields entirely. A
+    // spreadsheet row should receive an empty cell for that case, while a
+    // missing node, trigger metadata, or nested path must remain an error.
+    const source = context?.[expression.nodeId];
+    return source?.success === true
+        && source?.triggerData?.fields
+        && source?.fields
+        && !Object.hasOwn(source.fields, path[1]);
+};
+
 export const resolveWorkflowExpression = (expression, context) => {
     if (!isWorkflowExpression(expression)) return { value: expression, unresolved: [] };
     if (expression[EXPRESSION_KEY] === 'reference') {
         const value = getContextValue(context, expression.nodeId, expression.path);
+        if (value === undefined && isOmittedFormField(expression, context)) return { value: '', unresolved: [] };
         return value === undefined ? { value: expression, unresolved: [expression] } : { value, unresolved: [] };
     }
     const values = expression.parts.map(part => part?.reference ? resolveWorkflowExpression(part.reference, context) : { value: part?.text || '', unresolved: [] });

@@ -80,6 +80,7 @@ const messageFromResult = ({ result, workflow, idFactory = makeId }) => {
             baseWorkflowRevision: workflow.revision,
             requirements: result.requirements,
             capabilities: result.capabilities,
+            workflowUpdates: result.workflowUpdates || null,
             nodes: result.nodes,
             edges: result.edges,
             operations: result.operations,

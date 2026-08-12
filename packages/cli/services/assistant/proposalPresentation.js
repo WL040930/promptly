@@ -41,6 +41,12 @@ export const buildFormPresentation = ({ form = {}, proposal = {} } = {}) => {
 export const buildWorkflowPresentation = ({ workflow = {}, proposal = {} } = {}) => {
     const diff = proposal.diff || {};
     const changes = [
+        ...(diff.metadata?.name ? [{
+            id: 'workflow_name',
+            type: 'update',
+            label: 'Workflow name',
+            detail: `Rename to ${titleCase(diff.metadata.name.to)}`
+        }] : []),
         ...(diff.addedNodes || []).map(node => ({ id: `add_${node.id}`, type: 'add', label: titleCase(node.title || node.subType), detail: 'Added step' })),
         ...(diff.updatedNodes || []).map(node => ({ id: `update_${node.id}`, type: 'update', label: titleCase(node.title || node.subType), detail: 'Updated step' })),
         ...(diff.removedNodes || []).map(node => ({ id: `remove_${node.id}`, type: 'remove', label: titleCase(node.title || node.subType), detail: 'Removed step' })),

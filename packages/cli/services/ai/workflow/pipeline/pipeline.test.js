@@ -164,6 +164,27 @@ const existingWorkflow = {
     edges: [{ id: 'e1', source: 'trigger_1', target: 'email_1', sourceHandle: 'event', targetHandle: 'event' }]
 };
 
+test('pipeline creates a direct metadata-only proposal for a workflow rename', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let providerCalls = 0;
+    const result = await generateWorkflowTurn({
+        request: 'rename this workflow to Event Registration Automation',
+        currentWorkflow: { ...existingWorkflow, name: 'New Automation' },
+        provider: { async generateContent() { providerCalls += 1; throw new Error('Rename should not call an AI provider.'); } },
+        formLoader: async () => { throw new Error('Rename should not load a form.'); },
+        resourceLookup: async () => { throw new Error('Rename should not inspect Google resources.'); },
+        resourceLoader: async () => { throw new Error('Rename should not load account resources.'); },
+        registry: makeRegistry()
+    });
+
+    assert.equal(providerCalls, 0);
+    assert.equal(result.type, 'proposal');
+    assert.deepEqual(result.workflowUpdates, { name: 'Event Registration Automation' });
+    assert.deepEqual(result.operations, [{ op: 'update_workflow', updates: { name: 'Event Registration Automation' } }]);
+    assert.deepEqual(result.diff.metadata, { name: { from: 'New Automation', to: 'Event Registration Automation' } });
+    assert.equal(result.plan[0].title, 'Rename workflow to Event Registration Automation');
+});
+
 // ---------------------------------------------------------------------------
 // Planner reply — short-circuits without worker
 // ---------------------------------------------------------------------------

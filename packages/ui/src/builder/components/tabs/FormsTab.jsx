@@ -8,7 +8,6 @@ import FormResponses from '../../../forms/responses/FormResponses';
 import FormSettings from '../../../forms/settings/FormSettings';
 import FormShareModal from '../../../forms/settings/FormShareModal';
 import Button from '../../../components/ui/Button.jsx';
-import { createField } from '../../../forms/editor/fields/fieldTypes';
 import { useForms, useForm, useCreateForm, useUpdateForm, useDeleteForm } from '../../../api/hooks/useForms.js';
 import { useToast } from '../../../context/ToastContext.jsx';
 import { parsePath, buildPath, replacePath } from '../../../utils/router.js';
@@ -177,7 +176,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
             title: 'Untitled Form',
             description: '',
             settings: { accentColor: '#5b4ee8', acceptingResponses: true },
-            fields: [createField('text')],
+            fields: [],
         };
         createFormMutation.mutate(newFormPayload, {
             onSuccess: (newForm) => {

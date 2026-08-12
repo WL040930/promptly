@@ -6,7 +6,7 @@ import { buildFormBindingCatalogue } from '../../../../../shared/workflowExpress
 const MAX_CONTEXT_TEXT = 12000;
 const MAX_HISTORY = 10;
 const MAX_HISTORY_TEXT = 500;
-const MAX_DESCRIPTION_TEXT = 120;
+const MAX_DESCRIPTION_TEXT = 80;
 const MAX_CONFIG_KEYS = 12;
 const MAX_CONFIG_ARRAY_ITEMS = 12;
 const clamp = (value, max = MAX_CONTEXT_TEXT) => {
@@ -69,22 +69,42 @@ const compactPending = pending => {
     };
 };
 
-const compactCatalogue = catalogue => (catalogue || []).map(item => ({
-    nodeKey: item.nodeKey,
-    type: item.type,
-    subType: item.subType,
-    title: item.title,
-    description: clamp(item.description, MAX_DESCRIPTION_TEXT),
-    // Keep this intentionally smaller than a full node schema, while giving
-    // the planner enough configuration information for a safe linear draft.
-    configInputs: (item.inputs || []).slice(0, 12).map(input => ({
+const compactPlannerInput = input => {
+    if (!input?.name || input.isConnection) return null;
+    return {
         name: input.name,
-        required: input.required === true,
+        ...(input.required === true ? { required: true } : {}),
         ...(input.defaultValue !== undefined ? { defaultValue: compactValue(input.defaultValue) } : {}),
         ...(input.resource ? { resource: input.resource } : {})
-    })),
-    connectionOutputs: (item.outputs || []).slice(0, 4).map(output => output.name)
-}));
+    };
+};
+
+// The planner needs the full set of possible node keys, but only the inputs
+// that constrain safe routing or resource selection. The worker receives the
+// complete authoritative schema after node selection.
+const compactCatalogue = catalogue => (catalogue || []).map(item => {
+    const inputs = (item.inputs || [])
+        .filter(input => input?.required === true || input?.resource)
+        .slice(0, 12)
+        .map(compactPlannerInput)
+        .filter(Boolean);
+    const outputs = (item.outputs || []).slice(0, 4).map(output => output?.name).filter(Boolean);
+    return {
+        nodeKey: item.nodeKey,
+        title: item.title,
+        purpose: clamp(item.description, MAX_DESCRIPTION_TEXT),
+        ...(inputs.length ? { inputs } : {}),
+        ...(outputs.length ? { outputs } : {})
+    };
+});
+
+const hasContextContent = value => {
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'string') return Boolean(value.trim());
+    if (Array.isArray(value)) return value.some(hasContextContent);
+    if (typeof value === 'object') return Object.values(value).some(hasContextContent);
+    return true;
+};
 
 const compactResources = resources => Object.fromEntries(Object.entries(resources || {}).map(([key, entry]) => [
     key,
@@ -121,57 +141,54 @@ export const buildWorkflowPlannerContext = ({
     formLookupUsed = false,
     forceDecision = false
 }) => {
-    const sections = [
-    ['Resource Identity and Continuity:', JSON.stringify(compactValue(resourceContext || {}))],
-    'You are editing this existing workflow. Preserve its purpose, accepted decisions, and graph behavior unless the Current Request explicitly changes them.',
-    '',
-    'Current Workflow Edit View:',
-    JSON.stringify(plannerWorkflowView(workflow)),
-    '',
-    'Available Node Catalogue:',
-    JSON.stringify(compactCatalogue(catalogue)),
-    '',
-    'Clarification Mode:',
-    `${normalizeClarificationMode(clarificationMode)} - ${getClarificationModeInstruction(clarificationMode)}`,
-    forceDecision ? 'Choose sensible defaults now. Ask again only when execution or safety is blocked.' : '',
-    '',
-    'Resolved Turn Context:',
-    turnContext ? JSON.stringify(compactValue(turnContext)) : '(none)',
-    '',
-    'Attached Form Context:',
-    formSchema ? JSON.stringify({
+    const sections = [];
+    const sectionCharacters = {};
+    const addSection = (name, value, { required = false } = {}) => {
+        if (!required && !hasContextContent(value)) return;
+        const text = typeof value === 'string' ? value : JSON.stringify(value);
+        const section = `${name}:\n${text}`;
+        sections.push(section);
+        sectionCharacters[name] = section.length;
+    };
+    const compactResourceContext = compactValue(resourceContext || {});
+    const workflowView = plannerWorkflowView(workflow);
+    const plannerCatalogue = compactCatalogue(catalogue);
+    const recentHistory = history.slice(-MAX_HISTORY).map(compactHistoryMessage);
+    const pending = compactPending(pendingProposal);
+
+    addSection('Resource Identity and Continuity', compactResourceContext);
+    addSection('Workflow Continuity', 'You are editing this existing workflow. Preserve its purpose, accepted decisions, and graph behavior unless the Current Request explicitly changes them.', { required: true });
+    addSection('Current Workflow Edit View', workflowView, { required: true });
+    addSection('Available Node Catalogue', plannerCatalogue, { required: true });
+    addSection('Clarification Mode', `${normalizeClarificationMode(clarificationMode)} - ${getClarificationModeInstruction(clarificationMode)}`, { required: true });
+    if (forceDecision) addSection('Decision Resolution', 'Choose sensible defaults now. Ask again only when execution or safety is blocked.', { required: true });
+    addSection('Resolved Turn Context', turnContext && compactValue(turnContext));
+    addSection('Attached Form Context', formSchema && {
         ...projectFormResourceContext(formSchema),
         fieldBindings: buildFormBindingCatalogue(formSchema).bindings
-    }) : '(none)',
-    '',
-    'Inspected Form Context:',
-    inspectedFormSchema ? JSON.stringify(projectFormResourceContext(inspectedFormSchema)) : '(none)',
-    formLookupUsed ? 'A form lookup was already used for this request. Do not request another lookup.' : '',
-    '',
-    'Inspected Run Diagnostic Context:',
-    inspectedRun ? JSON.stringify(compactValue(inspectedRun)) : '(none)',
-    '',
-    'Inspected Account Resource:',
-    inspectedResource ? JSON.stringify(compactValue(inspectedResource)) : '(none)',
-    '',
-    'Available Owned Resources:',
-    userContext ? JSON.stringify(compactValue(userContext)) : '(none)',
-    '',
-    'Recent Conversation:',
-    JSON.stringify(history.slice(-MAX_HISTORY).map(compactHistoryMessage)),
-    '',
-    'Pending Unapplied Proposal:',
-    JSON.stringify(compactPending(pendingProposal)),
-    '',
-    'Current Request:',
-    clamp(request)
-    ];
-    const prompt = sections.map(section => Array.isArray(section) ? section.join('\n') : section).join('\n');
+    });
+    addSection('Inspected Form Context', inspectedFormSchema && projectFormResourceContext(inspectedFormSchema));
+    if (formLookupUsed) addSection('Form Lookup Status', 'A form lookup was already used for this request. Do not request another lookup.', { required: true });
+    addSection('Inspected Run Diagnostic Context', inspectedRun && compactValue(inspectedRun));
+    addSection('Inspected Account Resource', inspectedResource && compactValue(inspectedResource));
+    addSection('Available Owned Resources', userContext && compactValue(userContext));
+    addSection('Recent Conversation', recentHistory);
+    addSection('Pending Unapplied Proposal', pending);
+    addSection('Current Request', clamp(request), { required: true });
+
+    const prompt = sections.join('\n\n');
+    const optionalContextCharacters = Object.entries(sectionCharacters)
+        .filter(([name]) => !['Workflow Continuity', 'Current Workflow Edit View', 'Available Node Catalogue', 'Clarification Mode', 'Recent Conversation', 'Current Request'].includes(name))
+        .reduce((total, [, characters]) => total + characters, 0);
     return {
         prompt,
         metrics: {
             characters: prompt.length,
-            catalogueCharacters: JSON.stringify(compactCatalogue(catalogue)).length,
+            sectionCharacters,
+            catalogueCharacters: sectionCharacters['Available Node Catalogue'] || 0,
+            workflowCharacters: sectionCharacters['Current Workflow Edit View'] || 0,
+            historyCharacters: sectionCharacters['Recent Conversation'] || 0,
+            optionalContextCharacters,
             workflowNodeCount: workflow?.nodes?.length || 0,
             historyMessageCount: Math.min(history.length, MAX_HISTORY),
             pendingProposalIncluded: Boolean(pendingProposal),
@@ -181,6 +198,8 @@ export const buildWorkflowPlannerContext = ({
         }
     };
 };
+
+export const workflowContextInternals = Object.freeze({ compactCatalogue });
 
 const describeRepairIssue = item => [
     `${item.code || 'INVALID'} at ${item.path || 'response'}: ${item.message || 'Invalid output.'}`,

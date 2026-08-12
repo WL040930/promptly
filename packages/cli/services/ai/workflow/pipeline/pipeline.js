@@ -65,9 +65,54 @@ const workflowComplexityFor = ({ workflow = {}, plan = {}, formSchema = null }) 
     return WORKFLOW_COMPLEXITY_BUDGETS.simple;
 };
 
+const workflowRenameFromRequest = request => {
+    const text = String(request || '').trim();
+    const match = text.match(/^(?:please\s+)?(?:rename|change)\s+(?:this\s+|the\s+)?(?:workflow|automation)(?:\s+name)?\s+to\s+["“]?(.+?)["”]?\s*[.!?]?$/i);
+    if (!match) return null;
+    const name = String(match[1] || '').trim().replace(/\s+/g, ' ');
+    return name && name.length <= 255 ? name : null;
+};
+
+const workflowRenameProposal = ({ workflow, name, usage = {} }) => {
+    if (name === String(workflow?.name || '').trim()) {
+        return {
+            type: 'reply',
+            message: `This workflow is already named “${name}”.`,
+            tokenUsage: { ...usage, requestCalls: usage.requestCalls || 0 }
+        };
+    }
+    const diff = {
+        addedNodes: [],
+        updatedNodes: [],
+        removedNodes: [],
+        edges: [],
+        metadata: { name: { from: workflow?.name || '', to: name } }
+    };
+    return {
+        type: 'proposal',
+        message: `Rename this workflow to “${name}”.`,
+        requirements: [{ id: 'req_rename_workflow', description: `Rename the workflow to “${name}”.` }],
+        capabilities: [],
+        operations: [{ op: 'update_workflow', updates: { name } }],
+        workflowUpdates: { name },
+        nodes: workflow?.nodes || [],
+        edges: workflow?.edges || [],
+        diff,
+        plan: [{ title: `Rename workflow to ${name}` }],
+        readiness: { ready: true, status: 'ready', canApply: true, issues: [], setupActions: [] },
+        verification: { status: 'pass', issues: [], fulfilledRequirements: ['req_rename_workflow'] },
+        warnings: [],
+        resourceChanges: [],
+        tokenUsage: { ...usage, requestCalls: usage.requestCalls || 0 },
+        contextDelta: null,
+        diagnosis: null
+    };
+};
+
 export const workflowPipelineInternals = Object.freeze({
     WORKFLOW_COMPLEXITY_BUDGETS,
-    workflowComplexityFor
+    workflowComplexityFor,
+    workflowRenameFromRequest
 });
 
 const createPipelineError = (message, code, issues = []) => {
@@ -491,6 +536,8 @@ export const generateWorkflowTurn = async ({
         status: 'planning', phase: 'understand', label: 'Reading your request',
         message: 'Understanding your request', detail: 'Identifying the trigger, actions, and any approval rules.'
     });
+    const requestedName = workflowRenameFromRequest(request);
+    if (requestedName) return workflowRenameProposal({ workflow: currentWorkflow, name: requestedName, usage });
     let inspectedRun = null;
     let inspectedResource = null;
     let resourceSelections = {};
@@ -564,10 +611,11 @@ export const generateWorkflowTurn = async ({
         forceDecision
     });
     let plannerContext = buildPlannerContext({ inspectedFormSchema, formLookupUsed });
+    let plannerInstruction = workflowPlannerInstruction;
     let plannerResult = await requestAndValidate({
         label: 'planner',
         prompt: plannerContext.prompt,
-        instruction: workflowPlannerInstruction,
+        instruction: plannerInstruction,
         validate: validatePlannerForCatalogue,
         provider,
         budget,
@@ -697,10 +745,11 @@ export const generateWorkflowTurn = async ({
         || normalizeClarificationMode(clarificationMode) === CLARIFICATION_MODES.DECIDE_EVERYTHING;
     if (plan.type === 'message' && shouldResolveDefaults) {
         plannerContext = buildPlannerContext({ inspectedFormSchema, formLookupUsed, forceDecision: true });
+        plannerInstruction = `${workflowPlannerInstruction}\nThe user delegated safe defaults. Resolve defaultable choices now.`;
         plannerResult = await requestAndValidate({
             label: 'planner',
             prompt: plannerContext.prompt,
-            instruction: `${workflowPlannerInstruction}\nThe user delegated safe defaults. Resolve defaultable choices now.`,
+            instruction: plannerInstruction,
             validate: validatePlannerForCatalogue,
             provider,
             budget,
@@ -721,6 +770,13 @@ export const generateWorkflowTurn = async ({
     await recordAiDiagnostic({
         event: 'workflow_planner_outcome',
         context: plannerContext.metrics,
+        instructionCharacters: plannerInstruction.length,
+        contextCharacters: plannerContext.prompt.length,
+        combinedCharacters: plannerInstruction.length + plannerContext.prompt.length,
+        catalogueCharacters: plannerContext.metrics.catalogueCharacters,
+        workflowCharacters: plannerContext.metrics.workflowCharacters,
+        historyCharacters: plannerContext.metrics.historyCharacters,
+        optionalContextCharacters: plannerContext.metrics.optionalContextCharacters,
         planType: plan.type,
         selectedNodeCount: (plan.selectedNodeKeys || []).length,
         requirementCount: (plan.requirements || []).length,

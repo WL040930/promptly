@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildWorkflowPlannerContext, buildWorkflowWorkerContext } from './workflowContext.js';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import NodeRegistry from '../../../../utils/NodeRegistry.js';
+import {
+    buildWorkflowPlannerContext,
+    buildWorkflowWorkerContext,
+    workflowContextInternals
+} from './workflowContext.js';
+
+const directory = path.dirname(fileURLToPath(import.meta.url));
+const nodesDir = path.resolve(directory, '../../../../../nodes');
+const plannerInstructionPath = path.resolve(directory, '../instruction/workflow-planner.md');
 
 test('planner context keeps node routing information while excluding full schemas and proposal operations', () => {
     const result = buildWorkflowPlannerContext({
@@ -44,10 +56,67 @@ test('planner context keeps node routing information while excluding full schema
     assert.equal(result.metrics.historyMessageCount, 10);
     assert.equal(result.metrics.pendingProposalIncluded, true);
     assert.match(result.prompt, /"nodeKey":"action:email"/);
-    assert.doesNotMatch(result.prompt, /"inputs"/);
+    assert.match(result.prompt, /"inputs":\[{"name":"to","resource":"contacts"}\]/);
+    assert.doesNotMatch(result.prompt, /"configInputs"|"connectionOutputs"/);
     assert.doesNotMatch(result.prompt, /should not be included/);
     assert.doesNotMatch(result.prompt, /"position"/);
-    assert.ok(result.metrics.catalogueCharacters < 300, 'planner catalogue should remain routing-sized');
+    assert.doesNotMatch(result.prompt, /Attached Form Context:|Inspected Form Context:|Available Owned Resources:/);
+    assert.ok(result.metrics.catalogueCharacters < 500, 'planner catalogue should remain routing-sized');
+    assert.ok(result.metrics.workflowCharacters > 0);
+    assert.ok(result.metrics.historyCharacters > 0);
+});
+
+test('planner catalogue keeps every enabled node key in a compact routing contract', async () => {
+    await NodeRegistry.init({ nodesDir });
+    const rawCatalogue = NodeRegistry.getCompactCatalogue();
+    const catalogue = workflowContextInternals.compactCatalogue(rawCatalogue);
+    const email = catalogue.find(item => item.nodeKey === 'action:email');
+    const approval = catalogue.find(item => item.nodeKey === 'logic:approval');
+
+    assert.equal(catalogue.length, 28);
+    assert.equal(catalogue.length, rawCatalogue.length);
+    assert.ok(JSON.stringify(catalogue).length <= 6000);
+    assert.deepEqual(Object.keys(email), ['nodeKey', 'title', 'purpose', 'inputs', 'outputs']);
+    assert.ok(email.inputs.some(input => input.name === 'to'));
+    assert.deepEqual(approval.outputs, ['approved', 'rejected']);
+    assert.equal(Object.hasOwn(email, 'type'), false);
+    assert.equal(Object.hasOwn(email, 'subType'), false);
+});
+
+test('representative planner prompt remains within the compact prompt budget', async () => {
+    await NodeRegistry.init({ nodesDir });
+    const instruction = await fs.readFile(plannerInstructionPath, 'utf8');
+    const workflow = {
+        revision: 4,
+        nodes: Array.from({ length: 6 }, (_, index) => ({
+            id: `node_${index + 1}`,
+            nodeKey: index === 0 ? 'trigger:webhook' : 'action:email',
+            type: index === 0 ? 'trigger' : 'action',
+            subType: index === 0 ? 'webhook' : 'email',
+            title: index === 0 ? 'Webhook' : `Email ${index}`,
+            config: { subject: `Message ${index}`, body: 'x'.repeat(240) }
+        })),
+        edges: Array.from({ length: 5 }, (_, index) => ({
+            id: `edge_${index + 1}`,
+            source: `node_${index + 1}`,
+            target: `node_${index + 2}`
+        }))
+    };
+    const result = buildWorkflowPlannerContext({
+        workflow,
+        catalogue: NodeRegistry.getCompactCatalogue(),
+        history: Array.from({ length: 10 }, (_, index) => ({ sender: 'user', text: `Message ${index}`.repeat(30) })),
+        request: 'Add a confirmation email after the registration is saved.',
+        clarificationMode: 'important_only'
+    });
+
+    assert.ok(instruction.length <= 4200, 'planner instruction should remain compact');
+    assert.match(instruction, /untrusted data/);
+    for (const outcome of ['reply', 'message', 'inspect_form', 'inspect_resource', 'diagnose_run', 'direct_plan', 'plan_complete']) {
+        assert.match(instruction, new RegExp(`\\\`${outcome}\\\``));
+    }
+    assert.ok(result.metrics.catalogueCharacters <= 6000, 'full enabled catalogue should remain compact');
+    assert.ok(instruction.length + result.prompt.length <= 16000, 'representative planner prompt should remain bounded');
 });
 
 test('planner context keeps the attached form field metadata available for inspection', () => {

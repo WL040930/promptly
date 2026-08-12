@@ -360,6 +360,40 @@ test('workflow applies a locally valid unverified proposal after user review', a
     assert.equal(memory.messages[0].payload.verification.status, 'unverified');
 });
 
+test('workflow AI carries a rename proposal through review without saving an unchanged graph', async () => {
+    const memory = createMemoryModels();
+    let saveDraftCalls = 0;
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({ LOCK: { UPDATE: 'UPDATE' } }) },
+        runTurn: async () => ({
+            kind: 'proposal',
+            message: 'Rename this workflow to “Event Registration Automation”.',
+            requirements: [{ id: 'req_rename', description: 'Rename the workflow.' }],
+            capabilities: [],
+            workflowUpdates: { name: 'Event Registration Automation' },
+            nodes: [],
+            edges: [],
+            operations: [{ op: 'update_workflow', updates: { name: 'Event Registration Automation' } }],
+            diff: { addedNodes: [], updatedNodes: [], removedNodes: [], edges: [], metadata: { name: { from: 'Registration flow', to: 'Event Registration Automation' } } },
+            readiness: { canApply: true },
+            verification: { status: 'pass' },
+            warnings: []
+        }),
+        saveDraft: async () => { saveDraftCalls += 1; throw new Error('A rename must not save an unchanged graph.'); },
+        idFactory: (() => { let count = 0; return prefix => `${prefix}_${++count}`; })()
+    });
+
+    const turn = await assistant.submitTurn({
+        userId: 'user_1', workflowId: 'workflow_1', command: { type: 'submit_text', text: 'Rename this workflow' }
+    });
+    assert.deepEqual(turn.botMsg.payload.workflowUpdates, { name: 'Event Registration Automation' });
+
+    await assistant.decideProposal({ userId: 'user_1', workflowId: 'workflow_1', proposalMessageId: turn.botMsg.id });
+    assert.equal(memory.workflows[0].name, 'Event Registration Automation');
+    assert.equal(saveDraftCalls, 0);
+});
+
 test('workflow progress is persisted and emitted with its retry attempt', async () => {
     const memory = createMemoryModels();
     const events = [];
