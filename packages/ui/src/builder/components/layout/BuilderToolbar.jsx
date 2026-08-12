@@ -1,6 +1,7 @@
 import {
     ArrowLeft,
     ChevronRight,
+    Pause,
     Play,
     Rocket,
     Upload,
@@ -172,7 +173,7 @@ const BuilderToolbar = ({
                     >
                         <span className="hidden xl:inline">{publishLabel}</span>
                     </Button>
-                    {isActive && <Button variant="ghost" size="xs" onClick={onPause} disabled={isPausing} isLoading={isPausing} title="Pause live triggers" className="h-8 gap-0 rounded-lg px-2 hover:bg-slate-100 sm:px-2.5 xl:gap-2"><span className="hidden xl:inline">Pause</span></Button>}
+                    {isActive && <Button variant="ghost" size="xs" onClick={onPause} disabled={isPausing} isLoading={isPausing} title="Pause live triggers" iconLeft={!isPausing && <Pause className="h-3.5 w-3.5" />} className="h-8 gap-0 rounded-lg px-2 hover:bg-slate-100 sm:px-2.5 xl:gap-2"><span className="hidden xl:inline">Pause</span></Button>}
                 </div>
                 <span className={`hidden items-center gap-1.5 text-xs font-bold xl:flex ${isActive ? 'text-emerald-700' : hasDraftChanges ? 'text-amber-700' : 'text-slate-500'}`}><span className={`h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : hasDraftChanges ? 'bg-amber-500' : 'bg-slate-400'}`} />{isActive ? (hasDraftChanges ? 'Changes not live' : 'Live') : 'Draft'}</span>
 
