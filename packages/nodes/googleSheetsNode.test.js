@@ -24,6 +24,15 @@ test('Google Sheets connector validates bounded range values', () => {
     assert.match(buildSheetsUrl({ spreadsheetId, range: 'Sheet 1!A1:C3', operation: 'read', query: { majorDimension: 'ROWS' } }), /Sheet%201!A1%3AC3/);
 });
 
+test('Google Sheets connector serializes Date values from form-submission triggers', () => {
+    const submittedAt = new Date('2026-08-12T03:47:06.288Z');
+
+    assert.deepEqual(validateValues([[submittedAt, 'Lim']]), [[
+        '2026-08-12T03:47:06.288Z',
+        'Lim'
+    ]]);
+});
+
 test('Google Sheets connector rejects invalid configuration', () => {
     assert.throws(() => validateSpreadsheetId('short'), /Spreadsheet ID is invalid/);
     assert.throws(() => validateRange(''), /range is required/);

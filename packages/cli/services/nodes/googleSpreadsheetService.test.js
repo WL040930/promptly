@@ -19,6 +19,79 @@ test('creates and initializes a Google Sheet with a durable provisioning key', a
     assert.ok(calls.some(call => call.method === 'PUT' && call.data?.values?.[0]?.[0] === 'Email'));
 });
 
+test('reconciles a Drive create that succeeds before Google returns a 403 response', async () => {
+    const calls = [];
+    const retries = [];
+    let createdFile = null;
+    let creates = 0;
+    let readyResource = null;
+    const service = createGoogleSpreadsheetService({
+        provisioningReconcileAttempts: 2,
+        waitForRetry: async delayMs => retries.push(delayMs),
+        getGoogleClient: async () => ({ client: { request: async request => {
+            calls.push(request);
+            if (request.method === 'GET' && request.url.includes('/drive/v3/files?')) {
+                return { data: { files: createdFile ? [createdFile] : [] } };
+            }
+            if (request.method === 'POST' && request.url.includes('/drive/v3/files?fields=')) {
+                creates += 1;
+                createdFile = {
+                    id: 'sheet_reconciled_after_403',
+                    name: request.data.name,
+                    webViewLink: 'https://sheet.test/reconciled'
+                };
+                const error = new Error('Google returned a response after creating the Drive file.');
+                error.response = { status: 403, data: { error: { status: 'PERMISSION_DENIED' } } };
+                throw error;
+            }
+            if (request.url.includes('?fields=sheets.properties')) return { data: { sheets: [{ properties: { sheetId: 0, title: 'Sheet1' } }] } };
+            if (request.method === 'PATCH' && request.url.includes('/drive/v3/files/')) return { data: { ...createdFile, name: 'Event Registration Responses' } };
+            return { data: {} };
+        } } })
+    });
+
+    const created = await service.createAndInitialize({
+        userId: 'user_1',
+        title: 'Event Registration Responses',
+        sheetTitle: 'Responses',
+        headers: ['Email'],
+        provisioningKey: 'workflow-proposal:workflow_1:proposal_1:responses',
+        onFileReady: resource => { readyResource = resource; }
+    });
+
+    assert.equal(creates, 1);
+    assert.equal(created.id, 'sheet_reconciled_after_403');
+    assert.equal(readyResource.id, 'sheet_reconciled_after_403');
+    assert.equal(retries.length, 0);
+    const createCall = calls.find(call => call.method === 'POST' && call.url.includes('/drive/v3/files?fields='));
+    assert.equal(createCall.retry, false);
+    assert.match(createCall.data.name, /Promptly [a-f0-9]{16}$/);
+    assert.ok(calls.some(call => call.method === 'PATCH' && call.data?.name === 'Event Registration Responses'));
+    assert.equal(calls.filter(call => call.method === 'POST' && call.url.includes('/drive/v3/files?fields=')).length, 1);
+});
+
+test('returns a retry-safe outcome when an ambiguous Drive create cannot be reconciled', async () => {
+    const service = createGoogleSpreadsheetService({
+        provisioningReconcileAttempts: 1,
+        getGoogleClient: async () => ({ client: { request: async request => {
+            if (request.method === 'GET' && request.url.includes('/drive/v3/files?')) return { data: { files: [] } };
+            if (request.method === 'POST' && request.url.includes('/drive/v3/files?fields=')) {
+                const error = new Error('Drive connection reset.');
+                error.code = 'ECONNABORTED';
+                throw error;
+            }
+            return { data: {} };
+        } } })
+    });
+
+    await assert.rejects(
+        () => service.createAndInitialize({ userId: 'user_1', title: 'Responses', provisioningKey: 'ambiguous_create' }),
+        error => error.code === 'GOOGLE_PROVISIONING_UNCERTAIN'
+            && error.status === 409
+            && error.message === 'Google did not confirm whether the spreadsheet was created. Wait a moment, then retry Apply safely.'
+    );
+});
+
 test('explains that Google must be reconnected when the saved token returns 401', async () => {
     const service = createGoogleSpreadsheetService({ getGoogleClient: async () => ({ client: { request: async () => {
         const error = new Error('Google returned 401');
@@ -140,6 +213,56 @@ test('reports the created file before Sheets initialisation can fail', async () 
         range: "'Approved'!A1",
         webViewLink: 'https://sheet.test'
     });
+});
+
+test('resumes a persisted spreadsheet ID without creating another Drive file', async () => {
+    const calls = [];
+    const service = createGoogleSpreadsheetService({ getGoogleClient: async () => ({ client: { request: async request => {
+        calls.push(request);
+        if (request.url.includes('?fields=sheets.properties')) return { data: { sheets: [{ properties: { sheetId: 0, title: 'Sheet1' } }] } };
+        if (request.method === 'PATCH' && request.url.includes('/drive/v3/files/')) return { data: { id: 'sheet_saved_after_failure', name: 'Responses', webViewLink: 'https://sheet.test/saved' } };
+        return { data: {} };
+    } } }) });
+
+    const resumed = await service.createAndInitialize({
+        userId: 'user_1',
+        title: 'Responses',
+        headers: ['Email'],
+        provisioningKey: 'resume_persisted_file',
+        existingSpreadsheetId: 'sheet_saved_after_failure'
+    });
+
+    assert.equal(resumed.id, 'sheet_saved_after_failure');
+    assert.equal(calls.filter(call => call.method === 'POST' && call.url.includes('/drive/v3/files?fields=')).length, 0);
+    assert.equal(calls.filter(call => call.method === 'GET' && call.url.includes('/drive/v3/files?')).length, 0);
+    assert.ok(calls.some(call => call.method === 'PATCH' && call.data?.name === 'Responses'));
+});
+
+test('keeps a prepared spreadsheet usable when Google rejects the cosmetic Drive rename', async () => {
+    const calls = [];
+    const service = createGoogleSpreadsheetService({ getGoogleClient: async () => ({ client: { request: async request => {
+        calls.push(request);
+        if (request.url.includes('?fields=sheets.properties')) return { data: { sheets: [{ properties: { sheetId: 0, title: 'Responses' } }] } };
+        if (request.method === 'PATCH' && request.url.includes('/drive/v3/files/')) {
+            const error = new Error('Google denied the final Drive rename.');
+            error.response = { status: 403, data: { error: { status: 'PERMISSION_DENIED' } } };
+            throw error;
+        }
+        return { data: {} };
+    } } }) });
+
+    const prepared = await service.createAndInitialize({
+        userId: 'user_1',
+        title: 'Event Registration Responses',
+        sheetTitle: 'Responses',
+        headers: ['Email'],
+        provisioningKey: 'rename_is_cosmetic',
+        existingSpreadsheetId: 'sheet_already_prepared'
+    });
+
+    assert.equal(prepared.id, 'sheet_already_prepared');
+    assert.equal(prepared.range, "'Responses'!A1");
+    assert.ok(calls.some(call => call.method === 'PATCH'));
 });
 
 test('asks the user to connect Google when no active client is available', async () => {

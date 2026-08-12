@@ -13,6 +13,12 @@ const normalizeCellValue = (value, rowIndex, columnIndex) => {
     const path = cellPath(rowIndex, columnIndex);
 
     if (value === undefined || value === null) return '';
+    // Form submissions carry submittedAt as a Date until the execution state
+    // is persisted. Google Sheets accepts scalar strings, not Date objects.
+    if (value instanceof Date) {
+        if (!Number.isFinite(value.getTime())) throw new Error(`${path} must be a valid Date.`);
+        return value.toISOString();
+    }
     if (isScalarCellValue(value)) return value;
 
     if (Array.isArray(value)) {

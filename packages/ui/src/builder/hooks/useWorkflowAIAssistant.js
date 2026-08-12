@@ -269,11 +269,16 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
         },
         onError: (error, variables) => {
             const code = error?.code || error?.payload?.code;
-            if (code !== 'WORKFLOW_PROPOSAL_STALE') return;
-            queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({
-                ...page,
-                messages: markWorkflowProposalStale(page.messages || [], variables.messageId)
-            })));
+            if (code === 'WORKFLOW_PROPOSAL_STALE') {
+                queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({
+                    ...page,
+                    messages: markWorkflowProposalStale(page.messages || [], variables.messageId)
+                })));
+            }
+            // Applying may have already persisted a Drive file ID before Google
+            // failed while initialising it. Refresh that state so a retry can
+            // resume the same spreadsheet rather than create another one.
+            void queryClient.invalidateQueries({ queryKey });
         }
     });
 
@@ -349,7 +354,10 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
             } catch (error) {
                 const code = error?.code || error?.payload?.code;
                 const needsGoogleReconnect = ['GOOGLE_RECONNECT_REQUIRED', 'GOOGLE_CONNECTION_REQUIRED', 'GOOGLE_PERMISSION_REQUIRED'].includes(code);
-                toast.error(error.message || 'Failed to apply changes.', needsGoogleReconnect ? {
+                const fallbackMessage = code === 'GOOGLE_PROVISIONING_UNCERTAIN'
+                    ? 'Google may still be creating the spreadsheet. Wait a moment, then retry Apply safely.'
+                    : 'Failed to apply changes.';
+                toast.error(error.message || fallbackMessage, needsGoogleReconnect ? {
                     action: {
                         label: code === 'GOOGLE_CONNECTION_REQUIRED' ? 'Connect Google' : code === 'GOOGLE_PERMISSION_REQUIRED' ? 'Review Google access' : 'Reconnect Google',
                         onClick: () => navigateTo({ page: 'settings', section: 'connections' })

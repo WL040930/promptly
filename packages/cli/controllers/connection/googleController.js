@@ -14,6 +14,12 @@ const oauth2Client = new OAuth2Client(
 
 const getConnectionsPath = () => '/app/settings/connections';
 
+const tokenExpiryDate = tokens => {
+    if (tokens?.expiry_date === null || tokens?.expiry_date === undefined || tokens?.expiry_date === '') return null;
+    const timestamp = Number(tokens?.expiry_date);
+    return Number.isFinite(timestamp) ? new Date(timestamp) : null;
+};
+
 const getGoogleConnectionStatus = async (req, res) => {
     const connection = await Connection.findOne({ where: { userId: req.user.id, provider: 'google', status: 'active' } });
     const status = await googleConnectionHealthChecker({ userId: req.user.id, connection });
@@ -97,6 +103,7 @@ const googleCallback = async (req, res) => {
                 accountEmail: googleEmail,
                 accessToken: tokens.access_token,
                 refreshToken: tokens.refresh_token || null,
+                tokenExpiresAt: tokenExpiryDate(tokens),
                 scopes: tokens.scope ? String(tokens.scope).split(' ') : [],
                 status: 'active'
             }
@@ -105,6 +112,7 @@ const googleCallback = async (req, res) => {
             accountEmail: googleEmail,
             accessToken: tokens.access_token || connection.accessToken,
             refreshToken: tokens.refresh_token || connection.refreshToken,
+            tokenExpiresAt: tokenExpiryDate(tokens) || connection.tokenExpiresAt,
             scopes: tokens.scope ? String(tokens.scope).split(' ') : connection.scopes,
             status: 'active'
         });
