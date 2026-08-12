@@ -16,10 +16,20 @@ import { getOutputIssues, requestJson } from '../provider/request.js';
 import { repairPlanner } from '../recovery/repairs.js';
 import { recoverWorkerProposal } from '../recovery/workerRecovery.js';
 import { addTokenUsage } from '../shared/usage.js';
+import {
+    materializePendingFormProposal,
+    rebaseFormProposalSchema
+} from '../domain/formProposalRevision.js';
 
 const DEFAULT_FORM_TITLE = 'Untitled Form';
 
 const hasUsableFormTitle = schema => typeof schema?.title === 'string' && schema.title.trim().length > 0;
+
+const sameRevision = (left, right) => {
+    const leftTime = new Date(left || '').getTime();
+    const rightTime = new Date(right || '').getTime();
+    return !Number.isFinite(leftTime) || !Number.isFinite(rightTime) || leftTime === rightTime;
+};
 
 const canRebuildDirectProposal = (plannerResult, issues = []) => {
     if (plannerResult?.type !== 'direct_proposal' || !Array.isArray(plannerResult.requirements) || plannerResult.requirements.length === 0) {
@@ -64,7 +74,25 @@ export const generateFormFromPrompt = async (
     options = {}
 ) => {
     try {
-        const aiSchema = activeFormSchemaForAI(currentSchema || {});
+        const persistedSchema = currentSchema || {};
+        const pendingProposal = options.pendingProposal || null;
+        if (pendingProposal?.baseFormUpdatedAt && !sameRevision(pendingProposal.baseFormUpdatedAt, persistedSchema.updatedAt)) {
+            return {
+                type: 'reply',
+                message: 'This form changed while the pending draft was waiting. Generate a new suggestion from the latest form.',
+                pendingProposalDisposition: 'stale',
+                revisesProposalMessageId: pendingProposal.messageId || null,
+                tokenUsage: { requestCalls: 0 }
+            };
+        }
+        // A pending proposal is not yet persisted, but its server-stored
+        // patches are the draft the user is asking us to revise. Materialize
+        // that draft before asking any AI stage to edit it.
+        const pendingDraft = pendingProposal
+            ? materializePendingFormProposal({ currentSchema: persistedSchema, proposal: pendingProposal })
+            : null;
+        const proposalBaseSchema = pendingDraft?.schema || persistedSchema;
+        const aiSchema = activeFormSchemaForAI(proposalBaseSchema);
         const provider = options.provider || null;
         const budget = createRequestBudget();
         const reportProviderActivity = event => {
@@ -104,6 +132,7 @@ export const generateFormFromPrompt = async (
                 cardinality,
                 turnContext: options.turnContext || null,
                 resourceContext: options.resourceContext || null,
+                revisionOfPendingProposal: Boolean(pendingDraft),
                 forceDecision
             }) }]
         }];
@@ -234,7 +263,7 @@ export const generateFormFromPrompt = async (
             // Keep soft-deleted field records in the patch-engine source so
             // their IDs remain reserved, while the AI-facing contexts above
             // only expose fields the user can currently see.
-            const sourceSchema = currentSchema || {};
+            const sourceSchema = proposalBaseSchema;
             const needsTitlePatch = !hasUsableFormTitle(sourceSchema);
             // New-form turns start with an empty schema. Give the patch engine a
             // valid base so field-only worker output can still be reviewed, and
@@ -245,10 +274,11 @@ export const generateFormFromPrompt = async (
             const workerContents = [{
                 role: 'user',
                 parts: [{ text: buildWorkerContext({
-                schema: workerSchema,
-                requirements: plannerResult.requirements,
+                    schema: workerSchema,
+                    requirements: plannerResult.requirements,
                     cardinality,
-                    turnContext: options.turnContext || null
+                    turnContext: options.turnContext || null,
+                    revisionOfPendingProposal: Boolean(pendingDraft)
                 }) }]
             }];
             const workerResult = await recoverWorkerProposal({
@@ -266,9 +296,24 @@ export const generateFormFromPrompt = async (
                 turnContext: options.turnContext || null
             });
             const result = workerResult.result;
-            const appliedProposal = workerResult.appliedProposal;
+            let appliedProposal = workerResult.appliedProposal;
             const verification = workerResult.verification;
             tokenUsage = workerResult.tokenUsage;
+            if (pendingDraft) {
+                appliedProposal = rebaseFormProposalSchema({
+                    currentSchema: persistedSchema,
+                    targetSchema: appliedProposal.schema
+                });
+                if (appliedProposal.patches.length === 0) {
+                    return {
+                        type: 'reply',
+                        message: 'That removes every pending form change, so there is nothing left to apply.',
+                        pendingProposalDisposition: 'supersede',
+                        revisesProposalMessageId: pendingProposal.messageId || null,
+                        tokenUsage: { ...tokenUsage, requestCalls: budget.calls }
+                    };
+                }
+            }
             if (onProgress) onProgress({
                 status: 'proposal_ready', phase: 'check', label: 'Prepared a reviewable form draft',
                 message: 'The form draft is ready for review',
@@ -286,7 +331,8 @@ export const generateFormFromPrompt = async (
                 verification,
                 warnings: workerResult.warnings || [],
                 cardinality,
-                contextDelta: plannerResult.contextDelta || null
+                contextDelta: plannerResult.contextDelta || null,
+                revisesProposalMessageId: pendingDraft ? pendingProposal.messageId || null : null
             };
         }
 

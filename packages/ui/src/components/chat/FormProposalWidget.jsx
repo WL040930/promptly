@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Eye, X } from 'lucide-react';
 import Button from '../ui/Button.jsx';
 import { formatFormSettingValue, getFormSettingLabel } from '../../forms/settings/formSettingPresentation.js';
-import { isAcceptedProposalStatus, isRejectedProposalStatus, isStaleProposalStatus } from './proposalStatus.js';
+import { isAcceptedProposalStatus, isRejectedProposalStatus, isStaleProposalStatus, normalizeProposalStatus } from './proposalStatus.js';
 import { selectedFormPatchIds, visibleFormPatches } from './formProposalSelection.js';
 import { AssistantWorkDetails } from './AssistantWorkCard.jsx';
 
@@ -28,6 +28,7 @@ export default function FormProposalWidget({ proposal, status, summary, tokenUsa
     const isAccepted = isAcceptedProposalStatus(status);
     const isRejected = isRejectedProposalStatus(status);
     const isStale = isStaleProposalStatus(status);
+    const isReplaced = normalizeProposalStatus(status) === 'superseded';
     const locked = isAccepted || isRejected || isStale;
     const [selected, setSelected] = useState({});
     const [expanded, setExpanded] = useState({});
@@ -91,7 +92,7 @@ export default function FormProposalWidget({ proposal, status, summary, tokenUsa
     if (isStale) return <section className="mt-2 w-full overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm shadow-amber-900/5">
         <div className="flex items-center gap-3 px-4 py-3.5">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-amber-200 bg-amber-50 text-amber-700"><X size={17} strokeWidth={3} /></span>
-            <span className="min-w-0 flex-1"><span className="block text-[10px] font-extrabold uppercase tracking-[0.14em] text-amber-700">Proposal outdated</span><span className="mt-0.5 block truncate text-sm font-extrabold text-slate-900">{proposal?.schema?.title || 'Form changes'}</span><span className="mt-0.5 block text-xs text-slate-500">Generate a new suggestion before applying changes.</span></span>
+            <span className="min-w-0 flex-1"><span className="block text-[10px] font-extrabold uppercase tracking-[0.14em] text-amber-700">{isReplaced ? 'Proposal replaced' : 'Proposal outdated'}</span><span className="mt-0.5 block truncate text-sm font-extrabold text-slate-900">{proposal?.schema?.title || 'Form changes'}</span><span className="mt-0.5 block text-xs text-slate-500">{isReplaced ? 'A newer proposal replaced this one.' : 'Generate a new suggestion before applying changes.'}</span></span>
         </div>
         {proposal?.work && <div className="border-t border-slate-100 bg-slate-50/40 px-4 py-3"><AssistantWorkDetails work={proposal.work} tokenUsage={tokenUsage} /></div>}
     </section>;

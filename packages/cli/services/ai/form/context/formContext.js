@@ -210,7 +210,7 @@ const compactPendingProposal = (messages = []) => {
     };
 };
 
-export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarificationMode, cardinality = null, turnContext = null, resourceContext = null, forceDecision = false }) => {
+export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarificationMode, cardinality = null, turnContext = null, resourceContext = null, revisionOfPendingProposal = false, forceDecision = false }) => {
     const memory = readFormMemory(schema);
     const recentConversation = selectRecentMessages(chatHistory);
     const pendingProposal = compactPendingProposal(chatHistory);
@@ -225,6 +225,9 @@ export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarific
         '',
         'Current Form Schema:',
         JSON.stringify(compactFormSchema(schema)),
+        revisionOfPendingProposal
+            ? 'This schema is the user’s unapplied pending draft. Revise it as requested, preserve unchanged draft fields, and do not assume draft-only fields have already been saved.'
+            : '',
         '',
         'Question Count:',
         cardinality
@@ -258,9 +261,12 @@ export const buildPlannerContext = ({ schema, chatHistory = [], prompt, clarific
     ].join('\n');
 };
 
-export const buildWorkerContext = ({ schema, requirements = [], cardinality = null, turnContext = null }) => [
+export const buildWorkerContext = ({ schema, requirements = [], cardinality = null, turnContext = null, revisionOfPendingProposal = false }) => [
     'Current Form Schema:',
     JSON.stringify(compactFormSchema(schema)),
+    revisionOfPendingProposal
+        ? 'This is an unapplied draft being revised. Draft-only field IDs above are valid update/remove targets for this request.'
+        : '',
     'If Current Form Schema.title is "Untitled Form", treat this as a new form. Include an update_meta patch with a concise, non-empty title when the request identifies the form; otherwise keep the safe title.',
     '',
     'Existing Field IDs (these are the only valid targets for update/remove):',

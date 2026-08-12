@@ -65,5 +65,5 @@ export const runFormTurn = async ({
         ]
         : history,
     onProgress,
-    { clarificationMode, provider, turnContext, resourceContext }
+    { clarificationMode, provider, turnContext, resourceContext, pendingProposal }
 ));

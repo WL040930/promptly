@@ -437,3 +437,109 @@ test('form assistant preserves an existing pending proposal when a follow-up fai
     assert.equal(result.state.activeProposalMessageId, 'proposal_1');
     assert.equal(memory.messages[0].proposalStatus, 'pending');
 });
+
+test('form assistant supersedes a pending proposal after a draft revision', async () => {
+    const memory = createMemoryModels();
+    const state = await memory.models.AssistantThread.create({
+        id: 'thread_1', userId: 'user_1', surface: 'form', formId: 'form_1',
+        state: { version: 1, phase: 'awaiting_proposal', activeProposalMessageId: 'proposal_1' }, context: {}
+    });
+    await memory.models.AssistantMessage.create({
+        id: 'proposal_1', threadId: state.id, sender: 'bot', kind: 'form_proposal', proposalStatus: 'pending', text: 'Add Phone and Company.',
+        payload: {
+            baseFormUpdatedAt: memory.forms[0].updatedAt,
+            schema: { ...memory.forms[0], fields: [...memory.forms[0].fields, { id: 'phone', type: 'phone', label: 'Phone' }, { id: 'company', type: 'text', label: 'Company' }] },
+            patches: [{ op: 'add', field: { id: 'phone', type: 'phone', label: 'Phone' } }, { op: 'add', field: { id: 'company', type: 'text', label: 'Company' } }]
+        }
+    });
+    let receivedPendingProposal;
+    const assistant = createFormAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        idFactory: (() => { let count = 0; return prefix => `${prefix}_${++count}`; })(),
+        runTurn: async ({ pendingProposal }) => {
+            receivedPendingProposal = pendingProposal;
+            return {
+                kind: 'proposal',
+                message: 'Keep Phone and remove Company.',
+                revisesProposalMessageId: pendingProposal.messageId,
+                schema: { ...memory.forms[0], fields: [...memory.forms[0].fields, { id: 'phone', type: 'phone', label: 'Phone' }] },
+                patches: [{ op: 'add', field: { id: 'phone', type: 'phone', label: 'Phone' } }],
+                requirements: [{ id: 'req_phone', description: 'Keep the Phone field.' }],
+                verification: { status: 'pass', issues: [] }
+            };
+        }
+    });
+
+    const result = await assistant.submitTurn({
+        userId: 'user_1', formId: 'form_1', command: { type: 'submit_text', text: 'dont need the company' }
+    });
+
+    assert.equal(receivedPendingProposal.messageId, 'proposal_1');
+    assert.equal(memory.messages[0].proposalStatus, 'superseded');
+    assert.equal(memory.messages[0].payload.supersededBy, result.botMsg.id);
+    assert.equal(result.botMsg.payload.revisesProposalMessageId, 'proposal_1');
+    assert.equal(result.botMsg.proposalStatus, 'pending');
+});
+
+test('form assistant closes a pending proposal when its revision leaves no changes', async () => {
+    const memory = createMemoryModels();
+    const state = await memory.models.AssistantThread.create({
+        id: 'thread_1', userId: 'user_1', surface: 'form', formId: 'form_1',
+        state: { version: 1, phase: 'awaiting_proposal', activeProposalMessageId: 'proposal_1' }, context: {}
+    });
+    await memory.models.AssistantMessage.create({
+        id: 'proposal_1', threadId: state.id, sender: 'bot', kind: 'form_proposal', proposalStatus: 'pending', text: 'Add Company.',
+        payload: { patches: [{ op: 'add', field: { id: 'company', type: 'text', label: 'Company' } }] }
+    });
+    const assistant = createFormAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async () => ({
+            kind: 'reply',
+            message: 'That removes every pending form change, so there is nothing left to apply.',
+            pendingProposalDisposition: 'supersede'
+        }),
+        idFactory: (() => { let count = 0; return prefix => `${prefix}_${++count}`; })()
+    });
+
+    const result = await assistant.submitTurn({
+        userId: 'user_1', formId: 'form_1', command: { type: 'submit_text', text: 'dont need company' }
+    });
+
+    assert.equal(memory.messages[0].proposalStatus, 'superseded');
+    assert.equal(result.state.activeProposalMessageId, null);
+    assert.equal(result.state.phase, 'idle');
+    assert.equal(result.botMsg.kind, 'text');
+});
+
+test('form assistant marks a pending proposal stale before a stale-draft revision can continue', async () => {
+    const memory = createMemoryModels();
+    const state = await memory.models.AssistantThread.create({
+        id: 'thread_1', userId: 'user_1', surface: 'form', formId: 'form_1',
+        state: { version: 1, phase: 'awaiting_proposal', activeProposalMessageId: 'proposal_1' }, context: {}
+    });
+    await memory.models.AssistantMessage.create({
+        id: 'proposal_1', threadId: state.id, sender: 'bot', kind: 'form_proposal', proposalStatus: 'pending', text: 'Add Company.',
+        payload: { patches: [{ op: 'add', field: { id: 'company', type: 'text', label: 'Company' } }] }
+    });
+    const assistant = createFormAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async () => ({
+            kind: 'reply',
+            message: 'This form changed while the pending draft was waiting. Generate a new suggestion from the latest form.',
+            pendingProposalDisposition: 'stale'
+        }),
+        idFactory: (() => { let count = 0; return prefix => `${prefix}_${++count}`; })()
+    });
+
+    const result = await assistant.submitTurn({
+        userId: 'user_1', formId: 'form_1', command: { type: 'submit_text', text: 'dont need company' }
+    });
+
+    assert.equal(memory.messages[0].proposalStatus, 'stale');
+    assert.deepEqual(result.staleProposalMessageIds, ['proposal_1']);
+    assert.equal(result.state.activeProposalMessageId, null);
+    assert.equal(result.state.phase, 'idle');
+});

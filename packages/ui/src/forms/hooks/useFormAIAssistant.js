@@ -214,11 +214,16 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
                     result.botMsg?.id
                 ].includes(message.id));
                 const superseded = new Set(result.botMsg?.supersededMessageIds || []);
+                const stale = new Set(result.staleProposalMessageIds || []);
                 return {
                     ...page,
                     state: result.state || page.state,
                     messages: [
-                        ...currentMessages.map(message => superseded.has(message.id) ? { ...message, proposalStatus: 'superseded' } : message),
+                        ...currentMessages.map(message => superseded.has(message.id)
+                            ? { ...message, proposalStatus: 'superseded' }
+                            : stale.has(message.id)
+                                ? { ...message, proposalStatus: 'stale' }
+                                : message),
                         result.userMsg,
                         result.botMsg
                     ].filter(Boolean)

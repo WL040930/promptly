@@ -76,6 +76,7 @@ const messageFromResult = (result, form = {}) => {
             warnings: result.warnings || [],
             cardinality: result.cardinality,
             contextDelta: result.contextDelta || null,
+            revisesProposalMessageId: result.revisesProposalMessageId || null,
             baseFormUpdatedAt: result.baseFormUpdatedAt
         };
         const presentation = buildFormPresentation({ form, proposal });
@@ -316,8 +317,9 @@ export const createFormAssistant = ({
             const history = rawHistory.reverse()
                 .filter(message => ![userMessage.id, reservation.workMessage.id].includes(message.id))
                 .map(asJson);
-            const pendingForAI = context.pendingProposal.mode === 'include'
-                ? asJson(pending)?.payload || null
+            const pendingValue = asJson(pending);
+            const pendingForAI = context.pendingProposal.mode === 'include' && pendingValue?.payload
+                ? { ...pendingValue.payload, messageId: pendingValue.id }
                 : null;
             const request = context.command.type === 'decide_for_me'
                 ? `Resolve the active request using sensible defaults. Active request: ${context.intent.sourceText || 'the current form request'}`
@@ -347,16 +349,33 @@ export const createFormAssistant = ({
                     return;
                 }
                 let supersededMessageIds = [];
-                if (messageData.proposal) {
+                const pendingProposalDisposition = result?.pendingProposalDisposition || null;
+                const closesPendingProposal = ['supersede', 'stale'].includes(pendingProposalDisposition);
+                const staleProposalMessageIds = [];
+                const assistantMessage = await models.AssistantMessage.findOne({ where: { id: reservation.workMessage.id, threadId: state.threadId }, transaction });
+                if (pendingProposalDisposition === 'stale' && pending?.id) {
+                    const pendingMessage = await models.AssistantMessage.findOne({ where: { id: pending.id, threadId: state.threadId }, transaction });
+                    if (pendingMessage?.proposalStatus === 'pending') {
+                        await pendingMessage.update({
+                            proposalStatus: 'stale',
+                            payload: {
+                                ...(pendingMessage.payload || {}),
+                                staleReason: 'FORM_VERSION_CHANGED',
+                                work: finishAssistantWork(pendingMessage.payload?.work, { status: 'failed', detail: 'The form changed before this proposal could be revised.' }, now())
+                            }
+                        }, { transaction });
+                        staleProposalMessageIds.push(pendingMessage.id);
+                    }
+                }
+                if (messageData.proposal || pendingProposalDisposition === 'supersede') {
                     supersededMessageIds = await supersedePendingFormChatProposals({
                         formId,
                         transaction,
-                        supersededBy: null,
+                        supersededBy: assistantMessage?.id || null,
                         messageModel: models.AssistantMessage,
                         threadId: state.threadId
                     });
                 }
-                const assistantMessage = await models.AssistantMessage.findOne({ where: { id: reservation.workMessage.id, threadId: state.threadId }, transaction });
                 const kind = messageData.proposal ? 'form_proposal' : messageData.options ? 'clarification' : 'text';
                 const work = finishAssistantWork(assistantMessage?.payload?.work, {
                     status: messageData.proposal ? 'awaiting_review' : messageData.options ? 'needs_input' : 'completed',
@@ -373,7 +392,7 @@ export const createFormAssistant = ({
                     result,
                     command: context.command,
                     proposalMessageId: assistantMessage.id,
-                    previousActiveProposalMessageId: state.activeProposalMessageId
+                    previousActiveProposalMessageId: closesPendingProposal ? null : state.activeProposalMessageId
                 });
                 await freshState.update({
                     ...statePatch,
@@ -387,6 +406,7 @@ export const createFormAssistant = ({
                 response = {
                     userMsg: asJson(userMessage),
                     botMsg: { ...asJson(assistantMessage), supersededMessageIds },
+                    staleProposalMessageIds,
                     result,
                     state: asJson(freshState)
                 };
