@@ -41,7 +41,7 @@ const formatDuration = durationMs => {
     return durationMs < 1000 ? `${durationMs}ms` : `${(durationMs / 1000).toFixed(1)}s`;
 };
 
-const workflowNameForLog = log => log.workflow?.name || log.workflowName || 'Automation';
+const workflowNameForLog = log => log.sourceAutomation?.name || log.workflow?.name || log.workflowNameSnapshot || log.workflowName || 'Deleted automation';
 
 const statusForWorkflow = workflow => {
     if (workflow.isActive || workflow.status === 'Active') return 'Active';
@@ -252,7 +252,8 @@ const DashboardTab = () => {
                                         const normalizedStatus = String(log.status || '').toLowerCase();
                                         const success = ['success', 'succeeded'].includes(normalizedStatus);
                                         const waiting = ['waiting', 'running', 'resuming', 'pending'].includes(normalizedStatus);
-                                        return <button key={log.id} type="button" onClick={() => openRun(log.id)} className="group flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition hover:bg-slate-50"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${success ? 'bg-emerald-50 text-emerald-600' : waiting ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600'}`}>{success ? <CheckCircle2 size={16} /> : waiting ? <Clock3 size={16} /> : <XCircle size={16} />}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-800">{workflowNameForLog(log)}</span><span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400"><span>{waiting ? 'Waiting for approval' : log.trigger || 'Manual run'}</span><span>·</span><span>{formatRelative(log.time)}</span></span></span><span className="shrink-0 text-[11px] font-medium text-slate-400">{formatDuration(log.durationMs)}</span></button>;
+                                        const cancelled = normalizedStatus === 'cancelled';
+                                        return <button key={log.id} type="button" onClick={() => openRun(log.id)} className="group flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition hover:bg-slate-50"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${success ? 'bg-emerald-50 text-emerald-600' : waiting ? 'bg-amber-50 text-amber-600' : cancelled ? 'bg-slate-100 text-slate-500' : 'bg-red-50 text-red-600'}`}>{success ? <CheckCircle2 size={16} /> : waiting ? <Clock3 size={16} /> : <XCircle size={16} />}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-800">{workflowNameForLog(log)}</span><span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400"><span>{waiting ? 'Waiting for approval' : cancelled ? 'Cancelled because automation was deleted' : log.trigger || 'Manual run'}</span><span>·</span><span>{formatRelative(log.time)}</span></span></span><span className="shrink-0 text-[11px] font-medium text-slate-400">{formatDuration(log.durationMs)}</span></button>;
                                     }) : <EmptyPanel icon={Activity} title="No executions yet" detail="Run an automation to start building an activity history." onAction={() => go('workflows')} action="Open automations" />}
                                 </div>
                             </div>

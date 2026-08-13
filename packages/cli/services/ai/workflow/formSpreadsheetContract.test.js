@@ -78,7 +78,7 @@ test('runtime-created response sheets receive the matching header and row contra
         ]
     });
     assert.equal(result.applied, true);
-    assert.deepEqual(result.nodes.find(node => node.id === 'create').config.headers, [['Submitted At', 'Response ID', 'Name']]);
+    assert.deepEqual(result.nodes.find(node => node.id === 'create').config.headers, ['Submitted At', 'Response ID', 'Name']);
     assert.equal(result.nodes.find(node => node.id === 'append').config.values[0].length, 3);
     assert.equal(result.nodes.find(node => node.id === 'append').config.valueInputOption, 'RAW');
 });

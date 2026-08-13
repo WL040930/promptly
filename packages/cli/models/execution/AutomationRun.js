@@ -8,6 +8,8 @@ const AutomationRun = sequelize.define('AutomationRun', {
     userId: { type: DataTypes.UUID, allowNull: false },
     revisionId: { type: DataTypes.STRING(100), allowNull: true },
     definitionSnapshot: { type: DataTypes.JSONB, allowNull: true },
+    workflowNameSnapshot: { type: DataTypes.STRING(255), allowNull: true },
+    workflowDeletedAt: { type: DataTypes.DATE, allowNull: true },
     status: { type: DataTypes.STRING(30), allowNull: false, defaultValue: 'running' },
     trigger: { type: DataTypes.STRING(255), allowNull: true },
     state: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
@@ -24,6 +26,7 @@ const AutomationRun = sequelize.define('AutomationRun', {
     timestamps: true,
     indexes: [
         { fields: ['workflowId', 'createdAt'], name: 'automation_runs_workflow_created' },
+        { fields: ['workflowNameSnapshot'], name: 'automation_runs_workflow_name' },
         { fields: ['status', 'updatedAt'], name: 'automation_runs_status_updated' },
         { fields: ['userId', 'createdAt'], name: 'automation_runs_user_created' },
         {

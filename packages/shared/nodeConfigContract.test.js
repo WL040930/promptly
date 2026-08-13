@@ -60,3 +60,28 @@ test('node config contract clears stale dependent selections when a parent chang
         spreadsheetId: 'sheet_a'
     });
 });
+
+test('Google Sheets Create headers are a flat text list while append values remain a row grid', async () => {
+    const createSchema = (await import('../nodes/integrations/external-apps/google-sheets-create-action/schema.json', { with: { type: 'json' } })).default;
+    const appendSchema = (await import('../nodes/integrations/external-apps/google-sheets-action/schema.json', { with: { type: 'json' } })).default;
+
+    const createResult = validateNodeConfig({
+        schema: createSchema,
+        config: { title: 'Event Registration', sheetTitle: 'Responses', headers: ['Name', 'Email'] },
+        mode: 'active'
+    });
+    assert.equal(createResult.valid, true);
+
+    const appendResult = validateNodeConfig({
+        schema: appendSchema,
+        config: {
+            spreadsheetId: 'sheet_123',
+            range: "'Responses'!A1",
+            operation: 'append',
+            values: ['Name', 'Email']
+        },
+        mode: 'active'
+    });
+    assert.equal(appendResult.valid, false);
+    assert.equal(appendResult.issues.some(issue => issue.code === 'INVALID_DATA_GRID'), true);
+});

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, CheckCircle2, Circle, Clock3, Copy, FileText, GitBranch, X, XCircle } from 'lucide-react';
 import { useExecutionLog } from '../../../api/hooks/useLogs.js';
-import { formatDuration, formatLogDate, getStatusClasses, getWorkflowName, isSuccessStatus, isWaitingStatus } from './logFormatters.js';
+import { formatDuration, formatLogDate, getStatusClasses, getWorkflowName, isCancelledStatus, isDeletedAutomationRun, isSuccessStatus, isWaitingStatus } from './logFormatters.js';
 import { LogInspectorSkeleton } from './LogsSkeleton.jsx';
 import { navigateTo } from '../../../utils/router.js';
 
@@ -17,6 +17,7 @@ const LogInspector = ({ logId, isOpen = true, onClose }) => {
     };
 
     const statusClasses = getStatusClasses(log?.status);
+    const deletedAutomation = isDeletedAutomationRun(log);
 
     return (
         <div className={`shrink-0 overflow-hidden transition-[width] duration-300 ease-out motion-reduce:transition-none ${isOpen ? 'w-full lg:w-[420px]' : 'w-0'}`}>
@@ -58,7 +59,10 @@ const LogInspector = ({ logId, isOpen = true, onClose }) => {
                 ) : (
                     <div className="flex flex-col gap-6">
                         <div>
-                            <h4 className="font-semibold text-slate-900">{getWorkflowName(log)}</h4>
+                            <div className="flex items-center gap-2">
+                                <h4 className="font-semibold text-slate-900">{getWorkflowName(log)}</h4>
+                                {deletedAutomation && <span className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">Deleted automation</span>}
+                            </div>
                             <p className="text-xs text-slate-500 mt-1">{log.trigger || 'Manual run'} on {formatLogDate(log.time)}</p>
                         </div>
 
@@ -79,6 +83,12 @@ const LogInspector = ({ logId, isOpen = true, onClose }) => {
                         {isWaitingStatus(log.status) && (
                             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                                 This run is paused until the approval is resolved. It will continue automatically after a decision.
+                            </div>
+                        )}
+
+                        {isCancelledStatus(log.status) && (
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                                {log.error || 'This run was cancelled because its automation was deleted. The recorded execution history is preserved.'}
                             </div>
                         )}
 

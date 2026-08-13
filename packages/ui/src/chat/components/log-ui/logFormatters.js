@@ -4,7 +4,11 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 });
 
 export function getWorkflowName(log) {
-    return log.workflow?.name || 'Unknown workflow';
+    return log?.sourceAutomation?.name || log?.workflow?.name || log?.workflowNameSnapshot || 'Unknown workflow';
+}
+
+export function isDeletedAutomationRun(log) {
+    return Boolean(log?.sourceAutomation?.deleted || log?.workflowDeletedAt);
 }
 
 export function formatLogDate(value) {
@@ -35,6 +39,10 @@ export function isFailedStatus(status) {
     return normalizeStatus(status) === 'failed';
 }
 
+export function isCancelledStatus(status) {
+    return normalizeStatus(status) === 'cancelled';
+}
+
 export function getStatusClasses(status) {
     if (isSuccessStatus(status)) {
         return {
@@ -47,6 +55,13 @@ export function getStatusClasses(status) {
         return {
             badge: 'bg-amber-50 text-amber-700 border-amber-200',
             icon: 'text-amber-600'
+        };
+    }
+
+    if (isCancelledStatus(status)) {
+        return {
+            badge: 'bg-slate-100 text-slate-600 border-slate-200',
+            icon: 'text-slate-500'
         };
     }
 

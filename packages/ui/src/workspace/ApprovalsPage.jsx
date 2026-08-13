@@ -151,57 +151,55 @@ function ApprovalFilters({
   );
 }
 
+const workflowPresentation = item => ({
+  name: item?.workflow?.name || item?.run?.workflowNameSnapshot || "Deleted automation",
+  deleted: Boolean(item?.workflow?.deleted || item?.run?.workflowDeletedAt)
+});
+
+function ApprovalRow({ item, selectedId, tab, onSelect }) {
+  const workflow = workflowPresentation(item);
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(item.id)}
+      aria-pressed={selectedId === item.id}
+      className={`w-full border-t border-slate-100 border-l-4 p-4 text-left transition first:border-t-0 hover:bg-slate-50 ${selectedId === item.id ? "border-l-indigo-600 bg-indigo-50/40" : "border-l-transparent"}`}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="truncate text-sm font-semibold text-slate-900 sm:text-base">
+              {item.approval?.title || item.payload?.title || "Review required"}
+            </span>
+            <StatusBadge status={item.status} />
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500">
+            <span>{workflow.name}</span>
+            {workflow.deleted && <span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">Deleted</span>}
+            <span aria-hidden="true">|</span>
+            <span>{item.approval?.instructions || item.payload?.instructions || "Review the workflow request."}</span>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-medium text-slate-400">
+            <span>{item.run?.trigger || "Workflow event"}</span>
+            <span aria-hidden="true">|</span>
+            <span>{formatDate(item.createdAt)}</span>
+            <span aria-hidden="true">|</span>
+            <span className="font-mono">{item.id}</span>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1.5 text-right">
+          <span className="text-xs font-medium text-slate-800">Awaiting your decision</span>
+          {tab === "pending" && <span className="text-xs text-slate-400">Assigned to you</span>}
+        </div>
+      </div>
+    </button>
+  );
+}
+
 function ApprovalList({ approvals, selectedId, tab, onSelect }) {
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      {approvals.map((item) => (
-        <button
-          type="button"
-          key={item.id}
-          onClick={() => onSelect(item.id)}
-          aria-pressed={selectedId === item.id}
-          className={`w-full border-t border-slate-100 border-l-4 p-4 text-left transition first:border-t-0 hover:bg-slate-50 ${selectedId === item.id ? "border-l-indigo-600 bg-indigo-50/40" : "border-l-transparent"}`}
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <span className="truncate text-sm font-semibold text-slate-900 sm:text-base">
-                  {item.approval?.title ||
-                    item.payload?.title ||
-                    "Review required"}
-                </span>
-                <StatusBadge status={item.status} />
-              </div>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500">
-                <span>{item.workflow?.name || "Unknown workflow"}</span>
-                <span aria-hidden="true">|</span>
-                <span>
-                  {item.approval?.instructions ||
-                    item.payload?.instructions ||
-                    "Review the workflow request."}
-                </span>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-medium text-slate-400">
-                <span>{item.run?.trigger || "Workflow event"}</span>
-                <span aria-hidden="true">|</span>
-                <span>{formatDate(item.createdAt)}</span>
-                <span aria-hidden="true">|</span>
-                <span className="font-mono">{item.id}</span>
-              </div>
-            </div>
-            <div className="flex shrink-0 flex-col items-end gap-1.5 text-right">
-              <span className="text-xs font-medium text-slate-800">
-                Awaiting your decision
-              </span>
-              {tab === "pending" && (
-                <span className="text-xs text-slate-400">
-                  Assigned to you
-                </span>
-              )}
-            </div>
-          </div>
-        </button>
-      ))}
+      {approvals.map(item => <ApprovalRow key={item.id} item={item} selectedId={selectedId} tab={tab} onSelect={onSelect} />)}
     </div>
   );
 }
@@ -236,6 +234,7 @@ function ReviewEntries({ item }) {
 }
 
 function ApprovalInspector({ item, isOpen = true, onClose, onDecision }) {
+  const workflow = workflowPresentation(item);
   return (
     <div
       className={`shrink-0 overflow-hidden transition-[width] duration-300 ease-out motion-reduce:transition-none ${isOpen ? "w-full lg:w-[420px]" : "w-0"}`}
@@ -288,7 +287,7 @@ function ApprovalInspector({ item, isOpen = true, onClose, onDecision }) {
               <Detail
                 icon={Workflow}
                 label="Workflow"
-                value={item.workflow?.name || "Unknown workflow"}
+                value={workflow.name}
               />
               <Detail
                 icon={Clock3}

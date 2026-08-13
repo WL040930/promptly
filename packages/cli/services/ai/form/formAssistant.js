@@ -14,6 +14,7 @@ import { applyResourceContextDelta, buildResourceIdentity, resourceContextForPro
 import { buildFormPresentation } from '../../assistant/proposalPresentation.js';
 import { advanceAssistantWork, createAssistantWork, finishAssistantWork } from '../../../../shared/assistantWork.js';
 import { isAssistantTurnStale } from '../../assistant/assistantTurnLiveness.js';
+import { resolveClarificationSubmission } from '../../../../shared/clarificationContract.js';
 
 const MAX_HISTORY = 100;
 
@@ -185,7 +186,7 @@ export const createFormAssistant = ({
         provider = null,
         onProgress = null
     } = {}) => {
-        const command = toCommand({ command: rawCommand });
+        let command = toCommand({ command: rawCommand });
         const mode = normalizeClarificationMode(clarificationMode);
         if (command.type === 'submit_text' && !command.text) {
             const error = new Error('Prompt is required');
@@ -223,6 +224,24 @@ export const createFormAssistant = ({
                 ? await models.AssistantMessage.findOne({ where: { id: state.activeProposalMessageId, threadId: state.threadId }, transaction })
                 : null;
 
+            let clarificationResolution = null;
+            if (state.openClarification && command.type === 'submit_clarification') {
+                clarificationResolution = resolveClarificationSubmission({
+                    inputs: state.openClarification.inputs || [],
+                    state: command.state || {}
+                });
+                if (!clarificationResolution.complete) {
+                    const error = new Error('Please complete the requested information before continuing.');
+                    error.code = 'FORM_AI_CLARIFICATION_INCOMPLETE';
+                    error.status = 400;
+                    error.missingInputIds = clarificationResolution.missingInputIds;
+                    error.missingGroups = clarificationResolution.missingGroups;
+                    error.conflictingGroups = clarificationResolution.conflictingGroups;
+                    error.invalidInputIds = clarificationResolution.invalidInputIds;
+                    throw error;
+                }
+                command = { ...command, state: clarificationResolution.state };
+            }
             if (state.openClarification && ['submit_clarification', 'decide_for_me'].includes(command.type)) {
                 const clarificationMessage = await models.AssistantMessage.findOne({
                     where: { threadId: state.threadId, sender: 'bot', kind: 'clarification' },
@@ -236,11 +255,22 @@ export const createFormAssistant = ({
                             ...(command.type === 'submit_clarification' ? { selectedState: command.state || {} } : {}),
                             resolution: {
                                 type: command.type === 'decide_for_me' ? 'defaulted' : 'answered',
-                                answeredAt: new Date().toISOString()
+                                answeredAt: new Date().toISOString(),
+                                ...(clarificationResolution?.answers ? { answers: clarificationResolution.answers } : {})
                             }
                         }
                     }, { transaction });
                 }
+            } else if (state.openClarification && command.type === 'submit_text') {
+                const clarificationMessage = await models.AssistantMessage.findOne({
+                    where: { threadId: state.threadId, sender: 'bot', kind: 'clarification' },
+                    order: [['createdAt', 'DESC']],
+                    transaction
+                });
+                if (clarificationMessage) await clarificationMessage.update({ payload: {
+                    ...clarificationMessage.payload,
+                    resolution: { type: 'superseded', answeredAt: new Date().toISOString() }
+                } }, { transaction });
             }
 
             const context = resolveFormTurnContext({

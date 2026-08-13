@@ -20,6 +20,7 @@ import { validateWorkflow } from '../engine/workflowValidator.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 import { resolveAssistantNavigation } from '../../../shared/assistantNavigation.js';
 import { clearChatSessionState, replaceChatSessionState } from './chatTurnLifecycle.js';
+import { resolveClarificationSubmission } from '../../../shared/clarificationContract.js';
 
 const askPromptlyCoordinator = createAskPromptlyCoordinator({
     processAgenticTurn,
@@ -435,6 +436,65 @@ export const applyEvent = async (session, userId, event, onEvent = null) => {
         await run.update({ status: 'blocked', currentStep: null, error: { code: 'AGENT_PLAN_REJECTED', message: 'The user chose not to continue with the proposed plan.' } });
         await clearChatSessionState(session);
         return { reply: await saveReply(session, { text: 'I stopped before making any form or workflow changes.', kind: 'status', payload: { status: 'cancelled', runId: run.id } }) };
+    }
+    if (event.type === 'submit_clarification') {
+        const run = state.runId
+            ? await AgentRun.findOne({ where: { id: state.runId, threadId: session.id, userId } })
+            : null;
+        if (!run || state.status !== 'awaiting_agent_clarification') {
+            return { reply: await saveReply(session, { text: 'That question is no longer waiting for an answer. Please send the request again.', kind: 'error' }) };
+        }
+        if (event.runId && event.runId !== run.id) {
+            return { reply: await saveReply(session, { text: 'That question belongs to an older request. Please use the latest question instead.', kind: 'error' }) };
+        }
+        const clarification = await AssistantMessage.findOne({
+            where: {
+                threadId: session.id,
+                sender: 'bot',
+                kind: 'clarification',
+                ...(event.clarificationMessageId ? { id: event.clarificationMessageId } : {})
+            },
+            order: [['createdAt', 'DESC']]
+        });
+        if (!clarification || clarification.payload?.runId !== run.id) {
+            const error = new Error('The pending clarification is no longer available. Please send the request again.');
+            error.code = 'AGENT_CLARIFICATION_NOT_FOUND';
+            error.status = 409;
+            throw error;
+        }
+        const inputs = clarification?.payload?.inputs || clarification?.payload?.options || [];
+        const resolved = resolveClarificationSubmission({ inputs, state: event.state || {} });
+        if (!resolved.complete) {
+            const error = new Error('Please complete the requested information before continuing.');
+            error.code = 'AGENT_CLARIFICATION_INCOMPLETE';
+            error.status = 400;
+            error.issues = {
+                missingInputIds: resolved.missingInputIds,
+                missingGroups: resolved.missingGroups,
+                conflictingGroups: resolved.conflictingGroups,
+                invalidInputIds: resolved.invalidInputIds
+            };
+            throw error;
+        }
+        if (clarification) await clarification.update({ payload: {
+            ...(clarification.payload || {}),
+            selectedState: resolved.state,
+            resolution: { type: 'answered', answeredAt: new Date().toISOString(), answers: resolved.answers }
+        } });
+        const resumed = await resumeAgentAfterClarification({
+            run,
+            session,
+            userId,
+            answer: event.text || resolved.answers.map(answer => answer.answer).join(', '),
+            state: resolved.state,
+            context: session.context || {},
+            onEvent
+        });
+        return {
+            reply: resumed.replyObj,
+            tokenUsage: resumed.totalTokenUsage,
+            clarification: messagePayload(clarification)
+        };
     }
     if (event.type === 'form_saved' && event.runId) {
         const run = await AgentRun.findOne({ where: { id: event.runId, threadId: session.id, userId } });

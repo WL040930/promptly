@@ -2,18 +2,9 @@ import { useState } from 'react';
 import { Check, ChevronRight, Sparkles } from 'lucide-react';
 import Button from '../ui/Button.jsx';
 import { choiceValues, clarificationState, textValue, updateChoiceValue } from '../../utils/clarificationState.js';
+import { resolveClarificationSubmission, updateClarificationDraft } from '../../../../shared/clarificationContract.js';
 
 const isResourceChoice = input => input.type === 'workflow_choice' || input.type === 'form_choice' || input.type === 'resource_choice';
-
-const answerFor = (input, value) => {
-    if (Array.isArray(value)) return value.join(', ');
-    return typeof value === 'string' ? value.trim() : '';
-};
-
-const answerRows = (options, state) => (options || []).flatMap(input => {
-    const answer = answerFor(input, state?.[input.id]);
-    return answer ? [{ id: input.id, label: input.label || 'Answer', answer }] : [];
-});
 
 export default function MessageOptionsWidget({
     message,
@@ -22,24 +13,36 @@ export default function MessageOptionsWidget({
     isTyping,
     allowDecide = false,
     clarificationId = null,
+    clarificationMessageId = null,
+    runId = null,
     isResolved = false,
     initialState = {},
     resolution = null
 }) {
     const [formState, setFormState] = useState(() => clarificationState(initialState));
-    // The original message is updated in place after submission, so use the
-    // persisted payload for the receipt instead of a possibly stale local draft.
-    const answers = answerRows(options, isResolved ? initialState : formState);
-    const hasAnswers = answers.length > 0;
+    const evaluation = resolveClarificationSubmission({ inputs: options, state: isResolved ? initialState : formState });
+    const answers = resolution?.answers || evaluation.answers;
+    const canSubmit = evaluation.complete;
 
     const handleToggle = (inputId, option, isSingle) => {
-        setFormState(previous => updateChoiceValue(previous, inputId, option, isSingle));
+        setFormState(previous => updateClarificationDraft({
+            inputs: options,
+            state: previous,
+            inputId,
+            value: updateChoiceValue(previous, inputId, option, isSingle)[inputId]
+        }));
     };
 
     const handleSend = () => {
-        if (!hasAnswers) return;
+        if (!canSubmit) return;
         const text = answers.map(({ label, answer }) => `${label}: ${answer}`).join('\n');
-        onSend?.({ type: 'submit_clarification', text, state: formState });
+        onSend?.({
+            type: 'submit_clarification',
+            text,
+            state: evaluation.state,
+            ...(clarificationMessageId ? { clarificationMessageId } : {}),
+            ...(runId ? { runId } : {})
+        });
     };
 
     if (isResolved) {
@@ -50,13 +53,15 @@ export default function MessageOptionsWidget({
                         <Check size={14} strokeWidth={2.75} />
                     </span>
                     <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-800">Input received</p>
+                        <p className="text-xs font-bold text-slate-800">{resolution?.type === 'superseded' ? 'Question superseded' : 'Input received'}</p>
                         <p className="mt-0.5 truncate text-xs text-slate-500">
-                            {resolution?.type === 'defaulted'
+                            {resolution?.type === 'superseded'
+                                ? 'Promptly continued with a newer request.'
+                                : resolution?.type === 'defaulted'
                                 ? 'Promptly continued with sensible defaults.'
                                 : answers.length > 0
                                     ? answers.map(({ label, answer }) => `${label}: ${answer}`).join(' · ')
-                                    : 'This question was answered in the conversation.'}
+                                    : 'The response was saved.'}
                         </p>
                     </div>
                 </div>
@@ -70,7 +75,7 @@ export default function MessageOptionsWidget({
                 <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.16em] text-violet-700">
                     <span className="flex h-5 w-5 items-center justify-center rounded-md bg-violet-600 text-white"><Sparkles size={11} /></span>
                     Needs your input
-                    {options.length > 1 && <span className="ml-auto normal-case tracking-normal text-violet-500">{options.length} questions</span>}
+                    {options.length > 1 && <span className="ml-auto normal-case tracking-normal text-violet-500">{evaluation.decisionCount} {evaluation.decisionCount === 1 ? 'decision' : 'decisions'}</span>}
                 </div>
                 {message && <p className="mt-2 text-sm font-semibold leading-5 text-slate-800">{message}</p>}
                 <p className="mt-1 text-xs leading-5 text-slate-500">Choose an answer and Promptly will continue the draft.</p>
@@ -92,13 +97,15 @@ export default function MessageOptionsWidget({
                                             type="button"
                                             disabled={isTyping}
                                             onClick={() => input.type === 'resource_choice'
-                                                ? onSend?.({ type: 'submit_clarification', text: `${questionLabel}: ${resource.name}`, state: { [input.id]: resource.id } })
+                                                ? setFormState(previous => updateClarificationDraft({ inputs: options, state: previous, inputId: input.id, value: resource.id }))
                                                 : onSend?.(resource)}
-                                            className="group flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left transition-colors hover:border-violet-300 hover:bg-violet-50/50 disabled:cursor-not-allowed disabled:opacity-50"
+                                            className={`group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${selected.includes(resource.id) ? 'border-violet-300 bg-violet-50 text-violet-950' : 'border-slate-200 bg-white hover:border-violet-300 hover:bg-violet-50/50'}`}
                                         >
                                             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-500">{(resource.name || resource.title || '?').slice(0, 1).toUpperCase()}</span>
                                             <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-700">{resource.name || resource.title}</span>{resource.description && <span className="block truncate text-xs text-slate-500">{resource.description}</span>}</span>
-                                            <ChevronRight size={16} className="text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-violet-600" />
+                                            {selected.includes(resource.id)
+                                                ? <Check size={16} className="text-violet-600" />
+                                                : <ChevronRight size={16} className="text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-violet-600" />}
                                         </button>
                                     ))}
                                 </div>
@@ -136,9 +143,9 @@ export default function MessageOptionsWidget({
                             <label key={input.id || index} className="block space-y-2">
                                 <span className="text-xs font-bold text-slate-700">{questionLabel}</span>
                                 {multiline ? (
-                                    <textarea disabled={isTyping} placeholder={input.placeholder || 'Type your answer…'} value={textValue(formState?.[input.id])} onChange={event => setFormState(previous => ({ ...clarificationState(previous), [input.id]: event.target.value }))} className={`${fieldClass} min-h-24 resize-y`} />
+                                    <textarea disabled={isTyping} placeholder={input.placeholder || 'Type your answer…'} value={textValue(formState?.[input.id])} onChange={event => setFormState(previous => updateClarificationDraft({ inputs: options, state: previous, inputId: input.id, value: event.target.value }))} className={`${fieldClass} min-h-24 resize-y`} />
                                 ) : (
-                                    <input disabled={isTyping} placeholder={input.placeholder || 'Type your answer…'} value={textValue(formState?.[input.id])} onChange={event => setFormState(previous => ({ ...clarificationState(previous), [input.id]: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') handleSend(); }} className={fieldClass} />
+                                    <input disabled={isTyping} placeholder={input.placeholder || 'Type your answer…'} value={textValue(formState?.[input.id])} onChange={event => setFormState(previous => updateClarificationDraft({ inputs: options, state: previous, inputId: input.id, value: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') handleSend(); }} className={fieldClass} />
                                 )}
                             </label>
                         );
@@ -149,7 +156,7 @@ export default function MessageOptionsWidget({
             </div>
 
             <footer className="flex flex-col gap-2 border-t border-slate-100 bg-slate-50/70 px-4 py-3 sm:flex-row sm:items-center">
-                <Button variant="primary" size="sm" onClick={handleSend} disabled={!hasAnswers || isTyping} className="w-full sm:flex-1">
+                <Button variant="primary" size="sm" onClick={handleSend} disabled={!canSubmit || isTyping} className="w-full sm:flex-1">
                     Continue drafting
                 </Button>
                 {allowDecide && (

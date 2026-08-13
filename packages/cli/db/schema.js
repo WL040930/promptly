@@ -5,7 +5,6 @@
  */
 export const ensureDatabaseSchema = async (sequelize) => {
     await sequelize.query(`CREATE EXTENSION IF NOT EXISTS pg_trgm;`);
-    await sequelize.query(`ALTER TABLE "automation_runs" ADD COLUMN IF NOT EXISTS "definitionSnapshot" JSONB;`).catch(() => {});
     await sequelize.query(`
         DO $$
         BEGIN
@@ -36,5 +35,9 @@ export const ensureDatabaseSchema = async (sequelize) => {
     await sequelize.query(`
         CREATE INDEX IF NOT EXISTS "automation_runs_error_trgm"
         ON "automation_runs" USING gin (error gin_trgm_ops);
+    `);
+    await sequelize.query(`
+        CREATE INDEX IF NOT EXISTS "automation_runs_workflow_name_trgm"
+        ON "automation_runs" USING gin ("workflowNameSnapshot" gin_trgm_ops);
     `);
 };

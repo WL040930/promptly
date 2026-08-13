@@ -12,6 +12,23 @@ const parsePageSize = pageSizeValue => (
     )
 );
 
+export const sourceAutomationForRun = value => {
+    const workflow = value?.workflow || null;
+    const deleted = Boolean(value?.workflowDeletedAt) || !workflow;
+    return {
+        id: value?.workflowId || workflow?.id || null,
+        name: deleted
+            ? (value?.workflowNameSnapshot || workflow?.name || 'Deleted automation')
+            : (workflow?.name || value?.workflowNameSnapshot || 'Automation'),
+        deleted
+    };
+};
+
+const serializeRun = log => {
+    const value = log?.toJSON ? log.toJSON() : log;
+    return { ...value, sourceAutomation: sourceAutomationForRun(value) };
+};
+
 export const encodeLogCursor = log => Buffer.from(JSON.stringify({
     createdAt: new Date(log.createdAt).toISOString(),
     id: log.id
@@ -39,6 +56,7 @@ const buildLogWhereClause = async ({ userId, search, status, workflowId }) => {
             waiting: 'waiting',
             running: 'running',
             resuming: 'resuming',
+            cancelled: 'cancelled',
             failed: 'failed'
         }[String(status).trim().toLowerCase()];
         if (normalizedStatus) whereClause.status = normalizedStatus;
@@ -61,6 +79,7 @@ const buildLogWhereClause = async ({ userId, search, status, workflowId }) => {
             { id: { [Op.iLike]: `%${search}%` } },
             { trigger: { [Op.iLike]: `%${search}%` } },
             { error: { [Op.iLike]: `%${search}%` } },
+            { workflowNameSnapshot: { [Op.iLike]: `%${search}%` } },
             { workflowId: { [Op.in]: matchedWorkflows.map(workflow => workflow.id) } }
         ];
     }
@@ -106,7 +125,7 @@ export const getExecutionLogs = asyncHandler(async (req, res) => {
         limit: pageSize + 1
     });
     const hasNextPage = rows.length > pageSize;
-    const data = hasNextPage ? rows.slice(0, pageSize) : rows;
+    const data = (hasNextPage ? rows.slice(0, pageSize) : rows).map(serializeRun);
     const last = data.at(-1);
 
     res.json({
@@ -138,7 +157,8 @@ export const getExecutionLog = asyncHandler(async (req, res) => {
     }
 
     const value = log.toJSON();
-    const nodes = value.workflow?.nodes || [];
+    const nodes = value.workflow?.nodes || value.definitionSnapshot?.nodes || [];
+    const sourceAutomation = sourceAutomationForRun(value);
     const linkedSteps = (value.steps || []).map(step => {
         const node = nodes.find(candidate => candidate.id === step.nodeId)
             || nodes.find(candidate => candidate.title && candidate.title === step.name)
@@ -146,7 +166,7 @@ export const getExecutionLog = asyncHandler(async (req, res) => {
         return {
             ...step,
             links: {
-                workflowId: value.workflowId,
+                ...(sourceAutomation.deleted ? {} : { workflowId: value.workflowId }),
                 ...(node?.subType === 'form-submission' && node.config?.formId ? { formId: node.config.formId } : {})
             }
         };
@@ -154,5 +174,5 @@ export const getExecutionLog = asyncHandler(async (req, res) => {
     // Keep the endpoint intentionally narrow: the client only needs stable
     // navigation IDs, never the workflow's full node configuration.
     if (value.workflow) delete value.workflow.nodes;
-    res.json({ ...value, steps: linkedSteps });
+    res.json({ ...value, sourceAutomation, steps: linkedSteps });
 });

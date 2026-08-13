@@ -264,16 +264,20 @@ const formHistory = async sessionId => {
     return messages.reverse().map(message => ({ sender: message.sender, text: message.text }));
 };
 
-const designForm = async ({ run, session, message, form, clarificationMode = DEFAULT_CLARIFICATION_MODE, onEvent = null }) => {
+const designForm = async ({ run, session, message, form, intent = null, clarificationMode = DEFAULT_CLARIFICATION_MODE, onEvent = null }) => {
     const step = await createStep(run, { stepKey: 'design_form', type: 'design_form' });
     await startStep(step);
     try {
         const requiredCapabilities = requiredCapabilitiesForRequest(message);
-        const request = requiredCapabilities.includes('respondent_confirmation')
+        const compoundFormWorkflow = intent?.domains?.includes('form') && intent?.domains?.includes('workflow');
+        const request = compoundFormWorkflow || requiredCapabilities.includes('respondent_confirmation')
             ? [
                 'Form design scope: create or update only the form requested by the user.',
-                'The workflow agent will handle all post-submission actions and email delivery separately.',
-                'Do not model email delivery as a form setting or field; collect at least one required email field for the workflow to use.',
+                'The workflow agent will handle every post-submission action, integration, and delivery separately.',
+                'Do not turn Sheet storage, approvals, notifications, or email delivery into form fields or settings.',
+                ...(requiredCapabilities.includes('respondent_confirmation')
+                    ? ['Collect at least one required email field for the workflow to use.']
+                    : []),
                 '',
                 `Original request: ${message}`
             ].join('\n')
@@ -323,7 +327,62 @@ const designForm = async ({ run, session, message, form, clarificationMode = DEF
     }
 };
 
-const designWorkflow = async ({ run, userId, message, workflow, form, formSchema = null, formArtifactId = null, formBinding = null, respondentEmailFieldId = null, onEvent = null }) => {
+export const proposedFormSchemaForWorkflow = ({ form = null, formSchema = null, formArtifactId = null } = {}) => {
+    const schema = form?.toJSON?.() || form || formSchema || null;
+    if (!schema || schema.id || !formArtifactId) return schema;
+    return { ...schema, id: `artifact:${formArtifactId}` };
+};
+
+export const buildWorkflowProposalContent = ({ result, workflow = null, form = null, formArtifactId = null, formBinding = null } = {}) => {
+    const action = (workflow?.nodes || []).length > 0 ? 'edit_workflow' : 'create_workflow';
+    const formTrigger = (result?.nodes || []).find(node => node.subType === 'form-submission');
+    const resourceBindings = [];
+    if (!form && formBinding && formTrigger) {
+        resourceBindings.push({
+            target: { nodeId: formTrigger.id, path: 'config.formId' },
+            source: formBinding.source || formBinding
+        });
+    }
+    return {
+        action,
+        workflowId: workflow?.id || null,
+        name: action === 'create_workflow' ? DEFAULT_AUTOMATION_NAME : workflow?.name,
+        message: result?.message,
+        nodes: result?.nodes || [],
+        edges: result?.edges || [],
+        diff: result?.diff,
+        repairs: result?.warnings || [],
+        baseWorkflowRevision: workflow?.revision || null,
+        formArtifactId,
+        ...(resourceBindings.length > 0 ? { resourceBindings } : {}),
+        readiness: result?.readiness,
+        plan: result?.plan,
+        resourceChanges: result?.resourceChanges || [],
+        resourceIntent: result?.resourceIntent || null,
+        contextDelta: result?.contextDelta || null
+    };
+};
+
+export const workflowTurnContextForAgent = ({ message, context = {} } = {}) => {
+    const state = context?.clarificationState;
+    if (!state || typeof state !== 'object' || Array.isArray(state) || Object.keys(state).length === 0) return null;
+    return {
+        command: {
+            type: 'submit_clarification',
+            text: String(context.clarificationText || '').trim(),
+            state
+        },
+        intent: {
+            sourceText: String(message || '').trim(),
+            latestText: String(context.clarificationText || '').trim(),
+            relationToPending: 'none',
+            authority: 'user',
+            clarificationMode: normalizeClarificationMode(context.clarificationMode)
+        }
+    };
+};
+
+const designWorkflow = async ({ run, userId, message, workflow, form, formSchema = null, formArtifactId = null, formBinding = null, respondentEmailFieldId = null, turnContext = null, onEvent = null }) => {
     const step = await createStep(run, { stepKey: 'design_workflow', type: 'design_workflow' });
     await startStep(step);
     try {
@@ -331,7 +390,8 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
             request: message,
             currentWorkflow: workflow?.toJSON?.() || workflow || { nodes: [], edges: [] },
             userId,
-            formSchema: form?.toJSON?.() || form || formSchema || null,
+            formSchema: proposedFormSchemaForWorkflow({ form, formSchema, formArtifactId }),
+            turnContext,
             onProgress: (progress) => {
                 onEvent?.({
                     type: 'workflow.design.progress',
@@ -353,32 +413,7 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
             return { status: 'clarification', result: reply, tokenUsage: result.tokenUsage || {} };
         }
 
-        const action = (workflow?.nodes || []).length > 0 ? 'edit_workflow' : 'create_workflow';
-        
-        const formTrigger = (result.nodes || []).find(n => n.subType === 'form-submission');
-        const resourceBindings = [];
-        if (!form && formBinding && formTrigger) {
-            resourceBindings.push({
-                target: { nodeId: formTrigger.id, path: 'config.formId' },
-                source: formBinding.source || formBinding
-            });
-        }
-
-        const content = {
-            action,
-            workflowId: workflow?.id || null,
-            name: action === 'create_workflow' ? DEFAULT_AUTOMATION_NAME : workflow?.name,
-            message: result.message,
-            nodes: result.nodes,
-            edges: result.edges,
-            diff: result.diff,
-            repairs: result.warnings || [],
-            baseWorkflowRevision: workflow?.revision || null,
-            formArtifactId,
-            ...(resourceBindings.length > 0 ? { resourceBindings } : {}),
-            readiness: result.readiness,
-            plan: result.plan
-        };
+        const content = buildWorkflowProposalContent({ result, workflow, form, formArtifactId, formBinding });
 
         const artifact = await createArtifact({
             run,
@@ -432,6 +467,7 @@ const createSolutionCapabilityRegistry = ({
     form,
     workflow,
     resources,
+    intent,
     clarificationMode,
     userId,
     actorEmail,
@@ -450,7 +486,7 @@ const createSolutionCapabilityRegistry = ({
         risk: 'proposal',
         produces: ['form_proposal', 'form_resource'],
         execute: async () => {
-            const result = await designForm({ run, session, message, form, clarificationMode, onEvent });
+            const result = await designForm({ run, session, message, form, intent, clarificationMode, onEvent });
             if (result.status === 'clarification') {
                 return {
                     status: 'awaiting_clarification',
@@ -488,6 +524,7 @@ const createSolutionCapabilityRegistry = ({
                     source: { artifactKey: 'form_proposal', appliedResource: 'id' }
                 } : null,
                 respondentEmailFieldId: context.input?.context?.respondentEmailFieldId || null,
+                turnContext: workflowTurnContextForAgent({ message, context: context.input?.context || {} }),
                 onEvent
             });
             if (result.status === 'clarification') {
@@ -651,6 +688,10 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         activeResource: context.activeResource || null,
         respondentEmailFieldId: context.respondentEmailFieldId || null,
         clarificationAnswers: Array.isArray(context.clarificationAnswers) ? context.clarificationAnswers.slice(-8) : [],
+        clarificationState: context.clarificationState && typeof context.clarificationState === 'object' && !Array.isArray(context.clarificationState)
+            ? context.clarificationState
+            : {},
+        clarificationText: String(context.clarificationText || '').trim(),
         clarificationMode: normalizeClarificationMode(context.clarificationMode)
     };
     const run = existingRun || await createRun({ threadId: session.id, userId, metadata: { request: message, context: persistedContext } });
@@ -710,6 +751,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
             form,
             workflow,
             resources: researched.resources,
+            intent: analyzed.intent,
             clarificationMode: persistedContext.clarificationMode,
             userId,
             actorEmail: actor?.email || null,
@@ -979,16 +1021,24 @@ export const resumeAgentAfterForm = async ({ run, session, userId, formId, onEve
     return { reply, tokenUsage: result.tokenUsage };
 };
 
-export const resumeAgentAfterClarification = async ({ run, session, userId, answer = '', context = null, onEvent = null }) => {
+export const resumeAgentAfterClarification = async ({ run, session, userId, answer = '', state = null, context = null, onEvent = null }) => {
     const metadata = run.metadata || {};
     const request = metadata.request;
     if (!request) throw new Error('The pending agent request is no longer available.');
 
-    const nextContext = { ...(context || metadata.context || {}) };
+    // The browser context only contains the most recent UI state. Preserve
+    // the run's original context as well so a clarification cannot discard
+    // the selected form, workflow, or other trusted inputs from the request.
+    const nextContext = { ...(metadata.context || {}), ...(context || {}) };
     nextContext.clarificationAnswers = [
         ...(Array.isArray(nextContext.clarificationAnswers) ? nextContext.clarificationAnswers : []),
         String(answer || '').trim()
     ].filter(Boolean).slice(-8);
+    const structuredState = state && typeof state === 'object' && !Array.isArray(state) ? state : {};
+    if (Object.keys(structuredState).length > 0) {
+        nextContext.clarificationState = structuredState;
+        nextContext.clarificationText = String(answer || '').trim();
+    }
     const workflowClarification = metadata.workflowClarification;
     if (workflowClarification?.kind === 'respondent_email_field') {
         const normalizedAnswer = String(answer || '').trim().toLowerCase();

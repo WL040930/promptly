@@ -53,6 +53,12 @@ const validateInputs = inputs => {
         }
         issues.push(...textIssues(input.id, `${path}.id`, { required: true, max: 100 }));
         issues.push(...textIssues(input.label, `${path}.label`, { required: true, max: 500 }));
+        if (input.required !== undefined && typeof input.required !== 'boolean') {
+            issues.push(issue('INVALID_CLARIFICATION_REQUIRED', `${path}.required`, 'Clarification required must be a boolean.'));
+        }
+        if (input.alternativeGroup !== undefined) {
+            issues.push(...textIssues(input.alternativeGroup, `${path}.alternativeGroup`, { required: true, max: 100 }));
+        }
         if (!INPUT_TYPES.has(input.type)) issues.push(issue('INVALID_CLARIFICATION_INPUT_TYPE', `${path}.type`, 'Unsupported clarification input type.'));
         if (input.id && ids.has(input.id)) issues.push(issue('DUPLICATE_CLARIFICATION_INPUT_ID', `${path}.id`, 'Clarification input IDs must be unique.'));
         ids.add(input.id);

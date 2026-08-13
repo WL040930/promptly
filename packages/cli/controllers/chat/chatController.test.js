@@ -99,3 +99,48 @@ test('assistant turn SSE exposes a reviewable plan result through the API bounda
     assert.equal(events.at(-1).result.reply.kind, 'agent_plan_review');
     assert.equal(events.at(-1).result.reply.payload.runId, 'run_1');
 });
+
+test('assistant clarification events return the resolved card so the browser closes it immediately', async () => {
+    const response = responseRecorder();
+    const session = {
+        id: 'session_1',
+        state: {},
+        context: {},
+        async update(updates) {
+            Object.assign(this, updates);
+            return this;
+        }
+    };
+    const resolvedClarification = {
+        id: 'clarification_1',
+        sender: 'bot',
+        kind: 'clarification',
+        payload: {
+            inputs: [{ id: 'createSpreadsheet', type: 'resource_choice', options: [{ id: 'create', name: 'Create a new Sheet' }] }],
+            selectedState: { createSpreadsheet: 'create' },
+            resolution: { type: 'answered', answers: [{ id: 'createSpreadsheet', label: 'Destination', answer: 'Create a new Sheet' }] }
+        }
+    };
+    const handler = createSendMessageHandler({
+        chatSessionModel: {
+            findOne: async () => session,
+            create: async () => session
+        },
+        applyEventService: async () => ({
+            reply: { id: 'reply_1', sender: 'bot', kind: 'workflow_proposal', text: 'Ready.' },
+            tokenUsage: {},
+            clarification: resolvedClarification
+        }),
+        assistantMessageModel: { update: async () => {} }
+    });
+
+    await handler({
+        body: { sessionId: 'session_1', event: { type: 'submit_clarification', state: { createSpreadsheet: 'create' } } },
+        headers: { accept: 'application/json' },
+        user: { id: 'user_1' }
+    }, response, error => { throw error; });
+
+    assert.equal(response.body.clarification.id, 'clarification_1');
+    assert.equal(response.body.clarification.payload.resolution.type, 'answered');
+    assert.equal(response.body.reply.kind, 'workflow_proposal');
+});

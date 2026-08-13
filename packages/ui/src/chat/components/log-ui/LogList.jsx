@@ -1,5 +1,5 @@
 import { CheckCircle2, Clock3, XCircle } from 'lucide-react';
-import { formatDuration, formatLogDate, getStatusClasses, getWorkflowName, isSuccessStatus, isWaitingStatus } from './logFormatters.js';
+import { formatDuration, formatLogDate, getStatusClasses, getWorkflowName, isCancelledStatus, isDeletedAutomationRun, isSuccessStatus, isWaitingStatus } from './logFormatters.js';
 
 const StatusIcon = ({ status, className }) => {
     if (isSuccessStatus(status)) return <CheckCircle2 size={16} aria-hidden="true" className={className} />;
@@ -12,6 +12,7 @@ const LogList = ({ logs, selectedLogId, onSelect }) => (
         {logs.map((log) => {
             const statusClasses = getStatusClasses(log.status);
             const workflowName = getWorkflowName(log);
+            const deletedAutomation = isDeletedAutomationRun(log);
 
             return (
                 <button
@@ -28,6 +29,7 @@ const LogList = ({ logs, selectedLogId, onSelect }) => (
                     <div className="flex flex-col gap-1.5 min-w-0 flex-1">
                         <div className="flex items-center gap-2.5 min-w-0">
                             <span className="font-semibold text-slate-900 text-sm sm:text-base truncate">{workflowName}</span>
+                            {deletedAutomation && <span className="inline-flex shrink-0 items-center rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">Deleted automation</span>}
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-medium shrink-0 ${statusClasses.badge}`}>
                                 <StatusIcon status={log.status} className={statusClasses.icon} />
                                 {log.status}
@@ -42,8 +44,8 @@ const LogList = ({ logs, selectedLogId, onSelect }) => (
                             <span className="font-mono text-slate-400 truncate max-w-[18rem]">Run ID: {log.id}</span>
                         </div>
 
-                        {log.error && log.status?.toLowerCase() === 'failed' && (
-                            <div className="text-xs font-medium text-red-600 bg-red-50/50 border border-red-100 rounded-lg py-1.5 px-3 mt-1 leading-relaxed truncate">
+                        {log.error && ['failed', 'cancelled'].includes(log.status?.toLowerCase()) && (
+                            <div className={`text-xs font-medium rounded-lg py-1.5 px-3 mt-1 leading-relaxed truncate ${isCancelledStatus(log.status) ? 'text-slate-600 bg-slate-50 border border-slate-200' : 'text-red-600 bg-red-50/50 border border-red-100'}`}>
                                 {log.error}
                             </div>
                         )}

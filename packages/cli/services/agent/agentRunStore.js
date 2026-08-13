@@ -98,6 +98,19 @@ export const createArtifact = async ({ run, runId, type, artifactKey, content, b
     return artifact;
 };
 
+export const updateArtifact = async (run, artifactKey, updates = {}) => {
+    const current = (Array.isArray(run?.artifacts) ? run.artifacts : []).find(artifact => artifact.artifactKey === artifactKey);
+    if (!current) throw new Error(`Agent artifact '${artifactKey}' was not found.`);
+    const content = updates.content === undefined ? current.content : updates.content;
+    return updateJsonCollection(run, 'artifacts', 'artifactKey', {
+        ...current,
+        ...updates,
+        artifactKey,
+        content,
+        contentHash: hash(content)
+    });
+};
+
 export const createApproval = async ({ run, userId, artifactIds, idempotencyKey }) => {
     const approval = run.approval || {
         id: `approval_${crypto.randomUUID().replace(/-/g, '')}`,

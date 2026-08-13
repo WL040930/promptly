@@ -40,3 +40,13 @@ test('an explicit create request overrides a named destination', () => {
         mode: 'create', source: 'request', name: 'Event Registration'
     });
 });
+
+test('a structured Create answer keeps the original destination name instead of parsing the button label', () => {
+    assert.deepEqual(resolveSpreadsheetIntent({
+        request: 'Or create a new Sheet: Create a new Event Registration Sheet',
+        sourceText: 'When the Event Registration form is submitted, save the response to the Event Registration Google Sheet.',
+        clarificationState: { createSpreadsheet: 'create' }
+    }), {
+        mode: 'create', source: 'clarification', name: 'Event Registration'
+    });
+});

@@ -6,6 +6,10 @@ import asyncHandler from '../../utils/asyncHandler.js';
 const METRICS_CACHE_TTL_MS = 30_000;
 const metricsCache = new Map();
 
+export const invalidateDashboardMetrics = userId => {
+    if (userId) metricsCache.delete(userId);
+};
+
 export const getDashboardMetrics = asyncHandler(async (req, res) => {
     const userId = req.user.id;
     const cached = metricsCache.get(userId);
@@ -48,7 +52,7 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
             where: { userId },
             order: [['createdAt', 'DESC']],
             limit: 5,
-            include: [{ model: Workflow, as: 'workflow', attributes: ['name'] }]
+            include: [{ model: Workflow, as: 'workflow', attributes: ['name'], required: false }]
         })
     ]);
 
@@ -79,7 +83,7 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
         weeklyData: filledWeeklyData,
         recentActivities: recentActivities.map(log => ({
             id: log.id,
-            action: `${log.workflow ? log.workflow.name : 'Workflow'} ${log.status}`,
+            action: `${log.workflow?.name || log.workflowNameSnapshot || 'Deleted automation'} ${log.status}`,
             detail: `Triggered by ${log.trigger}`,
             time: log.time,
             type: ['success', 'succeeded'].includes(String(log.status || '').toLowerCase()) ? 'success' : ['waiting', 'running', 'resuming', 'pending'].includes(String(log.status || '').toLowerCase()) ? 'pending' : 'error',

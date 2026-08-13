@@ -63,8 +63,9 @@ const selectedIntent = ({ source, spreadsheetId, name = null } = {}) => ({ mode:
  * conversational data only; ownership and account-resource checks happen in
  * the pipeline before the planner is called.
  */
-export const resolveSpreadsheetIntent = ({ request = '', clarificationState = {}, pendingProposal = null, history = [] } = {}) => {
+export const resolveSpreadsheetIntent = ({ request = '', sourceText = '', clarificationState = {}, pendingProposal = null, history = [] } = {}) => {
     const current = text(request);
+    const original = text(sourceText);
     const selectedValue = clarificationState?.spreadsheetId;
     const selectedId = spreadsheetIdFromValue(selectedValue);
     const createChoice = clarificationState?.createSpreadsheet === 'create'
@@ -74,7 +75,10 @@ export const resolveSpreadsheetIntent = ({ request = '', clarificationState = {}
     if (selectedId && !explicitCreatePattern.test(selectedId)) {
         return selectedIntent({ source: 'clarification', spreadsheetId: selectedId });
     }
-    if (createChoice) return createIntent({ source: 'clarification' });
+    if (createChoice) return createIntent({
+        source: 'clarification',
+        name: namedSpreadsheetFromText(original)
+    });
 
     const rejectsCreation = rejectCreatePattern.test(current);
     if (!rejectsCreation && explicitCreatePattern.test(current)) {

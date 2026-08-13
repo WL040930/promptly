@@ -88,7 +88,12 @@ export const createSendMessageHandler = ({
                 detail: eventResult.reply.text || 'Completed the requested action.',
                 messageModel: assistantMessageModel
             });
-            const payload = { sessionId: session.id, reply: eventResult.reply, tokenUsage: eventResult.tokenUsage || null };
+            const payload = {
+                sessionId: session.id,
+                reply: eventResult.reply,
+                tokenUsage: eventResult.tokenUsage || null,
+                ...(eventResult.clarification ? { clarification: eventResult.clarification } : {})
+            };
             if (useSSE) {
                 emit({ type: 'turn.completed', result: payload });
                 return res.end();

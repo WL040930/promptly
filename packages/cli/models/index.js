@@ -35,11 +35,14 @@ Form.hasMany(FormResponse, {
 // --- Automation run associations ---
 AutomationRun.belongsTo(User, { foreignKey: 'userId', as: 'user', onDelete: 'CASCADE' });
 User.hasMany(AutomationRun, { foreignKey: 'userId', as: 'runs', onDelete: 'CASCADE' });
-AutomationRun.belongsTo(Workflow, { foreignKey: 'workflowId', as: 'workflow', onDelete: 'CASCADE' });
-Workflow.hasMany(AutomationRun, { foreignKey: 'workflowId', as: 'runs', onDelete: 'CASCADE' });
+// Run history keeps its source ID as immutable provenance. It must not be
+// owned by the live workflow row, so deleting a workflow cannot cascade into
+// historical executions.
+AutomationRun.belongsTo(Workflow, { foreignKey: 'workflowId', as: 'workflow', constraints: false });
+Workflow.hasMany(AutomationRun, { foreignKey: 'workflowId', as: 'runs', constraints: false });
 AutomationRun.hasMany(WorkflowContinuation, { foreignKey: 'runId', as: 'continuations', onDelete: 'CASCADE' });
 WorkflowContinuation.belongsTo(AutomationRun, { foreignKey: 'runId', as: 'run', onDelete: 'CASCADE' });
-WorkflowContinuation.belongsTo(Workflow, { foreignKey: 'workflowId', as: 'workflow', onDelete: 'CASCADE' });
+WorkflowContinuation.belongsTo(Workflow, { foreignKey: 'workflowId', as: 'workflow', constraints: false });
 WorkflowContinuation.belongsTo(User, { foreignKey: 'resolvedBy', as: 'resolver', onDelete: 'SET NULL' });
 Asset.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 User.hasMany(Asset, { foreignKey: 'userId', as: 'assets', onDelete: 'CASCADE' });

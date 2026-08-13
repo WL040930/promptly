@@ -195,7 +195,7 @@ const addDefaultSpreadsheetIntent = ({ plan, request, workflow, formSchema, spre
             resourceChanges: (plan.resourceChanges || []).filter(change => change?.type !== 'create_google_spreadsheet')
         };
     }
-    if (!spreadsheetRequestPattern.test(String(request || ''))) return plan;
+    if (spreadsheetIntent?.mode !== 'create' && !spreadsheetRequestPattern.test(String(request || ''))) return plan;
     if (perSubmissionSpreadsheetPattern.test(String(request || ''))) {
         const requirements = [...(plan.requirements || [])];
         if (!requirements.some(requirement => /(?:create|new).*(?:sheet|spreadsheet).*(?:each|every|per).*(?:submission|response)|(?:each|every|per).*(?:submission|response).*?(?:create|new).*(?:sheet|spreadsheet)/i.test(requirement?.description || ''))) {
@@ -319,9 +319,13 @@ const missingSpreadsheetClarification = ({ name = null, allowCreate = true } = {
         ? `I could not find a Google Sheet named “${name}”. Paste its Google Sheets URL or spreadsheet ID${allowCreate ? ', or choose to create a new Sheet' : ''}.`
         : 'Choose the existing Google Sheet to use by pasting its Google Sheets URL or spreadsheet ID.',
     inputs: [
-        { id: 'spreadsheetId', type: 'text', label: 'Spreadsheet URL or ID', placeholder: 'https://docs.google.com/spreadsheets/d/…' },
+        {
+            id: 'spreadsheetId', type: 'text', label: 'Existing Google Sheet URL or ID',
+            placeholder: 'https://docs.google.com/spreadsheets/d/…',
+            ...(allowCreate ? { alternativeGroup: 'spreadsheetDestination' } : {})
+        },
         ...(allowCreate ? [{
-            id: 'createSpreadsheet', type: 'resource_choice', label: 'Or create a new Sheet',
+            id: 'createSpreadsheet', type: 'resource_choice', label: 'Create a new Sheet', alternativeGroup: 'spreadsheetDestination',
             options: [{ id: 'create', name: name ? `Create a new “${name}” Sheet` : 'Create a new Google Sheet', description: 'A new Sheet will be proposed for review, not created yet.' }]
         }] : [])
     ]
@@ -613,6 +617,7 @@ export const generateWorkflowTurn = async ({
     registry = NodeRegistry,
     resourceLoader = loadWorkflowResourceContext
 } = {}) => {
+    const turnIntent = turnContext?.intent || turnContext || null;
     const budget = { calls: 0, maxCalls: WORKFLOW_COMPLEXITY_BUDGETS.simple.maxProviderCalls };
     const catalogue = enabledCatalogue(registry);
     const validatePlannerForCatalogue = result => plannerNodeKeyIssues(result, catalogue);
@@ -645,6 +650,7 @@ export const generateWorkflowTurn = async ({
     let formLookupUsed = false;
     let spreadsheetIntent = resolveSpreadsheetIntent({
         request,
+        sourceText: turnIntent?.sourceText || '',
         clarificationState: turnContext?.command?.state || {},
         pendingProposal,
         history
@@ -752,7 +758,7 @@ export const generateWorkflowTurn = async ({
         pendingProposal,
         request,
         clarificationMode,
-        turnContext,
+        turnContext: turnIntent,
         userContext,
         resourceContext: assistantContext,
         formSchema,
@@ -915,7 +921,7 @@ export const generateWorkflowTurn = async ({
         };
     }
 
-    const shouldResolveDefaults = turnContext?.authority === 'assistant'
+    const shouldResolveDefaults = turnIntent?.authority === 'assistant'
         || normalizeClarificationMode(clarificationMode) === CLARIFICATION_MODES.DECIDE_EVERYTHING;
     if (plan.type === 'message' && shouldResolveDefaults) {
         plannerContext = buildPlannerContext({ inspectedFormSchema, formLookupUsed, forceDecision: true });

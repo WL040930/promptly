@@ -1,6 +1,9 @@
 import { Op, QueryTypes } from 'sequelize';
 import { Workflow, WorkflowVersion } from '../../models/index.js';
+import sequelize from '../../db/index.js';
 import { executeWorkflow } from '../../services/engine/executionEngine.js';
+import { recordTerminalRunMetric } from '../../services/engine/dashboardMetricsService.js';
+import { retainRunsForDeletedWorkflow } from '../../services/engine/runRetentionService.js';
 import asyncHandler from '../../utils/asyncHandler.js';
 import SchedulerService from '../../services/scheduler/schedulerService.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
@@ -9,6 +12,7 @@ import { reconcileWorkflow, removeWorkflow } from '../../services/triggers/trigg
 import { saveAutomationDraft, publishAutomation, pauseAutomation } from '../../services/automations/automationService.js';
 import { deactivateWorkflowTriggerBindings } from '../../services/triggers/workflowTriggerBindingService.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
+import { invalidateDashboardMetrics } from '../dashboard/dashboardController.js';
 
 const graphsMatch = (leftNodes = [], leftEdges = [], rightNodes = [], rightEdges = []) => (
     JSON.stringify(leftNodes || []) === JSON.stringify(rightNodes || [])
@@ -249,12 +253,49 @@ export const deleteWorkflow = asyncHandler(async (req, res) => {
     const workflow = await Workflow.findOne({ where: { id, userId: req.user.id } });
     if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
     
-    // Deregister any scheduled job before deletion
+    // Stop external work before removing the live automation. Historical runs
+    // are handled in the database transaction below and are never destroyed.
     SchedulerService.deregister(id);
     await removeWorkflow(id);
 
-    await workflow.destroy();
-    res.json({ message: 'Workflow deleted' });
+    let deletionSummary = null;
+    let deleted = false;
+    await sequelize.transaction(async transaction => {
+        const currentWorkflow = await Workflow.findOne({
+            where: { id, userId: req.user.id },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        if (!currentWorkflow) return;
+
+        deletionSummary = await retainRunsForDeletedWorkflow({
+            workflowId: id,
+            userId: req.user.id,
+            workflowName: currentWorkflow.name,
+            transaction
+        });
+        await currentWorkflow.destroy({ transaction });
+        deleted = true;
+    });
+
+    if (!deleted) return res.status(404).json({ message: 'Workflow not found' });
+
+    invalidateDashboardMetrics(req.user.id);
+
+    // Metrics use their own idempotent transaction and must run after the
+    // deletion transaction commits. A metrics failure must not undo deletion
+    // or put the retained run history at risk.
+    await Promise.all((deletionSummary?.cancelledRunIds || []).map(runId => (
+        recordTerminalRunMetric(runId).catch(error => {
+            console.warn(`[RunRetention] Could not record cancelled run metric ${runId}:`, error.message);
+        })
+    )));
+
+    res.json({
+        message: 'Workflow deleted',
+        runsRetained: deletionSummary?.retainedRunCount || 0,
+        runsCancelled: deletionSummary?.cancelledRunIds?.length || 0
+    });
 });
 
 export const triggerWorkflow = asyncHandler(async (req, res) => {

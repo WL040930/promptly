@@ -197,9 +197,11 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                         options={options}
                         allowDecide={clarification?.allowDecide === true || payload.allowDecide === true}
                         clarificationId={clarification?.clarificationId || clarification?.id || payload.clarificationId}
+                        clarificationMessageId={message.id}
+                        runId={payload.runId || null}
                         onSend={(selected) => onOption?.(selected)}
                         isTyping={isTyping}
-                        isResolved={!isLatest || Object.keys(selectedState).length > 0}
+                        isResolved={Boolean((clarification?.resolution || payload.resolution)?.type || Object.keys(selectedState).length > 0)}
                         initialState={selectedState}
                         resolution={clarification?.resolution || payload.resolution}
                     />

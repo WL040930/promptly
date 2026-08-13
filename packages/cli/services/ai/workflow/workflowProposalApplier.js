@@ -2,6 +2,7 @@ import { applyResourceContextDelta, buildResourceIdentity } from '../../assistan
 import { compileWorkflowBindings, validateWorkflowExpressions } from '../../../../shared/workflowExpressions.js';
 import { finishAssistantWork } from '../../../../shared/assistantWork.js';
 import { applyFormResponseSpreadsheetContract } from './formSpreadsheetContract.js';
+import { provisionWorkflowResources } from './workflowResourceProvisioner.js';
 
 const isProvisionReference = value => value !== null && typeof value === 'object' && !Array.isArray(value)
     && typeof value.$provision === 'string' && Object.keys(value).length === 1;
@@ -107,33 +108,6 @@ export const createWorkflowProposalApplier = ({
         return { form, normalizedBindings };
     };
 
-    const provisionGoogleSheets = async ({ changes = [], userId, workflowId, proposalMessageId, onFileReady }) => {
-        const resources = new Map();
-        const resolvedChanges = [];
-        for (const change of changes) {
-            if (change?.type !== 'create_google_spreadsheet') {
-                resolvedChanges.push(change);
-                continue;
-            }
-            const created = await spreadsheetService.createAndInitialize({
-                userId,
-                title: change.title,
-                sheetTitle: change.sheetTitle || 'Responses',
-                headers: change.headers || [],
-                provisioningKey: `workflow-proposal:${workflowId}:${proposalMessageId}:${change.ref}`,
-                folderId: change.folderId || null,
-                // Only reuse an ID that Promptly persisted after Drive returned
-                // it; never trust an AI-authored spreadsheet ID as a provider
-                // resource identity.
-                existingSpreadsheetId: change.status === 'provisioning' ? change.spreadsheetId || null : null,
-                onFileReady: resource => onFileReady?.({ change, resource })
-            });
-            resources.set(change.ref, created);
-            resolvedChanges.push({ ...change, status: 'ready', spreadsheetId: created.id, webViewLink: created.webViewLink, range: created.range });
-        }
-        return { resources, resolvedChanges };
-    };
-
     const apply = async ({ workflowId, userId, proposalMessageId, expectedStateVersion, workflow, message, payload }) => {
         if (payload.workflowId !== workflow.id) throw errorWith('WORKFLOW_PROPOSAL_SCOPE_INVALID', 'This proposal belongs to a different workflow.', 409);
         if (payload.readiness?.canApply === false) {
@@ -224,11 +198,12 @@ export const createWorkflowProposalApplier = ({
                     resourceChanges: payload.resourceChanges || [],
                     form: form?.toJSON?.() || form
                 });
-                const provisioned = await provisionGoogleSheets({
+                const provisioned = await provisionWorkflowResources({
+                    nodes: responseSheetContract.nodes,
                     changes: responseSheetContract.resourceChanges,
                     userId,
-                    workflowId,
-                    proposalMessageId,
+                    provisioningKeyPrefix: `workflow-proposal:${workflowId}:${proposalMessageId}`,
+                    spreadsheetService,
                     onFileReady: async ({ change, resource }) => {
                         await updateFreshProposal(current => ({
                             payload: payloadWithProvisionedFile(current.payload || payload, change.ref, resource)
@@ -236,11 +211,11 @@ export const createWorkflowProposalApplier = ({
                     }
                 });
                 provisionedResources = provisioned.resources;
-                createdResources = [...provisionedResources.values()];
+                createdResources = provisioned.createdResources;
                 resolvedPayload = {
                     ...payload,
-                    nodes: resolveProvisionedGoogleSheetConfigs(responseSheetContract.nodes, provisionedResources, errorWith),
-                    resourceChanges: provisioned.resolvedChanges
+                    nodes: provisioned.nodes,
+                    resourceChanges: provisioned.changes
                 };
                 await updateFreshProposal(() => ({ payload: resolvedPayload }));
             } catch (error) {

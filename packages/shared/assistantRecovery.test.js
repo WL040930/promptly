@@ -103,3 +103,21 @@ test('assistant recovery explains when AI returns no workflow operations', () =>
     assert.equal(result.location, 'AI proposal generation — no workflow node was changed.');
     assert.equal(result.details[0].message, 'The AI response did not include a list of workflow steps.');
 });
+
+test('assistant recovery identifies a Google Sheet header/row contract mismatch', () => {
+    const result = buildAssistantRecovery({
+        surface: 'workflow',
+        code: 'WORKFLOW_AI_UNSAFE_PROPOSAL',
+        issues: [{
+            code: 'INVALID_NODE_CONFIG_INVALID_DATA_GRID',
+            path: 'nodes[1].config.headers',
+            message: 'Header row must contain rows and columns.'
+        }],
+        context: { retryText: 'Save Event Registration responses to a Google Sheet.' }
+    });
+
+    assert.equal(result.type, 'spreadsheet_response_columns');
+    assert.equal(result.title, 'Promptly could not prepare the Google Sheet columns');
+    assert.match(result.summary, /different formats/i);
+    assert.equal(result.action.type, 'retry');
+});

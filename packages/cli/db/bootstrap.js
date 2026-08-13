@@ -5,23 +5,6 @@ import { ensureStorageResources } from './storageProvisioning.js';
 import { ensureDatabaseChangeTriggers } from '../services/triggers/databaseTriggerService.js';
 import { fileURLToPath } from 'node:url';
 
-const removeDuplicateAssetConstraint = async () => {
-    await sequelize.query(`
-        DO $$
-        BEGIN
-            IF EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conname = 'workflow_assets_storageKey_key1'
-                  AND conrelid = 'workflow_assets'::regclass
-            ) THEN
-                ALTER TABLE "workflow_assets"
-                DROP CONSTRAINT "workflow_assets_storageKey_key1";
-            END IF;
-        END
-        $$;
-    `);
-};
-
 const modelTableNames = () => [...new Set(
     Object.values(sequelize.models)
         .map(model => model.getTableName())
@@ -35,6 +18,9 @@ const hasMissingModelTables = async () => {
     return modelTableNames().some(table => !existingTables.has(table));
 };
 
+// The model definitions are the source of truth for a rebuilt database.
+// This module only installs PostgreSQL extensions, constraints, indexes, and
+// triggers that Sequelize sync cannot express; it is not a legacy migration runner.
 const needsPostgresSetup = async () => {
     const [rows] = await sequelize.query(`
         SELECT
@@ -55,18 +41,8 @@ const needsPostgresSetup = async () => {
             to_regclass('public.automations_name_trgm') IS NOT NULL
                 AND to_regclass('public.automation_runs_trigger_trgm') IS NOT NULL
                 AND to_regclass('public.automation_runs_error_trgm') IS NOT NULL
-                AS trigram_indexes_ready,
-            EXISTS (
-                SELECT 1 FROM information_schema.columns
-                WHERE table_schema = 'public'
-                  AND table_name = 'automation_runs'
-                  AND column_name = 'definitionSnapshot'
-            ) AS automation_run_snapshot_ready,
-            NOT EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conname = 'workflow_assets_storageKey_key1'
-                  AND conrelid = 'workflow_assets'::regclass
-            ) AS asset_constraint_ready;
+                AND to_regclass('public.automation_runs_workflow_name_trgm') IS NOT NULL
+                AS trigram_indexes_ready;
     `);
     const state = rows[0];
     return !Object.values(state).every(Boolean);
@@ -88,7 +64,6 @@ export const ensureDatabaseReady = async () => {
         await ensureDatabaseSchema(sequelize);
         await ensureDatabaseChangeTriggers(sequelize);
         await ensureStorageResources(sequelize);
-        await removeDuplicateAssetConstraint();
     }
     console.log('[DB] Bootstrap complete.');
 };

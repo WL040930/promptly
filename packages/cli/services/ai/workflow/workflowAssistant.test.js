@@ -566,9 +566,50 @@ test('workflow AI records a structured clarification answer before continuing th
 
     assert.deepEqual(clarification.payload.selectedState, { provider: ['Gmail'] });
     assert.equal(clarification.payload.resolution.type, 'answered');
-    assert.equal(turnContexts[1].sourceText, 'Add an email notification.');
-    assert.deepEqual(turnContexts[1].latestText, 'Gmail');
+    assert.equal(turnContexts[1].intent.sourceText, 'Add an email notification.');
+    assert.deepEqual(turnContexts[1].intent.latestText, 'Gmail');
+    assert.deepEqual(turnContexts[1].command.state, { provider: ['Gmail'] });
     assert.equal(result.state.phase, 'idle');
+});
+
+test('workflow AI rejects a partial clarification without closing it or starting a turn', async () => {
+    const memory = createMemoryModels();
+    let runTurnCalls = 0;
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async () => {
+            runTurnCalls += 1;
+            return runTurnCalls === 1
+                ? {
+                    kind: 'clarification',
+                    message: 'Provide both values.',
+                    inputs: [
+                        { id: 'provider', type: 'text', label: 'Provider' },
+                        { id: 'recipient', type: 'text', label: 'Recipient' }
+                    ]
+                }
+                : { kind: 'reply', message: 'Unexpected.' };
+        },
+        idFactory: (() => { let count = 0; return prefix => `${prefix}_${++count}`; })()
+    });
+
+    await assistant.submitTurn({
+        userId: 'user_1', workflowId: 'workflow_1',
+        command: { type: 'submit_text', text: 'Send a notification.' }
+    });
+    await assert.rejects(
+        () => assistant.submitTurn({
+            userId: 'user_1', workflowId: 'workflow_1',
+            command: { type: 'submit_clarification', text: 'Gmail', state: { provider: 'Gmail' } }
+        }),
+        error => error.code === 'WORKFLOW_AI_CLARIFICATION_INCOMPLETE'
+    );
+
+    assert.equal(runTurnCalls, 1);
+    assert.equal(memory.threads[0].state.phase, 'awaiting_clarification');
+    assert.equal(memory.messages.length, 2);
+    assert.equal(memory.messages.find(message => message.kind === 'clarification').payload.resolution, undefined);
 });
 
 test('rejecting the active workflow proposal marks it ignored and returns the assistant to idle', async () => {

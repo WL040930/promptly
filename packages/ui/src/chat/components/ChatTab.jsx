@@ -121,15 +121,17 @@ export default function ChatTab({ conversationId = null }) {
                 navigateTo({ page: 'assistant', conversationId: response.sessionId });
             }
         }
-        if (response?.reply) {
-            const supersededMessageIds = new Set(response.reply.payload?.supersededMessageIds || []);
+        if (response?.reply || response?.clarification) {
+            const supersededMessageIds = new Set(response.reply?.payload?.supersededMessageIds || []);
             setMessages(previous => [
                 ...(supersededMessageIds.size > 0
                     ? previous.map(message => supersededMessageIds.has(message.id)
                         ? { ...message, proposalStatus: 'superseded' }
                         : message)
-                    : previous),
-                response.reply
+                    : previous).map(message => response.clarification?.id === message.id
+                        ? response.clarification
+                        : message),
+                ...(response.reply ? [response.reply] : [])
             ]);
         }
     };
@@ -308,6 +310,9 @@ export default function ChatTab({ conversationId = null }) {
     const handleOption = (option) => {
         if (option?.type === 'agent_plan_approved' || option?.type === 'agent_plan_rejected') {
             return send(null, { type: option.type, runId: option.runId });
+        }
+        if (option?.type === 'submit_clarification') {
+            return send(null, option);
         }
         if (option?.id && option?.title) return send(null, { type: 'form_target_selected', formId: option.id });
         if (option?.type === 'preview_form') {

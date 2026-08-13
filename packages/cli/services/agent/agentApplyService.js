@@ -5,13 +5,74 @@ import { validateFormSchema } from '../ai/form/domain/formSchemaValidator.js';
 import { validateWorkflow } from '../engine/workflowValidator.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { reconcileWorkflow } from '../triggers/triggerRuntime.js';
-import { createApproval, getRunArtifacts, getRunForUser, serializeRun } from './agentRunStore.js';
+import { createApproval, getRunArtifacts, getRunForUser, serializeRun, updateArtifact } from './agentRunStore.js';
 import { makeError } from './agentContracts.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 import { clearChatSessionState, replaceChatSessionState } from '../chat/chatTurnLifecycle.js';
+import googleSpreadsheetService from '../nodes/googleSpreadsheetService.js';
+import { applyFormResponseSpreadsheetContract } from '../ai/workflow/formSpreadsheetContract.js';
+import { provisionWorkflowResources } from '../ai/workflow/workflowResourceProvisioner.js';
 
 const revisionMatches = (current, expected) => !expected || new Date(current).getTime() === new Date(expected).getTime();
 const workflowRevisionMatches = (current, expected) => expected === undefined || expected === null || Number(current) === Number(expected);
+
+export const prepareAgentWorkflowArtifact = async ({
+    run,
+    artifact,
+    formArtifact = null,
+    userId,
+    spreadsheetService = googleSpreadsheetService
+} = {}) => {
+    if (!artifact) return null;
+    const initialContent = artifact.content || {};
+    const responseContract = applyFormResponseSpreadsheetContract({
+        nodes: initialContent.nodes || [],
+        resourceChanges: initialContent.resourceChanges || [],
+        form: formArtifact?.content?.schema || null
+    });
+    let workingContent = {
+        ...initialContent,
+        nodes: responseContract.nodes,
+        resourceChanges: responseContract.resourceChanges
+    };
+    const hasProvisioning = (workingContent.resourceChanges || []).some(change => change?.type === 'create_google_spreadsheet');
+    if (!hasProvisioning) {
+        return responseContract.applied
+            ? updateArtifact(run, artifact.artifactKey, { content: workingContent })
+            : artifact;
+    }
+
+    const persistProvisioningResource = async ({ change, resource }) => {
+        workingContent = {
+            ...workingContent,
+            resourceChanges: (workingContent.resourceChanges || []).map(candidate => candidate?.ref === change.ref
+                ? {
+                    ...candidate,
+                    status: 'provisioning',
+                    spreadsheetId: resource.id,
+                    range: resource.range,
+                    webViewLink: resource.webViewLink || null
+                }
+                : candidate)
+        };
+        await updateArtifact(run, artifact.artifactKey, { content: workingContent });
+    };
+
+    const provisioned = await provisionWorkflowResources({
+        nodes: workingContent.nodes,
+        changes: workingContent.resourceChanges,
+        userId,
+        provisioningKeyPrefix: `agent-run:${run.id}:${artifact.id}`,
+        spreadsheetService,
+        onFileReady: persistProvisioningResource
+    });
+    workingContent = {
+        ...workingContent,
+        nodes: provisioned.nodes,
+        resourceChanges: provisioned.changes
+    };
+    return updateArtifact(run, artifact.artifactKey, { content: workingContent });
+};
 
 const applyFormArtifact = async ({ artifact, userId, transaction }) => {
     const content = artifact.content || {};
@@ -113,16 +174,23 @@ export const approveAgentRun = async ({ runId, userId, idempotencyKey }) => {
     if (!key) throw Object.assign(new Error('An idempotency key is required.'), { code: 'AGENT_IDEMPOTENCY_REQUIRED' });
     if (run.approval?.status === 'approved') return serializeRun(run);
     const approval = run.approval || await createApproval({ run, userId, artifactIds: [], idempotencyKey: key });
-    const artifacts = getRunArtifacts(run);
-    const pendingArtifacts = artifacts.filter(artifact => artifact.status !== 'applied');
-    const formArtifact = pendingArtifacts.find(artifact => artifact.type === 'form_proposal');
-    const workflowArtifact = pendingArtifacts.find(artifact => artifact.type === 'workflow_proposal');
+    let artifacts = getRunArtifacts(run);
+    let pendingArtifacts = artifacts.filter(artifact => artifact.status !== 'applied');
+    let formArtifact = pendingArtifacts.find(artifact => artifact.type === 'form_proposal');
+    let workflowArtifact = pendingArtifacts.find(artifact => artifact.type === 'workflow_proposal');
     let form = null;
     let appliedWorkflow = null;
     let triggerSetupError = null;
 
     try {
         await run.update({ status: 'applying', currentStep: 'apply' });
+        if (workflowArtifact) {
+            workflowArtifact = await prepareAgentWorkflowArtifact({ run, artifact: workflowArtifact, formArtifact, userId });
+            artifacts = getRunArtifacts(run);
+            pendingArtifacts = artifacts.filter(artifact => artifact.status !== 'applied');
+            formArtifact = pendingArtifacts.find(artifact => artifact.type === 'form_proposal');
+            workflowArtifact = pendingArtifacts.find(artifact => artifact.type === 'workflow_proposal');
+        }
         await sequelize.transaction(async transaction => {
             if (formArtifact) form = await applyFormArtifact({ artifact: formArtifact, userId, transaction });
             if (workflowArtifact) appliedWorkflow = await applyWorkflowArtifact({ artifact: workflowArtifact, userId, form, transaction });
@@ -182,6 +250,11 @@ export const approveAgentRun = async ({ runId, userId, idempotencyKey }) => {
         return serializeRun(await getRunForUser(runId, userId));
     } catch (error) {
         const failure = makeError(error);
+        if (/^(?:GOOGLE_|WORKFLOW_PROVISION_)/.test(failure.code)) {
+            const retryableApproval = { ...(run.approval || approval), status: 'pending', metadata: { error: failure } };
+            await run.update({ status: 'awaiting_approval', currentStep: null, error: failure, approval: retryableApproval });
+            throw Object.assign(new Error(failure.message), failure);
+        }
         const failedApproval = { ...(run.approval || approval), status: 'failed', metadata: { error: failure } };
         await run.update({ status: 'failed', currentStep: null, error: failure, approval: failedApproval });
         throw Object.assign(new Error(failure.message), failure);

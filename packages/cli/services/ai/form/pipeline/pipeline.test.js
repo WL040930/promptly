@@ -5,7 +5,10 @@ import assert from 'node:assert/strict';
 // enables provider-managed completion for interactive development.
 process.env.AI_FORM_UNLIMITED_COMPLETION_TOKENS = 'false';
 process.env.AI_UNLIMITED_COMPLETION_TOKENS = 'false';
-process.env.AI_TIMEOUT_MS = '50';
+// The hanging-provider test exercises up to four retryable routes. Keep each
+// synthetic deadline short enough that all routes finish within its 150ms
+// assertion window.
+process.env.AI_TIMEOUT_MS = '20';
 
 test('generateFormFromPrompt returns a non-mutating conversational reply', async () => {
     const { generateFormFromPrompt } = await import('./pipeline.js');

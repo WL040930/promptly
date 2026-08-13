@@ -18,6 +18,7 @@ import { createWorkflowProposalApplier } from './workflowProposalApplier.js';
 import nodeResourceService from '../../nodes/nodeResourceService.js';
 import { buildRunDiagnosticReport } from './runDiagnostics.js';
 import { isAssistantTurnStale } from '../../assistant/assistantTurnLiveness.js';
+import { resolveClarificationSubmission } from '../../../../shared/clarificationContract.js';
 
 const MAX_HISTORY = 100;
 const AI_CONTEXT_HISTORY = 30;
@@ -229,7 +230,7 @@ export const createWorkflowAssistant = ({
 
     const submitTurn = async ({ workflowId, userId, command, clarificationMode, expectedStateVersion = null, requestId = idFactory('wturn'), onProgress = null } = {}) => {
         const workflow = await findWorkflow(workflowId, userId);
-        const normalizedCommand = normalizeWorkflowCommand(command);
+        let normalizedCommand = normalizeWorkflowCommand(command);
         const mode = normalizeClarificationMode(clarificationMode);
         if (normalizedCommand.type === 'submit_text' && !normalizedCommand.text) throw errorWith('WORKFLOW_AI_INPUT_REQUIRED', 'Please describe a workflow change.', 400);
         const displayText = normalizedCommand.type === 'decide_for_me' ? 'Use sensible defaults.' : normalizedCommand.text;
@@ -257,12 +258,43 @@ export const createWorkflowAssistant = ({
                 if (state.inFlightRequestId && state.inFlightRequestId !== requestId) throw errorWith('WORKFLOW_AI_TURN_IN_PROGRESS', 'This workflow assistant is already processing a request.', 409, { currentStateVersion: state.version });
                 if (!state.inFlightRequestId && state.phase === 'processing') throw errorWith('WORKFLOW_AI_TURN_IN_PROGRESS', 'This workflow assistant is already processing a request.', 409, { currentStateVersion: state.version });
                 const pending = state.activeProposalMessageId ? await models.AssistantMessage.findOne({ where: { id: state.activeProposalMessageId, threadId: state.threadId }, transaction }) : null;
+                let clarificationResolution = null;
+                if (state.openClarification && normalizedCommand.type === 'submit_clarification') {
+                    clarificationResolution = resolveClarificationSubmission({
+                        inputs: state.openClarification.inputs || [],
+                        state: normalizedCommand.state || {}
+                    });
+                    if (!clarificationResolution.complete) {
+                        throw errorWith(
+                            'WORKFLOW_AI_CLARIFICATION_INCOMPLETE',
+                            'Please complete the requested information before continuing.',
+                            400,
+                            {
+                                missingInputIds: clarificationResolution.missingInputIds,
+                                missingGroups: clarificationResolution.missingGroups,
+                                conflictingGroups: clarificationResolution.conflictingGroups,
+                                invalidInputIds: clarificationResolution.invalidInputIds
+                            }
+                        );
+                    }
+                    normalizedCommand = { ...normalizedCommand, state: clarificationResolution.state };
+                }
                 if (state.openClarification && ['submit_clarification', 'decide_for_me'].includes(normalizedCommand.type)) {
                     const clarification = await models.AssistantMessage.findOne({ where: { threadId: state.threadId, sender: 'bot', kind: 'clarification' }, order: [['createdAt', 'DESC']], transaction });
                     if (clarification) await clarification.update({ payload: {
                         ...(clarification.payload || {}),
                         ...(normalizedCommand.type === 'submit_clarification' ? { selectedState: normalizedCommand.state || {} } : {}),
-                        resolution: { type: normalizedCommand.type === 'decide_for_me' ? 'defaulted' : 'answered', answeredAt: now().toISOString() }
+                        resolution: {
+                            type: normalizedCommand.type === 'decide_for_me' ? 'defaulted' : 'answered',
+                            answeredAt: now().toISOString(),
+                            ...(clarificationResolution?.answers ? { answers: clarificationResolution.answers } : {})
+                        }
+                    } }, { transaction });
+                } else if (state.openClarification && normalizedCommand.type === 'submit_text') {
+                    const clarification = await models.AssistantMessage.findOne({ where: { threadId: state.threadId, sender: 'bot', kind: 'clarification' }, order: [['createdAt', 'DESC']], transaction });
+                    if (clarification) await clarification.update({ payload: {
+                        ...(clarification.payload || {}),
+                        resolution: { type: 'superseded', answeredAt: now().toISOString() }
                     } }, { transaction });
                 }
                 const context = resolveWorkflowTurnContext({ command: normalizedCommand, activeWork: state.activeWork, clarification: state.openClarification, pendingProposal: pending ? publicMessage(pending) : null, clarificationMode: mode });
@@ -303,7 +335,7 @@ export const createWorkflowAssistant = ({
             const result = await runTurn({
                 request, currentWorkflow: toWorkflowJson(workflow), history,
                 pendingProposal: reservation.pending && reservation.context.pendingProposal.mode === 'include' ? publicMessage(reservation.pending) : null,
-                clarificationMode: mode, turnContext: reservation.context.intent, userId, userContext: { forms: compactOwnedForms(ownedForms) },
+                clarificationMode: mode, turnContext: reservation.context, userId, userContext: { forms: compactOwnedForms(ownedForms) },
                 assistantContext: resourceContextForPrompt({ identity: buildResourceIdentity({ surface: 'workflow', resource: toWorkflowJson(workflow) }), context: reservation.state.context }),
                 formSchema: form?.toJSON?.() || null,
                 formLoader: async ({ formId }) => (await models.Form.findOne({ where: { id: formId, userId } }))?.toJSON?.() || null,

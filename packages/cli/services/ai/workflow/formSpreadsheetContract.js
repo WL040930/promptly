@@ -61,7 +61,7 @@ export const applyFormResponseSpreadsheetContract = ({ nodes = [], resourceChang
                 };
             }
             if (node.id === runtimeCreator?.id) {
-                return { ...node, config: { ...(node.config || {}), headers: [contract.headers] } };
+                return { ...node, config: { ...(node.config || {}), headers: contract.headers } };
             }
             return node;
         }),

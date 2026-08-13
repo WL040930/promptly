@@ -7,6 +7,17 @@ import { claimQueueRow, WAIT_CONTINUATION_CLAIM_SQL } from '../queueClaim.js';
 
 const SENSITIVE_KEY = /(authorization|cookie|password|secret|token|api[-_]?key|private[-_]?key)/i;
 const serviceError = (message, status, code) => Object.assign(new Error(message), { status, code });
+const OPEN_CONTINUATION_STATUSES = Object.freeze(['pending', 'resuming']);
+
+const updateContinuationIfOpen = async (continuation, values) => {
+    const [updatedCount, updatedRows] = await WorkflowContinuation.update(values, {
+        where: { id: continuation.id, status: { [Op.in]: OPEN_CONTINUATION_STATUSES } },
+        returning: true
+    });
+    return updatedCount > 0
+        ? updatedRows[0]
+        : await WorkflowContinuation.findByPk(continuation.id) || continuation;
+};
 
 const safeReviewValue = (value, key = '') => {
     if (SENSITIVE_KEY.test(String(key))) return '[redacted]';
@@ -56,6 +67,10 @@ export const serializeApproval = async (continuation, { responsesById = null } =
     const value = continuation?.toJSON ? continuation.toJSON() : { ...continuation };
     const run = value.run || await AutomationRun.findByPk(value.runId, { include: [{ model: Workflow, as: 'workflow', attributes: ['id', 'name', 'description'] }] }).catch(() => null);
     const workflow = value.workflow || run?.workflow || (value.workflowId ? await Workflow.findByPk(value.workflowId, { attributes: ['id', 'name', 'description'] }).catch(() => null) : null);
+    const workflowDeleted = Boolean(run?.workflowDeletedAt) || !workflow;
+    const workflowName = workflowDeleted
+        ? (run?.workflowNameSnapshot || workflow?.name || 'Deleted automation')
+        : (workflow?.name || run?.workflowNameSnapshot || 'Automation');
     const responseId = value.payload?.input?.responseId || null;
     const reviewData = await normalizeReviewData(value.payload?.input || {}, responseId ? responsesById?.get(responseId) : null);
     const resolver = value.resolver || (value.resolvedBy ? await User.findByPk(value.resolvedBy, { attributes: ['id', 'email'] }).catch(() => null) : null);
@@ -74,8 +89,17 @@ export const serializeApproval = async (continuation, { responsesById = null } =
             createdAt: value.createdAt,
             assignee: 'automation_owner'
         },
-        workflow: workflow ? { id: workflow.id, name: workflow.name, description: workflow.description || null } : { id: value.workflowId, name: 'Automation', description: null },
-        run: run ? { id: run.id, status: run.status, trigger: run.trigger, createdAt: run.createdAt, completedAt: run.completedAt, error: run.error || null } : { id: value.runId, status: 'waiting', trigger: null },
+        workflow: { id: value.workflowId || workflow?.id || null, name: workflowName, description: workflow?.description || null, deleted: workflowDeleted },
+        run: run ? {
+            id: run.id,
+            status: run.status,
+            trigger: run.trigger,
+            createdAt: run.createdAt,
+            completedAt: run.completedAt,
+            error: run.error || null,
+            workflowNameSnapshot: run.workflowNameSnapshot || null,
+            workflowDeletedAt: run.workflowDeletedAt || null
+        } : { id: value.runId, status: 'waiting', trigger: null },
         reviewData,
         decision: value.resolution ? { ...value.resolution, resolvedBy: value.resolvedBy || null, resolvedByEmail: resolver?.email || null } : null
     };
@@ -95,37 +119,52 @@ const claimDueWait = async () => {
 const resumeWait = async continuation => {
     const run = await AutomationRun.findByPk(continuation.runId);
     if (!run || run.status !== 'waiting') {
-        await continuation.update({ status: 'discarded', lastError: 'Workflow run is no longer waiting.' });
+        await updateContinuationIfOpen(continuation, { status: 'discarded', lastError: run?.error || 'Workflow run is no longer waiting.', resolvedAt: new Date() });
         return;
     }
     const resolution = { decision: 'completed', continuationId: continuation.id };
     try {
-        await resumeWorkflowRun({ run, userId: run.userId, resolution });
-        await continuation.update({ status: 'resolved', resolution, resolvedAt: new Date() });
+        const log = await resumeWorkflowRun({ run, userId: run.userId, resolution });
+        if (log?.status === 'cancelled') {
+            await updateContinuationIfOpen(continuation, { status: 'discarded', lastError: log.error || 'Automation was deleted before the continuation could resume.', resolvedAt: new Date() });
+            return;
+        }
+        await updateContinuationIfOpen(continuation, { status: 'resolved', resolution, resolvedAt: new Date() });
     } catch (error) {
-        await continuation.update({ status: 'failed', lastError: error.message });
+        const latestRun = await AutomationRun.findByPk(run.id).catch(() => null);
+        if (latestRun?.status === 'cancelled') {
+            await updateContinuationIfOpen(continuation, { status: 'discarded', lastError: latestRun.error || error.message, resolvedAt: new Date() });
+            return;
+        }
+        await updateContinuationIfOpen(continuation, { status: 'failed', lastError: error.message });
         throw error;
     }
 };
 
 const claimApproval = async ({ id, userId, decision, note }) => {
     return WorkflowContinuation.sequelize.transaction(async transaction => {
-        const continuation = await WorkflowContinuation.findOne({
-            where: { id, userId, kind: 'approval' },
-            transaction,
-            lock: transaction.LOCK.UPDATE
+        const candidate = await WorkflowContinuation.findOne({
+            where: { id, userId, kind: 'approval' }
         });
-        if (!continuation) throw serviceError('Approval request not found.', 404, 'APPROVAL_NOT_FOUND');
-        if (continuation.status !== 'pending') {
+        if (!candidate) throw serviceError('Approval request not found.', 404, 'APPROVAL_NOT_FOUND');
+        if (candidate.status !== 'pending') {
             throw serviceError('This approval is already being resolved or has already been decided.', 409, 'APPROVAL_NOT_PENDING');
         }
         const run = await AutomationRun.findOne({
-            where: { id: continuation.runId, userId, workflowId: continuation.workflowId },
+            where: { id: candidate.runId, userId, workflowId: candidate.workflowId },
             transaction,
             lock: transaction.LOCK.UPDATE
         });
         if (!run || run.status !== 'waiting') {
             throw serviceError('This workflow run is no longer waiting for approval.', 409, 'RUN_NOT_WAITING');
+        }
+        const continuation = await WorkflowContinuation.findOne({
+            where: { id, userId, kind: 'approval', status: 'pending' },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        if (!continuation) {
+            throw serviceError('This approval is already being resolved or has already been decided.', 409, 'APPROVAL_NOT_PENDING');
         }
         const resolvedAt = new Date();
         const resolution = { decision, ...(note ? { note } : {}), resolvedAt: resolvedAt.toISOString() };
@@ -140,10 +179,19 @@ export const resolveApprovalForUser = async ({ id, decision, note = null, userId
     const { continuation, run } = await claimApproval({ id, userId, decision, note: decisionNote });
     try {
         const log = await resumeWorkflowRun({ run, userId: run.userId, resolution: { decision, note: decisionNote, continuationId: continuation.id } });
-        await continuation.update({ status: 'resolved' });
+        if (log?.status === 'cancelled') {
+            await updateContinuationIfOpen(continuation, { status: 'discarded', lastError: log.error || 'Automation was deleted before the continuation could resume.', resolvedAt: new Date() });
+            return { continuation, log };
+        }
+        await updateContinuationIfOpen(continuation, { status: 'resolved' });
         return { continuation, log };
     } catch (error) {
-        await continuation.update({ status: 'failed', lastError: error.message });
+        const latestRun = await AutomationRun.findByPk(run.id).catch(() => null);
+        if (latestRun?.status === 'cancelled') {
+            await updateContinuationIfOpen(continuation, { status: 'discarded', lastError: latestRun.error || error.message, resolvedAt: new Date() });
+            return { continuation, log: latestRun };
+        }
+        await updateContinuationIfOpen(continuation, { status: 'failed', lastError: error.message });
         throw error;
     }
 };
@@ -168,9 +216,14 @@ export const listApprovals = async ({ userId, status = 'pending', search = '', w
         offset: Math.max(Number(offset) || 0, 0),
         limit: Math.min(Math.max(Number(limit) || 25, 1), 100),
         include: [
-            { model: Workflow, as: 'workflow', attributes: ['id', 'name', 'description'] },
+            { model: Workflow, as: 'workflow', attributes: ['id', 'name', 'description'], required: false },
             { model: User, as: 'resolver', attributes: ['id', 'email'] },
-            { model: AutomationRun, as: 'run', attributes: ['id', 'status', 'trigger', 'createdAt', 'completedAt', 'error'], include: [{ model: Workflow, as: 'workflow', attributes: ['id', 'name', 'description'] }] }
+            {
+                model: AutomationRun,
+                as: 'run',
+                attributes: ['id', 'status', 'trigger', 'createdAt', 'completedAt', 'error', 'workflowNameSnapshot', 'workflowDeletedAt'],
+                include: [{ model: Workflow, as: 'workflow', attributes: ['id', 'name', 'description'], required: false }]
+            }
         ]
     });
 };

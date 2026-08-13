@@ -1,7 +1,7 @@
 import sequelize from '../../db/index.js';
 import { AutomationRun, DashboardRunMetric } from '../../models/index.js';
 
-const TERMINAL = new Set(['succeeded', 'failed']);
+const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
 
 export const recordTerminalRunMetric = async runId => sequelize.transaction(async transaction => {
     const run = await AutomationRun.findByPk(runId, { transaction, lock: transaction.LOCK.UPDATE });

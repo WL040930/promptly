@@ -427,7 +427,12 @@ export default function AutomationCenter() {
             onSuccess: () => {
                 setWorkflowToDelete(null);
                 setSelectedWorkflowId(null);
-                toast.success('Automation deleted.');
+                queryClient.invalidateQueries({ queryKey: ['executionLogs'] });
+                queryClient.invalidateQueries({ queryKey: ['executionLog'] });
+                queryClient.invalidateQueries({ queryKey: ['approvals'] });
+                queryClient.invalidateQueries({ queryKey: ['approval-summary'] });
+                queryClient.invalidateQueries({ queryKey: ['dashboardMetrics'] });
+                toast.success('Automation deleted. Run history was retained; active runs were cancelled.');
                 if (nextPage !== page) setPage(nextPage);
                 else void refetch();
             },
@@ -501,7 +506,7 @@ export default function AutomationCenter() {
 
             {selectedWorkflowId && <><button ref={drawerOverlayRef} type="button" aria-label="Close workflow details" onClick={closeWorkflowDetails} className="fixed inset-0 z-[60] cursor-default bg-slate-900/20 backdrop-blur-[1px]" /><WorkflowDetailDrawer workflowId={selectedWorkflowId} isClosing={isClosingWorkflow} onClose={closeWorkflowDetails} onClosed={finishClosingWorkflow} onRun={() => { const workflow = workflows.find(item => item.id === selectedWorkflowId); openRun(workflow, 'test'); }} onRunLive={() => { const workflow = workflows.find(item => item.id === selectedWorkflowId); if (!getProductionIssue(workflow)) openRun(workflow, 'production'); }} onOpenBuilder={() => navigate(`/app/automations/${selectedWorkflowId}/build?editor=visual`)} onAskAI={prompt => openWorkflowAI(selectedWorkflowId, prompt)} onDiagnose={log => openWorkflowAI(selectedWorkflowId, `Diagnose this failed execution (${log.id}). Explain the root cause and propose a safe fix.`)} onToggleActive={toggleWorkflow} /></>}
 
-            <ConfirmModal isOpen={!!workflowToDelete} onClose={() => setWorkflowToDelete(null)} onConfirm={confirmDelete} title="Delete automation?" message={`This permanently deletes “${workflowToDelete?.name || 'this automation'}” and its configuration.`} confirmText="Delete" confirmVariant="danger" isLoading={deleteWorkflowMutation.isPending} />
+            <ConfirmModal isOpen={!!workflowToDelete} onClose={() => setWorkflowToDelete(null)} onConfirm={confirmDelete} title="Delete automation?" message={`This permanently deletes “${workflowToDelete?.name || 'this automation'}” and its configuration. Run history is retained, and active runs are cancelled.`} confirmText="Delete" confirmVariant="danger" isLoading={deleteWorkflowMutation.isPending} />
             <ConfirmModal isOpen={!!workflowToPublish} onClose={() => setWorkflowToPublish(null)} onConfirm={() => { if (workflowToPublish) publishWorkflow(workflowToPublish, { closeConfirmOnSuccess: true }); }} title="Publish and activate automation?" message="Publishing makes this automation live and may run real integrations." confirmText="Publish and activate" confirmVariant="primary" isLoading={publishWorkflowMutation.isPending} />
             {runWorkflow && <TestRunModal isOpen={true} onClose={() => setRunWorkflow(null)} onConfirm={runSelectedWorkflow} isLoading={runWorkflowMutation.isPending} workflowId={runWorkflow.id} runType={runType} nodes={runWorkflowDetails?.nodes || runWorkflow.nodes || []} />}
         </>

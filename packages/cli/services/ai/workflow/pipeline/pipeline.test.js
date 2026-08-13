@@ -62,7 +62,7 @@ const googleSheetsSpec = {
             { name: 'operation', type: 'text' },
             { name: 'spreadsheetId', type: 'resource-select', resource: 'google-spreadsheets' },
             { name: 'range', type: 'resource-select', resource: 'google-sheet-ranges', resourceParams: { spreadsheetId: '$spreadsheetId' } },
-            { name: 'values', type: 'text' }
+            { name: 'values', type: 'data-grid' }
         ],
         outputs: [{ name: 'done', isConnection: true }]
     },
@@ -73,7 +73,7 @@ const googleSheetsCreateSpec = {
     nodeKey: 'action:googleSheetsCreate', type: 'action', subType: 'googleSheetsCreate',
     title: 'Create Google Sheet', description: 'Creates a spreadsheet during a run', implementationStatus: 'experimental',
     schema: {
-        inputs: [{ name: 'event', isConnection: true }, { name: 'title', type: 'text' }, { name: 'sheetTitle', type: 'text' }, { name: 'headers', type: 'data-grid' }],
+        inputs: [{ name: 'event', isConnection: true }, { name: 'title', type: 'text' }, { name: 'sheetTitle', type: 'text' }, { name: 'headers', type: 'string-list' }],
         outputs: [{ name: 'done', isConnection: true }]
     }, ui: {}
 };
@@ -248,6 +248,60 @@ test('pipeline asks before creating a named Google Sheet that cannot be found', 
     assert.equal(result.type, 'message');
     assert.match(result.message, /could not find/i);
     assert.deepEqual(result.inputs.map(input => input.id), ['spreadsheetId', 'createSpreadsheet']);
+    assert.equal(result.inputs[0].alternativeGroup, 'spreadsheetDestination');
+    assert.equal(result.inputs[1].alternativeGroup, 'spreadsheetDestination');
+});
+
+test('pipeline resumes the Create Sheet clarification using structured state and the original destination name', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') return {
+                text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Save each Event Registration response.',
+                    requirements: [{ id: 'req_1', description: 'Append each response to the Event Registration Sheet.' }],
+                    selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
+                    linearSteps: [
+                        { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Form submitted', requirementIds: ['req_1'], config: { formId: 'form_event' } },
+                        { ref: 'save_response', nodeKey: 'action:googleSheets', title: 'Save response', requirementIds: ['req_1'], config: {} }
+                    ],
+                    capabilities: []
+                })
+            };
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'Create a new Sheet: Create a new Event Registration Sheet',
+        currentWorkflow: { nodes: [], edges: [] },
+        formSchema: {
+            id: 'form_event', title: 'Event Registration',
+            fields: [{ id: 'name', label: 'Name', type: 'text', required: true }]
+        },
+        turnContext: {
+            command: { type: 'submit_clarification', state: { createSpreadsheet: 'create' } },
+            intent: {
+                sourceText: 'When the Event Registration form is submitted, save the response to the Event Registration Google Sheet.',
+                latestText: 'Create a new Sheet: Create a new Event Registration Sheet',
+                authority: 'user'
+            }
+        },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec]),
+        resourceLookup: async () => { throw new Error('Structured Create must not browse existing Sheets.'); },
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.resourceChanges.length, 1);
+    assert.equal(result.resourceChanges[0].title, 'Event Registration');
+    assert.deepEqual(result.resourceChanges[0].headers, ['Submitted At', 'Response ID', 'Name']);
+    const append = result.nodes.find(node => node.nodeKey === 'action:googleSheets');
+    assert.deepEqual(append.config.spreadsheetId, { $provision: result.resourceChanges[0].ref });
+    assert.equal(Array.isArray(append.config.values[0]), true);
+    assert.equal(append.config.values[0].length, 3);
 });
 
 test('pipeline resolves a named Google Sheet with case- and spacing-normalized matching', async () => {
@@ -767,7 +821,7 @@ test('pipeline uses a runtime sheet for every approved form submission', async (
     const append = result.nodes.find(node => node.subType === 'googleSheets');
     assert.equal(result.resourceChanges.length, 0);
     assert.equal(append.config.spreadsheetId.nodeId, creator.id);
-    assert.deepEqual(creator.config.headers, [['Submitted At', 'Response ID', 'Name']]);
+    assert.deepEqual(creator.config.headers, ['Submitted At', 'Response ID', 'Name']);
 });
 
 // ---------------------------------------------------------------------------
@@ -1112,6 +1166,49 @@ test('pipeline assembles a validated linear form-to-Sheets workflow without work
     assert.deepEqual(result.nodes.map(node => node.nodeKey), ['trigger:form-submission', 'action:googleSheets']);
     assert.equal(result.edges.length, 1);
     assert.equal(result.nodes.find(node => node.nodeKey === 'action:googleSheets')?.config?.operation, 'append');
+});
+
+test('pipeline supports Ask Promptly compound wording with a proposed form schema and a new response Sheet', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') return {
+                text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Save each conference registration response to a Sheet.',
+                    requirements: [{ id: 'req_1', description: 'Append every submitted response to Google Sheets.' }],
+                    selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
+                    linearSteps: [
+                        { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Form submitted', requirementIds: ['req_1'], config: {} },
+                        { ref: 'save_response', nodeKey: 'action:googleSheets', title: 'Save response', requirementIds: ['req_1'], config: {} }
+                    ],
+                    capabilities: []
+                })
+            };
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'Can u design the conference registration form, then when the form receive the responses, save the responses inside the sheet',
+        currentWorkflow: { nodes: [], edges: [] },
+        formSchema: {
+            id: 'pending_form_artifact',
+            title: 'Conference Registration',
+            fields: [
+                { id: 'name', label: 'Name', type: 'text', required: true },
+                { id: 'email', label: 'Email', type: 'email', required: true }
+            ]
+        },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec]),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.resourceChanges[0].title, 'Conference Registration Responses');
+    assert.deepEqual(result.resourceChanges[0].headers, ['Submitted At', 'Response ID', 'Name', 'Email']);
+    assert.equal(result.nodes.find(node => node.nodeKey === 'action:googleSheets').config.values[0].length, 4);
 });
 
 test('pipeline resolves a named owned form and assembles a connected form-to-Sheets proposal', async () => {

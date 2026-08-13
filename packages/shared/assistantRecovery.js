@@ -58,6 +58,15 @@ const workflowResponseIssueCodes = [
     'INVALID_OPERATION'
 ];
 
+const isSpreadsheetResponseContractIssue = ({ surface, code, issues }) => {
+    if (surface !== 'workflow') return false;
+    if (code === 'WORKFLOW_PROVISION_REFERENCE_INVALID') return true;
+    return issues.some(issue => (
+        ['INVALID_NODE_CONFIG_INVALID_DATA_GRID', 'INVALID_NODE_CONFIG_INVALID_STRING_LIST'].includes(issue.code)
+        && /(?:header|sheet|column|row)/i.test(String(issue.message || ''))
+    ));
+};
+
 const recovery = ({ type, title, summary, steps = [], action, details, retryable = false, location = null }) => ({
     type,
     title,
@@ -121,6 +130,18 @@ export const buildAssistantRecovery = ({ surface = 'assistant', code, issues = [
             steps: ['Choose an available resource in the workflow.', 'Then generate a new proposal.'],
             action: { type: 'focus_composer', label: 'Generate a new proposal' },
             details: safeIssues
+        });
+    }
+
+    if (isSpreadsheetResponseContractIssue({ surface, code, issues: safeIssues })) {
+        return recovery({
+            type: 'spreadsheet_response_columns',
+            title: 'Promptly could not prepare the Google Sheet columns',
+            summary: 'The proposed Sheet header row and form-response row were in different formats. No changes were made.',
+            steps: ['Promptly will use one column for each form field, plus Submitted At and Response ID.', 'Try the same request again to generate a fresh proposal.'],
+            action: retryAction,
+            details: safeIssues,
+            retryable: true
         });
     }
 

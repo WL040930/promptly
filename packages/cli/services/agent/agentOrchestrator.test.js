@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { deterministicIntent, ensureRespondentEmailField, shouldPauseForPlanReview } from './agentOrchestrator.js';
+import {
+    buildWorkflowProposalContent,
+    deterministicIntent,
+    ensureRespondentEmailField,
+    proposedFormSchemaForWorkflow,
+    shouldPauseForPlanReview,
+    workflowTurnContextForAgent
+} from './agentOrchestrator.js';
 import { compileExecutionPlan, makeAdaptivePlan, makeFallbackOutcomePlan } from './agentPlanCompiler.js';
 import { createAgentCapabilityRegistry } from './agentCapabilityRegistry.js';
 
@@ -105,6 +112,63 @@ test('compound form and workflow requests retain both requested operations', () 
         message: 'Create a job application form, then approve submissions and email the applicant.'
     });
     assert.deepEqual(intent.requestedOperations.map(operation => operation.domain), ['form', 'workflow']);
+});
+
+test('Ask Promptly treats a natural form-then-save-responses request as an ordered compound solution', () => {
+    const intent = deterministicIntent({
+        message: 'Can u design the conference registration form, then when the form receive the responses, save the responses inside the sheet'
+    });
+    const plan = makeAdaptivePlan({}, intent);
+
+    assert.deepEqual(intent.requestedOperations.map(operation => operation.domain), ['form', 'workflow']);
+    assert.deepEqual(plan.steps.map(step => step.type), ['design_form', 'design_workflow']);
+    assert.deepEqual(plan.steps[1].dependsOn, [plan.steps[0].id]);
+});
+
+test('Ask Promptly gives a proposed form a temporary workflow binding and preserves Sheet resources in the workflow artifact', () => {
+    assert.equal(proposedFormSchemaForWorkflow({
+        formSchema: { title: 'Conference Registration', fields: [] },
+        formArtifactId: 'artifact_form_1'
+    }).id, 'artifact:artifact_form_1');
+
+    const content = buildWorkflowProposalContent({
+        result: {
+            message: 'Ready', nodes: [], edges: [], diff: {}, readiness: { canApply: true }, plan: [],
+            resourceChanges: [{ type: 'create_google_spreadsheet', ref: 'responses', title: 'Conference Registration Responses' }],
+            resourceIntent: { mode: 'unnamed', source: 'request' }
+        },
+        workflow: null,
+        form: null,
+        formArtifactId: 'artifact_form_1',
+        formBinding: { source: { artifactKey: 'form_proposal', appliedResource: 'id' } }
+    });
+
+    assert.deepEqual(content.resourceChanges, [{ type: 'create_google_spreadsheet', ref: 'responses', title: 'Conference Registration Responses' }]);
+    assert.deepEqual(content.resourceIntent, { mode: 'unnamed', source: 'request' });
+});
+
+test('Ask Promptly forwards structured clarification state to its workflow specialist', () => {
+    assert.deepEqual(workflowTurnContextForAgent({
+        message: 'Save Event Registration responses to the Event Registration Google Sheet.',
+        context: {
+            clarificationState: { createSpreadsheet: 'create' },
+            clarificationText: 'Create a new Event Registration Sheet',
+            clarificationMode: 'important_only'
+        }
+    }), {
+        command: {
+            type: 'submit_clarification',
+            text: 'Create a new Event Registration Sheet',
+            state: { createSpreadsheet: 'create' }
+        },
+        intent: {
+            sourceText: 'Save Event Registration responses to the Event Registration Google Sheet.',
+            latestText: 'Create a new Event Registration Sheet',
+            relationToPending: 'none',
+            authority: 'user',
+            clarificationMode: 'important_only'
+        }
+    });
 });
 
 test('self dependencies are normalized before cycle validation', () => {
