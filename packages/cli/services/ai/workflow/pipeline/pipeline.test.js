@@ -232,6 +232,78 @@ test('pipeline resolves an exact existing Google Sheet before the second planner
     assert.match(result.message, /found/i);
 });
 
+test('pipeline asks before creating a named Google Sheet that cannot be found', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let providerCalls = 0;
+    const result = await generateWorkflowTurn({
+        request: 'Save the response to the Event Registration Google Sheet.',
+        currentWorkflow: { nodes: [], edges: [] },
+        provider: { async generateContent() { providerCalls += 1; throw new Error('The planner must not run before destination resolution.'); } },
+        resourceLookup: async () => ({ options: [] }),
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec]),
+        resourceLoader
+    });
+
+    assert.equal(providerCalls, 0);
+    assert.equal(result.type, 'message');
+    assert.match(result.message, /could not find/i);
+    assert.deepEqual(result.inputs.map(input => input.id), ['spreadsheetId', 'createSpreadsheet']);
+});
+
+test('pipeline resolves a named Google Sheet with case- and spacing-normalized matching', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let lookupCount = 0;
+    const result = await generateWorkflowTurn({
+        request: 'Save the response to the event   registration google sheet.',
+        currentWorkflow: { nodes: [], edges: [] },
+        provider: { async generateContent() { return { text: JSON.stringify({ type: 'reply', message: 'The existing Sheet is selected.' }) }; } },
+        resourceLookup: async () => {
+            lookupCount += 1;
+            return { options: [{ value: 'sheet_event', label: 'Event Registration' }] };
+        },
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec]),
+        resourceLoader
+    });
+
+    assert.equal(lookupCount, 1);
+    assert.equal(result.type, 'reply');
+    assert.match(result.message, /selected/i);
+});
+
+test('pipeline asks the user to choose between ambiguous named Google Sheets', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const result = await generateWorkflowTurn({
+        request: 'Save the response to the Event Registration Google Sheet.',
+        currentWorkflow: { nodes: [], edges: [] },
+        provider: { async generateContent() { throw new Error('The planner must not run before destination resolution.'); } },
+        resourceLookup: async () => ({ options: [
+            { value: 'sheet_current', label: 'Event Registration 2026' },
+            { value: 'sheet_archive', label: 'Event Registration Archive' }
+        ] }),
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec]),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'message');
+    assert.equal(result.inputs[0].type, 'resource_choice');
+    assert.deepEqual(result.inputs[0].options.map(option => option.id), ['sheet_current', 'sheet_archive']);
+});
+
+test('pipeline surfaces Google connection errors for a named Sheet instead of proposing a new one', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const result = await generateWorkflowTurn({
+        request: 'Save the response to the Event Registration Google Sheet.',
+        currentWorkflow: { nodes: [], edges: [] },
+        provider: { async generateContent() { throw new Error('The planner must not run before destination resolution.'); } },
+        resourceLookup: async () => ({ options: [], error: { code: 'GOOGLE_RECONNECT_REQUIRED', message: 'Reconnect Google.' } }),
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec]),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'reply');
+    assert.equal(result.message, 'Reconnect Google.');
+});
+
 test('pipeline unwraps an exact form resource ID accidentally wrapped as provisioned', async () => {
     const { generateWorkflowTurn } = await import('./pipeline.js');
     let plannerCalls = 0;
@@ -1045,6 +1117,7 @@ test('pipeline assembles a validated linear form-to-Sheets workflow without work
 test('pipeline resolves a named owned form and assembles a connected form-to-Sheets proposal', async () => {
     const { generateWorkflowTurn } = await import('./pipeline.js');
     let workerCalls = 0;
+    let spreadsheetLookups = 0;
     const provider = {
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
@@ -1091,16 +1164,109 @@ test('pipeline resolves a named owned form and assembles a connected form-to-She
             : null,
         provider,
         registry: makeRegistry([formSubmissionSpec, googleSheetsSpec]),
-        resourceLoader
+        resourceLookup: async () => {
+            spreadsheetLookups += 1;
+            return { options: [{ value: 'sheet_event_registration', label: 'Event Registration' }] };
+        },
+        resourceLoader: async ({ selections = {} }) => ({
+            'google-spreadsheets': {
+                resource: 'google-spreadsheets',
+                options: [{ value: 'sheet_event_registration', label: 'Event Registration' }]
+            },
+            'google-sheet-ranges': {
+                resource: 'google-sheet-ranges',
+                variants: {
+                    [JSON.stringify({ spreadsheetId: selections['google-spreadsheets'] })]: {
+                        resource: 'google-sheet-ranges',
+                        options: [{ value: "'Registrations'!A1", label: 'Registrations' }]
+                    }
+                }
+            }
+        })
     });
 
     assert.equal(result.type, 'proposal');
+    assert.equal(spreadsheetLookups, 1);
     assert.equal(workerCalls, 0);
+    assert.deepEqual(result.resourceChanges, []);
     assert.equal(result.nodes.find(node => node.nodeKey === 'trigger:form-submission')?.config?.formId, 'form_event');
-    assert.equal(result.nodes.find(node => node.nodeKey === 'action:googleSheets')?.config?.operation, 'append');
+    const sheets = result.nodes.find(node => node.nodeKey === 'action:googleSheets');
+    assert.equal(sheets?.config?.operation, 'append');
+    assert.equal(sheets?.config?.spreadsheetId, 'sheet_event_registration');
+    assert.equal(sheets?.config?.range, "'Registrations'!A1");
+    assert.equal(result.nodes.some(node => node.nodeKey === 'action:googleSheetsCreate'), false);
     assert.equal(result.edges.length, 1);
     assert.equal(result.edges[0].source, result.nodes.find(node => node.nodeKey === 'trigger:form-submission')?.id);
     assert.equal(result.edges[0].target, result.nodes.find(node => node.nodeKey === 'action:googleSheets')?.id);
+});
+
+test('pipeline rejects a contradictory runtime Sheet creator from a direct plan for a selected destination', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let repairCalls = 0;
+    const repairContexts = [];
+    const provider = {
+        async generateContent(contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return {
+                    text: JSON.stringify({
+                        type: 'direct_plan',
+                        summary: 'Save registrations.',
+                        requirements: [{ id: 'req_save', description: 'Append each registration response to the selected Sheet.' }],
+                        selectedNodeKeys: ['trigger:form-submission', 'action:googleSheetsCreate', 'action:googleSheets'],
+                        capabilities: [],
+                        operations: [
+                            { op: 'create_node', node: { ref: 'form', nodeKey: 'trigger:form-submission', config: { formId: 'form_event' } } },
+                            { op: 'create_node', node: { ref: 'create', nodeKey: 'action:googleSheetsCreate', afterNodeRef: 'form', config: {} } },
+                            { op: 'create_node', node: { ref: 'append', nodeKey: 'action:googleSheets', afterNodeRef: 'create', config: { operation: 'append', spreadsheetId: { $provision: 'response_spreadsheet' }, range: "'Responses'!A1" } } },
+                            { op: 'connect', from: { nodeRef: 'form', handle: 'event' }, to: { nodeRef: 'create', handle: 'event' } },
+                            { op: 'connect', from: { nodeRef: 'create', handle: 'done' }, to: { nodeRef: 'append', handle: 'event' } }
+                        ]
+                    })
+                };
+            }
+            if (options.operation === 'workflow:worker repair') {
+                repairCalls += 1;
+                repairContexts.push(contents?.[0]?.parts?.[0]?.text || '');
+                return {
+                    text: JSON.stringify({
+                        operations: [
+                            { op: 'create_node', node: { ref: 'form', nodeKey: 'trigger:form-submission', config: { formId: 'form_event' } } },
+                            { op: 'create_node', node: { ref: 'append', nodeKey: 'action:googleSheets', afterNodeRef: 'form', config: { operation: 'append' } } },
+                            { op: 'connect', from: { nodeRef: 'form', handle: 'event' }, to: { nodeRef: 'append', handle: 'event' } }
+                        ]
+                    })
+                };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'When the Event Registration form is submitted, save the response to the Event Registration Google Sheet.',
+        currentWorkflow: { nodes: [], edges: [] },
+        formSchema: { id: 'form_event', title: 'Event Registration', fields: [{ id: 'name', label: 'Name', type: 'text' }] },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, googleSheetsCreateSpec, googleSheetsSpec]),
+        resourceLookup: async () => ({ options: [{ value: 'sheet_event_registration', label: 'Event Registration' }] }),
+        resourceLoader: async ({ selections = {} }) => ({
+            'google-spreadsheets': { options: [{ value: 'sheet_event_registration', label: 'Event Registration' }] },
+            'google-sheet-ranges': {
+                variants: {
+                    [JSON.stringify({ spreadsheetId: selections['google-spreadsheets'] })]: {
+                        options: [{ value: "'Registrations'!A1", label: 'Registrations' }]
+                    }
+                }
+            }
+        })
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(repairCalls, 1);
+    assert.match(repairContexts[0], /WORKFLOW_SPREADSHEET_DESTINATION_CONFLICT/);
+    assert.equal(result.nodes.some(node => node.nodeKey === 'action:googleSheetsCreate'), false);
+    assert.deepEqual(result.resourceChanges, []);
+    assert.equal(result.nodes.find(node => node.nodeKey === 'action:googleSheets')?.config?.spreadsheetId, 'sheet_event_registration');
+    assert.equal(result.edges.length, 1);
 });
 
 test('pipeline returns a form choice when named-form matching is ambiguous', async () => {

@@ -16,6 +16,7 @@ import { explicitRunIdFromRequest } from '../runDiagnostics.js';
 import { applyFormResponseSpreadsheetContract } from '../formSpreadsheetContract.js';
 import { discoverResource } from '../resourceDiscovery.js';
 import { resolveFormReference } from '../domain/formReferenceResolver.js';
+import { resolveSpreadsheetIntent } from '../domain/workflowSpreadsheetIntent.js';
 import { assembleLinearWorkflow } from '../domain/linearWorkflowAssembler.js';
 import {
     buildWorkflowOutputRepairContext,
@@ -186,8 +187,14 @@ const defaultSpreadsheetTitle = ({ workflow, formSchema }) => {
  * A destination omitted from a request to save form data is a safe default:
  * propose a new Sheet. It remains a proposal until the user clicks Apply.
  */
-const addDefaultSpreadsheetIntent = ({ plan, request, workflow, formSchema }) => {
+const addDefaultSpreadsheetIntent = ({ plan, request, workflow, formSchema, spreadsheetIntent = null }) => {
     if (!['direct_plan', 'plan_complete'].includes(plan?.type)) return plan;
+    if (['existing_named', 'existing_selected', 'requires_existing'].includes(spreadsheetIntent?.mode)) {
+        return {
+            ...plan,
+            resourceChanges: (plan.resourceChanges || []).filter(change => change?.type !== 'create_google_spreadsheet')
+        };
+    }
     if (!spreadsheetRequestPattern.test(String(request || ''))) return plan;
     if (perSubmissionSpreadsheetPattern.test(String(request || ''))) {
         const requirements = [...(plan.requirements || [])];
@@ -225,11 +232,100 @@ const addDefaultSpreadsheetIntent = ({ plan, request, workflow, formSchema }) =>
         resourceChanges: [{
             ref: 'response_spreadsheet',
             type: 'create_google_spreadsheet',
-            title: defaultSpreadsheetTitle({ workflow, formSchema }),
+            title: spreadsheetIntent?.mode === 'create' && spreadsheetIntent.name
+                ? spreadsheetIntent.name
+                : defaultSpreadsheetTitle({ workflow, formSchema }),
             sheetTitle: 'Responses'
         }]
     };
 };
+
+const isExistingSpreadsheetIntent = intent => ['existing_named', 'existing_selected'].includes(intent?.mode);
+
+const isRuntimeSpreadsheetCreator = operation => ['create_node', 'insert_between', 'insert_after_route'].includes(operation?.op)
+    && operation?.node?.nodeKey === 'action:googleSheetsCreate';
+
+const applySpreadsheetIntentToPlan = ({ plan, spreadsheetIntent }) => {
+    if (!['direct_plan', 'plan_complete'].includes(plan?.type) || !isExistingSpreadsheetIntent(spreadsheetIntent)) return plan;
+    return {
+        ...plan,
+        resourceIntent: spreadsheetIntent,
+        selectedNodeKeys: (plan.selectedNodeKeys || []).filter(key => key !== 'action:googleSheetsCreate'),
+        capabilities: (plan.capabilities || []).filter(capability => capability !== 'per_submission_spreadsheet'),
+        resourceChanges: (plan.resourceChanges || []).filter(change => change?.type !== 'create_google_spreadsheet'),
+        linearSteps: (plan.linearSteps || []).filter(step => step?.nodeKey !== 'action:googleSheetsCreate')
+    };
+};
+
+const selectedSpreadsheetRange = ({ resourceContext = {}, spreadsheetId } = {}) => {
+    if (!spreadsheetId) return null;
+    const entry = resourceContext?.['google-sheet-ranges'];
+    const key = JSON.stringify({ spreadsheetId });
+    const variant = entry?.variants?.[key] || entry;
+    return variant?.options?.find(option => option?.value)?.value || null;
+};
+
+const needsDefaultSelectedRange = ({ range, spreadsheetIntent }) => !range
+    || (spreadsheetIntent?.replacesProvisioning === true && /^'Responses'!A1$/i.test(String(range)));
+
+const selectedSpreadsheetConfig = ({ config = {}, spreadsheetIntent, range = null }) => {
+    if (!isExistingSpreadsheetIntent(spreadsheetIntent) || !spreadsheetIntent.spreadsheetId) return config;
+    return {
+        ...config,
+        operation: 'append',
+        spreadsheetId: spreadsheetIntent.spreadsheetId,
+        ...(range && needsDefaultSelectedRange({ range: config.range, spreadsheetIntent }) ? { range } : {})
+    };
+};
+
+const applySelectedSpreadsheetToLinearSteps = ({ plan, spreadsheetIntent, range }) => {
+    if (!isExistingSpreadsheetIntent(spreadsheetIntent)) return plan;
+    return {
+        ...plan,
+        linearSteps: (plan.linearSteps || []).map(step => step?.nodeKey === 'action:googleSheets'
+            ? { ...step, config: selectedSpreadsheetConfig({ config: step.config || {}, spreadsheetIntent, range }) }
+            : step)
+    };
+};
+
+const applySelectedSpreadsheetToOperations = ({ operations = [], workflow, spreadsheetIntent, range }) => {
+    if (!isExistingSpreadsheetIntent(spreadsheetIntent) || !Array.isArray(operations)) return operations;
+    const existingSheetRefs = new Set(buildWorkflowEditView(workflow).nodes
+        .filter(node => node?.nodeKey === 'action:googleSheets')
+        .map(node => node.ref));
+    const configureNode = node => node?.nodeKey === 'action:googleSheets'
+        ? { ...node, config: selectedSpreadsheetConfig({ config: node.config || {}, spreadsheetIntent, range }) }
+        : node;
+    return operations.map(operation => {
+        if (['create_node', 'insert_between', 'insert_after_route'].includes(operation?.op)) {
+            return { ...operation, node: configureNode(operation.node) };
+        }
+        if (operation?.op === 'update_node' && existingSheetRefs.has(operation.nodeRef)) {
+            return {
+                ...operation,
+                updates: {
+                    ...(operation.updates || {}),
+                    config: selectedSpreadsheetConfig({ config: operation.updates?.config || {}, spreadsheetIntent, range })
+                }
+            };
+        }
+        return operation;
+    });
+};
+
+const missingSpreadsheetClarification = ({ name = null, allowCreate = true } = {}) => ({
+    type: 'message',
+    message: name
+        ? `I could not find a Google Sheet named “${name}”. Paste its Google Sheets URL or spreadsheet ID${allowCreate ? ', or choose to create a new Sheet' : ''}.`
+        : 'Choose the existing Google Sheet to use by pasting its Google Sheets URL or spreadsheet ID.',
+    inputs: [
+        { id: 'spreadsheetId', type: 'text', label: 'Spreadsheet URL or ID', placeholder: 'https://docs.google.com/spreadsheets/d/…' },
+        ...(allowCreate ? [{
+            id: 'createSpreadsheet', type: 'resource_choice', label: 'Or create a new Sheet',
+            options: [{ id: 'create', name: name ? `Create a new “${name}” Sheet` : 'Create a new Google Sheet', description: 'A new Sheet will be proposed for review, not created yet.' }]
+        }] : [])
+    ]
+});
 
 const workflowReference = (nodeId, path) => ({ $expr: 'reference', v: 1, nodeId, path });
 
@@ -357,6 +453,7 @@ const buildProposalResult = ({ plan, capabilities, operations, compiled, verific
     verification,
     warnings: compiled.repairs,
     resourceChanges: compiled.resourceChanges || plan.resourceChanges || [],
+    resourceIntent: plan.resourceIntent || null,
     tokenUsage: { ...usage, requestCalls: usage.requestCalls },
     contextDelta: plan.contextDelta || null,
     diagnosis
@@ -372,6 +469,7 @@ const applyAndValidate = async ({
     userId,
     resourceContext,
     resourceChanges = [],
+    bindExistingFormResponseValues = false,
     registry
 }) => {
     const applied = compileWorkflowEdits({ currentWorkflow: workflow, operations, specs, registry });
@@ -393,7 +491,8 @@ const applyAndValidate = async ({
     const responseSheetContract = applyFormResponseSpreadsheetContract({
         nodes: runtimeSheet.nodes,
         resourceChanges,
-        form: resolvedFormSchema
+        form: resolvedFormSchema,
+        bindExistingFormResponseValues
     });
     const normalizedResources = normalizeGeneratedResourceValues({
         nodes: responseSheetContract.nodes,
@@ -544,6 +643,12 @@ export const generateWorkflowTurn = async ({
     let inspectedFormSchema = null;
     let resolvedFormSchema = formSchema;
     let formLookupUsed = false;
+    let spreadsheetIntent = resolveSpreadsheetIntent({
+        request,
+        clarificationState: turnContext?.command?.state || {},
+        pendingProposal,
+        history
+    });
 
     // A form selected from a previous clarification, or already attached to
     // this workflow, is more authoritative than a name inferred from prose.
@@ -582,14 +687,61 @@ export const generateWorkflowTurn = async ({
             fieldCount: resolvedFormSchema.fields?.length || 0
         });
     }
-    const selectedSpreadsheetId = turnContext?.command?.state?.spreadsheetId;
-    if (selectedSpreadsheetId && resourceLookup) {
-        const result = await resourceLookup({ userId, resource: 'google-spreadsheets' });
-        const selected = (result?.options || []).find(option => option.value === selectedSpreadsheetId);
-        if (selected) {
-            inspectedResource = { resource: 'google-spreadsheets', selected: { id: selected.value, name: selected.label, description: selected.description || null } };
-            resourceSelections = { 'google-spreadsheets': selected.value };
+    if (spreadsheetIntent.mode === 'requires_existing') {
+        return {
+            ...missingSpreadsheetClarification({ allowCreate: false }),
+            tokenUsage: { ...usage, requestCalls: budget.calls }
+        };
+    }
+    if (isExistingSpreadsheetIntent(spreadsheetIntent)) {
+        let resourceResult;
+        try {
+            resourceResult = await resourceLookup({ userId, resource: 'google-spreadsheets' });
+        } catch (error) {
+            return { type: 'reply', message: error.message || 'Google Sheets could not be searched right now.', tokenUsage: { ...usage, requestCalls: budget.calls } };
         }
+        if (resourceResult?.error) {
+            return { type: 'reply', message: resourceResult.error.message || 'Google Sheets could not be searched right now.', tokenUsage: { ...usage, requestCalls: budget.calls } };
+        }
+        const options = resourceResult?.options || [];
+        if (spreadsheetIntent.mode === 'existing_selected') {
+            const selected = options.find(option => String(option.value) === String(spreadsheetIntent.spreadsheetId));
+            if (!selected && spreadsheetIntent.source !== 'clarification') {
+                return {
+                    ...missingSpreadsheetClarification({ name: spreadsheetIntent.name || null }),
+                    tokenUsage: { ...usage, requestCalls: budget.calls }
+                };
+            }
+            spreadsheetIntent = {
+                ...spreadsheetIntent,
+                spreadsheetId: selected?.value || spreadsheetIntent.spreadsheetId,
+                ...(selected?.label ? { name: selected.label } : {})
+            };
+        } else {
+            const discovery = discoverResource({ options, query: spreadsheetIntent.name });
+            if (discovery.status === 'missing') {
+                return {
+                    ...missingSpreadsheetClarification({ name: spreadsheetIntent.name }),
+                    tokenUsage: { ...usage, requestCalls: budget.calls }
+                };
+            }
+            if (discovery.status === 'ambiguous') {
+                return {
+                    type: 'message',
+                    message: `I found several Google Sheets matching “${spreadsheetIntent.name}”. Choose the one to use.`,
+                    inputs: [{ id: 'spreadsheetId', type: 'resource_choice', label: 'Google Sheet', options: discovery.options.map(option => ({ id: option.value, name: option.label, description: option.description || null })) }],
+                    tokenUsage: { ...usage, requestCalls: budget.calls }
+                };
+            }
+            spreadsheetIntent = {
+                ...spreadsheetIntent,
+                mode: 'existing_selected',
+                spreadsheetId: discovery.option.value,
+                name: discovery.option.label
+            };
+        }
+        inspectedResource = { resource: 'google-spreadsheets', selected: { id: spreadsheetIntent.spreadsheetId, name: spreadsheetIntent.name || null, description: null } };
+        resourceSelections = { 'google-spreadsheets': spreadsheetIntent.spreadsheetId };
     }
     const requestedRunId = explicitRunIdFromRequest(request);
     if (requestedRunId && runLoader) inspectedRun = await runLoader({ selector: 'referenced', runId: requestedRunId, userId, workflow: currentWorkflow });
@@ -607,6 +759,7 @@ export const generateWorkflowTurn = async ({
         inspectedFormSchema,
         inspectedRun,
         inspectedResource,
+        spreadsheetIntent,
         formLookupUsed,
         forceDecision
     });
@@ -680,6 +833,27 @@ export const generateWorkflowTurn = async ({
                 message: 'I can inspect one additional form per request. I have loaded the requested form; please ask what you would like to know or change about it.',
                 tokenUsage: { ...usage, requestCalls: budget.calls }
             };
+        }
+    }
+
+    if (plan.type === 'inspect_resource') {
+        if (isExistingSpreadsheetIntent(spreadsheetIntent) && inspectedResource) {
+            plannerContext = buildPlannerContext({ inspectedFormSchema, formLookupUsed });
+            plannerResult = await requestAndValidate({
+                label: 'planner',
+                prompt: plannerContext.prompt,
+                instruction: `${workflowPlannerInstruction}\nThe spreadsheet destination is already resolved. Do not inspect or replace it; return the workflow plan that uses it.`,
+                validate: validatePlannerForCatalogue,
+                provider,
+                budget,
+                usage,
+                onActivity: reportProviderActivity
+            });
+            usage = plannerResult.usage;
+            plan = plannerResult.call.value;
+            if (plan.type === 'inspect_resource') {
+                return { type: 'reply', message: `The Google Sheet “${spreadsheetIntent.name || spreadsheetIntent.spreadsheetId}” is already selected. Please describe the workflow change to make with it.`, tokenUsage: { ...usage, requestCalls: budget.calls } };
+            }
         }
     }
 
@@ -852,7 +1026,11 @@ export const generateWorkflowTurn = async ({
         }
     }
 
-    plan = addDefaultSpreadsheetIntent({ plan, request, workflow: currentWorkflow, formSchema: resolvedFormSchema });
+    if (['direct_plan', 'plan_complete'].includes(plan.type) && spreadsheetIntent.mode !== 'none') {
+        plan = { ...plan, resourceIntent: spreadsheetIntent };
+    }
+    plan = applySpreadsheetIntentToPlan({ plan, spreadsheetIntent });
+    plan = addDefaultSpreadsheetIntent({ plan, request, workflow: currentWorkflow, formSchema: resolvedFormSchema, spreadsheetIntent });
     const complexity = workflowComplexityFor({ workflow: currentWorkflow, plan, formSchema: resolvedFormSchema });
     budget.maxCalls = Math.max(budget.calls, complexity.maxProviderCalls);
 
@@ -872,6 +1050,8 @@ export const generateWorkflowTurn = async ({
     });
     const loadedResourceContext = await resourceLoader({ userId, specs, nodes: currentWorkflow.nodes || [], selections: resourceSelections });
     const resourceContext = withTrustedFormResource(loadedResourceContext, resolvedFormSchema);
+    const spreadsheetRange = selectedSpreadsheetRange({ resourceContext, spreadsheetId: spreadsheetIntent.spreadsheetId });
+    plan = applySelectedSpreadsheetToLinearSteps({ plan, spreadsheetIntent, range: spreadsheetRange });
     const linearAssembly = plan.type === 'plan_complete'
         ? assembleLinearWorkflow({ workflow: currentWorkflow, plan, specs, formSchema: resolvedFormSchema })
         : { operations: null, reason: 'Only complete plans can provide a linear workflow blueprint.' };
@@ -937,7 +1117,26 @@ export const generateWorkflowTurn = async ({
             }
         }
 
-        const workerIssues = workflowOutputIssues({ call: workerCall, validate: validateWorkflowWorkerResult });
+        const selectedOperations = applySelectedSpreadsheetToOperations({
+            operations: workerCall.value.operations,
+            workflow: currentWorkflow,
+            spreadsheetIntent,
+            range: spreadsheetRange
+        });
+        workerCall = { ...workerCall, value: { ...workerCall.value, operations: selectedOperations } };
+        const destinationIssues = isExistingSpreadsheetIntent(spreadsheetIntent)
+            && Array.isArray(selectedOperations)
+            && selectedOperations.some(isRuntimeSpreadsheetCreator)
+            ? [{
+                code: 'WORKFLOW_SPREADSHEET_DESTINATION_CONFLICT',
+                path: 'operations',
+                message: 'An existing Google Sheet is selected, so do not add a Create Google Sheet step.'
+            }]
+            : [];
+        const workerIssues = [
+            ...workflowOutputIssues({ call: workerCall, validate: validateWorkflowWorkerResult }),
+            ...destinationIssues
+        ];
         if (workerIssues.length > 0) {
             onProgress?.({ status: 'repairing', phase: 'draft', label: 'Repairing an invalid workflow draft', message: 'The draft needs a correction', detail: `${workerIssues.length} issue${workerIssues.length === 1 ? '' : 's'} found before the workflow could be checked.` });
             previousResponse = workerCall.rawText || workerCall.value;
@@ -957,6 +1156,7 @@ export const generateWorkflowTurn = async ({
                 userId,
                 resourceContext,
                 resourceChanges: plan.resourceChanges || [],
+                bindExistingFormResponseValues: isExistingSpreadsheetIntent(spreadsheetIntent),
                 registry
             });
         } catch (error) {
@@ -1096,6 +1296,7 @@ export const generateWorkflowTurn = async ({
                     userId,
                     resourceContext,
                     resourceChanges: plan.resourceChanges || [],
+                    bindExistingFormResponseValues: isExistingSpreadsheetIntent(spreadsheetIntent),
                     registry
                 });
             } catch (error) {

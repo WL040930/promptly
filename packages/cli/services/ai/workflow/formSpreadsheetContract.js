@@ -19,8 +19,12 @@ export const buildFormResponseSpreadsheetContract = ({ form, triggerNodeId } = {
     };
 };
 
-/** Applies the contract only to a newly created Google Sheet attached to one form trigger. */
-export const applyFormResponseSpreadsheetContract = ({ nodes = [], resourceChanges = [], form = null } = {}) => {
+/**
+ * Applies the response-value contract to a newly created Sheet and, when the
+ * destination was deterministically selected by the user, to an otherwise
+ * unconfigured existing Sheet. Existing custom mappings are preserved.
+ */
+export const applyFormResponseSpreadsheetContract = ({ nodes = [], resourceChanges = [], form = null, bindExistingFormResponseValues = false } = {}) => {
     const trigger = (nodes || []).filter(node => node?.subType === 'form-submission').at(0);
     const hasOneFormTrigger = (nodes || []).filter(node => node?.subType === 'form-submission').length === 1;
     const contract = hasOneFormTrigger ? buildFormResponseSpreadsheetContract({ form, triggerNodeId: trigger?.id }) : null;
@@ -36,10 +40,17 @@ export const applyFormResponseSpreadsheetContract = ({ nodes = [], resourceChang
     const runtimeAppends = runtimeCreator
         ? (nodes || []).filter(node => node?.subType === 'googleSheets' && node.config?.spreadsheetId?.nodeId === runtimeCreator.id)
         : [];
-    if (matchedRefs.size === 0 && runtimeAppends.length === 0) return { nodes, resourceChanges, applied: false };
+    const selectedExistingAppends = bindExistingFormResponseValues
+        ? (nodes || []).filter(node => node?.subType === 'googleSheets'
+            && typeof node.config?.spreadsheetId === 'string'
+            && (!Array.isArray(node.config?.values) || node.config.values.length === 0))
+        : [];
+    if (matchedRefs.size === 0 && runtimeAppends.length === 0 && selectedExistingAppends.length === 0) return { nodes, resourceChanges, applied: false };
     return {
         nodes: nodes.map(node => {
-            if (matchedRefs.has(node?.config?.spreadsheetId?.$provision) || runtimeAppends.some(append => append.id === node.id)) {
+            if (matchedRefs.has(node?.config?.spreadsheetId?.$provision)
+                || runtimeAppends.some(append => append.id === node.id)
+                || selectedExistingAppends.some(append => append.id === node.id)) {
                 return {
                     ...node,
                     config: {

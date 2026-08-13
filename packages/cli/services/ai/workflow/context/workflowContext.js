@@ -60,6 +60,12 @@ const compactPending = pending => {
             id: requirement.id,
             description: clamp(requirement.description, 300)
         })),
+        resourceIntent: compactValue(payload.resourceIntent || null),
+        resourceChanges: (payload.resourceChanges || []).slice(0, 4).map(change => ({
+            type: change?.type || null,
+            title: clamp(change?.title || change?.name || '', 160),
+            sheetTitle: clamp(change?.sheetTitle || '', 120)
+        })),
         changes: {
             added: (payload.diff?.addedNodes || []).slice(0, 12).map(node => node.title || node.subType),
             updated: (payload.diff?.updatedNodes || []).slice(0, 12).map(node => node.title || node.subType),
@@ -138,6 +144,7 @@ export const buildWorkflowPlannerContext = ({
     inspectedFormSchema = null,
     inspectedRun = null,
     inspectedResource = null,
+    spreadsheetIntent = null,
     formLookupUsed = false,
     forceDecision = false
 }) => {
@@ -171,6 +178,7 @@ export const buildWorkflowPlannerContext = ({
     if (formLookupUsed) addSection('Form Lookup Status', 'A form lookup was already used for this request. Do not request another lookup.', { required: true });
     addSection('Inspected Run Diagnostic Context', inspectedRun && compactValue(inspectedRun));
     addSection('Inspected Account Resource', inspectedResource && compactValue(inspectedResource));
+    addSection('Resolved Spreadsheet Destination', spreadsheetIntent && spreadsheetIntent.mode !== 'none' && compactValue(spreadsheetIntent));
     addSection('Available Owned Resources', userContext && compactValue(userContext));
     addSection('Recent Conversation', recentHistory);
     addSection('Pending Unapplied Proposal', pending);

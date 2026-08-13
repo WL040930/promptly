@@ -53,6 +53,21 @@ test('existing and non-form sheets are not rewritten', () => {
     assert.deepEqual(result.nodes[0].config.values, [['keep']]);
 });
 
+test('a deterministically selected existing Sheet receives form values only when it has no mapping', () => {
+    const result = applyFormResponseSpreadsheetContract({
+        form: { fields: [{ id: 'name', label: 'Name', type: 'text' }] },
+        bindExistingFormResponseValues: true,
+        nodes: [
+            { id: 'form', subType: 'form-submission', config: { formId: 'form_1' } },
+            { id: 'sheet', subType: 'googleSheets', config: { spreadsheetId: 'sheet_existing', values: [] } }
+        ]
+    });
+
+    assert.equal(result.applied, true);
+    assert.equal(result.nodes.find(node => node.id === 'sheet').config.values[0].length, 3);
+    assert.equal(result.nodes.find(node => node.id === 'sheet').config.valueInputOption, 'RAW');
+});
+
 test('runtime-created response sheets receive the matching header and row contract', () => {
     const result = applyFormResponseSpreadsheetContract({
         form: { fields: [{ id: 'name', label: 'Name', type: 'text' }] },

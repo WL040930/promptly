@@ -140,6 +140,84 @@ test('workflow assistant keeps a pending proposal after a reply and after a fail
     assert.equal(failure.state.activeProposalMessageId, 'proposal_1');
 });
 
+test('workflow assistant keeps a provisioned proposal while a Sheet refinement needs a destination choice', async () => {
+    const memory = createMemoryModels();
+    await memory.models.AssistantThread.create({
+        id: 'thread_1', userId: 'user_1', surface: 'workflow', workflowId: 'workflow_1',
+        state: { version: 1, phase: 'awaiting_proposal', activeProposalMessageId: 'proposal_1' }, context: {}
+    });
+    await memory.models.AssistantMessage.create({
+        id: 'proposal_1', threadId: 'thread_1', sender: 'bot', kind: 'workflow_proposal', proposalStatus: 'pending', text: 'Create a response Sheet.',
+        payload: {
+            workflowId: 'workflow_1', baseWorkflowRevision: 1, nodes: [], edges: [],
+            resourceChanges: [{ type: 'create_google_spreadsheet', ref: 'responses_sheet', title: 'Event Registration' }],
+            resourceIntent: { mode: 'create', source: 'request' }
+        }
+    });
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async () => ({
+            kind: 'clarification',
+            message: 'Paste the existing Google Sheet URL or ID.',
+            inputs: [{ id: 'spreadsheetId', type: 'text', label: 'Spreadsheet URL or ID' }]
+        }),
+        idFactory: (() => { let count = 0; return prefix => `${prefix}_${++count}`; })()
+    });
+
+    const result = await assistant.submitTurn({
+        userId: 'user_1', workflowId: 'workflow_1', command: { type: 'submit_text', text: "Don't create the Sheet." }
+    });
+
+    assert.equal(result.botMsg.kind, 'clarification');
+    assert.equal(result.state.phase, 'awaiting_clarification');
+    assert.equal(result.state.activeProposalMessageId, 'proposal_1');
+    assert.equal(memory.messages.find(message => message.id === 'proposal_1').proposalStatus, 'pending');
+});
+
+test('workflow assistant supersedes a provisioned proposal only after its Sheet-free revision succeeds', async () => {
+    const memory = createMemoryModels();
+    await memory.models.AssistantThread.create({
+        id: 'thread_1', userId: 'user_1', surface: 'workflow', workflowId: 'workflow_1',
+        state: { version: 1, phase: 'awaiting_proposal', activeProposalMessageId: 'proposal_1' }, context: {}
+    });
+    await memory.models.AssistantMessage.create({
+        id: 'proposal_1', threadId: 'thread_1', sender: 'bot', kind: 'workflow_proposal', proposalStatus: 'pending', text: 'Create a response Sheet.',
+        payload: {
+            workflowId: 'workflow_1', baseWorkflowRevision: 1, nodes: [], edges: [],
+            resourceChanges: [{ type: 'create_google_spreadsheet', ref: 'responses_sheet', title: 'Event Registration' }],
+            resourceIntent: { mode: 'create', source: 'request' }
+        }
+    });
+    let receivedPending;
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async ({ pendingProposal }) => {
+            receivedPending = pendingProposal;
+            return {
+                kind: 'proposal', message: 'Use the existing Event Registration Sheet.',
+                requirements: [{ id: 'req_1', description: 'Append the response to the selected Sheet.' }],
+                capabilities: [], nodes: [], edges: [], operations: [],
+                diff: { addedNodes: [], updatedNodes: [], removedNodes: [], edges: [] },
+                readiness: { canApply: true }, verification: { status: 'pass' }, warnings: [], resourceChanges: [],
+                resourceIntent: { mode: 'existing_selected', source: 'history', name: 'Event Registration', spreadsheetId: 'sheet_event' }
+            };
+        },
+        idFactory: (() => { let count = 0; return prefix => `${prefix}_${++count}`; })()
+    });
+
+    const result = await assistant.submitTurn({
+        userId: 'user_1', workflowId: 'workflow_1', command: { type: 'submit_text', text: "Don't create the Sheet; use the existing Event Registration Sheet." }
+    });
+
+    assert.equal(receivedPending.id, 'proposal_1');
+    assert.equal(memory.messages.find(message => message.id === 'proposal_1').proposalStatus, 'superseded');
+    assert.equal(result.botMsg.proposalStatus, 'pending');
+    assert.deepEqual(result.botMsg.payload.resourceChanges, []);
+    assert.equal(result.botMsg.payload.resourceIntent.spreadsheetId, 'sheet_event');
+});
+
 test('workflow history uses the oldest returned message as the cursor', async () => {
     const memory = createMemoryModels();
     await memory.models.AssistantThread.create({ id: 'thread_1', userId: 'user_1', surface: 'workflow', workflowId: 'workflow_1', state: { version: 1, phase: 'idle' }, context: {} });

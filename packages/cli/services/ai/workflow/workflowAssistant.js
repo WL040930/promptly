@@ -90,6 +90,7 @@ const messageFromResult = ({ result, workflow, idFactory = makeId }) => {
             warnings: result.warnings || [],
             plan: result.plan || [],
             resourceChanges: result.resourceChanges || [],
+            resourceIntent: result.resourceIntent || null,
             contextDelta: result.contextDelta || null,
             diagnosis: result.diagnosis || null
         };
