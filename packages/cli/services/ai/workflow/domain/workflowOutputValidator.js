@@ -318,6 +318,31 @@ const validateApprovalGateOperation = (operation, path) => {
     return issues;
 };
 
+const validateMoveApprovalGateOperation = (operation, path) => {
+    const issues = [
+        ...textIssues(operation.approvalNodeRef, `${path}.approvalNodeRef`, { required: true, max: 64 }),
+        ...validateEndpoint(operation.connection?.from, `${path}.connection.from`, {
+        code: 'WORKFLOW_APPROVAL_GATE_CONNECTION_INVALID',
+        message: 'An approval move needs the existing source connection.'
+        }),
+        ...validateEndpoint(operation.connection?.to, `${path}.connection.to`, {
+        code: 'WORKFLOW_APPROVAL_GATE_CONNECTION_INVALID',
+        message: 'An approval move needs the existing destination connection.'
+        })
+    ];
+    if (operation.approvalUpdates === undefined) return issues;
+    if (!isObject(operation.approvalUpdates)) {
+        issues.push(issue('WORKFLOW_APPROVAL_MOVE_INVALID', `${path}.approvalUpdates`, 'Approval updates must be an object.'));
+        return issues;
+    }
+    issues.push(...textIssues(operation.approvalUpdates.title, `${path}.approvalUpdates.title`, { max: 180 }));
+    issues.push(...textIssues(operation.approvalUpdates.description, `${path}.approvalUpdates.description`, { max: 1000 }));
+    if (operation.approvalUpdates.config !== undefined && !isObject(operation.approvalUpdates.config)) {
+        issues.push(issue('WORKFLOW_APPROVAL_MOVE_INVALID', `${path}.approvalUpdates.config`, 'Approval updates need a config object.'));
+    }
+    return issues;
+};
+
 const validateJoinBranchesOperation = (operation, path) => {
     const issues = [];
     if (!Array.isArray(operation.branches) || operation.branches.length < 2 || operation.branches.length > 12) {
@@ -470,6 +495,8 @@ export const validateWorkflowWorkerResult = result => {
             return validateErrorHandlerOperation(operation, path);
         case 'add_approval_gate':
             return validateApprovalGateOperation(operation, path);
+        case 'move_approval_gate':
+            return validateMoveApprovalGateOperation(operation, path);
         case 'join_branches':
             return validateJoinBranchesOperation(operation, path);
         default:

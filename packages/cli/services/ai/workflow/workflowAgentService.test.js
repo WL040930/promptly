@@ -351,6 +351,54 @@ test('add_approval_gate preserves the approved connection and can add a rejected
     assert.ok(result.edges.some(edge => edge.source === approval.id && edge.sourceHandle === 'rejected' && edge.target === rejected.id));
 });
 
+test('move_approval_gate relocates a shared approval onto the AI-selected venue route', () => {
+    const specs = [
+        { nodeKey: 'trigger:form-submission', type: 'trigger', subType: 'form-submission', schema: { inputs: [], outputs: [{ name: 'event', isConnection: true }] } },
+        { nodeKey: 'logic:approval', type: 'logic', subType: 'approval', schema: { inputs: [{ name: 'inputData', isConnection: true }, { name: 'title', type: 'text' }], outputs: [{ name: 'approved', isConnection: true }, { name: 'rejected', isConnection: true }] } },
+        { nodeKey: 'logic:condition', type: 'logic', subType: 'condition', schema: { inputs: [{ name: 'input1', isConnection: true }], outputs: [{ name: 'true', isConnection: true }, { name: 'false', isConnection: true }] } },
+        { nodeKey: 'action:email', type: 'action', subType: 'email', schema: { inputs: [{ name: 'event', isConnection: true }], outputs: [] } },
+        { nodeKey: 'action:logger', type: 'action', subType: 'logger', schema: { inputs: [{ name: 'event', isConnection: true }], outputs: [] } }
+    ];
+    const result = compileWorkflowEdits({
+        currentWorkflow: {
+            nodes: [
+                { id: 'form', type: 'trigger', subType: 'form-submission', nodeKey: 'trigger:form-submission', config: {} },
+                { id: 'approval', type: 'logic', subType: 'approval', nodeKey: 'logic:approval', title: 'Review before both email routes', config: { title: 'Review before both email routes' } },
+                { id: 'condition', type: 'logic', subType: 'condition', nodeKey: 'logic:condition', config: {} },
+                { id: 'online', type: 'action', subType: 'email', nodeKey: 'action:email', title: 'Send Online Joining Instructions', config: {} },
+                { id: 'venue', type: 'action', subType: 'email', nodeKey: 'action:email', title: 'Send Venue Instructions', config: {} },
+                { id: 'rejected', type: 'action', subType: 'logger', nodeKey: 'action:logger', config: {} }
+            ],
+            edges: [
+                { id: 'form_approval', source: 'form', sourceHandle: 'event', target: 'approval', targetHandle: 'inputData' },
+                { id: 'approval_condition', source: 'approval', sourceHandle: 'approved', target: 'condition', targetHandle: 'input1' },
+                { id: 'approval_rejected', source: 'approval', sourceHandle: 'rejected', target: 'rejected', targetHandle: 'event' },
+                { id: 'condition_online', source: 'condition', sourceHandle: 'true', target: 'online', targetHandle: 'event' },
+                { id: 'condition_venue', source: 'condition', sourceHandle: 'false', target: 'venue', targetHandle: 'event' }
+            ]
+        },
+        specs,
+        registry: registryFor(specs),
+        operations: [{
+            op: 'move_approval_gate',
+            approvalNodeRef: 'n2',
+            connection: { from: { nodeRef: 'n3', handle: 'false' }, to: { nodeRef: 'n5', handle: 'event' } },
+            approvalUpdates: { title: 'Review before venue instructions', config: { title: 'Review before venue instructions' } }
+        }]
+    });
+
+    assert.equal(result.nodes.filter(node => node.nodeKey === 'logic:approval').length, 1);
+    assert.equal(result.nodes.find(node => node.id === 'approval')?.title, 'Review before venue instructions');
+    assert.equal(result.edges.some(edge => edge.source === 'form' && edge.target === 'approval'), false);
+    assert.equal(result.edges.some(edge => edge.source === 'approval' && edge.sourceHandle === 'approved' && edge.target === 'condition'), false);
+    assert.ok(result.edges.some(edge => edge.source === 'form' && edge.sourceHandle === 'event' && edge.target === 'condition' && edge.targetHandle === 'input1'));
+    assert.ok(result.edges.some(edge => edge.source === 'condition' && edge.sourceHandle === 'true' && edge.target === 'online'));
+    assert.equal(result.edges.some(edge => edge.source === 'condition' && edge.sourceHandle === 'false' && edge.target === 'venue'), false);
+    assert.ok(result.edges.some(edge => edge.source === 'condition' && edge.sourceHandle === 'false' && edge.target === 'approval' && edge.targetHandle === 'inputData'));
+    assert.ok(result.edges.some(edge => edge.source === 'approval' && edge.sourceHandle === 'approved' && edge.target === 'venue' && edge.targetHandle === 'event'));
+    assert.ok(result.edges.some(edge => edge.source === 'approval' && edge.sourceHandle === 'rejected' && edge.target === 'rejected'));
+});
+
 test('join_branches connects each route to one Merge input and one continuation', () => {
     const specs = [
         { nodeKey: 'trigger:webhook', type: 'trigger', subType: 'webhook', schema: { inputs: [], outputs: [{ name: 'event', isConnection: true }] } },

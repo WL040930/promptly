@@ -545,6 +545,122 @@ export const addApprovalGate = ({ operation, nodes, edges, refs, specsByNodeKey 
     }
 };
 
+/**
+ * Move an existing approval gate onto one different, AI-selected connection.
+ * The AI identifies intent by choosing the current approval and route; the
+ * compiler owns the fragile reconnection so the graph stays connected and any
+ * rejection route remains unchanged.
+ */
+export const moveApprovalGate = ({ operation, nodes, edges, refs, specsByNodeKey }) => {
+    if (typeof operation.approvalNodeRef !== 'string' || !operation.approvalNodeRef.trim()) {
+        throwEditError(operation.op, 'move_approval_gate requires the existing Approval node reference.', {
+            code: 'WORKFLOW_APPROVAL_MOVE_INVALID', path: 'approvalNodeRef'
+        });
+    }
+    const approvalId = refs.get(operation.approvalNodeRef);
+    const approval = nodes.find(node => node.id === approvalId);
+    if (!approval) {
+        throwEditError(operation.op, `Unknown Approval nodeRef '${operation.approvalNodeRef}'.`, {
+            code: 'WORKFLOW_NODE_REF_INVALID', value: operation.approvalNodeRef, allowed: [...refs.keys()]
+        });
+    }
+    if ((approval.nodeKey || `${approval.type}:${approval.subType}`) !== CONTROL_FLOW_NODE_KEYS.approval) {
+        throwEditError(operation.op, 'approvalNodeRef must identify an existing Approval step.', {
+            code: 'WORKFLOW_APPROVAL_MOVE_INVALID', path: 'approvalNodeRef', value: operation.approvalNodeRef
+        });
+    }
+    const approvalForValidation = withKnownSchema(approval, specsByNodeKey);
+    assertNodePorts({
+        operation,
+        node: approvalForValidation,
+        outputs: ['approved', 'rejected'],
+        code: 'WORKFLOW_APPROVAL_GATE_SCHEMA_INVALID',
+        message: 'The Approval node schema does not expose approved and rejected routes.'
+    });
+    const approvalInput = requireSingleInputPort({
+        operation,
+        node: approvalForValidation,
+        code: 'WORKFLOW_APPROVAL_GATE_SCHEMA_INVALID',
+        message: 'The Approval node schema must expose exactly one connection input.'
+    });
+    const incoming = edges.filter(edge => edge.target === approvalId);
+    const approved = edges.filter(edge => edge.source === approvalId && edge.sourceHandle === 'approved');
+    if (incoming.length !== 1 || approved.length !== 1) {
+        throwEditError(operation.op, 'The selected Approval must have one incoming route and one approved route before it can move.', {
+            code: 'WORKFLOW_APPROVAL_MOVE_UNSAFE'
+        });
+    }
+    const oldIncoming = incoming[0];
+    const oldApproved = approved[0];
+    if ((oldIncoming.targetHandle || null) !== approvalInput) {
+        throwEditError(operation.op, 'The selected Approval has an unsupported incoming route.', {
+            code: 'WORKFLOW_APPROVAL_MOVE_UNSAFE'
+        });
+    }
+    const oldSource = nodes.find(node => node.id === oldIncoming.source);
+    const oldTarget = nodes.find(node => node.id === oldApproved.target);
+    if (!oldSource || !oldTarget) {
+        throwEditError(operation.op, 'The selected Approval has a connection to a missing step.', {
+            code: 'WORKFLOW_NODE_REF_INVALID'
+        });
+    }
+    const next = requireExistingConnection({
+        operation,
+        connection: operation.connection,
+        nodes,
+        edges,
+        refs,
+        specsByNodeKey
+    });
+    if (next.from.nodeId === approvalId || next.to.nodeId === approvalId) {
+        throwEditError(operation.op, 'Choose a different route for the Approval step.', {
+            code: 'WORKFLOW_APPROVAL_MOVE_INVALID', path: 'connection'
+        });
+    }
+    if (operation.approvalUpdates !== undefined && !isObject(operation.approvalUpdates)) {
+        throwEditError(operation.op, 'Approval updates must be an object.', {
+            code: 'WORKFLOW_APPROVAL_MOVE_INVALID', path: 'approvalUpdates'
+        });
+    }
+    if (operation.approvalUpdates?.config !== undefined && !isObject(operation.approvalUpdates.config)) {
+        throwEditError(operation.op, 'Approval updates need a config object.', {
+            code: 'WORKFLOW_APPROVAL_MOVE_INVALID', path: 'approvalUpdates.config'
+        });
+    }
+    if (operation.approvalUpdates) {
+        const updates = operation.approvalUpdates;
+        approval.title = typeof updates.title === 'string' && updates.title.trim() ? updates.title.trim() : approval.title;
+        approval.description = typeof updates.description === 'string' && updates.description.trim() ? updates.description.trim() : approval.description;
+        approval.config = updates.config ? { ...(approval.config || {}), ...updates.config } : approval.config;
+    }
+
+    edges.splice(0, edges.length, ...edges.filter(edge => edge !== oldIncoming && edge !== oldApproved && edge !== next.match));
+    connectNodes({
+        operation: operation.op,
+        edges,
+        from: { nodeId: oldIncoming.source, handle: oldIncoming.sourceHandle || null },
+        to: { nodeId: oldApproved.target, handle: oldApproved.targetHandle || null },
+        sourceNode: withKnownSchema(oldSource, specsByNodeKey),
+        targetNode: withKnownSchema(oldTarget, specsByNodeKey)
+    });
+    connectNodes({
+        operation: operation.op,
+        edges,
+        from: next.from,
+        to: { nodeId: approvalId, handle: approvalInput },
+        sourceNode: next.sourceNode,
+        targetNode: approvalForValidation
+    });
+    connectNodes({
+        operation: operation.op,
+        edges,
+        from: { nodeId: approvalId, handle: 'approved' },
+        to: next.to,
+        sourceNode: approvalForValidation,
+        targetNode: next.targetNode
+    });
+};
+
 const resolveBranchSource = ({ operation, endpoint, path, nodes, refs, specsByNodeKey }) => {
     const from = normalizeEndpoint(endpoint, refs, operation.op, path);
     const sourceNode = nodes.find(node => node.id === from.nodeId);
@@ -678,6 +794,9 @@ export const compileControlFlowOperation = args => {
         return true;
     case 'add_approval_gate':
         addApprovalGate(args);
+        return true;
+    case 'move_approval_gate':
+        moveApprovalGate(args);
         return true;
     case 'join_branches':
         joinBranches(args);

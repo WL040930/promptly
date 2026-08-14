@@ -1926,13 +1926,13 @@ test('pipeline compiles an if/otherwise notification branch when the worker repe
     assert.equal(result.diff.edges.length, 1);
 });
 
-test('pipeline requires an explicit approval scope before it resolves approval-before-email follow-ups', async () => {
+test('pipeline lets AI narrow a shared approval to the venue route and lets the compiler preserve the graph', async () => {
     const { generateWorkflowTurn } = await import('./pipeline.js');
     const currentWorkflow = {
         revision: 8,
         nodes: [
             { id: 'trigger', type: 'trigger', subType: 'webhook', nodeKey: 'trigger:webhook', title: 'Receive registration', config: {}, position: { x: 100, y: 200 } },
-            { id: 'approval', type: 'logic', subType: 'approval', nodeKey: 'logic:approval', title: 'Review registration', config: {}, position: { x: 450, y: 200 } },
+            { id: 'approval', type: 'logic', subType: 'approval', nodeKey: 'logic:approval', title: 'Review before both email routes', config: { title: 'Review before both email routes' }, position: { x: 450, y: 200 } },
             { id: 'condition', type: 'logic', subType: 'condition', nodeKey: 'logic:condition', title: 'Check Attendance Mode', config: { valueA: 'Online', operator: 'equals', valueB: 'Online' }, position: { x: 800, y: 200 } },
             { id: 'online', type: 'action', subType: 'email', nodeKey: 'action:email', title: 'Send Joining Instructions', config: { to: 'online@example.com', subject: 'Joining instructions' }, position: { x: 1150, y: 100 } },
             { id: 'venue', type: 'action', subType: 'email', nodeKey: 'action:email', title: 'Send Venue Instructions', config: { to: 'venue@example.com', subject: 'Venue instructions' }, position: { x: 1150, y: 300 } }
@@ -1945,56 +1945,47 @@ test('pipeline requires an explicit approval scope before it resolves approval-b
         ]
     };
     let providerCalls = 0;
-    const provider = { async generateContent() { providerCalls += 1; throw new Error('This approval follow-up should not call the AI provider.'); } };
-    const request = 'Also wait for my approval before sending the email';
+    const provider = {
+        async generateContent(_contents, options) {
+            providerCalls += 1;
+            if (options.operation === 'workflow:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Only require the existing approval before venue instructions.',
+                    requirements: [{ id: 'req_venue_approval', description: 'Keep Online instructions unapproved and require the existing approval before Venue instructions.' }],
+                    selectedNodeKeys: ['logic:approval'],
+                    capabilities: ['owner_approval']
+                }) };
+            }
+            if (options.operation === 'workflow:worker') {
+                return { text: JSON.stringify({
+                    operations: [{
+                        op: 'move_approval_gate',
+                        approvalNodeRef: 'n2',
+                        connection: { from: { nodeRef: 'n3', handle: 'false' }, to: { nodeRef: 'n5', handle: 'event' } },
+                        approvalUpdates: { title: 'Review before Venue Instructions', config: { title: 'Review before Venue Instructions' } }
+                    }]
+                }) };
+            }
+            if (options.operation === 'workflow:verifier') return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+            throw new Error(`Unexpected workflow operation: ${options.operation}`);
+        }
+    };
+    const request = 'approval only for venue, means after checking the attendance mode, I only need to approve for the physical one (venue) online no need';
     const registry = makeRegistry([triggerSpec, approvalSpec, conditionSpec, emailSpec]);
 
-    const clarification = await generateWorkflowTurn({ request, currentWorkflow, provider, registry, resourceLoader });
-    assert.equal(clarification.type, 'message');
-    assert.deepEqual(clarification.inputs[0].options, ['Use existing approval', 'Choose a different approval placement']);
-    assert.equal(providerCalls, 0);
-
-    const scopeChoice = await generateWorkflowTurn({
-        request: 'Add another approval',
-        currentWorkflow,
-        turnContext: {
-            intent: { sourceText: request },
-            command: { type: 'submit_clarification', state: { approvalExistingGate: ['Add another approval'] } }
-        },
-        provider,
-        registry,
-        resourceLoader
-    });
-
-    assert.equal(scopeChoice.type, 'message');
-    assert.deepEqual(scopeChoice.inputs[0].options, ['One approval before both email routes', 'Separate approval before each email route']);
-    assert.equal(providerCalls, 0);
-
-    const result = await generateWorkflowTurn({
-        request: 'One approval before both email routes',
-        currentWorkflow,
-        turnContext: {
-            intent: { sourceText: request },
-            command: {
-                type: 'submit_clarification',
-                state: {
-                    approvalExistingGate: ['Choose a different approval placement'],
-                    approvalPlacementScope: ['One approval before both email routes']
-                }
-            }
-        },
-        provider,
-        registry,
-        resourceLoader
-    });
+    const result = await generateWorkflowTurn({ request, currentWorkflow, provider, registry, resourceLoader });
 
     assert.equal(result.type, 'proposal');
-    assert.equal(providerCalls, 0);
-    const approvals = result.nodes.filter(node => node.nodeKey === 'logic:approval');
-    assert.equal(approvals.length, 2);
-    const addedApproval = approvals.find(node => node.id !== 'approval');
-    assert.ok(result.edges.some(edge => edge.source === 'approval' && edge.sourceHandle === 'approved' && edge.target === addedApproval.id));
-    assert.ok(result.edges.some(edge => edge.source === addedApproval.id && edge.sourceHandle === 'approved' && edge.target === 'condition'));
+    assert.equal(providerCalls, 3);
+    assert.equal(result.operations[0].op, 'move_approval_gate');
+    assert.equal(result.nodes.find(node => node.id === 'approval')?.title, 'Review before Venue Instructions');
+    assert.equal(result.edges.some(edge => edge.source === 'trigger' && edge.target === 'approval'), false);
+    assert.ok(result.edges.some(edge => edge.source === 'trigger' && edge.target === 'condition'));
+    assert.ok(result.edges.some(edge => edge.source === 'condition' && edge.sourceHandle === 'true' && edge.target === 'online'));
+    assert.equal(result.edges.some(edge => edge.source === 'condition' && edge.sourceHandle === 'false' && edge.target === 'venue'), false);
+    assert.ok(result.edges.some(edge => edge.source === 'condition' && edge.sourceHandle === 'false' && edge.target === 'approval'));
+    assert.ok(result.edges.some(edge => edge.source === 'approval' && edge.sourceHandle === 'approved' && edge.target === 'venue'));
 });
 
 test('pipeline keeps the original invalid reference when a repair returns no operations', async () => {

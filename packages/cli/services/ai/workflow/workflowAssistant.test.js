@@ -647,32 +647,32 @@ test('workflow AI carries earlier answers into a follow-up clarification', async
         runTurn: async args => {
             turnContexts.push(args.turnContext);
             call += 1;
-            if (call === 1) return { kind: 'clarification', message: 'Choose an existing approval.', inputs: [{ id: 'approvalExistingGate', type: 'single_choice', label: 'Existing approval', options: ['Choose a different approval placement'] }] };
-            if (call === 2) return { kind: 'clarification', message: 'Choose an approval placement.', inputs: [{ id: 'approvalPlacementScope', type: 'single_choice', label: 'Approval placement', options: ['One approval before both email routes'] }] };
-            return { kind: 'reply', message: 'Approval scope recorded.' };
+            if (call === 1) return { kind: 'clarification', message: 'Choose a delivery channel.', inputs: [{ id: 'deliveryChannel', type: 'single_choice', label: 'Delivery channel', options: ['Email'] }] };
+            if (call === 2) return { kind: 'clarification', message: 'Choose a delivery tone.', inputs: [{ id: 'deliveryTone', type: 'single_choice', label: 'Delivery tone', options: ['Formal'] }] };
+            return { kind: 'reply', message: 'Delivery preferences recorded.' };
         },
         idFactory: (() => { let count = 0; return prefix => `${prefix}_${++count}`; })()
     });
 
     await assistant.submitTurn({
-        userId: 'user_1', workflowId: 'workflow_1', command: { type: 'submit_text', text: 'Wait for my approval before the emails.' }
+        userId: 'user_1', workflowId: 'workflow_1', command: { type: 'submit_text', text: 'Send an update.' }
     });
     await assistant.submitTurn({
         userId: 'user_1', workflowId: 'workflow_1', command: {
-            type: 'submit_clarification', text: 'Choose a different approval placement',
-            state: { approvalExistingGate: ['Choose a different approval placement'] }
+            type: 'submit_clarification', text: 'Email',
+            state: { deliveryChannel: ['Email'] }
         }
     });
     await assistant.submitTurn({
         userId: 'user_1', workflowId: 'workflow_1', command: {
-            type: 'submit_clarification', text: 'One approval before both email routes',
-            state: { approvalPlacementScope: ['One approval before both email routes'] }
+            type: 'submit_clarification', text: 'Formal',
+            state: { deliveryTone: ['Formal'] }
         }
     });
 
     assert.deepEqual(turnContexts[2].command.state, {
-        approvalExistingGate: ['Choose a different approval placement'],
-        approvalPlacementScope: ['One approval before both email routes']
+        deliveryChannel: ['Email'],
+        deliveryTone: ['Formal']
     });
 });
 
@@ -868,16 +868,16 @@ test('resolveWorkflowTurnContext retains structured clarification state', () => 
 
 test('resolveWorkflowTurnContext carries prior clarification answers forward', () => {
     const ctx = resolveWorkflowTurnContext({
-        command: { type: 'submit_clarification', text: 'One approval before both email routes', state: { approvalPlacementScope: ['One approval before both email routes'] } },
+        command: { type: 'submit_clarification', text: 'Formal', state: { deliveryTone: ['Formal'] } },
         activeWork: {
-            sourceText: 'Wait for my approval before the emails',
-            clarificationState: { approvalExistingGate: ['Choose a different approval placement'] }
+            sourceText: 'Send an update',
+            clarificationState: { deliveryChannel: ['Email'] }
         }
     });
 
     assert.deepEqual(ctx.command.state, {
-        approvalExistingGate: ['Choose a different approval placement'],
-        approvalPlacementScope: ['One approval before both email routes']
+        deliveryChannel: ['Email'],
+        deliveryTone: ['Formal']
     });
 });
 

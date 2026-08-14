@@ -17,7 +17,6 @@ import { applyFormResponseSpreadsheetContract } from '../formSpreadsheetContract
 import { discoverResource } from '../resourceDiscovery.js';
 import { resolveFormReference } from '../domain/formReferenceResolver.js';
 import { resolveSpreadsheetIntent } from '../domain/workflowSpreadsheetIntent.js';
-import { resolveApprovalPlacement } from '../domain/approvalPlacement.js';
 import { assembleLinearWorkflow } from '../domain/linearWorkflowAssembler.js';
 import { normalizeSemanticWorkflowOperations } from '../domain/semanticOperationNormalizer.js';
 import {
@@ -619,6 +618,7 @@ const proposalDiff = ({ before, after, operations }) => {
             'add_switch_routes',
             'add_error_handler',
             'add_approval_gate',
+            'move_approval_gate',
             'join_branches'
         ].includes(operation.op))
     };
@@ -770,70 +770,6 @@ const applyAndValidate = async ({
         },
         diff: proposalDiff({ before: workflow, after: finalWorkflow, operations })
     };
-};
-
-const deterministicApprovalPlan = ({ operations, targetCount, scope }) => ({
-    type: 'direct_plan',
-    summary: scope === 'Separate approval before each email route'
-        ? 'Wait for owner approval separately before each email route.'
-        : `Wait for owner approval before sending ${targetCount === 1 ? 'the email' : 'either email route'}.`,
-    requirements: [{
-        id: 'req_owner_approval_before_email',
-        description: scope === 'Separate approval before each email route'
-            ? 'Require owner approval independently before each email route.'
-            : `Require owner approval before ${targetCount === 1 ? 'sending the selected email' : 'sending either email route'}.`
-    }],
-    selectedNodeKeys: ['logic:approval'],
-    capabilities: ['owner_approval'],
-    resourceChanges: [],
-    operations
-});
-
-const buildDeterministicApprovalProposal = async ({
-    placement,
-    workflow,
-    formSchema,
-    formLoader,
-    userId,
-    registry,
-    resourceLoader,
-    resourceSelections,
-    spreadsheetIntent,
-    usage
-}) => {
-    const plan = deterministicApprovalPlan({ operations: placement.operations, targetCount: placement.targets.length, scope: placement.scope });
-    const { specs } = specsForPlan({ workflow, planner: plan, registry });
-    const loadedResourceContext = await resourceLoader({ userId, specs, nodes: workflow.nodes || [], selections: resourceSelections });
-    const resourceContext = withTrustedConfiguredSpreadsheetResources(
-        withTrustedFormResource(loadedResourceContext, formSchema),
-        spreadsheetIntent
-    );
-    const compiled = await applyAndValidate({
-        workflow,
-        operations: plan.operations,
-        specs,
-        capabilities: plan.capabilities,
-        formSchema,
-        formLoader,
-        userId,
-        resourceContext,
-        resourceChanges: [],
-        spreadsheetIntent,
-        perSubmissionRequested: false,
-        registry
-    });
-    return buildProposalResult({
-        plan,
-        capabilities: plan.capabilities,
-        operations: plan.operations,
-        compiled,
-        verification: {
-            status: 'pass',
-            issues: [],
-            fulfilledRequirements: plan.requirements.map(requirement => requirement.id)
-        },
-        usage: { ...usage, requestCalls: usage.requestCalls || 0 }
-    });
 };
 
 const requestAndValidate = async ({
@@ -1031,77 +967,6 @@ export const generateWorkflowTurn = async ({
     }
     const requestedRunId = explicitRunIdFromRequest(request);
     if (requestedRunId && runLoader) inspectedRun = await runLoader({ selector: 'referenced', runId: requestedRunId, userId, workflow: currentWorkflow });
-
-    // Approval placement is graph-sensitive: a phrase such as "the email"
-    // may refer to several branch outcomes. Resolve the small owner-approval
-    // follow-up directly from the current graph before a model can guess refs.
-    const approvalPlacement = resolveApprovalPlacement({
-        request: turnIntent?.sourceText || request,
-        workflow: currentWorkflow,
-        clarificationState: turnContext?.command?.state || {}
-    });
-    if (approvalPlacement.kind !== 'not_applicable') {
-        await recordAiDiagnostic({
-            event: 'workflow_approval_placement_resolved',
-            outcome: approvalPlacement.kind,
-            targetCount: approvalPlacement.targets?.length || 0
-        });
-        if (['clarification', 'unsupported_approver'].includes(approvalPlacement.kind)) {
-            return {
-                type: 'message',
-                message: approvalPlacement.message,
-                inputs: approvalPlacement.inputs,
-                tokenUsage: { ...usage, requestCalls: budget.calls }
-            };
-        }
-        if (['already_satisfied', 'cancelled'].includes(approvalPlacement.kind)) {
-            return {
-                type: 'reply',
-                message: approvalPlacement.message,
-                tokenUsage: { ...usage, requestCalls: budget.calls }
-            };
-        }
-        if (approvalPlacement.kind === 'unsafe_placement') {
-            if (approvalPlacement.inputs?.length) {
-                return {
-                    type: 'message',
-                    message: approvalPlacement.message,
-                    inputs: approvalPlacement.inputs,
-                    tokenUsage: { ...usage, requestCalls: budget.calls }
-                };
-            }
-            return {
-                type: 'reply',
-                message: approvalPlacement.message,
-                tokenUsage: { ...usage, requestCalls: budget.calls }
-            };
-        }
-        if (approvalPlacement.kind === 'operation') {
-            onProgress?.({
-                status: 'building', phase: 'draft', label: 'Placing approval safely',
-                message: 'Preparing the approval step',
-                detail: 'Promptly found the shared route before the email instructions.'
-            });
-            const proposal = await buildDeterministicApprovalProposal({
-                placement: approvalPlacement,
-                workflow: currentWorkflow,
-                formSchema: resolvedFormSchema,
-                formLoader,
-                userId,
-                registry,
-                resourceLoader,
-                resourceSelections,
-                spreadsheetIntent,
-                usage
-            });
-            onProgress?.({
-                status: 'verified', phase: 'check', label: 'Verified the approval placement',
-                message: 'The approval change is ready for review',
-                detail: 'The approval will gate every selected email route.'
-            });
-            return proposal;
-        }
-    }
 
     const buildPlannerContext = ({ inspectedFormSchema = null, formLookupUsed = false, forceDecision = false } = {}) => buildWorkflowPlannerContext({
         workflow: currentWorkflow,

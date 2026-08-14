@@ -252,6 +252,11 @@ test('worker validator accepts every semantic control-flow operation', () => {
                 whenRejected: { ref: 'notify_rejected', nodeKey: 'action:email', config: {} }
             },
             {
+                op: 'move_approval_gate',
+                approvalNodeRef: 'n8',
+                connection: { from: { nodeRef: 'n9', handle: 'false' }, to: { nodeRef: 'n10', handle: 'event' } }
+            },
+            {
                 op: 'join_branches',
                 branches: [{ from: { nodeRef: 'n6', handle: 'outputData' } }, { from: { nodeRef: 'n7', handle: 'outputData' } }],
                 merge: { ref: 'join_routes', config: { mergeMode: 'array' } },

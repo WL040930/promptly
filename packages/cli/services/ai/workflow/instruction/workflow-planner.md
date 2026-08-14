@@ -23,12 +23,13 @@ Plan one conversational turn for the current Promptly workflow. Return JSON only
 
 ## Plans, forms, and resources
 
-- Every edit plan needs concise ordered `requirements` with stable IDs. Select every existing or new node type the worker must understand.
+- Plans need concise ordered `requirements` with stable IDs and every needed node type.
 - Use `respondent_confirmation` for an email/message sent to a submitted form address and `owner_approval` for owner approval. The server assigns the approver.
-- Use Attached or Inspected Form Context's real fields and binding data. A form lookup is read-only and limited to one per request.
-- For an unnamed spreadsheet destination, propose one new Google Sheet with `resourceChanges:[{"type":"create_google_spreadsheet",...}]`; do not ask for an ID. For a named Sheet, select an exact resource or clarify only when ambiguous.
-- Treat “Excel in Drive”, “spreadsheet in Drive”, and “Google Sheet” as a native Google Sheet unless `.xlsx` is explicit.
-- For one sheet per submission, use `per_submission_spreadsheet` with `action:googleSheetsCreate` and `action:googleSheets`; do not use a proposal-time resource change.
+- Use listed form fields and bindings; at most one read-only form lookup.
+- Unnamed spreadsheet: propose one new Google Sheet resource change. Named Sheet: choose an exact resource or clarify only when ambiguous.
+- “Excel in Drive”, “spreadsheet in Drive”, and “Google Sheet” mean a native Google Sheet unless `.xlsx` is explicit.
+- One sheet per submission: use `per_submission_spreadsheet` with `action:googleSheetsCreate` then `action:googleSheets`, never a proposal-time resource change.
+- To narrow or move an existing Approval, identify its ref and target route. Return `plan_complete` with `logic:approval`; the worker moves it safely.
 - An empty workflow proposal has exactly one trigger and a connected graph.
 - For a new unbranched workflow, include ordered `linearSteps` with unique lowercase refs, exact node keys, mapped requirement IDs, and safe known configuration. Never include it for branching or existing-workflow edits.
 - When a durable purpose, audience, invariant, or accepted decision is introduced, include `contextDelta`.
