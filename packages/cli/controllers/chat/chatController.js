@@ -13,6 +13,7 @@ import {
     startChatTurn
 } from '../../services/chat/chatTurnLifecycle.js';
 import crypto from 'node:crypto';
+import { outcomeForAssistantMessage } from '../../../shared/assistantTurnNotification.js';
 
 export const createSendMessageHandler = ({
     chatSessionModel = AssistantThread,
@@ -48,7 +49,7 @@ export const createSendMessageHandler = ({
             userId,
             surface: 'ask_promptly',
             context: {},
-            state: { version: 1, phase: 'idle', mode: 'important_only' },
+            state: { version: 1, phase: 'idle', mode: 'important_only', lastTurn: null },
             title: `${titleSource.substring(0, 40)}${titleSource.length > 40 ? '...' : ''}`
         });
     }
@@ -86,6 +87,14 @@ export const createSendMessageHandler = ({
                 requestId: turnRequestId,
                 status: eventResult.reply.kind === 'error' ? 'failed' : 'completed',
                 detail: eventResult.reply.text || 'Completed the requested action.',
+                outcome: outcomeForAssistantMessage({
+                    kind: eventResult.reply.kind,
+                    isError: eventResult.reply.isError,
+                    status: eventResult.reply.kind === 'error' ? 'failed' : 'completed'
+                }),
+                messageId: eventResult.reply.id,
+                kind: eventResult.reply.kind,
+                isError: eventResult.reply.isError,
                 messageModel: assistantMessageModel
             });
             const payload = {
@@ -148,6 +157,10 @@ export const createSendMessageHandler = ({
             requestId: turnRequestId,
             status: 'completed',
             detail: replyObj?.text || 'Completed the requested request.',
+            outcome: outcomeForAssistantMessage({ kind: replyObj?.kind, isError: replyObj?.isError }),
+            messageId: replyObj?.id,
+            kind: replyObj?.kind,
+            isError: replyObj?.isError,
             messageModel: assistantMessageModel
         });
     }

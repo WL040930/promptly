@@ -8,7 +8,11 @@ import { useDurableTurnMonitor } from '../../api/hooks/useDurableTurnMonitor.js'
 import { useAIStream } from '../../context/AIStreamContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
 import { navigateTo } from '../../utils/router.js';
+import { requestSettingsModal } from '../../utils/settingsModal.js';
 import { markSupersededWorkflowProposals, markWorkflowProposalStale } from '../../components/chat/proposalStatus.js';
+import { emitAITurnLifecycle } from '../../utils/browserNotifications.js';
+import { outcomeForAssistantMessage } from '../../../../shared/assistantTurnNotification.js';
+import { normalizeAssistantText } from '../../../../shared/assistantText.js';
 
 const LIMIT = 50;
 const defaultMessage = {
@@ -35,7 +39,7 @@ const writeDraft = (workflowId, value) => {
 
 const normalizeInput = value => {
     if (typeof value === 'string') {
-        const text = value.trim();
+        const text = normalizeAssistantText(value);
         return { command: { type: 'submit_text', text }, text };
     }
     if (value?.type === 'decide_for_me') {
@@ -70,6 +74,7 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
     const inFlightAppliesRef = useRef(new Map());
+    const inFlightTurnRef = useRef(false);
     const [isSubmittingTurn, setIsSubmittingTurn] = useState(false);
     const [streamDetached, setStreamDetached] = useState(false);
     const [recoveryMode, setRecoveryMode] = useState(false);
@@ -200,9 +205,10 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
                 ...page,
                 messages: [...(page.messages || []), { id: optimisticUserId, sender: 'user', kind: 'text', text, isOptimistic: true }, optimisticWork]
             })));
-            return { previousData, optimisticUserId, optimisticWorkId, text };
+            return { previousData, optimisticUserId, optimisticWorkId, text, requestId };
         },
-        onSuccess: (result, _variables, context) => {
+        onSuccess: (result, variables, context) => {
+            inFlightTurnRef.current = false;
             setIsSubmittingTurn(false);
             setStreamDetached(false);
             setRecoveryMode(false);
@@ -226,8 +232,25 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
                     ].filter(Boolean)
                 };
             }));
+            emitAITurnLifecycle({
+                type: 'completed',
+                requestId: variables?.requestId || context?.requestId || result?.state?.lastTurn?.requestId,
+                surface: 'workflow',
+                resourceId: workflowId,
+                resourceName: workflow?.name || workflow?.title || 'Your workflow',
+                path: `/app/automations/${encodeURIComponent(workflowId)}/build?editor=ai`,
+                outcome: outcomeForAssistantMessage({
+                    kind: result?.botMsg?.kind,
+                    isError: result?.botMsg?.isError,
+                    outcome: result?.state?.lastTurn?.outcome
+                }),
+                status: result?.state?.lastTurn?.status || 'completed',
+                messageId: result?.botMsg?.id || result?.state?.lastTurn?.messageId || null,
+                completedAt: result?.state?.lastTurn?.completedAt || new Date().toISOString()
+            });
         },
-        onError: async (error, _variables, context) => {
+        onError: async (error, variables, context) => {
+            inFlightTurnRef.current = false;
             setIsSubmittingTurn(false);
             const errorCode = error?.code || error?.payload?.code;
             if (errorCode === 'WORKFLOW_AI_STATE_CONFLICT') syncStateVersion(error.currentStateVersion || error.payload?.currentStateVersion);
@@ -239,6 +262,17 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
                 toast.info('Still working in the background — reconnecting.');
                 return;
             }
+            emitAITurnLifecycle({
+                type: 'failed',
+                requestId: variables?.requestId || context?.requestId,
+                surface: 'workflow',
+                resourceId: workflowId,
+                resourceName: workflow?.name || workflow?.title || 'Your workflow',
+                path: `/app/automations/${encodeURIComponent(workflowId)}/build?editor=ai`,
+                outcome: 'error',
+                status: 'failed',
+                completedAt: new Date().toISOString()
+            });
             clearStreamState();
             if (context?.previousData) queryClient.setQueryData(queryKey, context.previousData);
             setInput(context?.text || '');
@@ -305,21 +339,32 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
 
     const handleSend = useCallback(async value => {
         const normalized = normalizeInput(value);
-        if (!normalized.text || isTyping || isSubmittingTurn || serverProcessing || !workflowId) return;
+        if (!normalized.text || inFlightTurnRef.current || isTyping || isSubmittingTurn || serverProcessing || !workflowId) return;
+        inFlightTurnRef.current = true;
         try {
             await onBeforeSend?.();
         } catch (error) {
+            inFlightTurnRef.current = false;
             toast.error(error.message || 'Save the workflow before asking AI to change it.');
             return;
         }
         const requestId = globalThis.crypto?.randomUUID?.() || `workflow_turn_${Date.now()}`;
+        emitAITurnLifecycle({
+            type: 'started',
+            requestId,
+            surface: 'workflow',
+            resourceId: workflowId,
+            resourceName: workflow?.name || workflow?.title || 'Your workflow',
+            path: `/app/automations/${encodeURIComponent(workflowId)}/build?editor=ai`,
+            startedAt: new Date().toISOString()
+        });
         sendMutation.mutate({
             command: normalized.command,
             text: normalized.text,
             requestId,
             optimisticWorkId: `optimistic_work_${requestId}`
         });
-    }, [workflowId, isSubmittingTurn, isTyping, onBeforeSend, sendMutation, serverProcessing, toast]);
+    }, [workflow, workflowId, isSubmittingTurn, isTyping, onBeforeSend, sendMutation, serverProcessing, toast]);
 
     const handleRecoveryAction = useCallback((action, message, previousRequest = '') => {
         const recovery = message?.errorMetadata?.recovery || message?.payload?.recovery || {};
@@ -328,7 +373,7 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
             return;
         }
         if (action?.type === 'open_connections') {
-            navigateTo({ page: 'settings', section: 'connections' });
+            requestSettingsModal('connections');
             return;
         }
         if (action?.type === 'retry') {
@@ -360,7 +405,7 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
                 toast.error(error.message || fallbackMessage, needsGoogleReconnect ? {
                     action: {
                         label: code === 'GOOGLE_CONNECTION_REQUIRED' ? 'Connect Google' : code === 'GOOGLE_PERMISSION_REQUIRED' ? 'Review Google access' : 'Reconnect Google',
-                        onClick: () => navigateTo({ page: 'settings', section: 'connections' })
+                        onClick: () => requestSettingsModal('connections')
                     }
                 } : undefined);
                 throw error;

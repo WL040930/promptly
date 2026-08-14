@@ -50,3 +50,31 @@ test('a structured Create answer keeps the original destination name instead of 
         mode: 'create', source: 'clarification', name: 'Event Registration'
     });
 });
+
+test('an applied workflow destination wins over a legacy clarification receipt in history', () => {
+    assert.deepEqual(resolveSpreadsheetIntent({
+        request: 'Request my approval before saving the response.',
+        currentWorkflow: {
+            nodes: [{
+                id: 'append_response',
+                subType: 'googleSheets',
+                title: 'Save Event Registration response',
+                config: { spreadsheetId: 'sheet_event_registration', range: "'Responses'!A1" }
+            }]
+        },
+        history: [{ sender: 'user', text: 'Create a new Sheet: Create a new “Event Registration” Sheet' }]
+    }), {
+        mode: 'existing_selected',
+        source: 'current_workflow',
+        spreadsheetId: 'sheet_event_registration',
+        name: 'Save Event Registration response',
+        range: "'Responses'!A1"
+    });
+});
+
+test('legacy Create Sheet receipts do not include their input label in the Sheet name', () => {
+    assert.equal(
+        namedSpreadsheetFromText('Create a new Sheet: Create a new “Event Registration” Sheet'),
+        'Event Registration'
+    );
+});

@@ -167,6 +167,14 @@ const validatePatchShape = (patch, path, { allowUnknownSettings = false } = {}) 
         issues.push(...validateText(patch.id, `${path}.id`, { required: true, max: 100 }));
         if (patch.op === 'update' && !isPlainObject(patch.updates)) issues.push(issue('INVALID_UPDATES', `${path}.updates`, 'Update patches require an updates object.'));
     }
+    if (patch.op === 'move') {
+        issues.push(...validateText(patch.id, `${path}.id`, { required: true, max: 100 }));
+        if (patch.insertAfter !== undefined) issues.push(...validateText(patch.insertAfter, `${path}.insertAfter`, { max: 100 }));
+        if (patch.insertBefore !== undefined) issues.push(...validateText(patch.insertBefore, `${path}.insertBefore`, { max: 100 }));
+        if (patch.insertAfter !== undefined && patch.insertBefore !== undefined) {
+            issues.push(issue('CONFLICTING_PLACEMENT', path, 'A move patch cannot specify both insertAfter and insertBefore.'));
+        }
+    }
     if (patch.op === 'update_meta') {
         if (!isPlainObject(patch.updates)) issues.push(issue('INVALID_METADATA_UPDATE', `${path}.updates`, 'Metadata updates require an updates object.'));
         else {
@@ -218,6 +226,9 @@ export const validateFormPatches = (currentSchema, patches = []) => {
     const reservedFieldIds = new Set(fields.map(field => field?.id).filter(Boolean));
     const addedIds = new Set();
     const touchedIds = new Set();
+    const movedIds = new Set();
+    const removedIds = new Set();
+    const moveAnchorIds = new Set();
 
     patches.forEach((patch, index) => {
         const path = `patches[${index}]`;
@@ -237,6 +248,30 @@ export const validateFormPatches = (currentSchema, patches = []) => {
                 issues.push(issue('UNKNOWN_PLACEMENT_ANCHOR', `${path}.${patch.insertBefore ? 'insertBefore' : 'insertAfter'}`, `Placement anchor '${anchor}' does not exist.`));
             }
         }
+        if (patch.op === 'move' && patch.id) {
+            if (patch.id === currentSchema?.id) {
+                issues.push(issue('FORM_ID_USED_AS_FIELD_ID', `${path}.id`, `Form ID '${patch.id}' cannot be used as a field ID. Use an existing fields[].id.`));
+            } else if (!fieldIds.has(patch.id) && !addedIds.has(patch.id)) {
+                issues.push(issue('UNKNOWN_FIELD', `${path}.id`, `Field ID '${patch.id}' does not exist.`));
+            }
+            if (removedIds.has(patch.id)) {
+                issues.push(issue('CONFLICTING_PATCHES', path, `Field '${patch.id}' cannot be moved after it is removed.`));
+            }
+            if (movedIds.has(patch.id)) {
+                issues.push(issue('CONFLICTING_PATCHES', path, `Field '${patch.id}' is moved more than once in this proposal.`));
+            }
+            movedIds.add(patch.id);
+
+            const anchor = patch.insertAfter || patch.insertBefore;
+            if (anchor) {
+                if (anchor === patch.id) {
+                    issues.push(issue('SELF_PLACEMENT', path, `Field '${patch.id}' cannot be placed relative to itself.`));
+                } else if (removedIds.has(anchor) || (!fieldIds.has(anchor) && !addedIds.has(anchor))) {
+                    issues.push(issue('UNKNOWN_PLACEMENT_ANCHOR', `${path}.${patch.insertBefore ? 'insertBefore' : 'insertAfter'}`, `Placement anchor '${anchor}' does not exist.`));
+                }
+                moveAnchorIds.add(anchor);
+            }
+        }
         if ((patch.op === 'update' || patch.op === 'remove') && patch.id) {
             if (patch.id === currentSchema?.id) {
                 issues.push(issue('FORM_ID_USED_AS_FIELD_ID', `${path}.id`, `Form ID '${patch.id}' cannot be used as a field ID. Use an existing fields[].id or an add patch.`));
@@ -244,6 +279,11 @@ export const validateFormPatches = (currentSchema, patches = []) => {
                 issues.push(issue('UNKNOWN_FIELD', `${path}.id`, `Field ID '${patch.id}' does not exist.`));
             }
             if (touchedIds.has(patch.id)) issues.push(issue('CONFLICTING_PATCHES', path, `Field '${patch.id}' is changed more than once in this proposal.`));
+            if (patch.op === 'remove') {
+                if (movedIds.has(patch.id)) issues.push(issue('CONFLICTING_PATCHES', path, `Field '${patch.id}' cannot be removed after it is moved.`));
+                if (moveAnchorIds.has(patch.id)) issues.push(issue('CONFLICTING_PATCHES', path, `Field '${patch.id}' cannot be removed while it is a move anchor.`));
+                removedIds.add(patch.id);
+            }
             touchedIds.add(patch.id);
         }
     });

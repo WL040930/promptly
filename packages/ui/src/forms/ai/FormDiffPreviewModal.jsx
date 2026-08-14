@@ -1,5 +1,7 @@
 import { useMemo, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { ArrowUpDown } from 'lucide-react';
+import Button from '../../components/ui/Button.jsx';
 import FieldRenderer from '../preview/FieldRenderer';
 import { isEmptyFormMemorySummary } from '../../../../shared/formContract.js';
 import { gsap } from 'gsap';
@@ -71,9 +73,9 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal, onApply,
         
         // 1. Render all proposed fields in order
         for (const field of (proposedSchema.fields || []).filter(field => !field?.deleted)) {
-            const patch = patches.find(p => (p.op === 'update' && p.id === field.id) || (p.op === 'add' && p.field?.id === field.id));
+            const patch = patches.find(p => (p.op === 'update' && p.id === field.id) || (p.op === 'move' && p.id === field.id) || (p.op === 'add' && p.field?.id === field.id));
             if (patch) {
-                list.push({ ...field, _diffStatus: patch.op === 'add' ? 'added' : 'updated' });
+                list.push({ ...field, _diffStatus: patch.op === 'add' ? 'added' : patch.op === 'move' ? 'moved' : 'updated' });
             } else {
                 list.push({ ...field, _diffStatus: 'unchanged' });
             }
@@ -106,7 +108,7 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal, onApply,
             ></div>
 
             {/* Modal Box */}
-            <div ref={modalRef} className="relative bg-slate-50 w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+            <div ref={modalRef} className="relative z-10 bg-slate-50 w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
                 
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between shrink-0">
@@ -205,6 +207,9 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal, onApply,
                                 } else if (field._diffStatus === 'updated') {
                                     wrapperClass = "relative p-4 -mx-4 rounded-xl bg-amber-50 border-2 border-amber-400 shadow-sm";
                                     tag = <span className="absolute -top-3 left-4 bg-amber-100 text-amber-800 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border border-amber-300">~ Modified</span>;
+                                } else if (field._diffStatus === 'moved') {
+                                    wrapperClass = "relative p-4 -mx-4 rounded-xl bg-amber-50 border-2 border-amber-400 shadow-sm";
+                                    tag = <span className="absolute -top-3 left-4 inline-flex items-center gap-1 bg-amber-100 text-amber-800 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border border-amber-300"><ArrowUpDown size={11} strokeWidth={2.5} aria-hidden="true" /> Reordered</span>;
                                 } else if (field._diffStatus === 'removed') {
                                     wrapperClass = "relative p-4 -mx-4 rounded-xl bg-red-50 border-2 border-red-400 opacity-80 shadow-sm";
                                     tag = <span className="absolute -top-3 left-4 bg-red-100 text-red-800 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border border-red-300">- Removed</span>;
@@ -230,32 +235,25 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal, onApply,
                 </div>
 
                 {/* Footer */}
-                <div className="px-6 py-4 border-t border-slate-200 bg-white flex justify-end shrink-0 gap-3">
-                    <button 
+                <div className="relative z-10 px-6 py-4 border-t border-slate-200 bg-white flex justify-end shrink-0 gap-3">
+                    <Button
+                        variant="outline"
+                        size="md"
                         onClick={handleClose}
                         aria-label="Cancel preview changes"
-                        className="px-6 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors"
                     >
                         Cancel
-                    </button>
+                    </Button>
                     {onApply && (
-                        <button 
+                        <Button
+                            variant="primary"
+                            size="md"
                             onClick={onApply}
-                            disabled={isApplying}
-                            className="px-6 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
+                            isLoading={isApplying}
+                            loadingText="Applying…"
                         >
-                            {isApplying ? (
-                                <>
-                                    <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    Applying...
-                                </>
-                            ) : (
-                                "Apply Changes"
-                            )}
-                        </button>
+                            Apply Changes
+                        </Button>
                     )}
                 </div>
             </div>

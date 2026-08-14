@@ -13,30 +13,12 @@
       "defaultValue": ""
     },
     {
-      "name": "matchA",
-      "type": "text",
-      "label": "Match Case A",
-      "defaultValue": ""
-    },
-    {
-      "name": "matchB",
-      "type": "text",
-      "label": "Match Case B",
-      "defaultValue": ""
-    },
-    {
       "name": "cases",
       "type": "json",
       "label": "Routes",
-      "placeholder": "[{\"value\":\"support\",\"handle\":\"support\"}]",
+      "placeholder": "[{\"value\":\"Online\",\"handle\":\"branchA\"}]",
       "defaultValue": [],
-      "helpText": "Add one route for each value you want to match."
-    },
-    {
-      "name": "defaultHandle",
-      "type": "text",
-      "label": "Default Route Handle",
-      "defaultValue": "default"
+      "helpText": "Use branchA or branchB for up to two exact-match routes. Unmatched values use Default."
     }
   ],
   "outputs": [

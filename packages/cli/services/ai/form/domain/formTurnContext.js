@@ -5,6 +5,8 @@ const CORRECTION_PATTERN = /\b(?:i\s+mean|actually|instead|correction|not\s+that
 const HEADING_PATTERN = /\b(?:section\s+heading|section\s+headings?|headings?)\b/i;
 const SECTION_PATTERN = /\badd\s+(?:some|a|several|multiple)?\s*sections?\b/i;
 const QUESTION_OR_FIELD_PATTERN = /\b(?:questions?|fields?)\b/i;
+const MUTATION_PATTERN = /\b(?:add|create|build|change|edit|update|modify|make|remove|delete|move|reorder|place|put|insert|rename|set|include|exclude|mark|require|optional|above|below|before|after)\b/i;
+const READ_ONLY_PATTERN = /^(?:why|how|what|which|when|where|who|should)\b|\b(?:tell me|explain|recommend)\b/i;
 
 const textOf = value => String(value || '').trim();
 
@@ -18,6 +20,12 @@ const detectScope = text => {
 };
 
 const isDelegation = text => DELEGATION_PATTERN.test(textOf(text));
+
+export const detectFormMutationIntent = text => {
+    const normalized = textOf(text);
+    if (!MUTATION_PATTERN.test(normalized)) return false;
+    return !READ_ONLY_PATTERN.test(normalized);
+};
 
 export const resolveFormTurnContext = ({
     command = { type: 'submit_text', text: '' },
@@ -54,7 +62,12 @@ export const resolveFormTurnContext = ({
             scope,
             relationToPending,
             authority: delegated ? 'assistant' : 'user',
-            clarificationMode: normalizeClarificationMode(clarificationMode)
+            clarificationMode: normalizeClarificationMode(clarificationMode),
+            // Use the current command for the mutation gate. An older active
+            // work request may be a mutation even when the user is now asking
+            // a read-only follow-up question.
+            expectsMutation: detectFormMutationIntent(rawText)
+                || (command.type === 'decide_for_me' && detectFormMutationIntent(sourceText))
         },
         pendingProposal: {
             mode: shouldExcludePending ? 'exclude' : 'include',

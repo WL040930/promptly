@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
     advanceChatTurn,
     attachChatTurnMessages,
+    finishChatTurn,
     reconcileStaleChatTurn,
     replaceChatSessionState,
     startChatTurn
@@ -80,4 +81,24 @@ test('stale chat turn becomes a retryable persistent failure', async () => {
     assert.equal(rows[0].payload.work.status, 'failed');
     assert.equal(rows[1].kind, 'error');
     assert.equal(rows[1].errorMetadata.code, 'ASK_PROMPTLY_TURN_STALLED');
+    assert.deepEqual(session.state.lastTurn, {
+        requestId: 'turn_1',
+        status: 'failed',
+        outcome: 'error',
+        messageId: rows[0].id,
+        completedAt: '2026-01-01T00:02:01.000Z'
+    });
+});
+
+test('terminal chat outcomes persist a notification-friendly last turn', async () => {
+    const { session, messageModel } = createMemory();
+    const finishedAt = new Date('2026-01-01T00:00:05.000Z');
+    await startChatTurn({ session, requestId: 'turn_2', now: () => new Date('2026-01-01T00:00:00.000Z') });
+    await attachChatTurnMessages({ session, requestId: 'turn_2', messageModel, now: () => new Date('2026-01-01T00:00:00.000Z') });
+    await finishChatTurn({ session, requestId: 'turn_2', kind: 'clarification', detail: 'Choose a form', now: () => finishedAt, messageModel });
+
+    assert.equal(session.state.lastTurn.requestId, 'turn_2');
+    assert.equal(session.state.lastTurn.status, 'completed');
+    assert.equal(session.state.lastTurn.outcome, 'clarification');
+    assert.equal(session.state.lastTurn.completedAt, finishedAt.toISOString());
 });

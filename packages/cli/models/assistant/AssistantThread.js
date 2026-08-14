@@ -14,7 +14,8 @@ const initialState = () => ({
     inFlightRequestId: null,
     inFlightStartedAt: null,
     inFlightLastActivityAt: null,
-    progress: null
+    progress: null,
+    lastTurn: null
 });
 
 const AssistantThread = sequelize.define(

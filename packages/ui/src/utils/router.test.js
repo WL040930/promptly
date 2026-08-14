@@ -17,3 +17,12 @@ test('canonical workspace routes cover resources and onboarding', () => {
     assert.deepEqual(parsePath('/app/automations/new?method=ai&prompt=Follow+up'), { page: 'automation-new', method: 'ai', prompt: 'Follow up' });
     assert.equal(buildPath({ page: 'settings', section: 'connections' }), '/app/settings/connections');
 });
+
+test('a settings query can open the connections modal without changing the workspace page', () => {
+    assert.deepEqual(parsePath('/app/automations/auto_1/build?editor=ai&settings=connections&success=true'), {
+        page: 'automation-build',
+        automationId: 'auto_1',
+        editor: 'ai',
+        settingsTab: 'connections'
+    });
+});

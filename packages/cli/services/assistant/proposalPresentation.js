@@ -14,6 +14,12 @@ export const buildFormPresentation = ({ form = {}, proposal = {} } = {}) => {
         const id = patch.patchId || `patch_${index + 1}`;
         if (patch.op === 'add') return { id, type: 'add', label: titleCase(patch.field?.label), detail: fieldTypeLabel(patch.field?.type) };
         if (patch.op === 'remove') return { id, type: 'remove', label: titleCase(patch.label || patch.id), detail: 'Removed question' };
+        if (patch.op === 'move') {
+            const destination = patch.insertBefore ? `before ${titleCase(patch.anchorLabel || patch.insertBefore)}`
+                : patch.insertAfter ? `after ${titleCase(patch.anchorLabel || patch.insertAfter)}`
+                    : 'to the end';
+            return { id, type: 'update', label: titleCase(patch.label || patch.id), detail: `Reordered ${destination}` };
+        }
         if (patch.op === 'update') return { id, type: 'update', label: titleCase(patch.label || patch.id), detail: 'Updated question' };
         if (patch.op === 'update_meta') return { id, type: 'update', label: 'Form details', detail: 'Updated title or description' };
         if (patch.op === 'update_settings') return { id, type: 'update', label: 'Form settings', detail: `${Object.keys(patch.updates || {}).length} setting${Object.keys(patch.updates || {}).length === 1 ? '' : 's'} updated` };
@@ -53,19 +59,21 @@ export const buildWorkflowPresentation = ({ workflow = {}, proposal = {} } = {})
         ...(diff.edges || []).map((edge, index) => ({ id: `flow_${index}`, type: 'connect', label: 'Workflow connection', detail: edge.op === 'disconnect' ? 'Removed connection' : 'Updated connection' })),
         ...(proposal.resourceChanges || []).filter(change => change?.type === 'create_google_spreadsheet').map(change => ({
             id: `resource_${change.ref}`,
-            type: 'add',
+            type: 'provision',
             label: titleCase(change.title),
-            detail: `Create Google Sheet · ${change.sheetTitle || 'Responses'} tab`
+            detail: `Create once when you apply · ${change.sheetTitle || 'Responses'} tab`
         }))
     ];
     const name = titleCase(workflow.name || 'Workflow');
-    const added = changes.filter(change => change.type === 'add').length;
+    const added = (diff.addedNodes || []).length;
     const updated = changes.filter(change => change.type === 'update').length;
     const removed = changes.filter(change => change.type === 'remove').length;
+    const provisionedSheets = changes.filter(change => change.type === 'provision').length;
     const changeSummary = [
         added ? `adds ${added} ${added === 1 ? 'step' : 'steps'}` : null,
         updated ? `updates ${updated}` : null,
-        removed ? `removes ${removed}` : null
+        removed ? `removes ${removed}` : null,
+        provisionedSheets ? `creates ${provisionedSheets} Google Sheet${provisionedSheets === 1 ? '' : 's'} once when you apply` : null
     ].filter(Boolean).join(', ') || `updates ${changes.length} ${changeWord(changes.length)}`;
     const flow = (proposal.nodes || []).slice(0, 5).map(node => titleCase(node.title || node.subType));
     return {

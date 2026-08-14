@@ -8,13 +8,15 @@ import { plannerInstruction, verifierInstruction, workerInstruction } from '../s
 import { requestJson } from '../provider/request.js';
 import { addTokenUsage } from '../shared/usage.js';
 
-export const repairPlanner = async ({ provider, rawText, issues, tokenUsage, budget, cardinality, onActivity = null }) => {
+export const repairPlanner = async ({ provider, rawText, issues, tokenUsage, budget, cardinality, request = '', turnContext = null, onActivity = null }) => {
     const repaired = await requestJson({
         provider,
         contents: [{ role: 'user', parts: [{ text: buildPlannerRepairContext({
             response: rawText,
             issues: summarizeValidationIssues(issues),
-            cardinality
+            cardinality,
+            request,
+            turnContext
         }) }] }],
         systemInstruction: plannerInstruction,
         label: 'planner repair',

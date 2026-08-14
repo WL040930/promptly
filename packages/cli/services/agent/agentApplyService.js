@@ -61,6 +61,8 @@ export const prepareAgentWorkflowArtifact = async ({
     const provisioned = await provisionWorkflowResources({
         nodes: workingContent.nodes,
         changes: workingContent.resourceChanges,
+        spreadsheetIntent: workingContent.resourceIntent,
+        capabilities: workingContent.capabilities || [],
         userId,
         provisioningKeyPrefix: `agent-run:${run.id}:${artifact.id}`,
         spreadsheetService,

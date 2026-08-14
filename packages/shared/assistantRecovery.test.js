@@ -75,6 +75,34 @@ test('assistant recovery explains an AI connection missing its route', () => {
     assert.doesNotMatch(result.details[0].message, /input route/i);
 });
 
+test('assistant recovery gives conditional branch failures a specific retry path', () => {
+    const result = buildAssistantRecovery({
+        surface: 'workflow',
+        code: 'WORKFLOW_AI_UNSAFE_PROPOSAL',
+        issues: [{ code: 'WORKFLOW_CONDITION_BRANCH_OPERATION_REQUIRED', message: 'Use add_condition_branch to add a new Condition and its true/false outcomes.' }],
+        context: { retryText: 'If attendance mode is Online, send joining instructions; otherwise send venue instructions.' }
+    });
+
+    assert.equal(result.type, 'conditional_branch_invalid');
+    assert.equal(result.title, 'Promptly could not add the conditional branch');
+    assert.equal(result.action.type, 'retry');
+    assert.equal(result.retryable, true);
+    assert.equal(result.details[0].message, 'Promptly needs to rebuild this conditional branch using its supported branch operation.');
+});
+
+test('assistant recovery keeps an ambiguous generated branch reference actionable', () => {
+    const result = buildAssistantRecovery({
+        surface: 'workflow',
+        code: 'WORKFLOW_AI_UNSAFE_PROPOSAL',
+        issues: [{ code: 'WORKFLOW_SEMANTIC_REF_AMBIGUOUS', message: 'A generated control-flow step was named more than once.' }],
+        context: { retryText: 'If attendance mode is Online, send joining instructions; otherwise send venue instructions.' }
+    });
+
+    assert.equal(result.type, 'conditional_branch_invalid');
+    assert.equal(result.action.type, 'retry');
+    assert.equal(result.details[0].message, 'Promptly could not identify a later route that refers to a newly generated branch step.');
+});
+
 test('assistant recovery hides internal IDs for unreachable workflow nodes', () => {
     const result = buildAssistantRecovery({
         surface: 'workflow',
@@ -104,6 +132,22 @@ test('assistant recovery explains when AI returns no workflow operations', () =>
     assert.equal(result.details[0].message, 'The AI response did not include a list of workflow steps.');
 });
 
+test('assistant recovery preserves an invalid workflow reference ahead of an empty repair draft', () => {
+    const result = buildAssistantRecovery({
+        surface: 'workflow',
+        code: 'WORKFLOW_AI_UNSAFE_PROPOSAL',
+        issues: [
+            { code: 'WORKFLOW_NODE_REF_INVALID', message: "Unknown nodeRef 'n99'." },
+            { code: 'EMPTY_OPERATIONS', message: 'An edit proposal must contain at least one operation.' }
+        ],
+        context: { retryText: 'Wait for approval before sending the email.' }
+    });
+
+    assert.equal(result.type, 'workflow_node_reference_invalid');
+    assert.match(result.summary, /referred to a step/i);
+    assert.equal(result.details[0].message, 'Promptly could not match one generated step to the current workflow.');
+});
+
 test('assistant recovery identifies a Google Sheet header/row contract mismatch', () => {
     const result = buildAssistantRecovery({
         surface: 'workflow',
@@ -120,4 +164,29 @@ test('assistant recovery identifies a Google Sheet header/row contract mismatch'
     assert.equal(result.title, 'Promptly could not prepare the Google Sheet columns');
     assert.match(result.summary, /different formats/i);
     assert.equal(result.action.type, 'retry');
+});
+
+test('assistant recovery gives Google connection blockers a direct connection action', () => {
+    const result = buildAssistantRecovery({
+        surface: 'workflow',
+        code: 'GOOGLE_CONNECTION_REQUIRED',
+        issues: [{ code: 'GOOGLE_CONNECTION_REQUIRED', message: 'Connect Google to browse spreadsheets and Gmail providers.' }]
+    });
+
+    assert.equal(result.type, 'connection_required');
+    assert.equal(result.title, 'Connect Google to use this Sheet');
+    assert.match(result.summary, /Google Sheets/);
+    assert.deepEqual(result.action, { type: 'open_connections', label: 'Connect Google' });
+});
+
+test('assistant recovery distinguishes a Google reconnect from a first-time connection', () => {
+    const result = buildAssistantRecovery({
+        surface: 'workflow',
+        code: 'GOOGLE_RECONNECT_REQUIRED',
+        issues: [{ code: 'GOOGLE_RECONNECT_REQUIRED', message: 'Reconnect Google.' }]
+    });
+
+    assert.equal(result.title, 'Reconnect Google to use this Sheet');
+    assert.equal(result.action.label, 'Reconnect Google');
+    assert.match(result.summary, /reconnect your Google account/i);
 });

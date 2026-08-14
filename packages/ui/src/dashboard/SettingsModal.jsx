@@ -4,6 +4,7 @@ import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useChangePassword, useDisconnectGoogle, useGoogleConnect } from '../api/hooks/useAuth.js';
 import { useToast } from '../context/ToastContext.jsx';
+import { useBrowserNotifications } from '../context/BrowserNotificationContext.jsx';
 import Button from '../components/ui/Button.jsx';
 
 export default function SettingsModal({ user, onClose, onLogout, initialTab = 'general' }) {
@@ -20,6 +21,7 @@ export default function SettingsModal({ user, onClose, onLogout, initialTab = 'g
     const overlayRef = useRef(null);
     const contentRef = useRef(null);
     const toast = useToast();
+    const browserNotifications = useBrowserNotifications();
 
     useGSAP(() => {
         if (!overlayRef.current || !contentRef.current) return;
@@ -41,6 +43,25 @@ export default function SettingsModal({ user, onClose, onLogout, initialTab = 'g
         toast.success('Editing preference saved.');
     };
 
+    const toggleBrowserNotifications = async () => {
+        if (!browserNotifications.enabled) {
+            const enabled = await browserNotifications.setEnabled(true);
+            if (enabled) toast.success('Browser notifications enabled.');
+            else if (browserNotifications.permission === 'denied') toast.error('Browser notifications are blocked. Allow them in your browser site settings.');
+            else if (!browserNotifications.supported) toast.error('This browser does not support notifications.');
+            else toast.error('Browser notifications were not enabled.');
+            return;
+        }
+        await browserNotifications.setEnabled(false);
+        toast.success('Browser notifications disabled.');
+    };
+
+    const sendTestBrowserNotification = () => {
+        if (browserNotifications.sendTestNotification()) toast.success('Test notification sent.');
+        else if (browserNotifications.permission === 'granted') toast.error('Your browser or system did not display the test. Check that notifications are allowed for this browser and that Focus mode is off.');
+        else toast.error('Enable browser notifications before sending a test.');
+    };
+
     const updatePassword = async event => {
         event.preventDefault();
         if (newPassword !== confirmPassword) return toast.error('Passwords do not match.');
@@ -58,7 +79,8 @@ export default function SettingsModal({ user, onClose, onLogout, initialTab = 'g
 
     const connectGoogle = async () => {
         try {
-            const response = await googleConnectMutation.mutateAsync();
+            const returnTo = `${window.location.pathname}${window.location.search}`;
+            const response = await googleConnectMutation.mutateAsync(returnTo);
             if (response?.url) window.location.href = response.url;
         } catch (error) {
             toast.error(error.message || 'Could not connect Google.');
@@ -99,6 +121,32 @@ export default function SettingsModal({ user, onClose, onLogout, initialTab = 'g
                                         ['ai', 'AI editor', 'Describe changes in plain language.'],
                                         ['visual', 'Visual editor', 'Arrange steps on the canvas.']
                                     ].map(([value, label, description]) => <button key={value} type="button" onClick={() => savePreference(value)} className={`rounded-xl border-2 p-4 text-left transition ${editorPreference === value ? 'border-indigo-500 bg-indigo-50/60' : 'border-slate-200 hover:border-indigo-200'}`}><p className="font-bold text-slate-800">{label}</p><p className="mt-1 text-xs leading-5 text-slate-500">{description}</p></button>)}
+                                </div>
+                            </section>
+
+                            <section className="border-t border-slate-100 pt-6">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div>
+                                        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">Browser notifications</h3>
+                                        <p className="mt-1 max-w-lg text-sm text-slate-500">Get an alert when Promptly finishes an AI request, needs clarification, or has changes ready to review.</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={browserNotifications.enabled}
+                                        aria-label="Browser notifications"
+                                        onClick={toggleBrowserNotifications}
+                                        disabled={!browserNotifications.supported || browserNotifications.permission === 'denied'}
+                                        className={`relative mt-1 h-7 w-12 shrink-0 rounded-full transition ${browserNotifications.enabled ? 'bg-indigo-600' : 'bg-slate-200'} disabled:cursor-not-allowed disabled:opacity-50`}
+                                    >
+                                        <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition ${browserNotifications.enabled ? 'left-6' : 'left-1'}`} />
+                                    </button>
+                                </div>
+                                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                                    {!browserNotifications.supported && <span>This browser does not support system notifications.</span>}
+                                    {browserNotifications.supported && browserNotifications.permission === 'denied' && <span>Notifications are blocked. Allow them in your browser site settings.</span>}
+                                    {browserNotifications.supported && browserNotifications.permission === 'default' && <span>Promptly will ask for permission when you enable this.</span>}
+                                    {browserNotifications.enabled && browserNotifications.permission === 'granted' && <button type="button" onClick={sendTestBrowserNotification} className="font-bold text-indigo-600 hover:text-indigo-800">Send test notification</button>}
                                 </div>
                             </section>
 

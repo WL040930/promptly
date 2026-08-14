@@ -2,6 +2,7 @@ import { AssistantMessage } from '../../models/index.js';
 import { advanceAssistantWork, createAssistantWork, finishAssistantWork } from '../../../shared/assistantWork.js';
 import { buildAssistantRecovery } from '../../../shared/assistantRecovery.js';
 import { isAssistantTurnStale } from '../assistant/assistantTurnLiveness.js';
+import { outcomeForAssistantMessage } from '../../../shared/assistantTurnNotification.js';
 
 const toIso = value => (value instanceof Date ? value : new Date(value)).toISOString();
 const nowDate = () => new Date();
@@ -148,6 +149,10 @@ export const finishChatTurn = async ({
     requestId,
     status = 'completed',
     detail = '',
+    outcome = null,
+    messageId = null,
+    kind = null,
+    isError = false,
     errorMetadata = null,
     messageModel = AssistantMessage,
     now = nowDate
@@ -176,7 +181,16 @@ export const finishChatTurn = async ({
         progress: { ...(turn.progress || {}), status, detail: detail || turn.progress?.detail || '', updatedAt: timestamp },
         ...(errorMetadata ? { errorMetadata } : {})
     };
-    await mergeChatSessionState(session, { turn: nextTurn });
+    await mergeChatSessionState(session, {
+        turn: nextTurn,
+        lastTurn: {
+            requestId,
+            status,
+            outcome: outcomeForAssistantMessage({ outcome, kind, status, isError }),
+            messageId: messageId || turn.workMessageId || null,
+            completedAt: timestamp
+        }
+    });
     return { turn: nextTurn, work, messageId: turn.workMessageId || null };
 };
 
@@ -203,6 +217,7 @@ export const failChatTurn = async ({
         requestId,
         status: 'failed',
         detail: recovery.summary || message,
+        outcome: 'error',
         errorMetadata,
         messageModel,
         now

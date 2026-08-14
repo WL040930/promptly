@@ -169,6 +169,25 @@ const normalizePlacementAnchors = (patches, schema) => {
     return { patches: normalized, warnings };
 };
 
+const canonicalize = value => {
+    if (Array.isArray(value)) return value.map(canonicalize);
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalize(value[key])]));
+};
+
+const comparableSchema = schema => ({
+    ...(schema || {}),
+    settings: { ...((schema || {}).settings || {}) },
+    fields: [
+        ...(Array.isArray(schema?.fields) ? schema.fields : []).filter(field => field && !field.deleted),
+        ...(Array.isArray(schema?.fields) ? schema.fields : [])
+            .filter(field => field && field.deleted)
+            .sort((left, right) => String(left.id).localeCompare(String(right.id)))
+    ]
+});
+
+const schemasEqual = (left, right) => JSON.stringify(canonicalize(comparableSchema(left))) === JSON.stringify(canonicalize(comparableSchema(right)));
+
 const hasUsableTitle = value => typeof value === 'string' && value.trim().length > 0;
 
 const ensureTitlePatch = (patches, schema, needsTitlePatch) => {
@@ -203,7 +222,8 @@ export const recoverWorkerProposal = async ({
     budget,
     cardinality,
     needsTitlePatch = false,
-    turnContext = null
+    turnContext = null,
+    allowAlreadySatisfied = true
 }) => {
     const memoryUpdate = getMemoryUpdate(plannerResult);
     let totalTokenUsage = tokenUsage;
@@ -369,6 +389,21 @@ export const recoverWorkerProposal = async ({
 
         const verification = verificationCall.value;
         if (verification.status === 'pass') {
+            if (allowAlreadySatisfied && schemasEqual(schema, appliedProposal.schema)) {
+                return {
+                    result: {
+                        ...result,
+                        type: 'reply',
+                        message: 'The requested form changes are already satisfied. No changes were applied.'
+                    },
+                    appliedProposal,
+                    verification,
+                    warnings,
+                    tokenUsage: totalTokenUsage,
+                    alreadySatisfied: true,
+                    alreadySatisfiedMessage: 'The requested form changes are already satisfied. No changes were applied.'
+                };
+            }
             return { result, appliedProposal, verification, warnings, tokenUsage: totalTokenUsage };
         }
 

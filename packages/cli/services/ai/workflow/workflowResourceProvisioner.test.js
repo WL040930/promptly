@@ -46,3 +46,29 @@ test('workflow resource provisioning rejects an undeclared provision reference',
         error => error.code === 'WORKFLOW_PROVISION_REFERENCE_INVALID'
     );
 });
+
+test('workflow resource provisioning blocks an old form proposal that would create a Sheet per submission', async () => {
+    let createCalls = 0;
+
+    await assert.rejects(
+        () => provisionWorkflowResources({
+            userId: 'user_1',
+            provisioningKeyPrefix: 'workflow-proposal:workflow_1:proposal_1',
+            spreadsheetService: {
+                async createAndInitialize() {
+                    createCalls += 1;
+                    throw new Error('must not run');
+                }
+            },
+            changes: [{ type: 'create_google_spreadsheet', ref: 'responses', title: 'Event Registration' }],
+            nodes: [
+                { id: 'form', type: 'trigger', subType: 'form-submission', config: { formId: 'form_1' } },
+                { id: 'create', type: 'action', subType: 'googleSheetsCreate', config: {} },
+                { id: 'append', type: 'action', subType: 'googleSheets', config: { spreadsheetId: { $provision: 'responses' } } }
+            ]
+        }),
+        error => error.code === 'WORKFLOW_FORM_RESPONSE_SHEET_DESTINATION_INVALID'
+    );
+
+    assert.equal(createCalls, 0);
+});

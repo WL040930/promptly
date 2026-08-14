@@ -344,6 +344,161 @@ test('generateFormFromPrompt uses the direct proposal fast path for a clear smal
     assert.deepEqual(operations, ['form:planner', 'form:verifier']);
 });
 
+test('generateFormFromPrompt supports moving an existing field before another field', async () => {
+    const { generateFormFromPrompt } = await import('./pipeline.js');
+    const outputs = [
+        {
+            type: 'direct_proposal',
+            summary: 'Move Special Requirements before Consent.',
+            requirements: [{ id: 'req_order', description: 'Place Special Requirements immediately before Consent.' }],
+            patches: [{ op: 'move', id: 'special_req', insertBefore: 'consent' }]
+        },
+        { status: 'pass', issues: [] }
+    ];
+    const provider = {
+        async generateContent() {
+            return { text: JSON.stringify(outputs.shift()) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Put Special Requirements right above Consent.',
+        {
+            id: 'form_1',
+            title: 'Event Registration',
+            description: '',
+            settings: {},
+            fields: [
+                { id: 'name', type: 'text', label: 'Name' },
+                { id: 'consent', type: 'checkbox', label: 'Consent', choices: ['Yes'] },
+                { id: 'special_req', type: 'textarea', label: 'Special Requirements' }
+            ]
+        },
+        [],
+        null,
+        { provider, turnContext: { expectsMutation: true, sourceText: 'Put Special Requirements right above Consent.' } }
+    );
+
+    assert.equal(result.type, 'proposal');
+    assert.deepEqual(result.schema.fields.map(field => field.id), ['name', 'special_req', 'consent']);
+    assert.deepEqual(result.patches.map(patch => patch.op), ['move']);
+});
+
+test('mutation requests repair a false conversational no-change reply before returning', async () => {
+    const { generateFormFromPrompt } = await import('./pipeline.js');
+    const outputs = [
+        { type: 'reply', message: 'Special Requirements is already above Consent.' },
+        {
+            type: 'plan_complete',
+            summary: 'Move Special Requirements before Consent.',
+            requirements: [{ id: 'req_order', description: 'Place Special Requirements immediately before Consent.' }]
+        },
+        { patches: [{ op: 'move', id: 'special_req', insertBefore: 'consent' }] },
+        { status: 'pass', issues: [] }
+    ];
+    const operations = [];
+    const provider = {
+        async generateContent(_contents, options) {
+            operations.push(options.operation);
+            return { text: JSON.stringify(outputs.shift()) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Put Special Requirements right above Consent.',
+        {
+            id: 'form_1',
+            title: 'Event Registration',
+            description: '',
+            settings: {},
+            fields: [
+                { id: 'consent', type: 'checkbox', label: 'Consent', choices: ['Yes'] },
+                { id: 'special_req', type: 'textarea', label: 'Special Requirements' }
+            ]
+        },
+        [],
+        null,
+        { provider, turnContext: { expectsMutation: true, sourceText: 'Put Special Requirements right above Consent.' } }
+    );
+
+    assert.equal(result.type, 'proposal');
+    assert.deepEqual(result.schema.fields.map(field => field.id), ['special_req', 'consent']);
+    assert.deepEqual(operations, ['form:planner', 'form:planner repair', 'form:worker', 'form:verifier']);
+});
+
+test('a verified move that is already satisfied returns a grounded no-change reply', async () => {
+    const { generateFormFromPrompt } = await import('./pipeline.js');
+    const outputs = [
+        {
+            type: 'direct_proposal',
+            summary: 'Move Special Requirements before Consent.',
+            requirements: [{ id: 'req_order', description: 'Place Special Requirements immediately before Consent.' }],
+            patches: [{ op: 'move', id: 'special_req', insertBefore: 'consent' }]
+        },
+        { status: 'pass', issues: [] }
+    ];
+    const operations = [];
+    const provider = {
+        async generateContent(_contents, options) {
+            operations.push(options.operation);
+            return { text: JSON.stringify(outputs.shift()) };
+        }
+    };
+
+    const result = await generateFormFromPrompt(
+        'Put Special Requirements right above Consent.',
+        {
+            id: 'form_1',
+            title: 'Event Registration',
+            settings: {},
+            fields: [
+                { id: 'special_req', type: 'textarea', label: 'Special Requirements' },
+                { id: 'consent', type: 'checkbox', label: 'Consent', choices: ['Yes'] }
+            ]
+        },
+        [],
+        null,
+        { provider, turnContext: { expectsMutation: true, sourceText: 'Put Special Requirements right above Consent.' } }
+    );
+
+    assert.equal(result.type, 'reply');
+    assert.match(result.message, /already satisfied/i);
+    assert.deepEqual(operations, ['form:planner', 'form:verifier']);
+});
+
+test('mutation requests fail safely when planner repair still returns a conversational reply', async () => {
+    const { generateFormFromPrompt } = await import('./pipeline.js');
+    const operations = [];
+    const provider = {
+        async generateContent(_contents, options) {
+            operations.push(options.operation);
+            return { text: JSON.stringify({ type: 'reply', message: 'It is already in the right place.' }) };
+        }
+    };
+
+    await assert.rejects(
+        generateFormFromPrompt(
+            'Put Special Requirements right above Consent.',
+            {
+                id: 'form_1',
+                title: 'Event Registration',
+                description: '',
+                settings: {},
+                fields: [
+                    { id: 'consent', type: 'checkbox', label: 'Consent', choices: ['Yes'] },
+                    { id: 'special_req', type: 'textarea', label: 'Special Requirements' }
+                ]
+            },
+            [],
+            null,
+            { provider, turnContext: { expectsMutation: true, sourceText: 'Put Special Requirements right above Consent.' } }
+        ),
+        error => error.code === 'FORM_AI_UNSAFE_PLAN'
+            && error.issues?.some(issue => issue.code === 'MUTATION_REQUEST_REQUIRES_PROPOSAL')
+    );
+    assert.deepEqual(operations, ['form:planner', 'form:planner repair']);
+});
+
 test('falls back to the worker when planner repair cannot fix malformed direct-proposal fields', async () => {
     const { generateFormFromPrompt } = await import('./pipeline.js');
     const operations = [];

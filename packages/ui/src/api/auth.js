@@ -54,7 +54,10 @@ const disconnectGoogle = () => apiRequest('/api/auth/google/disconnect', {
     method: 'POST'
 });
 
-const getGoogleConnectUrl = () => apiRequest('/api/auth/google/connect');
+const getGoogleConnectUrl = (returnTo = '') => {
+    const query = returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : '';
+    return apiRequest(`/api/auth/google/connect${query}`);
+};
 const getGoogleConnectionStatus = () => apiRequest('/api/auth/google/status');
 
 export {

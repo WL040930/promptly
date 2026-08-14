@@ -61,6 +61,16 @@ test('node config contract clears stale dependent selections when a parent chang
     });
 });
 
+test('json inputs accept any valid JSON value, including arrays', () => {
+    const result = validateNodeConfig({
+        schema: { inputs: [{ name: 'routes', type: 'json', label: 'Routes' }] },
+        config: { routes: [{ value: 'Online', handle: 'branchA' }] },
+        mode: 'active'
+    });
+    assert.equal(result.valid, true);
+    assert.deepEqual(result.issues, []);
+});
+
 test('Google Sheets Create headers are a flat text list while append values remain a row grid', async () => {
     const createSchema = (await import('../nodes/integrations/external-apps/google-sheets-create-action/schema.json', { with: { type: 'json' } })).default;
     const appendSchema = (await import('../nodes/integrations/external-apps/google-sheets-action/schema.json', { with: { type: 'json' } })).default;

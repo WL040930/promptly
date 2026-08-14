@@ -68,6 +68,30 @@ test('a deterministically selected existing Sheet receives form values only when
     assert.equal(result.nodes.find(node => node.id === 'sheet').config.valueInputOption, 'RAW');
 });
 
+test('a selected existing Sheet repairs malformed flat response values but preserves a valid custom grid', () => {
+    const input = {
+        form: { fields: [{ id: 'name', label: 'Name', type: 'text' }] },
+        bindExistingFormResponseValues: true,
+        nodes: [
+            { id: 'form', subType: 'form-submission', config: { formId: 'form_1' } },
+            { id: 'sheet', subType: 'googleSheets', config: { spreadsheetId: 'sheet_existing', values: ['Name'] } }
+        ]
+    };
+    const repaired = applyFormResponseSpreadsheetContract(input);
+    assert.equal(repaired.applied, true);
+    assert.equal(repaired.nodes.find(node => node.id === 'sheet').config.values[0].length, 3);
+
+    const preserved = applyFormResponseSpreadsheetContract({
+        ...input,
+        nodes: [
+            input.nodes[0],
+            { id: 'sheet', subType: 'googleSheets', config: { spreadsheetId: 'sheet_existing', values: [['Custom value']] } }
+        ]
+    });
+    assert.equal(preserved.applied, false);
+    assert.deepEqual(preserved.nodes[1].config.values, [['Custom value']]);
+});
+
 test('runtime-created response sheets receive the matching header and row contract', () => {
     const result = applyFormResponseSpreadsheetContract({
         form: { fields: [{ id: 'name', label: 'Name', type: 'text' }] },
@@ -81,4 +105,21 @@ test('runtime-created response sheets receive the matching header and row contra
     assert.deepEqual(result.nodes.find(node => node.id === 'create').config.headers, ['Submitted At', 'Response ID', 'Name']);
     assert.equal(result.nodes.find(node => node.id === 'append').config.values[0].length, 3);
     assert.equal(result.nodes.find(node => node.id === 'append').config.valueInputOption, 'RAW');
+});
+
+test('a repaired one-time response Sheet append is rebound to the provisioned destination', () => {
+    const result = applyFormResponseSpreadsheetContract({
+        form: { fields: [{ id: 'name', label: 'Name', type: 'text' }] },
+        resourceChanges: [{ type: 'create_google_spreadsheet', ref: 'responses', title: 'Event Registration', sheetTitle: 'Responses' }],
+        nodes: [
+            { id: 'form', subType: 'form-submission', config: { formId: 'form_1' } },
+            { id: 'append', subType: 'googleSheets', config: { operation: 'append' } }
+        ]
+    });
+
+    const append = result.nodes.find(node => node.id === 'append');
+    assert.deepEqual(append.config.spreadsheetId, { $provision: 'responses' });
+    assert.equal(append.config.range, "'Responses'!A1");
+    assert.equal(append.config.values[0].length, 3);
+    assert.deepEqual(result.resourceChanges[0].headers, ['Submitted At', 'Response ID', 'Name']);
 });

@@ -22,6 +22,19 @@ test('selectOutgoingEdges follows a logic routing handle', () => {
     assert.deepEqual(selectOutgoingEdges({ type: 'action' }, {}, edges), edges);
 });
 
+test('selectOutgoingEdges keeps every destination on the selected logic route', () => {
+    const edges = [
+        { id: 'save_approved_response', sourceHandle: 'approved' },
+        { id: 'send_approved_response_to_condition', sourceHandle: 'approved' },
+        { id: 'rejection_notice', sourceHandle: 'rejected' }
+    ];
+
+    assert.deepEqual(
+        selectOutgoingEdges({ type: 'logic' }, { targetHandle: 'approved' }, edges),
+        [edges[0], edges[1]]
+    );
+});
+
 test('a failed action only continues into an explicit Catch Error step', () => {
     const edges = [
         { id: 'email', target: 'email_1' },

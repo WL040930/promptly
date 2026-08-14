@@ -59,12 +59,12 @@ const validateGraph = (nodes, edges, registry) => {
             if (indegree.get(target) === 0) queue.push(target);
         }
     }
-    if (visited !== nodes.length) issues.push(issue('CYCLIC_WORKFLOW', 'edges', 'Workflow contains a cycle. Use a bounded loop node for iteration.'));
+    if (visited !== nodes.length) issues.push(issue('CYCLIC_WORKFLOW', 'edges', 'Workflow contains a cycle. Automation workflows must not contain cycles.'));
 
     return { issues, adjacency };
 };
 
-export const validateWorkflow = ({ nodes = [], edges = [], isActive = false, requireConnected = false, registry }) => {
+export const validateWorkflow = ({ nodes = [], edges = [], isActive = false, requireConnected = false, validateConfig = true, registry }) => {
     const issues = [];
     const warnings = [];
     if (!Array.isArray(nodes)) return { valid: false, issues: [issue('INVALID_NODES', 'nodes', 'Nodes must be an array.')] };
@@ -96,21 +96,23 @@ export const validateWorkflow = ({ nodes = [], edges = [], isActive = false, req
             if (isActive && ['disabled', 'coming_soon', 'retired'].includes(definition.implementationStatus)) {
                 issues.push(issue('UNSUPPORTED_NODE', `nodes[${index}]`, `Node "${node.type}:${node.subType}" is not implemented.`));
             }
-            const configValidation = validateNodeConfig({
-                schema: definition.configSchema || {},
-                config: node.config || {},
-                mode: isActive ? 'active' : 'draft'
-            });
-            configValidation.issues.forEach(configIssue => {
-                const target = issue(
-                    configIssue.code === 'MISSING_REQUIRED_CONFIG' ? 'MISSING_NODE_CONFIG' : `INVALID_NODE_CONFIG_${configIssue.code}`,
-                    `nodes[${index}].${configIssue.path}`,
-                    configIssue.message,
-                    configIssue.severity
-                );
-                if (target.severity === 'warning') warnings.push(target);
-                else issues.push(target);
-            });
+            if (validateConfig) {
+                const configValidation = validateNodeConfig({
+                    schema: definition.configSchema || {},
+                    config: node.config || {},
+                    mode: isActive ? 'active' : 'draft'
+                });
+                configValidation.issues.forEach(configIssue => {
+                    const target = issue(
+                        configIssue.code === 'MISSING_REQUIRED_CONFIG' ? 'MISSING_NODE_CONFIG' : `INVALID_NODE_CONFIG_${configIssue.code}`,
+                        `nodes[${index}].${configIssue.path}`,
+                        configIssue.message,
+                        configIssue.severity
+                    );
+                    if (target.severity === 'warning') warnings.push(target);
+                    else issues.push(target);
+                });
+            }
         }
         if (node.type === 'trigger') triggerNodes.push(node);
     }

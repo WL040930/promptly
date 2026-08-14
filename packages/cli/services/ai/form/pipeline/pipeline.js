@@ -161,6 +161,8 @@ export const generateFormFromPrompt = async (
                 tokenUsage,
                 budget,
                 cardinality,
+                request: prompt,
+                turnContext: options.turnContext || null,
                 onActivity: reportProviderActivity
             });
             tokenUsage = plannerCall.tokenUsage;
@@ -210,6 +212,8 @@ export const generateFormFromPrompt = async (
                     tokenUsage,
                     budget,
                     cardinality,
+                    request: prompt,
+                    turnContext: options.turnContext || null,
                     onActivity: reportProviderActivity
                 });
                 tokenUsage = plannerCall.tokenUsage;
@@ -222,6 +226,43 @@ export const generateFormFromPrompt = async (
                         throw createAIOutputError('I could not create a reliable plan for this request.', 'FORM_AI_UNSAFE_PLAN', plannerIssues);
                     }
                 }
+            }
+        }
+
+        if (plannerResult.type === 'reply' && options.turnContext?.expectsMutation) {
+            const mutationIssue = {
+                code: 'MUTATION_REQUEST_REQUIRES_PROPOSAL',
+                path: 'type',
+                message: 'This request changes the form, so the planner must return a proposal instead of a conversational reply.'
+            };
+            if (onProgress) onProgress({
+                status: 'repairing', phase: 'plan', label: 'Correcting the form plan',
+                message: 'Preparing a reviewable form change...', detail: 'The first response did not contain an editable proposal.'
+            });
+            plannerCall = await repairPlanner({
+                provider,
+                rawText: plannerCall.rawText || JSON.stringify(plannerResult),
+                issues: [mutationIssue],
+                tokenUsage,
+                budget,
+                cardinality,
+                request: prompt,
+                turnContext: options.turnContext || null,
+                onActivity: reportProviderActivity
+            });
+            tokenUsage = plannerCall.tokenUsage;
+            plannerResult = normalizePlannerType(plannerCall.value);
+            plannerIssues = getOutputIssues({ ...plannerCall, value: plannerResult, validate: validatePlannerResult });
+            if (plannerIssues.length > 0 && canRebuildDirectProposal(plannerResult, plannerIssues)) {
+                plannerResult = rebuildAsWorkerPlan(plannerResult);
+                plannerIssues = [];
+            }
+            if (plannerIssues.length > 0 || plannerResult.type === 'reply') {
+                throw createAIOutputError(
+                    'I could not safely prepare this form change because the AI did not return a valid editable proposal. No changes were applied.',
+                    'FORM_AI_UNSAFE_PLAN',
+                    plannerIssues.length > 0 ? plannerIssues : [mutationIssue]
+                );
             }
         }
 
@@ -293,12 +334,20 @@ export const generateFormFromPrompt = async (
                 budget,
                 cardinality,
                 needsTitlePatch,
-                turnContext: options.turnContext || null
+                turnContext: options.turnContext || null,
+                allowAlreadySatisfied: !pendingDraft
             });
             const result = workerResult.result;
             let appliedProposal = workerResult.appliedProposal;
             const verification = workerResult.verification;
             tokenUsage = workerResult.tokenUsage;
+            if (workerResult.alreadySatisfied) {
+                return {
+                    type: 'reply',
+                    message: workerResult.alreadySatisfiedMessage,
+                    tokenUsage: { ...tokenUsage, requestCalls: budget.calls }
+                };
+            }
             if (pendingDraft) {
                 appliedProposal = rebaseFormProposalSchema({
                     currentSchema: persistedSchema,

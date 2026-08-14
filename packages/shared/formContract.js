@@ -26,7 +26,7 @@ export const FORM_SETTINGS_KEYS = Object.freeze([
     'responseLimit',
     'confirmationMessage'
 ]);
-export const FORM_PATCH_OPERATIONS = Object.freeze(['add', 'update', 'remove', 'update_meta', 'update_settings', 'update_memory']);
+export const FORM_PATCH_OPERATIONS = Object.freeze(['add', 'update', 'remove', 'move', 'update_meta', 'update_settings', 'update_memory']);
 
 export const FORM_AI_MEMORY_LIMIT = 1500;
 export const FORM_MAX_FIELDS = 100;

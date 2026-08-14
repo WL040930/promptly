@@ -65,6 +65,31 @@ test('applyFormPatches supports explicit before placement for layout fields', ()
     assert.deepEqual(result.schema.fields.map(field => field.id), ['heading_contact', 'name']);
 });
 
+test('applyFormPatches moves an existing field without changing its definition', () => {
+    const currentSchema = {
+        title: 'Event Registration',
+        description: '',
+        settings: {},
+        fields: [
+            { id: 'name', type: 'text', label: 'Name' },
+            { id: 'consent', type: 'checkbox', label: 'Consent', required: true, choices: ['Yes'] },
+            { id: 'special_req', type: 'textarea', label: 'Special Requirements', required: false }
+        ]
+    };
+
+    const result = applyFormPatches({
+        currentSchema,
+        patches: [{ op: 'move', id: 'special_req', insertBefore: 'consent' }]
+    });
+
+    assert.deepEqual(result.schema.fields.map(field => field.id), ['name', 'special_req', 'consent']);
+    assert.deepEqual(result.schema.fields[1], currentSchema.fields[2]);
+    assert.equal(result.patches[0].originalIndex, 2);
+    assert.equal(result.patches[0].anchorLabel, 'Consent');
+    assert.deepEqual(result.patches[0].originalField, currentSchema.fields[2]);
+    assert.deepEqual(currentSchema.fields.map(field => field.id), ['name', 'consent', 'special_req']);
+});
+
 test('applyFormPatches rejects an unknown placement anchor', () => {
     assert.throws(
         () => applyFormPatches({

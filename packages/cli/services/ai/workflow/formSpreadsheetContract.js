@@ -1,4 +1,5 @@
 const activeFields = form => (form?.fields || []).filter(field => field?.id && !field.deleted && field.type !== 'heading');
+const isDataGrid = value => Array.isArray(value) && value.every(row => Array.isArray(row));
 
 const reference = (nodeId, path) => ({ $expr: 'reference', v: 1, nodeId, path });
 
@@ -29,12 +30,24 @@ export const applyFormResponseSpreadsheetContract = ({ nodes = [], resourceChang
     const hasOneFormTrigger = (nodes || []).filter(node => node?.subType === 'form-submission').length === 1;
     const contract = hasOneFormTrigger ? buildFormResponseSpreadsheetContract({ form, triggerNodeId: trigger?.id }) : null;
     if (!contract) return { nodes, resourceChanges, applied: false };
-    const provisionRefs = new Set((resourceChanges || [])
-        .filter(change => change?.type === 'create_google_spreadsheet' && change?.ref)
-        .map(change => change.ref));
+    const provisionedSheets = (resourceChanges || [])
+        .filter(change => change?.type === 'create_google_spreadsheet' && change?.ref);
+    const provisionRefs = new Set(provisionedSheets.map(change => change.ref));
     const matchedRefs = new Set((nodes || []).filter(node => (
         node?.subType === 'googleSheets' && provisionRefs.has(node.config?.spreadsheetId?.$provision)
     )).map(node => node.config.spreadsheetId.$provision));
+    // A repaired worker response can retain the Append Rows step but omit its
+    // server-owned destination. When there is exactly one new response Sheet
+    // and one unconfigured append, the intent is unambiguous: bind them here
+    // before the proposal is shown, not after a Sheet has been created.
+    const provisionedSheet = provisionedSheets.length === 1 ? provisionedSheets[0] : null;
+    const unconfiguredAppends = provisionedSheet && matchedRefs.size === 0
+        ? (nodes || []).filter(node => node?.subType === 'googleSheets'
+            && ['append', ''].includes(String(node.config?.operation || '').toLowerCase())
+            && (node.config?.spreadsheetId === undefined || node.config?.spreadsheetId === null || node.config?.spreadsheetId === ''))
+        : [];
+    const provisionedAppend = unconfiguredAppends.length === 1 ? unconfiguredAppends[0] : null;
+    if (provisionedAppend) matchedRefs.add(provisionedSheet.ref);
     const runtimeCreators = (nodes || []).filter(node => node?.subType === 'googleSheetsCreate');
     const runtimeCreator = runtimeCreators.length === 1 ? runtimeCreators[0] : null;
     const runtimeAppends = runtimeCreator
@@ -43,18 +56,27 @@ export const applyFormResponseSpreadsheetContract = ({ nodes = [], resourceChang
     const selectedExistingAppends = bindExistingFormResponseValues
         ? (nodes || []).filter(node => node?.subType === 'googleSheets'
             && typeof node.config?.spreadsheetId === 'string'
-            && (!Array.isArray(node.config?.values) || node.config.values.length === 0))
+            // A server-selected form-response destination may be safely
+            // repaired when its values are absent or malformed. A valid grid
+            // is treated as an intentional custom mapping and is preserved.
+            && (!isDataGrid(node.config?.values) || node.config.values.length === 0))
         : [];
     if (matchedRefs.size === 0 && runtimeAppends.length === 0 && selectedExistingAppends.length === 0) return { nodes, resourceChanges, applied: false };
     return {
         nodes: nodes.map(node => {
             if (matchedRefs.has(node?.config?.spreadsheetId?.$provision)
+                || node.id === provisionedAppend?.id
                 || runtimeAppends.some(append => append.id === node.id)
                 || selectedExistingAppends.some(append => append.id === node.id)) {
                 return {
                     ...node,
                     config: {
                         ...(node.config || {}),
+                        ...(node.id === provisionedAppend?.id ? {
+                            operation: 'append',
+                            spreadsheetId: { $provision: provisionedSheet.ref },
+                            range: `'${String(provisionedSheet.sheetTitle || 'Responses').replaceAll("'", "''")}'!A1`
+                        } : {}),
                         values: contract.values,
                         valueInputOption: 'RAW'
                     }

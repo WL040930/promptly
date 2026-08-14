@@ -61,6 +61,28 @@ export const applyFormPatches = ({ currentSchema = {}, patches = [] }) => {
             updatedSchema.fields[index] = { ...existing, ...cloneJson(patch.updates) };
         }
 
+        if (patch.op === 'move') {
+            const index = updatedSchema.fields.findIndex(field => field.id === patch.id);
+            const existing = updatedSchema.fields[index];
+            patch.label = existing.label || existing.title || patch.id;
+            patch.originalField = cloneJson(existing);
+            patch.originalIndex = index;
+            const anchorId = patch.insertBefore || patch.insertAfter;
+            const anchor = anchorId ? updatedSchema.fields.find(field => field.id === anchorId) : null;
+            if (anchor) patch.anchorLabel = anchor.label || anchor.title || anchor.id;
+            updatedSchema.fields.splice(index, 1);
+
+            if (patch.insertBefore) {
+                const anchorIndex = updatedSchema.fields.findIndex(field => field.id === patch.insertBefore);
+                updatedSchema.fields.splice(anchorIndex, 0, existing);
+            } else if (patch.insertAfter) {
+                const anchorIndex = updatedSchema.fields.findIndex(field => field.id === patch.insertAfter);
+                updatedSchema.fields.splice(anchorIndex + 1, 0, existing);
+            } else {
+                updatedSchema.fields.push(existing);
+            }
+        }
+
         if (patch.op === 'update_meta') {
             patch.originalMeta = {
                 title: updatedSchema.title,

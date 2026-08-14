@@ -269,10 +269,11 @@ export const buildWorkerContext = ({ schema, requirements = [], cardinality = nu
         : '',
     'If Current Form Schema.title is "Untitled Form", treat this as a new form. Include an update_meta patch with a concise, non-empty title when the request identifies the form; otherwise keep the safe title.',
     '',
-    'Existing Field IDs (these are the only valid targets for update/remove):',
+    'Existing Field IDs (these are the only valid targets for update/remove/move):',
     JSON.stringify((Array.isArray(schema.fields) ? schema.fields : []).filter(field => field && !field.deleted).map(field => field.id).filter(Boolean)),
     'The form ID is not a field ID. Never use it as a patch id.',
     'Every add patch must include a complete field object with non-empty id, type, and label.',
+    'For an ordering change, move an existing field with move plus insertBefore or insertAfter. Never re-add an existing field ID to change its position.',
     'For layout headings, use type "heading" and store the visible heading text in label. Headings are not questions.',
     `Supported form-level setting keys: ${FORM_SETTINGS_KEYS.join(', ')}. Only use these keys in update_settings; do not invent visual, branding, or delivery settings.`,
     turnContext ? `Resolved Turn Intent: ${JSON.stringify(turnContext)}` : 'Resolved Turn Intent: (none)',
@@ -290,16 +291,24 @@ export const buildWorkerContext = ({ schema, requirements = [], cardinality = nu
     JSON.stringify(requirements)
 ].join('\n');
 
-export const buildPlannerRepairContext = ({ response, issues, cardinality = null }) => [
+export const buildPlannerRepairContext = ({ response, issues, cardinality = null, request = '', turnContext = null }) => [
     'Repair the planner response below and return a complete compact JSON response.',
     'Do not include worker instructions. Keep the summary and requirement descriptions concise.',
-    'Direct proposals are only for updates to existing fields or settings. If the invalid response contains an add patch or malformed field object, return plan_complete with the same requirements and no patches so the worker can build the fields safely.',
+    'Direct proposals are only for small updates to existing fields, safe ordering moves, or settings. If the invalid response contains an add patch or malformed field object, return plan_complete with the same requirements and no patches so the worker can build the fields safely.',
+    turnContext?.expectsMutation
+        ? 'The current request is a form mutation. It must return direct_proposal or plan_complete, never reply. For existing-field ordering, describe a move requirement and let the worker emit a move patch.'
+        : '',
     '',
     'Validation Issues:',
     clampText(issues, 6000),
     '',
     'Question Cardinality:',
     cardinality ? JSON.stringify(cardinality) : '(none)',
+    '',
+    'Current Request:',
+    clampText(request, FORM_AI_CONTEXT_LIMIT),
+    'Resolved Turn Intent:',
+    turnContext ? JSON.stringify(turnContext) : '(none)',
     '',
     'Invalid Planner Response:',
     clampText(response, FORM_AI_CONTEXT_LIMIT)
@@ -341,6 +350,14 @@ const summarizePatch = (patch = {}) => {
         updates: summarizeFieldUpdates(patch.updates)
     };
     if (patch.op === 'remove') return { patchId: patch.patchId, op: patch.op, id: patch.id, label: clampText(patch.label, 120) };
+    if (patch.op === 'move') return {
+        patchId: patch.patchId,
+        op: patch.op,
+        id: patch.id,
+        label: clampText(patch.label, 120),
+        ...(patch.insertBefore ? { insertBefore: patch.insertBefore } : {}),
+        ...(patch.insertAfter ? { insertAfter: patch.insertAfter } : {})
+    };
     if (patch.op === 'update_meta') return {
         patchId: patch.patchId,
         op: patch.op,
@@ -415,10 +432,11 @@ export const buildWorkerRepairContext = ({ schema, requirements = [], response, 
     JSON.stringify(compactFormSchema(schema)),
     'If Current Form Schema.title is "Untitled Form", treat this as a new form. Include an update_meta patch with a concise, non-empty title when the request identifies the form; otherwise keep the safe title.',
     '',
-    'Existing Field IDs (these are the only valid targets for update/remove):',
+    'Existing Field IDs (these are the only valid targets for update/remove/move):',
     JSON.stringify((Array.isArray(schema.fields) ? schema.fields : []).filter(field => field && !field.deleted).map(field => field.id).filter(Boolean)),
-    'The form ID is not a field ID. Never use it as a patch id. If a requested field is not listed, use an add patch instead of update/remove.',
+    'The form ID is not a field ID. Never use it as a patch id. If a requested field is not listed, use an add patch instead of update/remove/move.',
     'Repair every listed issue. Every add patch must include a complete field object with non-empty id, type, and label. Do not repeat an omitted label.',
+    'For an ordering change, use a move patch with an existing target field ID and insertBefore or insertAfter. Never repair a reorder by adding a duplicate field.',
     `Supported form-level setting keys: ${FORM_SETTINGS_KEYS.join(', ')}. Only use these keys in update_settings; remove unsupported optional settings instead of inventing replacements.`,
     'Question Cardinality:',
     cardinality

@@ -4,9 +4,19 @@ const safeIssueMessage = issue => {
         WORKFLOW_NODE_KEY_INVALID: 'Promptly selected a workflow step that is not available.',
         WORKFLOW_EDIT_GRAPH_INVALID: 'Promptly could not create valid connections between the workflow steps.',
         WORKFLOW_EDIT_PLAN_INVALID: 'Promptly generated workflow steps that could not be verified.',
+        WORKFLOW_NODE_REF_INVALID: 'Promptly could not match one generated step to the current workflow.',
         WORKFLOW_CONNECTION_NOT_FOUND: 'Promptly could not match a generated step to the current workflow route.',
         WORKFLOW_ROUTE_NOT_FOUND: 'Promptly could not find the selected workflow route.',
         WORKFLOW_ROUTE_AMBIGUOUS: 'Promptly found more than one destination on this route.',
+        WORKFLOW_HANDLE_REQUIRED: 'An AI-generated connection did not specify the route it needs.',
+        WORKFLOW_HANDLE_INVALID: 'An AI-generated connection used an unavailable route.',
+        WORKFLOW_CONDITION_BRANCH_INVALID: 'The conditional branch proposal was incomplete.',
+        WORKFLOW_CONDITION_BRANCH_OPERATION_REQUIRED: 'Promptly needs to rebuild this conditional branch using its supported branch operation.',
+        WORKFLOW_CONDITION_SOURCE_HANDLE_REQUIRED: 'The conditional branch did not identify the route it should start from.',
+        WORKFLOW_CONDITION_CONFIG_INVALID: 'The conditional branch did not include a complete condition.',
+        WORKFLOW_CONDITION_BRANCH_ACTION_INVALID: 'One of the conditional outcomes was not a valid workflow step.',
+        WORKFLOW_CONDITION_SCHEMA_INVALID: 'Promptly could not find the required true and false routes for this condition.',
+        WORKFLOW_SEMANTIC_REF_AMBIGUOUS: 'Promptly could not identify a later route that refers to a newly generated branch step.',
         WORKFLOW_AI_NODE_SELECTION_REQUIRED: 'Promptly could not select the workflow steps needed for this request.',
         UNREACHABLE_NODE: 'Promptly could not connect all workflow steps to the trigger.',
         INVALID_WORKER_RESPONSE: 'The AI response was incomplete before any workflow steps were generated.',
@@ -41,13 +51,26 @@ const workflowGenerationIssueCodes = [
 ];
 
 const workflowConnectionIssueCodes = [
+    'WORKFLOW_NODE_REF_INVALID',
     'WORKFLOW_CONNECTION_NOT_FOUND',
     'WORKFLOW_ROUTE_NOT_FOUND',
     'WORKFLOW_ROUTE_AMBIGUOUS',
     'AMBIGUOUS_SOURCE_HANDLE',
     'AMBIGUOUS_TARGET_HANDLE',
     'UNKNOWN_SOURCE_HANDLE',
-    'UNKNOWN_TARGET_HANDLE'
+    'UNKNOWN_TARGET_HANDLE',
+    'WORKFLOW_HANDLE_REQUIRED',
+    'WORKFLOW_HANDLE_INVALID'
+];
+
+const conditionalBranchIssueCodes = [
+    'WORKFLOW_CONDITION_BRANCH_INVALID',
+    'WORKFLOW_CONDITION_BRANCH_OPERATION_REQUIRED',
+    'WORKFLOW_CONDITION_SOURCE_HANDLE_REQUIRED',
+    'WORKFLOW_CONDITION_CONFIG_INVALID',
+    'WORKFLOW_CONDITION_BRANCH_ACTION_INVALID',
+    'WORKFLOW_CONDITION_SCHEMA_INVALID',
+    'WORKFLOW_SEMANTIC_REF_AMBIGUOUS'
 ];
 
 const workflowResponseIssueCodes = [
@@ -112,12 +135,22 @@ export const buildAssistantRecovery = ({ surface = 'assistant', code, issues = [
     }
 
     if (has(safeIssues, 'WORKFLOW_RESOURCE_UNAVAILABLE', 'GOOGLE_CONNECTION_REQUIRED', 'GOOGLE_RECONNECT_REQUIRED')) {
+        const googleConnectionRequired = has(safeIssues, 'GOOGLE_CONNECTION_REQUIRED', 'GOOGLE_RECONNECT_REQUIRED');
+        const googleReconnectRequired = has(safeIssues, 'GOOGLE_RECONNECT_REQUIRED');
         return recovery({
             type: 'connection_required',
-            title: 'A connected service needs attention',
-            summary: 'Promptly could not verify one of the account resources needed for this change.',
-            steps: ['Check the relevant connection in Settings.', 'Return here and try the request again.'],
-            action: { type: 'open_connections', label: 'Open connections' },
+            title: googleConnectionRequired
+                ? `${googleReconnectRequired ? 'Reconnect' : 'Connect'} Google to use this Sheet`
+                : 'A connected service needs attention',
+            summary: googleConnectionRequired
+                ? (googleReconnectRequired
+                    ? 'Promptly needs you to reconnect your Google account before it can use the requested Sheet in this workflow.'
+                    : 'Promptly needs access to Google Sheets to find or create the requested Sheet for this workflow.')
+                : 'Promptly could not verify one of the account resources needed for this change.',
+            steps: googleConnectionRequired
+                ? [`${googleReconnectRequired ? 'Reconnect' : 'Connect'} your Google account in Settings → Connections.`, 'Return here and try the request again.']
+                : ['Check the relevant connection in Settings.', 'Return here and try the request again.'],
+            action: { type: 'open_connections', label: googleConnectionRequired ? `${googleReconnectRequired ? 'Reconnect' : 'Connect'} Google` : 'Open connections' },
             details: safeIssues
         });
     }
@@ -140,6 +173,19 @@ export const buildAssistantRecovery = ({ surface = 'assistant', code, issues = [
             summary: 'The proposed Sheet header row and form-response row were in different formats. No changes were made.',
             steps: ['Promptly will use one column for each form field, plus Submitted At and Response ID.', 'Try the same request again to generate a fresh proposal.'],
             action: retryAction,
+            details: safeIssues,
+            retryable: true
+        });
+    }
+
+    if (has(safeIssues, ...conditionalBranchIssueCodes)) {
+        return recovery({
+            type: 'conditional_branch_invalid',
+            title: 'Promptly could not add the conditional branch',
+            summary: 'The proposed if/otherwise branch was incomplete, so no workflow changes were made.',
+            steps: ['Try the request again so Promptly can rebuild the conditional branch.', 'If it keeps happening, name the condition and the two outcomes.'],
+            action: retryAction,
+            location: 'Conditional branch proposal — no workflow node was changed.',
             details: safeIssues,
             retryable: true
         });
@@ -200,6 +246,22 @@ export const buildAssistantRecovery = ({ surface = 'assistant', code, issues = [
             summary: 'The AI service was temporarily unavailable or took too long to respond. No changes were made.',
             steps: ['Try the same request again in a moment.'],
             action: retryAction,
+            details: safeIssues,
+            retryable: true
+        });
+    }
+
+    // A failed repair may end with an empty operation list, but an earlier
+    // invalid node reference is the useful cause. Show that connection issue
+    // instead of incorrectly blaming the current workflow or its nodes.
+    if (has(safeIssues, 'WORKFLOW_NODE_REF_INVALID')) {
+        return recovery({
+            type: 'workflow_node_reference_invalid',
+            title: 'Promptly could not match a workflow step',
+            summary: 'One proposed change referred to a step that is no longer in the current workflow. No changes were made.',
+            steps: ['Try the request again so Promptly can rebuild the change from the latest workflow.', 'If it keeps happening, describe which existing step should come before the new step.'],
+            action: retryAction,
+            location: 'Workflow connection proposal — no workflow node was changed.',
             details: safeIssues,
             retryable: true
         });

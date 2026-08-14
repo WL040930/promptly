@@ -23,6 +23,11 @@ export default function MessageOptionsWidget({
     const evaluation = resolveClarificationSubmission({ inputs: options, state: isResolved ? initialState : formState });
     const answers = resolution?.answers || evaluation.answers;
     const canSubmit = evaluation.complete;
+    const resolutionTitle = resolution?.type === 'superseded'
+        ? 'Question superseded'
+        : resolution?.type === 'defaulted'
+            ? 'Defaults applied'
+            : 'Answer recorded';
 
     const handleToggle = (inputId, option, isSingle) => {
         setFormState(previous => updateClarificationDraft({
@@ -53,12 +58,12 @@ export default function MessageOptionsWidget({
                         <Check size={14} strokeWidth={2.75} />
                     </span>
                     <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-800">{resolution?.type === 'superseded' ? 'Question superseded' : 'Input received'}</p>
+                        <p className="text-xs font-bold text-slate-800">{resolutionTitle}</p>
                         <p className="mt-0.5 truncate text-xs text-slate-500">
                             {resolution?.type === 'superseded'
                                 ? 'Promptly continued with a newer request.'
                                 : resolution?.type === 'defaulted'
-                                ? 'Promptly continued with sensible defaults.'
+                                ? 'Promptly chose sensible defaults for this question.'
                                 : answers.length > 0
                                     ? answers.map(({ label, answer }) => `${label}: ${answer}`).join(' · ')
                                     : 'The response was saved.'}

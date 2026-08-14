@@ -3,6 +3,7 @@ title: "Loop (Iterator)"
 type: logic
 subType: loop
 description: "Iterate over an array"
+implementationStatus: retired
 ui:
   icon: loop
   color: text-blue-500
@@ -11,11 +12,8 @@ ui:
   shadow: shadow-blue-100
 ---
 
-# Loop (Iterator) Node
+# Loop (Iterator) Node — Retired
 
-## When to use this node
-Iterate over an array
-
-## Configuration Schema
-The LLM must configure this node with the following JSON schema:
-- (Define schema here)
+This legacy node only exposed an array as output; it did not execute downstream
+steps once per item. It is retired from the node library and AI catalogue until
+the execution engine has a real, bounded iteration model.

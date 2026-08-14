@@ -1,9 +1,11 @@
+import { validateFormResponseSheetDestination } from './domain/formResponseSheetDestination.js';
+
 const isProvisionReference = value => value !== null && typeof value === 'object' && !Array.isArray(value)
     && typeof value.$provision === 'string' && Object.keys(value).length === 1;
 
 const provisionError = (message, details = {}) => {
     const error = new Error(message);
-    error.code = 'WORKFLOW_PROVISION_REFERENCE_INVALID';
+    error.code = details.code || 'WORKFLOW_PROVISION_REFERENCE_INVALID';
     error.status = 409;
     Object.assign(error, details);
     return error;
@@ -46,11 +48,25 @@ const resolveSheetConfigs = (nodes, resources) => (nodes || []).map(node => {
 export const provisionWorkflowResources = async ({
     nodes = [],
     changes = [],
+    spreadsheetIntent = null,
+    capabilities = [],
     userId,
     provisioningKeyPrefix,
     spreadsheetService,
     onFileReady = null
 } = {}) => {
+    const destinationIssues = validateFormResponseSheetDestination({
+        nodes,
+        resourceChanges: changes,
+        spreadsheetIntent,
+        capabilities
+    });
+    if (destinationIssues.length > 0) {
+        throw provisionError(
+            'This form response proposal mixes one-time and per-submission Google Sheet creation. Generate a new proposal before applying it.',
+            { code: 'WORKFLOW_FORM_RESPONSE_SHEET_DESTINATION_INVALID', issues: destinationIssues }
+        );
+    }
     const resources = new Map();
     const resolvedChanges = [];
 

@@ -15,6 +15,7 @@ import { buildFormPresentation } from '../../assistant/proposalPresentation.js';
 import { advanceAssistantWork, createAssistantWork, finishAssistantWork } from '../../../../shared/assistantWork.js';
 import { isAssistantTurnStale } from '../../assistant/assistantTurnLiveness.js';
 import { resolveClarificationSubmission } from '../../../../shared/clarificationContract.js';
+import { outcomeForAssistantMessage } from '../../../../shared/assistantTurnNotification.js';
 
 const MAX_HISTORY = 100;
 
@@ -171,7 +172,14 @@ export const createFormAssistant = ({
             inFlightRequestId: null,
             inFlightStartedAt: null,
             inFlightLastActivityAt: null,
-            progress: null
+            progress: null,
+            lastTurn: {
+                requestId,
+                status: 'failed',
+                outcome: 'error',
+                messageId: workMessage?.id || null,
+                completedAt: now().toISOString()
+            }
         }, { transaction });
         return true;
     };
@@ -424,6 +432,7 @@ export const createFormAssistant = ({
                     proposalMessageId: assistantMessage.id,
                     previousActiveProposalMessageId: closesPendingProposal ? null : state.activeProposalMessageId
                 });
+                const terminalOutcome = outcomeForAssistantMessage({ kind });
                 await freshState.update({
                     ...statePatch,
                     version: freshState.version + 1,
@@ -431,7 +440,14 @@ export const createFormAssistant = ({
                     inFlightRequestId: null,
                     inFlightStartedAt: null,
                     inFlightLastActivityAt: null,
-                    progress: null
+                    progress: null,
+                    lastTurn: {
+                        requestId,
+                        status: terminalOutcome === 'error' ? 'failed' : 'completed',
+                        outcome: terminalOutcome,
+                        messageId: assistantMessage.id,
+                        completedAt: now().toISOString()
+                    }
                 }, { transaction });
                 response = {
                     userMsg: asJson(userMessage),
@@ -484,7 +500,14 @@ export const createFormAssistant = ({
                     inFlightRequestId: null,
                     inFlightStartedAt: null,
                     inFlightLastActivityAt: null,
-                    progress: null
+                    progress: null,
+                    lastTurn: {
+                        requestId,
+                        status: 'failed',
+                        outcome: 'error',
+                        messageId: assistantMessage.id,
+                        completedAt: now().toISOString()
+                    }
                 }, { transaction });
                 response = {
                     userMsg: asJson(userMessage),
@@ -555,7 +578,8 @@ export const createFormAssistant = ({
                 inFlightRequestId: null,
                 inFlightStartedAt: null,
                 inFlightLastActivityAt: null,
-                progress: null
+                progress: null,
+                lastTurn: null
             }, { transaction });
             return { cleared: true, deletedMessages, state: asJson(state) };
         });

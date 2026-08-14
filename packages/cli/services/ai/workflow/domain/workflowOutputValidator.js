@@ -1,3 +1,10 @@
+import {
+    SEMANTIC_CONTROL_FLOW_NODE_KEYS,
+    SWITCH_BRANCH_HANDLES,
+    isLegacyControlFlowOperation,
+    legacyOperationIssueForNodeKey
+} from './editCompiler/contracts.js';
+
 const MAX_TEXT = 4000;
 const MAX_REQUIREMENTS = 30;
 const MAX_OPERATIONS = 50;
@@ -125,6 +132,224 @@ const validateResourceChanges = changes => {
 };
 
 const LINEAR_STEP_REF = /^[a-z][a-z0-9_]{0,63}$/;
+const CONDITION_OPERATORS_WITHOUT_VALUE_B = new Set(['exists', 'empty', 'truthy', 'falsy']);
+const MERGE_MODES = new Set(['object', 'array', 'last']);
+
+const missingConditionValue = value => value === undefined || value === null || (typeof value === 'string' && !value.trim());
+
+const validateConditionBranchAction = (action, path) => {
+    if (!isObject(action)) return [issue('WORKFLOW_CONDITION_BRANCH_ACTION_INVALID', path, 'Each conditional outcome must be a node definition.')];
+    const issues = [
+        ...textIssues(action.nodeKey, `${path}.nodeKey`, { required: true, max: 150 })
+    ];
+    if (SEMANTIC_CONTROL_FLOW_NODE_KEYS.has(action.nodeKey)) {
+        issues.push(issue('WORKFLOW_CONDITION_BRANCH_ACTION_INVALID', `${path}.nodeKey`, 'A conditional outcome must be an ordinary node. Add another control-flow step with its semantic operation.'));
+    }
+    if (!isObject(action.config)) issues.push(issue('WORKFLOW_CONDITION_BRANCH_ACTION_INVALID', `${path}.config`, 'Each conditional outcome requires a config object.'));
+    if (action.title !== undefined) issues.push(...textIssues(action.title, `${path}.title`, { max: 180 }));
+    if (action.description !== undefined) issues.push(...textIssues(action.description, `${path}.description`, { max: 1000 }));
+    if (action.afterNodeRef !== undefined) issues.push(...textIssues(action.afterNodeRef, `${path}.afterNodeRef`, { max: 64 }));
+    return issues;
+};
+
+const validateConditionBranchOperation = (operation, path) => {
+    const issues = [];
+    if (!isObject(operation.from)) {
+        issues.push(issue('WORKFLOW_CONDITION_SOURCE_HANDLE_REQUIRED', `${path}.from`, 'A conditional branch must identify the existing source route.'));
+    } else {
+        issues.push(...textIssues(operation.from.nodeRef, `${path}.from.nodeRef`, { required: true, max: 64 }));
+        if (missingConditionValue(operation.from.handle)) {
+            issues.push(issue('WORKFLOW_CONDITION_SOURCE_HANDLE_REQUIRED', `${path}.from.handle`, 'A conditional branch must identify the source route handle.'));
+        } else {
+            issues.push(...textIssues(operation.from.handle, `${path}.from.handle`, { required: true, max: 100 }));
+        }
+    }
+
+    const condition = operation.condition;
+    if (!isObject(condition)) {
+        issues.push(issue('WORKFLOW_CONDITION_BRANCH_INVALID', `${path}.condition`, 'A conditional branch requires a condition definition.'));
+    } else {
+        if (condition.title !== undefined) issues.push(...textIssues(condition.title, `${path}.condition.title`, { max: 180 }));
+        if (condition.description !== undefined) issues.push(...textIssues(condition.description, `${path}.condition.description`, { max: 1000 }));
+        if (condition.afterNodeRef !== undefined) issues.push(...textIssues(condition.afterNodeRef, `${path}.condition.afterNodeRef`, { max: 64 }));
+        if (!isObject(condition.config)) {
+            issues.push(issue('WORKFLOW_CONDITION_CONFIG_INVALID', `${path}.condition.config`, 'A conditional branch requires a condition config object.'));
+        } else {
+            if (missingConditionValue(condition.config.valueA)) {
+                issues.push(issue('WORKFLOW_CONDITION_CONFIG_INVALID', `${path}.condition.config.valueA`, 'The condition needs a value to evaluate.'));
+            }
+            issues.push(...textIssues(condition.config.operator, `${path}.condition.config.operator`, { required: true, max: 100 }));
+            if (!CONDITION_OPERATORS_WITHOUT_VALUE_B.has(condition.config.operator) && missingConditionValue(condition.config.valueB)) {
+                issues.push(issue('WORKFLOW_CONDITION_CONFIG_INVALID', `${path}.condition.config.valueB`, 'The condition needs the value to compare against.'));
+            }
+        }
+    }
+
+    issues.push(...validateConditionBranchAction(operation.whenTrue, `${path}.whenTrue`));
+    issues.push(...validateConditionBranchAction(operation.whenFalse, `${path}.whenFalse`));
+    return issues;
+};
+
+const validateEndpoint = (endpoint, path, { code, message, requireHandle = false } = {}) => {
+    if (!isObject(endpoint)) return [issue(code, path, message)];
+    const issues = textIssues(endpoint.nodeRef, `${path}.nodeRef`, { required: true, max: 64 });
+    if (requireHandle && missingConditionValue(endpoint.handle)) {
+        issues.push(issue(code, `${path}.handle`, `${message} Include the route handle.`));
+    } else if (endpoint.handle !== undefined && endpoint.handle !== null) {
+        issues.push(...textIssues(endpoint.handle, `${path}.handle`, { required: true, max: 100 }));
+    }
+    return issues;
+};
+
+const validateControlDefinition = (definition, path, { code, message, config = true } = {}) => {
+    if (!isObject(definition)) return [issue(code, path, message)];
+    const issues = [];
+    if (definition.title !== undefined) issues.push(...textIssues(definition.title, `${path}.title`, { max: 180 }));
+    if (definition.description !== undefined) issues.push(...textIssues(definition.description, `${path}.description`, { max: 1000 }));
+    if (definition.afterNodeRef !== undefined) issues.push(...textIssues(definition.afterNodeRef, `${path}.afterNodeRef`, { max: 64 }));
+    if (config && !isObject(definition.config)) issues.push(issue(code, `${path}.config`, `${message} It needs a config object.`));
+    return issues;
+};
+
+const validateSemanticAction = (action, path, { code, message } = {}) => {
+    if (!isObject(action)) return [issue(code, path, message)];
+    const issues = [
+        ...textIssues(action.nodeKey, `${path}.nodeKey`, { required: true, max: 150 })
+    ];
+    if (SEMANTIC_CONTROL_FLOW_NODE_KEYS.has(action.nodeKey)) {
+        issues.push(issue(code, `${path}.nodeKey`, 'Use a separate semantic operation for a control-flow node.'));
+    }
+    if (!isObject(action.config)) issues.push(issue(code, `${path}.config`, `${message} It needs a config object.`));
+    if (action.title !== undefined) issues.push(...textIssues(action.title, `${path}.title`, { max: 180 }));
+    if (action.description !== undefined) issues.push(...textIssues(action.description, `${path}.description`, { max: 1000 }));
+    if (action.afterNodeRef !== undefined) issues.push(...textIssues(action.afterNodeRef, `${path}.afterNodeRef`, { max: 64 }));
+    return issues;
+};
+
+const validateSwitchRoutesOperation = (operation, path) => {
+    const issues = [
+        ...validateEndpoint(operation.from, `${path}.from`, {
+            code: 'WORKFLOW_SWITCH_SOURCE_HANDLE_REQUIRED',
+            message: 'A Switch must identify the source route.',
+            requireHandle: true
+        }),
+        ...validateControlDefinition(operation.switch, `${path}.switch`, {
+            code: 'WORKFLOW_SWITCH_INVALID',
+            message: 'A Switch route needs a Switch definition.'
+        })
+    ];
+    const switchDefinition = operation.switch;
+    if (isObject(switchDefinition?.config) && missingConditionValue(switchDefinition.config.valueToTest)) {
+        issues.push(issue('WORKFLOW_SWITCH_CONFIG_INVALID', `${path}.switch.config.valueToTest`, 'A Switch needs a value to test.'));
+    }
+    if (!Array.isArray(operation.cases) || operation.cases.length === 0 || operation.cases.length > SWITCH_BRANCH_HANDLES.length) {
+        issues.push(issue('WORKFLOW_SWITCH_CASES_INVALID', `${path}.cases`, 'A Switch needs one or two case routes.'));
+    } else {
+        const values = new Set();
+        operation.cases.forEach((routeCase, index) => {
+            const casePath = `${path}.cases[${index}]`;
+            if (!isObject(routeCase) || !Object.hasOwn(routeCase || {}, 'value')) {
+                issues.push(issue('WORKFLOW_SWITCH_CASE_INVALID', casePath, 'Each Switch case needs a value and an action.'));
+                return;
+            }
+            if (!['string', 'number', 'boolean'].includes(typeof routeCase.value) && routeCase.value !== null) {
+                issues.push(issue('WORKFLOW_SWITCH_CASE_INVALID', `${casePath}.value`, 'Switch case values must be strings, numbers, booleans, or null.'));
+            } else {
+                const key = JSON.stringify(routeCase.value);
+                if (values.has(key)) issues.push(issue('WORKFLOW_SWITCH_CASE_INVALID', `${casePath}.value`, 'Switch case values must be unique.'));
+                values.add(key);
+            }
+            issues.push(...validateSemanticAction(routeCase.action, `${casePath}.action`, {
+                code: 'WORKFLOW_SWITCH_CASE_ACTION_INVALID',
+                message: 'Each Switch case needs an action.'
+            }));
+        });
+    }
+    issues.push(...validateSemanticAction(operation.otherwise, `${path}.otherwise`, {
+        code: 'WORKFLOW_SWITCH_DEFAULT_ACTION_INVALID',
+        message: 'A Switch needs a default action.'
+    }));
+    return issues;
+};
+
+const validateErrorHandlerOperation = (operation, path) => {
+    const issues = [
+        ...validateEndpoint(operation.connection?.from, `${path}.connection.from`, {
+            code: 'WORKFLOW_ERROR_HANDLER_CONNECTION_INVALID',
+            message: 'An error handler needs the existing source connection.'
+        }),
+        ...validateEndpoint(operation.connection?.to, `${path}.connection.to`, {
+            code: 'WORKFLOW_ERROR_HANDLER_CONNECTION_INVALID',
+            message: 'An error handler needs the existing destination connection.'
+        }),
+        ...validateControlDefinition(operation.handler, `${path}.handler`, {
+            code: 'WORKFLOW_ERROR_HANDLER_INVALID',
+            message: 'An error handler needs a Catch Error definition.'
+        }),
+        ...validateSemanticAction(operation.whenError, `${path}.whenError`, {
+            code: 'WORKFLOW_ERROR_HANDLER_RECOVERY_INVALID',
+            message: 'An error handler needs a recovery action.'
+        })
+    ];
+    return issues;
+};
+
+const validateApprovalGateOperation = (operation, path) => {
+    const issues = [
+        ...validateEndpoint(operation.connection?.from, `${path}.connection.from`, {
+            code: 'WORKFLOW_APPROVAL_GATE_CONNECTION_INVALID',
+            message: 'An approval gate needs the existing source connection.'
+        }),
+        ...validateEndpoint(operation.connection?.to, `${path}.connection.to`, {
+            code: 'WORKFLOW_APPROVAL_GATE_CONNECTION_INVALID',
+            message: 'An approval gate needs the existing destination connection.'
+        }),
+        ...validateControlDefinition(operation.approval, `${path}.approval`, {
+            code: 'WORKFLOW_APPROVAL_GATE_INVALID',
+            message: 'An approval gate needs an Approval definition.'
+        })
+    ];
+    if (operation.whenRejected !== undefined) {
+        issues.push(...validateSemanticAction(operation.whenRejected, `${path}.whenRejected`, {
+            code: 'WORKFLOW_APPROVAL_REJECTED_ACTION_INVALID',
+            message: 'The rejected route needs an action.'
+        }));
+    }
+    return issues;
+};
+
+const validateJoinBranchesOperation = (operation, path) => {
+    const issues = [];
+    if (!Array.isArray(operation.branches) || operation.branches.length < 2 || operation.branches.length > 12) {
+        issues.push(issue('WORKFLOW_MERGE_BRANCHES_INVALID', `${path}.branches`, 'A branch join needs between two and twelve incoming routes.'));
+    } else {
+        const routes = new Set();
+        operation.branches.forEach((branch, index) => {
+            const branchPath = `${path}.branches[${index}].from`;
+            issues.push(...validateEndpoint(branch?.from, branchPath, {
+                code: 'WORKFLOW_MERGE_BRANCH_INVALID',
+                message: 'Each branch join input needs a source route.'
+            }));
+            const route = branch?.from?.nodeRef ? `${branch.from.nodeRef}:${branch.from.handle || ''}` : null;
+            if (route) {
+                if (routes.has(route)) issues.push(issue('WORKFLOW_MERGE_BRANCHES_DUPLICATE', branchPath, 'Each branch join input must be different.'));
+                routes.add(route);
+            }
+        });
+    }
+    issues.push(...validateControlDefinition(operation.merge, `${path}.merge`, {
+        code: 'WORKFLOW_MERGE_INVALID',
+        message: 'A branch join needs a Merge definition.'
+    }));
+    if (isObject(operation.merge?.config) && operation.merge.config.mergeMode !== undefined && !MERGE_MODES.has(operation.merge.config.mergeMode)) {
+        issues.push(issue('WORKFLOW_MERGE_CONFIG_INVALID', `${path}.merge.config.mergeMode`, 'Merge mode must be object, array, or last.'));
+    }
+    issues.push(...validateSemanticAction(operation.continueWith, `${path}.continueWith`, {
+        code: 'WORKFLOW_MERGE_CONTINUATION_INVALID',
+        message: 'A branch join needs a post-merge action.'
+    }));
+    return issues;
+};
 
 /**
  * A linear blueprint is optional because branching and existing-workflow
@@ -227,11 +452,30 @@ export const validateWorkflowWorkerResult = result => {
     if (!Array.isArray(result.operations)) return [issue('INVALID_OPERATIONS', 'operations', 'Worker operations must be an array.')];
     if (result.operations.length === 0) return [issue('EMPTY_OPERATIONS', 'operations', 'An edit proposal must contain at least one operation.')];
     if (result.operations.length > MAX_OPERATIONS) return [issue('TOO_MANY_OPERATIONS', 'operations', `At most ${MAX_OPERATIONS} operations are allowed.`)];
-    return result.operations.flatMap((operation, index) => (
-        isObject(operation) && typeof operation.op === 'string' && operation.op
-            ? []
-            : [issue('INVALID_OPERATION', `operations[${index}]`, 'Every operation requires an op value.')]
-    ));
+    return result.operations.flatMap((operation, index) => {
+        const path = `operations[${index}]`;
+        if (!isObject(operation) || typeof operation.op !== 'string' || !operation.op) {
+            return [issue('INVALID_OPERATION', path, 'Every operation requires an op value.')];
+        }
+        if (isLegacyControlFlowOperation(operation)) {
+            const requirement = legacyOperationIssueForNodeKey(operation.node?.nodeKey);
+            return [issue(requirement.code, `${path}.node.nodeKey`, requirement.message)];
+        }
+        switch (operation.op) {
+        case 'add_condition_branch':
+            return validateConditionBranchOperation(operation, path);
+        case 'add_switch_routes':
+            return validateSwitchRoutesOperation(operation, path);
+        case 'add_error_handler':
+            return validateErrorHandlerOperation(operation, path);
+        case 'add_approval_gate':
+            return validateApprovalGateOperation(operation, path);
+        case 'join_branches':
+            return validateJoinBranchesOperation(operation, path);
+        default:
+            return [];
+        }
+    });
 };
 
 export const validateWorkflowVerifierResult = result => {

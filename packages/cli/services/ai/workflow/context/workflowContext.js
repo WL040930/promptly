@@ -1,5 +1,5 @@
 import { getClarificationModeInstruction, normalizeClarificationMode } from '../../../../../shared/agentContract.js';
-import { buildWorkflowEditView } from '../workflowAgentService.js';
+import { buildWorkflowEditView } from '../domain/editCompiler/index.js';
 import { projectFormResourceContext } from '../../form/context/formResourceContext.js';
 import { buildFormBindingCatalogue } from '../../../../../shared/workflowExpressions.js';
 
@@ -221,6 +221,7 @@ export const buildWorkflowWorkerContext = ({
     requirements,
     capabilities,
     resourceChanges = [],
+    sheetDestination = null,
     resourceContext,
     resourceSelections = {},
     formSchema = null,
@@ -256,6 +257,9 @@ export const buildWorkflowWorkerContext = ({
     JSON.stringify(linearSteps || []),
     'Machine Capabilities:',
     JSON.stringify(capabilities || []),
+    '',
+    'Form Response Sheet Destination:',
+    JSON.stringify(sheetDestination || 'none'),
     '',
     'Resource Changes:',
     JSON.stringify(resourceChanges || []),

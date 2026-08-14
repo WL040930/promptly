@@ -127,7 +127,7 @@ const validateStructuredInput = (input, value) => {
     const parsed = parseStructuredValue(value);
     if (parsed.error) return issue('INVALID_JSON', input.name, `${input.label || input.name} must contain valid JSON.`);
     const structured = parsed.value;
-    if (['object', 'json', 'key-value'].includes(input.type) && !isPlainObject(structured)) {
+    if (['object', 'key-value'].includes(input.type) && !isPlainObject(structured)) {
         return issue('INVALID_OBJECT', input.name, `${input.label || input.name} must be an object.`);
     }
     if (input.type === 'string-list' && (!Array.isArray(structured) || structured.some(item => typeof item !== 'string'))) {

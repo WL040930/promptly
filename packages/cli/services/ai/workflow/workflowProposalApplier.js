@@ -3,6 +3,7 @@ import { compileWorkflowBindings, validateWorkflowExpressions } from '../../../.
 import { finishAssistantWork } from '../../../../shared/assistantWork.js';
 import { applyFormResponseSpreadsheetContract } from './formSpreadsheetContract.js';
 import { provisionWorkflowResources } from './workflowResourceProvisioner.js';
+import { validateFormResponseSheetDestination } from './domain/formResponseSheetDestination.js';
 
 const isProvisionReference = value => value !== null && typeof value === 'object' && !Array.isArray(value)
     && typeof value.$provision === 'string' && Object.keys(value).length === 1;
@@ -118,6 +119,20 @@ export const createWorkflowProposalApplier = ({
                 { issues: payload.readiness.issues || [], setupActions: payload.readiness.setupActions || [] }
             );
         }
+        const destinationIssues = validateFormResponseSheetDestination({
+            nodes: payload.nodes || [],
+            resourceChanges: payload.resourceChanges || [],
+            spreadsheetIntent: payload.resourceIntent,
+            capabilities: payload.capabilities || []
+        });
+        if (destinationIssues.length > 0) {
+            throw errorWith(
+                'WORKFLOW_FORM_RESPONSE_SHEET_DESTINATION_INVALID',
+                'This proposal mixes one-time and per-submission Google Sheet creation. Generate a new proposal before applying it.',
+                409,
+                { issues: destinationIssues }
+            );
+        }
 
         // The initial status lock happens through a separate Sequelize
         // instance. Reload before each later write so a stale outer instance
@@ -201,6 +216,8 @@ export const createWorkflowProposalApplier = ({
                 const provisioned = await provisionWorkflowResources({
                     nodes: responseSheetContract.nodes,
                     changes: responseSheetContract.resourceChanges,
+                    spreadsheetIntent: payload.resourceIntent,
+                    capabilities: payload.capabilities || [],
                     userId,
                     provisioningKeyPrefix: `workflow-proposal:${workflowId}:${proposalMessageId}`,
                     spreadsheetService,

@@ -211,6 +211,136 @@ test('worker validator rejects an operation missing an op field', () => {
     assert.ok(issues.some(i => i.code === 'INVALID_OPERATION'));
 });
 
+test('worker validator accepts the semantic conditional branch operation', () => {
+    const issues = validateWorkflowWorkerResult({
+        operations: [{
+            op: 'add_condition_branch',
+            from: { nodeRef: 'n2', handle: 'approved' },
+            condition: {
+                ref: 'attendance_is_online',
+                title: 'Attendance is Online',
+                config: { valueA: { $binding: 'form_field_2' }, operator: 'equals', valueB: 'Online' }
+            },
+            whenTrue: { ref: 'send_online', nodeKey: 'action:email', config: { subject: 'Joining instructions' } },
+            whenFalse: { ref: 'send_venue', nodeKey: 'action:email', config: { subject: 'Venue instructions' } }
+        }]
+    });
+
+    assert.deepEqual(issues, []);
+});
+
+test('worker validator accepts every semantic control-flow operation', () => {
+    const issues = validateWorkflowWorkerResult({
+        operations: [
+            {
+                op: 'add_switch_routes',
+                from: { nodeRef: 'n1', handle: 'event' },
+                switch: { ref: 'route_mode', config: { valueToTest: { $binding: 'form_field_2' } } },
+                cases: [{ value: 'Online', action: { ref: 'online', nodeKey: 'action:email', config: {} } }],
+                otherwise: { ref: 'other', nodeKey: 'action:email', config: {} }
+            },
+            {
+                op: 'add_error_handler',
+                connection: { from: { nodeRef: 'n2', handle: 'outputData' }, to: { nodeRef: 'n3', handle: 'event' } },
+                handler: { ref: 'handle_error', config: {} },
+                whenError: { ref: 'alert_team', nodeKey: 'action:email', config: {} }
+            },
+            {
+                op: 'add_approval_gate',
+                connection: { from: { nodeRef: 'n4', handle: 'event' }, to: { nodeRef: 'n5', handle: 'event' } },
+                approval: { ref: 'review', config: {} },
+                whenRejected: { ref: 'notify_rejected', nodeKey: 'action:email', config: {} }
+            },
+            {
+                op: 'join_branches',
+                branches: [{ from: { nodeRef: 'n6', handle: 'outputData' } }, { from: { nodeRef: 'n7', handle: 'outputData' } }],
+                merge: { ref: 'join_routes', config: { mergeMode: 'array' } },
+                continueWith: { ref: 'log_join', nodeKey: 'action:logger', config: {} }
+            }
+        ]
+    });
+
+    assert.deepEqual(issues, []);
+});
+
+test('worker validator rejects a meaningful but incomplete approval rejection action', () => {
+    const issues = validateWorkflowWorkerResult({
+        operations: [{
+            op: 'add_approval_gate',
+            connection: { from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'n2', handle: 'event' } },
+            approval: { ref: 'review', config: {} },
+            whenRejected: { ref: 'notify_rejection' }
+        }]
+    });
+
+    assert.ok(issues.some(item => item.code === 'WORKFLOW_APPROVAL_REJECTED_ACTION_INVALID'));
+});
+
+test('worker validator rejects malformed semantic control-flow operations before compilation', () => {
+    const issues = validateWorkflowWorkerResult({
+        operations: [
+            {
+                op: 'add_switch_routes',
+                from: { nodeRef: 'n1' },
+                switch: { ref: 'route', config: {} },
+                cases: [{ value: 'Online', action: { ref: 'same', nodeKey: 'action:email', config: {} } }, { value: 'Online', action: { ref: 'same', nodeKey: 'action:email', config: {} } }],
+                otherwise: { ref: 'same', nodeKey: 'logic:approval', config: {} }
+            },
+            {
+                op: 'join_branches',
+                branches: [{ from: { nodeRef: 'n2' } }],
+                merge: { ref: 'merge', config: { mergeMode: 'invalid' } },
+                continueWith: { ref: 'merge', nodeKey: 'action:logger', config: {} }
+            }
+        ]
+    });
+
+    assert.ok(issues.some(item => item.code === 'WORKFLOW_SWITCH_SOURCE_HANDLE_REQUIRED'));
+    assert.ok(issues.some(item => item.code === 'WORKFLOW_SWITCH_CONFIG_INVALID'));
+    assert.ok(issues.some(item => item.code === 'WORKFLOW_SWITCH_CASE_INVALID'));
+    assert.ok(issues.some(item => item.code === 'WORKFLOW_MERGE_BRANCHES_INVALID'));
+    assert.ok(issues.some(item => item.code === 'WORKFLOW_MERGE_CONFIG_INVALID'));
+});
+
+test('worker validator rejects an incomplete semantic conditional branch before compilation', () => {
+    const issues = validateWorkflowWorkerResult({
+        operations: [{
+            op: 'add_condition_branch',
+            from: { nodeRef: 'n2' },
+            condition: { ref: 'same_ref', config: { valueA: { $binding: 'form_field_2' }, operator: 'equals' } },
+            whenTrue: { ref: 'same_ref', nodeKey: 'action:email', config: {} },
+            whenFalse: { ref: 'same_ref', nodeKey: 'logic:condition', config: {} }
+        }]
+    });
+
+    assert.ok(issues.some(item => item.code === 'WORKFLOW_CONDITION_SOURCE_HANDLE_REQUIRED'));
+    assert.ok(issues.some(item => item.code === 'WORKFLOW_CONDITION_CONFIG_INVALID' && item.path.endsWith('valueB')));
+    assert.ok(issues.some(item => item.code === 'WORKFLOW_CONDITION_BRANCH_ACTION_INVALID' && item.path.endsWith('whenFalse.nodeKey')));
+});
+
+test('worker validator retires raw Condition node creation', () => {
+    const issues = validateWorkflowWorkerResult({
+        operations: [{ op: 'create_node', node: { ref: 'condition', nodeKey: 'logic:condition', config: {} } }]
+    });
+
+    assert.deepEqual(issues.map(item => item.code), ['WORKFLOW_CONDITION_BRANCH_OPERATION_REQUIRED']);
+});
+
+test('worker validator retires raw creation for every semantic control-flow node', () => {
+    const cases = [
+        ['logic:switch', 'WORKFLOW_SWITCH_ROUTES_OPERATION_REQUIRED'],
+        ['logic:catchError', 'WORKFLOW_ERROR_HANDLER_OPERATION_REQUIRED'],
+        ['logic:merge', 'WORKFLOW_MERGE_OPERATION_REQUIRED'],
+        ['logic:approval', 'WORKFLOW_APPROVAL_GATE_OPERATION_REQUIRED']
+    ];
+    for (const [nodeKey, code] of cases) {
+        const issues = validateWorkflowWorkerResult({
+            operations: [{ op: 'create_node', node: { ref: 'control', nodeKey, config: {} } }]
+        });
+        assert.deepEqual(issues.map(item => item.code), [code]);
+    }
+});
+
 // ---------------------------------------------------------------------------
 // Verifier validator
 // ---------------------------------------------------------------------------

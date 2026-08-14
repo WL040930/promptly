@@ -1,9 +1,10 @@
 import { normalizeClarificationMode } from '../../../../../shared/agentContract.js';
+import { normalizeAssistantText } from '../../../../../shared/assistantText.js';
 
 const DECIDE_PATTERN = /^(?:you\s+decide|decide\s+for\s+me|use\s+(?:sensible\s+)?defaults)[.! ]*$/i;
 const CORRECTION_PATTERN = /\b(?:actually|instead|i\s+mean|correction|not\s+that|what\s+i\s+meant)\b/i;
 
-const textOf = value => String(value || '').trim();
+const textOf = value => normalizeAssistantText(value);
 
 export const normalizeWorkflowCommand = (command = {}) => {
     if (command?.type === 'decide_for_me') {
@@ -30,13 +31,20 @@ export const resolveWorkflowTurnContext = ({
     const delegated = command?.type === 'decide_for_me' || DECIDE_PATTERN.test(textOf(command?.text));
     const clarified = command?.type === 'submit_clarification';
     const rawText = delegated ? '' : textOf(command?.text);
+    const priorClarificationState = activeWork?.clarificationState && typeof activeWork.clarificationState === 'object'
+        ? activeWork.clarificationState
+        : {};
+    const submittedClarificationState = command?.state && typeof command.state === 'object'
+        ? command.state
+        : {};
+    const clarificationState = { ...priorClarificationState, ...submittedClarificationState };
     const sourceText = activeWork?.sourceText || rawText;
     const correction = CORRECTION_PATTERN.test(rawText);
     return {
         command: delegated
             ? { type: 'decide_for_me', clarificationId: command.clarificationId || clarification?.id || null }
             : clarified
-                ? { type: 'submit_clarification', text: rawText, state: command.state || {} }
+                ? { type: 'submit_clarification', text: rawText, state: clarificationState }
                 : { type: 'submit_text', text: rawText },
         intent: {
             sourceText: correction ? rawText : sourceText,

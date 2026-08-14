@@ -140,6 +140,35 @@ test('workflow assistant keeps a pending proposal after a reply and after a fail
     assert.equal(failure.state.activeProposalMessageId, 'proposal_1');
 });
 
+test('workflow assistant turns a Google connection reply into an actionable error card', async () => {
+    const memory = createMemoryModels();
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async () => ({
+            kind: 'reply',
+            message: 'Connect Google to browse spreadsheets and Gmail providers.',
+            errorMetadata: {
+                code: 'GOOGLE_CONNECTION_REQUIRED',
+                issues: [{ code: 'GOOGLE_CONNECTION_REQUIRED', message: 'Connect Google to browse spreadsheets and Gmail providers.' }]
+            }
+        })
+    });
+
+    const result = await assistant.submitTurn({
+        userId: 'user_1',
+        workflowId: 'workflow_1',
+        command: { type: 'submit_text', text: 'Save the response to the Event Registration Google Sheet.' }
+    });
+
+    assert.equal(result.botMsg.kind, 'error');
+    assert.equal(result.botMsg.isError, true);
+    assert.equal(result.botMsg.payload.code, 'GOOGLE_CONNECTION_REQUIRED');
+    assert.equal(result.botMsg.payload.recovery.action.type, 'open_connections');
+    assert.equal(result.botMsg.payload.recovery.action.label, 'Connect Google');
+    assert.equal(memory.messages[1].payload.work.status, 'failed');
+});
+
 test('workflow assistant keeps a provisioned proposal while a Sheet refinement needs a destination choice', async () => {
     const memory = createMemoryModels();
     await memory.models.AssistantThread.create({
@@ -257,6 +286,41 @@ test('workflow proposal application is blocked only when setup is required', asy
         () => assistant.decideProposal({ userId: 'user_1', workflowId: 'workflow_1', proposalMessageId: 'proposal_1' }),
         error => error.code === 'WORKFLOW_PROPOSAL_SETUP_REQUIRED'
     );
+    assert.equal(memory.messages[0].proposalStatus, 'pending');
+});
+
+test('workflow Apply blocks a legacy form proposal that mixes one-time and runtime Sheet creation', async () => {
+    const memory = createMemoryModels();
+    await memory.models.AssistantThread.create({
+        id: 'thread_1', userId: 'user_1', surface: 'workflow', workflowId: 'workflow_1',
+        state: { version: 1, phase: 'awaiting_proposal', activeProposalMessageId: 'proposal_1' }, context: {}
+    });
+    await memory.models.AssistantMessage.create({
+        id: 'proposal_1', threadId: 'thread_1', sender: 'bot', kind: 'workflow_proposal', proposalStatus: 'pending', text: 'Create a response sheet.',
+        payload: {
+            workflowId: 'workflow_1', baseWorkflowRevision: 1, readiness: { canApply: true }, capabilities: [],
+            resourceIntent: { mode: 'create', source: 'clarification' },
+            resourceChanges: [{ type: 'create_google_spreadsheet', ref: 'responses', title: 'Event Registration' }],
+            nodes: [
+                { id: 'form', type: 'trigger', subType: 'form-submission', config: { formId: 'form_1' } },
+                { id: 'create', type: 'action', subType: 'googleSheetsCreate', config: {} },
+                { id: 'append', type: 'action', subType: 'googleSheets', config: { spreadsheetId: { $provision: 'responses' } } }
+            ],
+            edges: []
+        }
+    });
+    let provisioningCalls = 0;
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({ LOCK: { UPDATE: 'UPDATE' } }) },
+        spreadsheetService: { async createAndInitialize() { provisioningCalls += 1; throw new Error('must not run'); } }
+    });
+
+    await assert.rejects(
+        () => assistant.decideProposal({ userId: 'user_1', workflowId: 'workflow_1', proposalMessageId: 'proposal_1' }),
+        error => error.code === 'WORKFLOW_FORM_RESPONSE_SHEET_DESTINATION_INVALID'
+    );
+    assert.equal(provisioningCalls, 0);
     assert.equal(memory.messages[0].proposalStatus, 'pending');
 });
 
@@ -560,7 +624,7 @@ test('workflow AI records a structured clarification answer before continuing th
     });
     const result = await assistant.submitTurn({
         userId: 'user_1', workflowId: 'workflow_1',
-        command: { type: 'submit_clarification', text: 'Gmail', state: { provider: ['Gmail'] } }
+        command: { type: 'submit_clarification', text: 'Provider: Gmail', state: { provider: ['Gmail'] } }
     });
     const clarification = memory.messages.find(message => message.kind === 'clarification');
 
@@ -569,7 +633,47 @@ test('workflow AI records a structured clarification answer before continuing th
     assert.equal(turnContexts[1].intent.sourceText, 'Add an email notification.');
     assert.deepEqual(turnContexts[1].intent.latestText, 'Gmail');
     assert.deepEqual(turnContexts[1].command.state, { provider: ['Gmail'] });
+    assert.equal(memory.messages.filter(message => message.sender === 'user').at(-1)?.text, 'Gmail');
     assert.equal(result.state.phase, 'idle');
+});
+
+test('workflow AI carries earlier answers into a follow-up clarification', async () => {
+    const memory = createMemoryModels();
+    const turnContexts = [];
+    let call = 0;
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async args => {
+            turnContexts.push(args.turnContext);
+            call += 1;
+            if (call === 1) return { kind: 'clarification', message: 'Choose an existing approval.', inputs: [{ id: 'approvalExistingGate', type: 'single_choice', label: 'Existing approval', options: ['Choose a different approval placement'] }] };
+            if (call === 2) return { kind: 'clarification', message: 'Choose an approval placement.', inputs: [{ id: 'approvalPlacementScope', type: 'single_choice', label: 'Approval placement', options: ['One approval before both email routes'] }] };
+            return { kind: 'reply', message: 'Approval scope recorded.' };
+        },
+        idFactory: (() => { let count = 0; return prefix => `${prefix}_${++count}`; })()
+    });
+
+    await assistant.submitTurn({
+        userId: 'user_1', workflowId: 'workflow_1', command: { type: 'submit_text', text: 'Wait for my approval before the emails.' }
+    });
+    await assistant.submitTurn({
+        userId: 'user_1', workflowId: 'workflow_1', command: {
+            type: 'submit_clarification', text: 'Choose a different approval placement',
+            state: { approvalExistingGate: ['Choose a different approval placement'] }
+        }
+    });
+    await assistant.submitTurn({
+        userId: 'user_1', workflowId: 'workflow_1', command: {
+            type: 'submit_clarification', text: 'One approval before both email routes',
+            state: { approvalPlacementScope: ['One approval before both email routes'] }
+        }
+    });
+
+    assert.deepEqual(turnContexts[2].command.state, {
+        approvalExistingGate: ['Choose a different approval placement'],
+        approvalPlacementScope: ['One approval before both email routes']
+    });
 });
 
 test('workflow AI rejects a partial clarification without closing it or starting a turn', async () => {
@@ -700,6 +804,12 @@ test('normalizeWorkflowCommand returns submit_text for ordinary messages', () =>
     assert.equal(result.text, 'add an email step');
 });
 
+test('normalizeWorkflowCommand collapses one accidentally repeated workflow request', () => {
+    const request = 'If attendance mode is Online, send joining instructions; otherwise send venue instructions';
+    const result = normalizeWorkflowCommand({ type: 'submit_text', text: `${request}${request}` });
+    assert.equal(result.text, request);
+});
+
 test('normalizeWorkflowCommand preserves a structured clarification response', () => {
     const result = normalizeWorkflowCommand({ type: 'submit_clarification', text: 'Email provider: Gmail', state: { provider: ['Gmail'] } });
     assert.deepEqual(result, {
@@ -754,6 +864,21 @@ test('resolveWorkflowTurnContext retains structured clarification state', () => 
     assert.equal(ctx.command.type, 'submit_clarification');
     assert.deepEqual(ctx.command.state, { provider: ['Gmail'] });
     assert.equal(ctx.intent.sourceText, 'Add an email step');
+});
+
+test('resolveWorkflowTurnContext carries prior clarification answers forward', () => {
+    const ctx = resolveWorkflowTurnContext({
+        command: { type: 'submit_clarification', text: 'One approval before both email routes', state: { approvalPlacementScope: ['One approval before both email routes'] } },
+        activeWork: {
+            sourceText: 'Wait for my approval before the emails',
+            clarificationState: { approvalExistingGate: ['Choose a different approval placement'] }
+        }
+    });
+
+    assert.deepEqual(ctx.command.state, {
+        approvalExistingGate: ['Choose a different approval placement'],
+        approvalPlacementScope: ['One approval before both email routes']
+    });
 });
 
 test('resolveWorkflowTurnContext marks relation as replace on correction language', () => {

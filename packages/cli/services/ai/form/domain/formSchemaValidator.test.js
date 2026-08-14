@@ -92,6 +92,34 @@ test('validateFormPatches accepts safe form settings updates and rejects unknown
     assert.ok(invalidIssues.some(issue => issue.code === 'INVALID_SETTINGS_KEY'));
 });
 
+test('validateFormPatches accepts moves and rejects unsafe move targets', () => {
+    const schema = {
+        id: 'form_1',
+        ...form,
+        fields: [
+            ...form.fields,
+            { id: 'consent', type: 'checkbox', label: 'Consent', choices: ['Yes'] },
+            { id: 'special_req', type: 'textarea', label: 'Special Requirements' }
+        ]
+    };
+
+    assert.deepEqual(validateFormPatches(schema, [
+        { op: 'move', id: 'special_req', insertBefore: 'consent' }
+    ]), []);
+
+    const issues = validateFormPatches(schema, [
+        { op: 'move', id: 'missing', insertBefore: 'consent' },
+        { op: 'move', id: 'special_req', insertBefore: 'missing' },
+        { op: 'move', id: 'special_req', insertBefore: 'special_req' },
+        { op: 'move', id: 'special_req', insertBefore: 'email', insertAfter: 'consent' }
+    ]);
+
+    assert.ok(issues.some(issue => issue.code === 'UNKNOWN_FIELD'));
+    assert.ok(issues.some(issue => issue.code === 'UNKNOWN_PLACEMENT_ANCHOR'));
+    assert.ok(issues.some(issue => issue.code === 'SELF_PLACEMENT'));
+    assert.ok(issues.some(issue => issue.code === 'CONFLICTING_PLACEMENT'));
+});
+
 test('worker output validation lets recovery isolate unknown optional settings', () => {
     assert.deepEqual(validateWorkerResult({
         patches: [{ op: 'update_settings', updates: { accentColor: '#fff' } }]

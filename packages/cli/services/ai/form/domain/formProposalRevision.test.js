@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     materializePendingFormProposal,
+    rebaseFormProposalSchema,
     rebaseFormProposalRevision
 } from './formProposalRevision.js';
 import { applyFormPatches } from './formPatchEngine.js';
@@ -76,4 +77,54 @@ test('returns no patches when a revision cancels every pending change', () => {
 
     assert.deepEqual(revision.patches, []);
     assert.deepEqual(revision.schema, savedForm);
+});
+
+test('rebases a retained-field reorder as a move patch', () => {
+    const currentSchema = {
+        ...savedForm,
+        fields: [
+            { id: 'name', type: 'text', label: 'Name' },
+            { id: 'consent', type: 'checkbox', label: 'Consent', choices: ['Yes'] },
+            { id: 'special_req', type: 'textarea', label: 'Special Requirements' }
+        ]
+    };
+    const targetSchema = {
+        ...currentSchema,
+        fields: [
+            currentSchema.fields[0],
+            currentSchema.fields[2],
+            currentSchema.fields[1]
+        ]
+    };
+
+    const result = rebaseFormProposalSchema({ currentSchema, targetSchema });
+
+    assert.deepEqual(result.patches.map(patch => [patch.op, patch.id]), [['move', 'special_req']]);
+    assert.equal(result.patches[0].insertBefore, 'consent');
+    assert.deepEqual(result.schema, targetSchema);
+});
+
+test('rebases a reorder without disturbing soft-deleted field placement', () => {
+    const currentSchema = {
+        title: 'Event Registration',
+        description: '',
+        settings: {},
+        fields: [
+            { id: 'name', type: 'text', label: 'Name' },
+            { id: 'legacy', type: 'text', label: 'Legacy', deleted: true },
+            { id: 'attendance', type: 'select', label: 'Attendance', choices: ['Physical', 'Online'] },
+            { id: 'consent', type: 'checkbox', label: 'Consent', choices: ['Yes'] }
+        ]
+    };
+    const targetSchema = applyFormPatches({
+        currentSchema,
+        patches: [{ op: 'move', id: 'name', insertAfter: 'consent' }]
+    }).schema;
+
+    const result = rebaseFormProposalSchema({ currentSchema, targetSchema });
+
+    assert.deepEqual(result.schema.fields.filter(field => !field.deleted).map(field => field.id), ['attendance', 'consent', 'name']);
+    assert.deepEqual(result.schema.fields.filter(field => field.deleted).map(field => field.id), ['legacy']);
+    assert.deepEqual(result.schema.fields.find(field => field.id === 'legacy'), currentSchema.fields[1]);
+    assert.deepEqual(result.schema.fields.find(field => field.id === 'name'), currentSchema.fields[0]);
 });

@@ -8,6 +8,7 @@ import WorkspaceShell from './workspace/WorkspaceShell.jsx';
 import WorkspacePageRouter from './workspace/WorkspacePageRouter.jsx';
 import { getAuthRedirect } from './utils/authNavigation.js';
 import { applySiteMetadata } from './utils/siteMetadata.js';
+import { clearPendingAITurnNotifications } from './utils/browserNotifications.js';
 
 const LandingPage = React.lazy(() => import('./landing/LandingPage.jsx'));
 const LoginPage = React.lazy(() => import('./auth/LoginPage.jsx'));
@@ -61,6 +62,7 @@ function App() {
     };
 
     const handleLogout = () => {
+        clearPendingAITurnNotifications();
         clearAuthUser();
         clearAuthToken();
         queryClient.setQueryData(['me'], null);

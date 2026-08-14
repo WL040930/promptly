@@ -56,18 +56,23 @@ const makeRoute = (page, extra = {}) => ({ page, ...extra });
 export function parsePath(path = window.location.pathname) {
     const pathname = getPathname(path);
     const parts = pathname.replace(/^\//, '').split('/');
+    const settingsTab = getQuery(path).get('settings') === 'connections' ? 'connections' : null;
+    const route = (page, extra = {}) => makeRoute(page, {
+        ...extra,
+        ...(settingsTab ? { settingsTab } : {})
+    });
 
-    if (parts[0] !== 'app') return makeRoute('home');
+    if (parts[0] !== 'app') return route('home');
 
     switch (parts[1]) {
         case undefined:
         case 'home':
-            return makeRoute('home');
+            return route('home');
         case 'automations':
             if (parts[2] === 'new') {
                 const method = getQuery(path).get('method') || 'ai';
                 const prompt = getQuery(path).get('prompt');
-                return makeRoute('automation-new', {
+                return route('automation-new', {
                     method,
                     ...(prompt ? { prompt } : {})
                 });
@@ -76,31 +81,31 @@ export function parsePath(path = window.location.pathname) {
                 if (parts[3] === 'build') {
                     const editor = getQuery(path).get('editor') === 'visual' ? 'visual' : 'ai';
                     const prompt = getQuery(path).get('prompt');
-                    return makeRoute('automation-build', {
+                    return route('automation-build', {
                         automationId: parts[2],
                         editor,
                         ...(prompt ? { prompt } : {})
                     });
                 }
-                if (parts[3] === 'runs') return makeRoute('automation-runs', { automationId: parts[2] });
-                if (parts[3] === 'versions') return makeRoute('automation-versions', { automationId: parts[2] });
-                if (parts[3] === 'settings') return makeRoute('automation-settings', { automationId: parts[2] });
-                return makeRoute('automation-detail', { automationId: parts[2] });
+                if (parts[3] === 'runs') return route('automation-runs', { automationId: parts[2] });
+                if (parts[3] === 'versions') return route('automation-versions', { automationId: parts[2] });
+                if (parts[3] === 'settings') return route('automation-settings', { automationId: parts[2] });
+                return route('automation-detail', { automationId: parts[2] });
             }
-            return makeRoute('automations');
+            return route('automations');
         case 'assistant':
-            return makeRoute('assistant', { conversationId: parts[2] || null });
+            return route('assistant', { conversationId: parts[2] || null });
         case 'forms':
-            if (parts[2]) return makeRoute('form-detail', { formId: parts[2], section: parts[3] || 'build' });
-            return makeRoute('forms');
+            if (parts[2]) return route('form-detail', { formId: parts[2], section: parts[3] || 'build' });
+            return route('forms');
         case 'runs':
-            return makeRoute(parts[2] ? 'run-detail' : 'runs', { runId: parts[2] || null });
+            return route(parts[2] ? 'run-detail' : 'runs', { runId: parts[2] || null });
         case 'approvals':
-            return makeRoute('approvals');
+            return route('approvals');
         case 'settings':
-            return makeRoute('settings', { section: parts[2] || 'general' });
+            return route('settings', { section: parts[2] || 'general' });
         default:
-            return makeRoute('home');
+            return route('home');
     }
 }
 
@@ -136,4 +141,14 @@ export function buildPath(route = {}) {
 
 export function navigateTo(route) {
     navigate(buildPath(route));
+}
+
+export function clearSettingsModalQuery() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('settings');
+    url.searchParams.delete('success');
+    url.searchParams.delete('error');
+    const nextPath = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState({}, '', nextPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
 }

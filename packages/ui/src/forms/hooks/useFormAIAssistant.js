@@ -8,6 +8,9 @@ import { useAIStream } from '../../context/AIStreamContext.jsx';
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
 import { getClarificationModePreference, setClarificationModePreference } from '../../utils/storage.js';
 import { navigateTo } from '../../utils/router.js';
+import { requestSettingsModal } from '../../utils/settingsModal.js';
+import { emitAITurnLifecycle } from '../../utils/browserNotifications.js';
+import { outcomeForAssistantMessage } from '../../../../shared/assistantTurnNotification.js';
 
 const LIMIT = 50;
 const defaultMessage = {
@@ -198,9 +201,9 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
                 ...page,
                 messages: [...(page.messages || []), { id: optimisticUserId, sender: 'user', kind: 'text', text, isOptimistic: true }, optimisticWork]
             })));
-            return { previousData, optimisticUserId, optimisticWorkId, text };
+            return { previousData, optimisticUserId, optimisticWorkId, text, requestId };
         },
-        onSuccess: (result, _variables, context) => {
+        onSuccess: (result, variables, context) => {
             setIsSubmittingTurn(false);
             setStreamDetached(false);
             setRecoveryMode(false);
@@ -229,8 +232,24 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
                     ].filter(Boolean)
                 };
             }));
+            emitAITurnLifecycle({
+                type: 'completed',
+                requestId: variables?.requestId || context?.requestId || result?.state?.lastTurn?.requestId,
+                surface: 'form',
+                resourceId: formId,
+                resourceName: form?.title || 'Your form',
+                path: `/app/forms/${encodeURIComponent(formId)}/build`,
+                outcome: outcomeForAssistantMessage({
+                    kind: result?.botMsg?.kind,
+                    isError: result?.botMsg?.isError,
+                    outcome: result?.state?.lastTurn?.outcome
+                }),
+                status: result?.state?.lastTurn?.status || 'completed',
+                messageId: result?.botMsg?.id || result?.state?.lastTurn?.messageId || null,
+                completedAt: result?.state?.lastTurn?.completedAt || new Date().toISOString()
+            });
         },
-        onError: async (error, _variables, context) => {
+        onError: async (error, variables, context) => {
             setIsSubmittingTurn(false);
             const errorCode = error?.code || error?.payload?.code;
             if (errorCode === 'FORM_AI_STATE_CONFLICT') syncStateVersion(error.currentStateVersion || error.payload?.currentStateVersion);
@@ -242,6 +261,17 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
                 toast.info('Still working in the background — reconnecting.');
                 return;
             }
+            emitAITurnLifecycle({
+                type: 'failed',
+                requestId: variables?.requestId || context?.requestId,
+                surface: 'form',
+                resourceId: formId,
+                resourceName: form?.title || 'Your form',
+                path: `/app/forms/${encodeURIComponent(formId)}/build`,
+                outcome: 'error',
+                status: 'failed',
+                completedAt: new Date().toISOString()
+            });
             clearStreamState();
             if (context?.previousData) queryClient.setQueryData(queryKey, context.previousData);
             setInput(context?.text || '');
@@ -281,13 +311,22 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
             return;
         }
         const requestId = globalThis.crypto?.randomUUID?.() || `form_turn_${Date.now()}`;
+        emitAITurnLifecycle({
+            type: 'started',
+            requestId,
+            surface: 'form',
+            resourceId: formId,
+            resourceName: form?.title || 'Your form',
+            path: `/app/forms/${encodeURIComponent(formId)}/build`,
+            startedAt: new Date().toISOString()
+        });
         sendMutation.mutate({
             command: normalized.command,
             text: normalized.text,
             requestId,
             optimisticWorkId: `optimistic_work_${requestId}`
         });
-    }, [formId, isSubmittingTurn, isTyping, onBeforeSend, sendMutation, serverProcessing, toast]);
+    }, [form, formId, isSubmittingTurn, isTyping, onBeforeSend, sendMutation, serverProcessing, toast]);
 
     const handleRecoveryAction = useCallback((action, message, previousRequest = '') => {
         const recovery = message?.errorMetadata?.recovery || message?.payload?.recovery || {};
@@ -296,7 +335,7 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
             return;
         }
         if (action?.type === 'open_connections') {
-            navigateTo({ page: 'settings', section: 'connections' });
+            requestSettingsModal('connections');
             return;
         }
         if (action?.type === 'retry') {

@@ -19,6 +19,7 @@ import nodeResourceService from '../../nodes/nodeResourceService.js';
 import { buildRunDiagnosticReport } from './runDiagnostics.js';
 import { isAssistantTurnStale } from '../../assistant/assistantTurnLiveness.js';
 import { resolveClarificationSubmission } from '../../../../shared/clarificationContract.js';
+import { outcomeForAssistantMessage } from '../../../../shared/assistantTurnNotification.js';
 
 const MAX_HISTORY = 100;
 const AI_CONTEXT_HISTORY = 30;
@@ -105,6 +106,30 @@ const messageFromResult = ({ result, workflow, idFactory = makeId }) => {
             payload: { clarificationId: idFactory('clarification'), inputs: result.inputs || [], allowDecide: true }
         };
     }
+    if (result?.errorMetadata?.code || result?.isError) {
+        const message = result.message || result.text || 'I could not complete this workflow request.';
+        const code = result.errorMetadata?.code || 'WORKFLOW_AI_FAILED';
+        const issues = Array.isArray(result.errorMetadata?.issues) && result.errorMetadata.issues.length > 0
+            ? result.errorMetadata.issues
+            : [{ code, message }];
+        const recovery = result.errorMetadata?.recovery || buildAssistantRecovery({
+            surface: 'workflow',
+            code,
+            issues,
+            context: {
+                formId: formIdForWorkflowNodes(workflow.nodes || []),
+                retryText: result.errorMetadata?.retryText || message
+            }
+        });
+        const errorMetadata = {
+            ...(result.errorMetadata || {}),
+            code,
+            issues,
+            retryable: recovery.retryable,
+            recovery
+        };
+        return { text: recovery.summary, kind: 'error', payload: errorMetadata, errorMetadata, isError: true };
+    }
     return { text: result.message || result.text || 'I could not find a safe workflow change to make.', kind: 'text', payload: null };
 };
 
@@ -163,7 +188,14 @@ export const createWorkflowAssistant = ({
             inFlightRequestId: null,
             inFlightStartedAt: null,
             inFlightLastActivityAt: null,
-            progress: null
+            progress: null,
+            lastTurn: {
+                requestId,
+                status: 'failed',
+                outcome: 'error',
+                messageId: workMessage?.id || null,
+                completedAt: now().toISOString()
+            }
         }, { transaction });
         return true;
     };
@@ -233,7 +265,7 @@ export const createWorkflowAssistant = ({
         let normalizedCommand = normalizeWorkflowCommand(command);
         const mode = normalizeClarificationMode(clarificationMode);
         if (normalizedCommand.type === 'submit_text' && !normalizedCommand.text) throw errorWith('WORKFLOW_AI_INPUT_REQUIRED', 'Please describe a workflow change.', 400);
-        const displayText = normalizedCommand.type === 'decide_for_me' ? 'Use sensible defaults.' : normalizedCommand.text;
+        let displayText = normalizedCommand.type === 'decide_for_me' ? 'Use sensible defaults.' : normalizedCommand.text;
         let reservation;
         let progressChain = Promise.resolve();
         const reportProgress = progress => {
@@ -277,7 +309,21 @@ export const createWorkflowAssistant = ({
                             }
                         );
                     }
-                    normalizedCommand = { ...normalizedCommand, state: clarificationResolution.state };
+                    const canonicalAnswerText = clarificationResolution.answers
+                        .map(answer => answer.answer)
+                        .filter(Boolean)
+                        .join(', ');
+                    normalizedCommand = {
+                        ...normalizedCommand,
+                        state: clarificationResolution.state,
+                        // The UI supplies a readable receipt such as
+                        // "Create a new Sheet: Create a new Event Registration
+                        // Sheet". Keep it out of persisted user history; the
+                        // structured state is authoritative and this canonical
+                        // answer cannot be mistaken for a Sheet name later.
+                        text: canonicalAnswerText || normalizedCommand.text
+                    };
+                    displayText = normalizedCommand.text;
                 }
                 if (state.openClarification && ['submit_clarification', 'decide_for_me'].includes(normalizedCommand.type)) {
                     const clarification = await models.AssistantMessage.findOne({ where: { threadId: state.threadId, sender: 'bot', kind: 'clarification' }, order: [['createdAt', 'DESC']], transaction });
@@ -351,14 +397,51 @@ export const createWorkflowAssistant = ({
                 }
                 const supersededMessageIds = reply.kind === 'workflow_proposal' ? await supersedePendingWorkflowProposals({ threadId: state.threadId, transaction, messageModel: models.AssistantMessage }) : [];
                 const botMessage = await models.AssistantMessage.findOne({ where: { id: reservation.workMessage.id, threadId: state.threadId }, transaction });
-                const work = finishAssistantWork(botMessage?.payload?.work, { status: reply.kind === 'workflow_proposal' ? 'awaiting_review' : reply.kind === 'clarification' ? 'needs_input' : 'completed', detail: reply.text }, now());
-                await botMessage.update({ text: reply.text, kind: reply.kind, payload: { ...(reply.payload || {}), work }, tokenUsage: result.tokenUsage || null, proposalStatus: reply.kind === 'workflow_proposal' ? 'pending' : null }, { transaction });
+                const workStatus = reply.kind === 'workflow_proposal'
+                    ? 'awaiting_review'
+                    : reply.kind === 'clarification'
+                        ? 'needs_input'
+                        : reply.kind === 'error'
+                            ? 'failed'
+                            : 'completed';
+                const work = finishAssistantWork(botMessage?.payload?.work, { status: workStatus, detail: reply.text }, now());
+                await botMessage.update({
+                    text: reply.text,
+                    kind: reply.kind,
+                    payload: { ...(reply.payload || {}), work },
+                    tokenUsage: result.tokenUsage || null,
+                    proposalStatus: reply.kind === 'workflow_proposal' ? 'pending' : null,
+                    ...(reply.isError ? { isError: true, errorMetadata: reply.errorMetadata } : {})
+                }, { transaction });
                 const statePatch = statePatchForResult({ resultKind: reply.kind, command: reservation.context.command, proposalMessageId: botMessage.id, previousActiveProposalMessageId: state.activeProposalMessageId, now });
                 if (reply.kind === 'clarification') {
                     statePatch.openClarification = reply.payload;
-                    statePatch.activeWork = { ...statePatch.activeWork, sourceText: reservation.context.intent.sourceText || request, requestId, relationToPending: reservation.context.intent.relationToPending };
+                    statePatch.activeWork = {
+                        ...statePatch.activeWork,
+                        sourceText: reservation.context.intent.sourceText || request,
+                        requestId,
+                        relationToPending: reservation.context.intent.relationToPending,
+                        clarificationState: reservation.context.command.type === 'submit_clarification'
+                            ? reservation.context.command.state
+                            : state.activeWork?.clarificationState || {}
+                    };
                 }
-                await state.update({ ...statePatch, version: state.version + 1, inFlightRequestId: null, inFlightStartedAt: null, inFlightLastActivityAt: null, progress: null }, { transaction });
+                const terminalOutcome = outcomeForAssistantMessage({ kind: reply.kind, isError: reply.isError });
+                await state.update({
+                    ...statePatch,
+                    version: state.version + 1,
+                    inFlightRequestId: null,
+                    inFlightStartedAt: null,
+                    inFlightLastActivityAt: null,
+                    progress: null,
+                    lastTurn: {
+                        requestId,
+                        status: terminalOutcome === 'error' ? 'failed' : 'completed',
+                        outcome: terminalOutcome,
+                        messageId: botMessage.id,
+                        completedAt: now().toISOString()
+                    }
+                }, { transaction });
                 return { userMsg: publicMessage(reservation.userMessage), botMsg: { ...publicMessage(botMessage), supersededMessageIds }, state: publicState(state) };
             });
         } catch (error) {
@@ -374,7 +457,23 @@ export const createWorkflowAssistant = ({
                 const botMessage = await models.AssistantMessage.findOne({ where: { id: reservation.workMessage.id, threadId: state.threadId }, transaction });
                 const errorMetadata = { code: error.code || 'WORKFLOW_AI_FAILED', retryable: recovery.retryable, recovery };
                 await botMessage.update({ text: recovery.summary, kind: 'error', payload: { ...errorMetadata, work: finishAssistantWork(botMessage?.payload?.work, { status: 'failed', detail: recovery.summary }, now()) }, isError: true, errorMetadata }, { transaction });
-                await state.update({ version: state.version + 1, phase: state.activeProposalMessageId ? 'awaiting_proposal' : 'idle', activeWork: null, openClarification: null, inFlightRequestId: null, inFlightStartedAt: null, inFlightLastActivityAt: null, progress: null }, { transaction });
+                await state.update({
+                    version: state.version + 1,
+                    phase: state.activeProposalMessageId ? 'awaiting_proposal' : 'idle',
+                    activeWork: null,
+                    openClarification: null,
+                    inFlightRequestId: null,
+                    inFlightStartedAt: null,
+                    inFlightLastActivityAt: null,
+                    progress: null,
+                    lastTurn: {
+                        requestId,
+                        status: 'failed',
+                        outcome: 'error',
+                        messageId: botMessage.id,
+                        completedAt: now().toISOString()
+                    }
+                }, { transaction });
                 return { userMsg: publicMessage(reservation.userMessage), botMsg: publicMessage(botMessage), state: publicState(state), error: { code: errorMetadata.code, message: recovery.summary } };
             });
         }
@@ -385,7 +484,7 @@ export const createWorkflowAssistant = ({
         const state = await ensureState({ workflow, transaction });
         if (state.inFlightRequestId) throw errorWith('WORKFLOW_AI_TURN_IN_PROGRESS', 'The workflow AI is still processing a request. Wait for it to finish before clearing the chat.', 409);
         const deletedMessages = await models.AssistantMessage.destroy({ where: { threadId: state.threadId }, transaction });
-        await state.update({ version: state.version + 1, phase: 'idle', activeWork: null, openClarification: null, activeProposalMessageId: null, inFlightRequestId: null, inFlightStartedAt: null, inFlightLastActivityAt: null, progress: null }, { transaction });
+        await state.update({ version: state.version + 1, phase: 'idle', activeWork: null, openClarification: null, activeProposalMessageId: null, inFlightRequestId: null, inFlightStartedAt: null, inFlightLastActivityAt: null, progress: null, lastTurn: null }, { transaction });
         return { cleared: true, deletedMessages, state: publicState(state) };
     });
 

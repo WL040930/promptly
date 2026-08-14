@@ -14,7 +14,17 @@ ui:
 # Router (Switch) Node
 
 ## When to use this node
-Route down multiple paths
+Route one value through up to two exact-match paths, with one default path.
+
+## Routes
+
+- `branchA`: first exact-match case
+- `branchB`: second exact-match case
+- `default`: every unmatched value
+
+The route handles are fixed. Do not configure arbitrary handles in `cases`.
+When Promptly AI creates a Switch, it uses the `add_switch_routes` semantic
+operation so the case configuration and graph connections stay aligned.
 
 ## Configuration Schema
 The LLM must configure this node with the following JSON schema:

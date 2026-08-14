@@ -92,6 +92,26 @@ const approvalSpec = {
     ui: {}
 };
 
+const conditionSpec = {
+    nodeKey: 'logic:condition',
+    type: 'logic',
+    subType: 'condition',
+    title: 'Condition',
+    description: 'Routes a workflow through true or false outcomes',
+    implementationStatus: 'experimental',
+    schema: {
+        inputs: [
+            { name: 'input1', isConnection: true },
+            { name: 'input2', isConnection: true },
+            { name: 'valueA', type: 'text' },
+            { name: 'operator', type: 'select' },
+            { name: 'valueB', type: 'text' }
+        ],
+        outputs: [{ name: 'true', isConnection: true }, { name: 'false', isConnection: true }]
+    },
+    ui: {}
+};
+
 const makeRegistry = (specs = [triggerSpec, emailSpec]) => ({
     getCompactCatalogue: () => specs.map(spec => ({
         nodeKey: spec.nodeKey,
@@ -304,6 +324,131 @@ test('pipeline resumes the Create Sheet clarification using structured state and
     assert.equal(append.config.values[0].length, 3);
 });
 
+test('pipeline reuses an applied Sheet for an approval follow-up instead of searching a legacy clarification receipt', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const workflow = {
+        revision: 1,
+        nodes: [
+            { id: 'form_1', type: 'trigger', subType: 'form-submission', nodeKey: 'trigger:form-submission', title: 'Event Registration submitted', config: { formId: 'form_event' }, position: { x: 100, y: 150 } },
+            { id: 'sheet_1', type: 'action', subType: 'googleSheets', nodeKey: 'action:googleSheets', title: 'Save Event Registration response', config: { operation: 'append', spreadsheetId: 'sheet_event_registration', range: "'Responses'!A1", values: [] }, position: { x: 450, y: 150 } }
+        ],
+        edges: [{ id: 'edge_1', source: 'form_1', sourceHandle: 'event', target: 'sheet_1', targetHandle: 'event' }]
+    };
+    let sheetLookups = 0;
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') return {
+                text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Require owner approval before saving each response.',
+                    requirements: [{ id: 'req_approval', description: 'Ask the owner to approve each submitted response before it is saved.' }],
+                    selectedNodeKeys: [],
+                    capabilities: []
+                })
+            };
+            if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') return {
+                text: JSON.stringify({
+                    operations: [{
+                        op: 'add_approval_gate',
+                        connection: { from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'n2', handle: 'event' } },
+                        approval: { ref: 'approval', title: 'Review Event Registration', config: {} }
+                    }]
+                })
+            };
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'Request my approval before saving the response.',
+        currentWorkflow: workflow,
+        history: [
+            { sender: 'user', text: 'When the Event Registration form is submitted, save the response to the Event Registration Google Sheet.' },
+            { sender: 'user', text: 'Create a new Sheet: Create a new “Event Registration” Sheet' }
+        ],
+        formSchema: { id: 'form_event', title: 'Event Registration', fields: [{ id: 'name', label: 'Name', type: 'text' }] },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec, approvalSpec]),
+        resourceLookup: async () => {
+            sheetLookups += 1;
+            throw new Error('A configured Sheet must not be searched again.');
+        },
+        resourceLoader: async ({ selections }) => {
+            assert.equal(selections['google-spreadsheets'], 'sheet_event_registration');
+            return {};
+        }
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(sheetLookups, 0);
+    assert.deepEqual(result.resourceChanges, []);
+    assert.equal(result.capabilities.includes('owner_approval'), true);
+    const sheet = result.nodes.find(node => node.id === 'sheet_1');
+    const approval = result.nodes.find(node => node.subType === 'approval');
+    assert.equal(sheet.config.spreadsheetId, 'sheet_event_registration');
+    assert.equal(sheet.config.range, "'Responses'!A1");
+    assert.equal(result.nodes.filter(node => node.subType === 'approval').length, 1);
+    assert.ok(result.edges.some(edge => edge.source === 'form_1' && edge.target === approval.id && edge.sourceHandle === 'event'));
+    assert.ok(result.edges.some(edge => edge.source === approval.id && edge.target === 'sheet_1' && edge.sourceHandle === 'approved'));
+});
+
+test('pipeline treats an empty approval rejection route as stop and repairs malformed existing Sheet values', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const workflow = {
+        revision: 1,
+        nodes: [
+            { id: 'form_1', type: 'trigger', subType: 'form-submission', nodeKey: 'trigger:form-submission', title: 'Event Registration submitted', config: { formId: 'form_event' }, position: { x: 100, y: 150 } },
+            { id: 'sheet_1', type: 'action', subType: 'googleSheets', nodeKey: 'action:googleSheets', title: 'Save Event Registration response', config: { operation: 'append', spreadsheetId: 'sheet_event_registration', range: "'Responses'!A1", values: ['wrong'] }, position: { x: 450, y: 150 } }
+        ],
+        edges: [{ id: 'edge_1', source: 'form_1', sourceHandle: 'event', target: 'sheet_1', targetHandle: 'event' }]
+    };
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') return {
+                text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Require owner approval before saving each response.',
+                    requirements: [{ id: 'req_approval', description: 'Ask the owner to approve each submitted response before it is saved.' }],
+                    selectedNodeKeys: [],
+                    capabilities: []
+                })
+            };
+            if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') return {
+                text: JSON.stringify({
+                    operations: [{
+                        op: 'add_approval_gate',
+                        connection: { from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'n2', handle: 'event' } },
+                        approval: { ref: 'approval', title: 'Review Event Registration', config: {} },
+                        whenRejected: {}
+                    }]
+                })
+            };
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'Request my approval before saving the response.',
+        currentWorkflow: workflow,
+        formSchema: { id: 'form_event', title: 'Event Registration', fields: [{ id: 'name', label: 'Name', type: 'text' }] },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec, approvalSpec]),
+        resourceLookup: async () => { throw new Error('The configured Sheet must be reused.'); },
+        resourceLoader: async () => ({})
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.deepEqual(result.resourceChanges, []);
+    const sheet = result.nodes.find(node => node.id === 'sheet_1');
+    const approval = result.nodes.find(node => node.subType === 'approval');
+    assert.equal(sheet.config.spreadsheetId, 'sheet_event_registration');
+    assert.equal(sheet.config.range, "'Responses'!A1");
+    assert.equal(sheet.config.values[0].length, 3);
+    assert.ok(result.edges.some(edge => edge.source === approval.id && edge.sourceHandle === 'approved' && edge.target === 'sheet_1'));
+    assert.equal(result.edges.some(edge => edge.source === approval.id && edge.sourceHandle === 'rejected'), false);
+    assert.equal(result.operations[0].whenRejected, undefined);
+});
+
 test('pipeline resolves a named Google Sheet with case- and spacing-normalized matching', async () => {
     const { generateWorkflowTurn } = await import('./pipeline.js');
     let lookupCount = 0;
@@ -349,13 +494,19 @@ test('pipeline surfaces Google connection errors for a named Sheet instead of pr
         request: 'Save the response to the Event Registration Google Sheet.',
         currentWorkflow: { nodes: [], edges: [] },
         provider: { async generateContent() { throw new Error('The planner must not run before destination resolution.'); } },
-        resourceLookup: async () => ({ options: [], error: { code: 'GOOGLE_RECONNECT_REQUIRED', message: 'Reconnect Google.' } }),
+        resourceLookup: async () => ({ options: [], error: {
+            code: 'GOOGLE_RECONNECT_REQUIRED',
+            message: 'Reconnect Google.',
+            action: { type: 'open_connections', label: 'Reconnect Google', href: '/app/settings/connections' }
+        } }),
         registry: makeRegistry([formSubmissionSpec, googleSheetsSpec]),
         resourceLoader
     });
 
     assert.equal(result.type, 'reply');
     assert.equal(result.message, 'Reconnect Google.');
+    assert.equal(result.errorMetadata.code, 'GOOGLE_RECONNECT_REQUIRED');
+    assert.deepEqual(result.errorMetadata.action, { type: 'open_connections', label: 'Reconnect Google', href: '/app/settings/connections' });
 });
 
 test('pipeline unwraps an exact form resource ID accidentally wrapped as provisioned', async () => {
@@ -382,10 +533,9 @@ test('pipeline unwraps an exact form resource ID accidentally wrapped as provisi
                     text: JSON.stringify({
                         operations: [
                             { op: 'create_node', node: { ref: 'form', nodeKey: 'trigger:form-submission', title: 'Form submitted', config: { formId: { $provision: 'form_1' } } } },
-                            { op: 'create_node', node: { ref: 'approval', nodeKey: 'logic:approval', title: 'Owner approval', config: {}, afterNodeRef: 'form' } },
-                            { op: 'create_node', node: { ref: 'email', nodeKey: 'action:email', title: 'Thank you', config: { to: { $binding: 'form_field_1' }, subject: 'Thank you' }, afterNodeRef: 'approval' } },
-                            { op: 'connect', from: { nodeRef: 'form', handle: 'event' }, to: { nodeRef: 'approval', handle: 'event' } },
-                            { op: 'connect', from: { nodeRef: 'approval', handle: 'approved' }, to: { nodeRef: 'email', handle: 'event' } }
+                            { op: 'create_node', node: { ref: 'email', nodeKey: 'action:email', title: 'Thank you', config: { to: { $binding: 'form_field_1' }, subject: 'Thank you' }, afterNodeRef: 'form' } },
+                            { op: 'connect', from: { nodeRef: 'form', handle: 'event' }, to: { nodeRef: 'email', handle: 'event' } },
+                            { op: 'add_approval_gate', connection: { from: { nodeRef: 'form', handle: 'event' }, to: { nodeRef: 'email', handle: 'event' } }, approval: { ref: 'approval', title: 'Owner approval', config: {} } }
                         ]
                     })
                 };
@@ -798,11 +948,10 @@ test('pipeline uses a runtime sheet for every approved form submission', async (
             if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') return {
                 text: JSON.stringify({
                     operations: [
-                        { op: 'create_node', node: { ref: 'approval', nodeKey: 'logic:approval', title: 'Review required', config: {} } },
                         { op: 'create_node', node: { ref: 'create', nodeKey: 'action:googleSheetsCreate', title: 'Create response sheet', config: {} } },
                         { op: 'create_node', node: { ref: 'append', nodeKey: 'action:googleSheets', title: 'Append approved response', config: { operation: 'append', range: "'Responses'!A1", values: [['wrong']] } } },
-                        { op: 'connect', from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'approval', handle: 'event' } },
-                        { op: 'connect', from: { nodeRef: 'approval', handle: 'approved' }, to: { nodeRef: 'create', handle: 'event' } },
+                        { op: 'connect', from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'create', handle: 'event' } },
+                        { op: 'add_approval_gate', connection: { from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'create', handle: 'event' } }, approval: { ref: 'approval', title: 'Review required', config: {} } },
                         { op: 'connect', from: { nodeRef: 'create', handle: 'done' }, to: { nodeRef: 'append', handle: 'event' } }
                     ]
                 })
@@ -1359,10 +1508,83 @@ test('pipeline rejects a contradictory runtime Sheet creator from a direct plan 
 
     assert.equal(result.type, 'proposal');
     assert.equal(repairCalls, 1);
-    assert.match(repairContexts[0], /WORKFLOW_SPREADSHEET_DESTINATION_CONFLICT/);
+    assert.match(repairContexts[0], /WORKFLOW_FORM_RESPONSE_RUNTIME_SHEET_CREATOR_FORBIDDEN/);
     assert.equal(result.nodes.some(node => node.nodeKey === 'action:googleSheetsCreate'), false);
     assert.deepEqual(result.resourceChanges, []);
     assert.equal(result.nodes.find(node => node.nodeKey === 'action:googleSheets')?.config?.spreadsheetId, 'sheet_event_registration');
+    assert.equal(result.edges.length, 1);
+});
+
+test('pipeline repairs a runtime Sheet creator when the user chose one Sheet to provision on Apply', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let repairCalls = 0;
+    const repairContexts = [];
+    const provider = {
+        async generateContent(contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Save registrations in a new Event Registration Sheet.',
+                        requirements: [{ id: 'req_save', description: 'Append every registration response to the new Event Registration Sheet.' }],
+                        selectedNodeKeys: ['trigger:form-submission', 'action:googleSheetsCreate', 'action:googleSheets'],
+                        capabilities: []
+                    })
+                };
+            }
+            if (options.operation === 'workflow:worker') {
+                return {
+                    text: JSON.stringify({
+                        operations: [
+                            { op: 'create_node', node: { ref: 'form', nodeKey: 'trigger:form-submission', config: { formId: 'form_event' } } },
+                            { op: 'create_node', node: { ref: 'create', nodeKey: 'action:googleSheetsCreate', afterNodeRef: 'form', config: {} } },
+                            { op: 'create_node', node: { ref: 'append', nodeKey: 'action:googleSheets', afterNodeRef: 'create', config: { operation: 'append', spreadsheetId: { $provision: 'response_spreadsheet' }, range: "'Responses'!A1" } } },
+                            { op: 'connect', from: { nodeRef: 'form', handle: 'event' }, to: { nodeRef: 'create', handle: 'event' } },
+                            { op: 'connect', from: { nodeRef: 'create', handle: 'done' }, to: { nodeRef: 'append', handle: 'event' } }
+                        ]
+                    })
+                };
+            }
+            if (options.operation === 'workflow:worker repair') {
+                repairCalls += 1;
+                repairContexts.push(contents?.[0]?.parts?.[0]?.text || '');
+                return {
+                    text: JSON.stringify({
+                        operations: [
+                            { op: 'create_node', node: { ref: 'form', nodeKey: 'trigger:form-submission', config: { formId: 'form_event' } } },
+                            { op: 'create_node', node: { ref: 'append', nodeKey: 'action:googleSheets', afterNodeRef: 'form', config: { operation: 'append' } } },
+                            { op: 'connect', from: { nodeRef: 'form', handle: 'event' }, to: { nodeRef: 'append', handle: 'event' } }
+                        ]
+                    })
+                };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'Create a new Event Registration Sheet and save every submitted response there.',
+        currentWorkflow: { nodes: [], edges: [] },
+        formSchema: { id: 'form_event', title: 'Event Registration', fields: [{ id: 'name', label: 'Name', type: 'text' }] },
+        turnContext: {
+            command: { type: 'submit_clarification', state: { createSpreadsheet: 'create' } },
+            intent: {
+                sourceText: 'When the Event Registration form is submitted, save the response to the Event Registration Google Sheet.',
+                latestText: 'Create a new Event Registration Sheet and save every submitted response there.',
+                authority: 'user'
+            }
+        },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, googleSheetsCreateSpec, googleSheetsSpec]),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(repairCalls, 1);
+    assert.match(repairContexts[0], /WORKFLOW_FORM_RESPONSE_RUNTIME_SHEET_CREATOR_FORBIDDEN/);
+    assert.equal(result.nodes.some(node => node.nodeKey === 'action:googleSheetsCreate'), false);
+    assert.equal(result.resourceChanges.length, 1);
+    assert.equal(result.nodes.find(node => node.nodeKey === 'action:googleSheets')?.config?.spreadsheetId?.$provision, 'response_spreadsheet');
     assert.equal(result.edges.length, 1);
 });
 
@@ -1600,4 +1822,276 @@ test('pipeline does not use the linear fallback for a branching workflow', async
         registry: makeRegistry([triggerSpec, approvalSpec]),
         resourceLoader
     }), error => error.code === 'WORKFLOW_AI_UNSAFE_PROPOSAL');
+});
+
+test('pipeline compiles an if/otherwise notification branch when the worker repeats refs and aliases an action node', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let workerCalls = 0;
+    let workerPrompt = '';
+    const provider = {
+        async generateContent(contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Send the right event instructions after manager approval.',
+                        requirements: [{ id: 'req_branch', description: 'After approval, send online instructions when attendance is Online; otherwise send venue instructions.' }],
+                        // The pipeline must add the semantic Condition and Email specs even when the planner omits them.
+                        selectedNodeKeys: [],
+                        capabilities: []
+                    })
+                };
+            }
+            if (options.operation === 'workflow:worker') {
+                workerCalls += 1;
+                workerPrompt = contents[0].parts[0].text;
+                return {
+                    text: JSON.stringify({
+                        operations: [{
+                            op: 'add_condition_branch',
+                            from: { nodeRef: 'n2', handle: 'approved' },
+                            condition: {
+                                ref: 'online_email',
+                                title: 'Attendance is Online',
+                                config: { valueA: { $binding: 'form_field_2' }, operator: 'equals', valueB: 'Online' }
+                            },
+                            whenTrue: {
+                                ref: 'online_email',
+                                nodeKey: 'action:send_email',
+                                title: 'Send joining instructions',
+                                config: { to: { $binding: 'form_field_1' }, subject: 'Joining instructions' }
+                            },
+                            whenFalse: {
+                                ref: 'online_email',
+                                nodeKey: 'action:send_email',
+                                title: 'Send venue instructions',
+                                config: { to: { $binding: 'form_field_1' }, subject: 'Venue instructions' }
+                            }
+                        }]
+                    })
+                };
+            }
+            assert.notEqual(options.operation, 'workflow:worker repair');
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+    const currentWorkflow = {
+        revision: 7,
+        nodes: [
+            { id: 'form', type: 'trigger', subType: 'form-submission', nodeKey: 'trigger:form-submission', title: 'Event Registration submitted', config: { formId: 'form_event' }, position: { x: 100, y: 200 } },
+            { id: 'approval', type: 'logic', subType: 'approval', nodeKey: 'logic:approval', title: 'Manager approval', config: {}, position: { x: 450, y: 200 } },
+            { id: 'sheet', type: 'action', subType: 'googleSheets', nodeKey: 'action:googleSheets', title: 'Save Event Registration response', config: {}, position: { x: 800, y: 200 } }
+        ],
+        edges: [
+            { id: 'form_to_approval', source: 'form', sourceHandle: 'event', target: 'approval', targetHandle: 'event' },
+            { id: 'approval_to_sheet', source: 'approval', sourceHandle: 'approved', target: 'sheet', targetHandle: 'event' }
+        ]
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'If attendance mode is Online, send joining instructions; otherwise send venue instructions.',
+        currentWorkflow,
+        formSchema: {
+            id: 'form_event',
+            title: 'Event Registration',
+            fields: [
+                { id: 'email', label: 'Email', type: 'email', required: true },
+                { id: 'attendance_mode', label: 'Attendance mode', type: 'select', required: true }
+            ]
+        },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, approvalSpec, googleSheetsSpec, conditionSpec, emailSpec]),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(workerCalls, 1);
+    assert.match(workerPrompt, /"logic:condition"/);
+    assert.match(workerPrompt, /"action:email"/);
+    const condition = result.nodes.find(node => node.nodeKey === 'logic:condition');
+    const onlineEmail = result.nodes.find(node => node.title === 'Send joining instructions');
+    const venueEmail = result.nodes.find(node => node.title === 'Send venue instructions');
+    assert.ok(condition);
+    assert.ok(onlineEmail);
+    assert.ok(venueEmail);
+    assert.ok(result.edges.some(edge => edge.id === 'approval_to_sheet'));
+    assert.ok(result.edges.some(edge => edge.source === 'approval' && edge.sourceHandle === 'approved' && edge.target === condition.id && edge.targetHandle === 'input1'));
+    assert.ok(result.edges.some(edge => edge.source === condition.id && edge.sourceHandle === 'true' && edge.target === onlineEmail.id));
+    assert.ok(result.edges.some(edge => edge.source === condition.id && edge.sourceHandle === 'false' && edge.target === venueEmail.id));
+    assert.equal(result.operations[0].op, 'add_condition_branch');
+    assert.equal(result.operations[0].condition.ref, 'cf_1_condition');
+    assert.equal(result.operations[0].whenTrue.ref, 'cf_1_true');
+    assert.equal(result.operations[0].whenFalse.ref, 'cf_1_false');
+    assert.equal(result.operations[0].whenTrue.nodeKey, 'action:email');
+    assert.equal(result.diff.edges.length, 1);
+});
+
+test('pipeline requires an explicit approval scope before it resolves approval-before-email follow-ups', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const currentWorkflow = {
+        revision: 8,
+        nodes: [
+            { id: 'trigger', type: 'trigger', subType: 'webhook', nodeKey: 'trigger:webhook', title: 'Receive registration', config: {}, position: { x: 100, y: 200 } },
+            { id: 'approval', type: 'logic', subType: 'approval', nodeKey: 'logic:approval', title: 'Review registration', config: {}, position: { x: 450, y: 200 } },
+            { id: 'condition', type: 'logic', subType: 'condition', nodeKey: 'logic:condition', title: 'Check Attendance Mode', config: { valueA: 'Online', operator: 'equals', valueB: 'Online' }, position: { x: 800, y: 200 } },
+            { id: 'online', type: 'action', subType: 'email', nodeKey: 'action:email', title: 'Send Joining Instructions', config: { to: 'online@example.com', subject: 'Joining instructions' }, position: { x: 1150, y: 100 } },
+            { id: 'venue', type: 'action', subType: 'email', nodeKey: 'action:email', title: 'Send Venue Instructions', config: { to: 'venue@example.com', subject: 'Venue instructions' }, position: { x: 1150, y: 300 } }
+        ],
+        edges: [
+            { id: 'trigger_approval', source: 'trigger', sourceHandle: 'event', target: 'approval', targetHandle: 'event' },
+            { id: 'approval_condition', source: 'approval', sourceHandle: 'approved', target: 'condition', targetHandle: 'input1' },
+            { id: 'condition_online', source: 'condition', sourceHandle: 'true', target: 'online', targetHandle: 'event' },
+            { id: 'condition_venue', source: 'condition', sourceHandle: 'false', target: 'venue', targetHandle: 'event' }
+        ]
+    };
+    let providerCalls = 0;
+    const provider = { async generateContent() { providerCalls += 1; throw new Error('This approval follow-up should not call the AI provider.'); } };
+    const request = 'Also wait for my approval before sending the email';
+    const registry = makeRegistry([triggerSpec, approvalSpec, conditionSpec, emailSpec]);
+
+    const clarification = await generateWorkflowTurn({ request, currentWorkflow, provider, registry, resourceLoader });
+    assert.equal(clarification.type, 'message');
+    assert.deepEqual(clarification.inputs[0].options, ['Use existing approval', 'Choose a different approval placement']);
+    assert.equal(providerCalls, 0);
+
+    const scopeChoice = await generateWorkflowTurn({
+        request: 'Add another approval',
+        currentWorkflow,
+        turnContext: {
+            intent: { sourceText: request },
+            command: { type: 'submit_clarification', state: { approvalExistingGate: ['Add another approval'] } }
+        },
+        provider,
+        registry,
+        resourceLoader
+    });
+
+    assert.equal(scopeChoice.type, 'message');
+    assert.deepEqual(scopeChoice.inputs[0].options, ['One approval before both email routes', 'Separate approval before each email route']);
+    assert.equal(providerCalls, 0);
+
+    const result = await generateWorkflowTurn({
+        request: 'One approval before both email routes',
+        currentWorkflow,
+        turnContext: {
+            intent: { sourceText: request },
+            command: {
+                type: 'submit_clarification',
+                state: {
+                    approvalExistingGate: ['Choose a different approval placement'],
+                    approvalPlacementScope: ['One approval before both email routes']
+                }
+            }
+        },
+        provider,
+        registry,
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(providerCalls, 0);
+    const approvals = result.nodes.filter(node => node.nodeKey === 'logic:approval');
+    assert.equal(approvals.length, 2);
+    const addedApproval = approvals.find(node => node.id !== 'approval');
+    assert.ok(result.edges.some(edge => edge.source === 'approval' && edge.sourceHandle === 'approved' && edge.target === addedApproval.id));
+    assert.ok(result.edges.some(edge => edge.source === addedApproval.id && edge.sourceHandle === 'approved' && edge.target === 'condition'));
+});
+
+test('pipeline keeps the original invalid reference when a repair returns no operations', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Add approval before the existing email.',
+                    requirements: [{ id: 'req_approval', description: 'Wait for owner approval before sending the existing email.' }],
+                    selectedNodeKeys: ['logic:approval'],
+                    capabilities: ['owner_approval']
+                }) };
+            }
+            if (options.operation === 'workflow:worker') {
+                return { text: JSON.stringify({
+                    operations: [{
+                        op: 'add_approval_gate',
+                        connection: { from: { nodeRef: 'n99', handle: 'event' }, to: { nodeRef: 'n2', handle: 'event' } },
+                        approval: { ref: 'review', title: 'Review', config: {} }
+                    }]
+                }) };
+            }
+            return { text: JSON.stringify({ operations: [] }) };
+        }
+    };
+
+    await assert.rejects(() => generateWorkflowTurn({
+        request: 'Request approval before saving the workflow response.',
+        currentWorkflow: existingWorkflow,
+        provider,
+        registry: makeRegistry([triggerSpec, emailSpec, approvalSpec]),
+        resourceLoader
+    }), error => {
+        assert.equal(error.code, 'WORKFLOW_AI_UNSAFE_PROPOSAL');
+        assert.equal(error.issues[0].code, 'WORKFLOW_NODE_REF_INVALID');
+        assert.ok(error.issues.some(issue => issue.code === 'EMPTY_OPERATIONS'));
+        return true;
+    });
+});
+
+test('pipeline repairs the historical true source-handle mistake as a semantic branch', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let repairPrompt = '';
+    const branch = handle => ({
+        op: 'add_condition_branch',
+        from: { nodeRef: 'n2', handle },
+        condition: { ref: 'attendance_is_online', config: { valueA: 'Online', operator: 'equals', valueB: 'Online' } },
+        whenTrue: { ref: 'send_online', nodeKey: 'action:email', config: { to: 'online@example.com', subject: 'Joining instructions' } },
+        whenFalse: { ref: 'send_venue', nodeKey: 'action:email', config: { to: 'venue@example.com', subject: 'Venue instructions' } }
+    });
+    const provider = {
+        async generateContent(contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Send online or venue instructions after approval.',
+                        requirements: [{ id: 'req_branch', description: 'Send online instructions for Online attendance and venue instructions otherwise.' }],
+                        selectedNodeKeys: [],
+                        capabilities: []
+                    })
+                };
+            }
+            if (options.operation === 'workflow:worker') return { text: JSON.stringify({ operations: [branch('true')] }) };
+            if (options.operation === 'workflow:worker repair') {
+                repairPrompt = contents[0].parts[0].text;
+                return { text: JSON.stringify({ operations: [branch('approved')] }) };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+    const currentWorkflow = {
+        nodes: [
+            { id: 'trigger', type: 'trigger', subType: 'webhook', nodeKey: 'trigger:webhook', title: 'Event registration submitted', config: {} },
+            { id: 'approval', type: 'logic', subType: 'approval', nodeKey: 'logic:approval', title: 'Manager approval', config: {} },
+            { id: 'sheet', type: 'action', subType: 'googleSheets', nodeKey: 'action:googleSheets', title: 'Save registration', config: {} }
+        ],
+        edges: [
+            { id: 'trigger_to_approval', source: 'trigger', sourceHandle: 'event', target: 'approval', targetHandle: 'event' },
+            { id: 'approval_to_sheet', source: 'approval', sourceHandle: 'approved', target: 'sheet', targetHandle: 'event' }
+        ]
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'If attendance mode is Online, send joining instructions; otherwise send venue instructions.',
+        currentWorkflow,
+        provider,
+        registry: makeRegistry([triggerSpec, approvalSpec, googleSheetsSpec, conditionSpec, emailSpec]),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.match(repairPrompt, /WORKFLOW_HANDLE_INVALID/);
+    assert.match(repairPrompt, /Provided value: "true"/);
+    assert.match(repairPrompt, /Allowed values: approved, rejected/);
+    assert.equal(result.operations[0].from.handle, 'approved');
+    assert.ok(result.edges.some(edge => edge.id === 'approval_to_sheet'));
 });

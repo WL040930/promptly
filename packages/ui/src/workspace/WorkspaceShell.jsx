@@ -1,10 +1,11 @@
 import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { navigateTo } from '../utils/router.js';
+import { clearSettingsModalQuery, navigateTo } from '../utils/router.js';
 import { apiRequest } from '../api/client.js';
 import { useGoogleConnectionHealth } from '../api/hooks/useAuth.js';
 import Button from '../components/ui/Button.jsx';
 import GoogleConnectionHealthModal from '../components/modals/GoogleConnectionHealthModal.jsx';
+import { subscribeToSettingsModal } from '../utils/settingsModal.js';
 
 const SettingsModal = lazy(() => import('../dashboard/SettingsModal.jsx'));
 
@@ -70,10 +71,23 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
         if (route?.page === 'settings') {
             setSettingsTab(route.section || 'general');
             setSettingsOpen(true);
+        } else if (route?.settingsTab) {
+            setSettingsTab(route.settingsTab);
+            setSettingsOpen(true);
         } else {
             setSettingsOpen(false);
         }
-    }, [route?.page, route?.section]);
+    }, [route?.page, route?.section, route?.settingsTab]);
+
+    useEffect(() => subscribeToSettingsModal(({ tab }) => {
+        setSettingsTab(tab);
+        setSettingsOpen(true);
+    }), []);
+
+    const closeSettings = () => {
+        setSettingsOpen(false);
+        if (route?.settingsTab) clearSettingsModalQuery();
+    };
 
     const go = (page) => {
         if (page === 'home') navigateTo({ page: 'home' });
@@ -140,7 +154,7 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
 
             <main className="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#f5f6fb]">{content}</main>
 
-            {settingsOpen && <Suspense fallback={null}><SettingsModal user={user} onClose={() => setSettingsOpen(false)} onLogout={onLogout} initialTab={settingsTab} /></Suspense>}
+            {settingsOpen && <Suspense fallback={null}><SettingsModal user={user} onClose={closeSettings} onLogout={onLogout} initialTab={settingsTab} /></Suspense>}
             {googleHealthKey && !settingsOpen && dismissedGoogleHealthKey !== googleHealthKey && <GoogleConnectionHealthModal status={googleHealth} onClose={() => setDismissedGoogleHealthKey(googleHealthKey)} />}
         </div>
     );

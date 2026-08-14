@@ -25,8 +25,15 @@ export const selectOutgoingEdges = (node, result = {}, edges = [], nodeMap = nul
     }
     if (node.type !== 'logic') return edges;
 
-    const targetEdgeId = result.targetEdgeId || edges.find(edge => edge.sourceHandle === result.targetHandle)?.id;
-    return targetEdgeId ? edges.filter(edge => edge.id === targetEdgeId) : edges;
+    // A routing result chooses an output handle, not a single destination.
+    // Keep every edge attached to that handle so an approved route can fan out
+    // to (for example) a response Sheet and a follow-up Condition.
+    if (result.targetEdgeId) return edges.filter(edge => edge.id === result.targetEdgeId);
+    if (result.targetHandle !== undefined && result.targetHandle !== null) {
+        const selected = edges.filter(edge => edge.sourceHandle === result.targetHandle);
+        return selected.length > 0 ? selected : edges;
+    }
+    return edges;
 };
 
 export const mergeExecutionResult = (context, node, result) => {

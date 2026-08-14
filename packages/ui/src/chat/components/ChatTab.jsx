@@ -9,6 +9,7 @@ import GenericChatWidget from '../../components/chat/GenericChatWidget.jsx';
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 import FormDiffPreviewModal from '../../forms/ai/FormDiffPreviewModal.jsx';
 import { navigateTo, parsePath, getQuery } from '../../utils/router.js';
+import { requestSettingsModal } from '../../utils/settingsModal.js';
 import { formatCompactRelativeTime } from '../../utils/time.js';
 import ChatSessionsSkeleton from '../../components/chat/ChatSessionsSkeleton.jsx';
 import ClarificationModeSelect from '../../components/chat/ClarificationModeSelect.jsx';
@@ -19,6 +20,8 @@ import { LoaderCircle } from 'lucide-react';
 import { useAIActivity, useAIStream } from '../../context/AIStreamContext.jsx';
 import { isDurableStreamDetachError } from '../../api/aiStream.js';
 import { useDurableTurnMonitor } from '../../api/hooks/useDurableTurnMonitor.js';
+import { emitAITurnLifecycle } from '../../utils/browserNotifications.js';
+import { outcomeForAssistantMessage } from '../../../../shared/assistantTurnNotification.js';
 
 const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I can build automations and forms from a description. What would you like to automate?' };
 
@@ -145,7 +148,17 @@ export default function ChatTab({ conversationId = null }) {
         if (!text?.trim() && !event) return;
         if (isTyping || sharedIsTyping || durableProcessing) return;
         const requestId = globalThis.crypto?.randomUUID?.() || `chat_turn_${Date.now()}`;
+        let activeSessionId = sessionId;
         let detached = false;
+        emitAITurnLifecycle({
+            type: 'started',
+            requestId,
+            surface: 'ask_promptly',
+            sessionId: activeSessionId,
+            resourceName: 'Ask Promptly',
+            path: activeSessionId ? `/app/assistant/${encodeURIComponent(activeSessionId)}` : '/app/assistant',
+            startedAt: new Date().toISOString()
+        });
         if (text?.trim()) setMessages(previous => [...previous, { id: `local_${requestId}`, sender: 'user', kind: 'text', text, isOptimistic: true }]);
         setInput('');
         if (text && /form/i.test(text)) setProgressLabel('Designing form');
@@ -171,7 +184,18 @@ export default function ChatTab({ conversationId = null }) {
                 requestId,
                 onEvent: data => {
                     if (data.type === 'turn.started') {
-                        if (data.sessionId && data.sessionId !== sessionId) setSessionId(data.sessionId);
+                        if (data.sessionId) {
+                            activeSessionId = data.sessionId;
+                            if (data.sessionId !== sessionId) setSessionId(data.sessionId);
+                            emitAITurnLifecycle({
+                                type: 'bound',
+                                requestId,
+                                surface: 'ask_promptly',
+                                sessionId: data.sessionId,
+                                resourceName: 'Ask Promptly',
+                                path: `/app/assistant/${encodeURIComponent(data.sessionId)}`
+                            });
+                        }
                         void refetchSession();
                     }
                     if (data.type === 'run.progress' && data.work && data.messageId) {
@@ -200,6 +224,21 @@ export default function ChatTab({ conversationId = null }) {
                 }
             });
             appendResponse(response);
+            const reply = response?.reply || response?.clarification || null;
+            emitAITurnLifecycle({
+                type: 'completed',
+                requestId,
+                surface: 'ask_promptly',
+                sessionId: response?.sessionId || activeSessionId,
+                resourceName: 'Ask Promptly',
+                path: (response?.sessionId || activeSessionId)
+                    ? `/app/assistant/${encodeURIComponent(response?.sessionId || activeSessionId)}`
+                    : '/app/assistant',
+                outcome: outcomeForAssistantMessage({ kind: reply?.kind, isError: reply?.isError }),
+                status: reply?.isError || reply?.kind === 'error' ? 'failed' : 'completed',
+                messageId: reply?.id || null,
+                completedAt: new Date().toISOString()
+            });
         } catch (error) {
             const errorCode = error?.code || error?.payload?.code;
             if (isDurableStreamDetachError(error) || ['ASSISTANT_TURN_IN_PROGRESS', 'ASSISTANT_TURN_ALREADY_RUNNING'].includes(errorCode)) {
@@ -213,6 +252,17 @@ export default function ChatTab({ conversationId = null }) {
                     : 'Still working in the background — reconnecting.');
                 return;
             }
+            emitAITurnLifecycle({
+                type: 'failed',
+                requestId,
+                surface: 'ask_promptly',
+                sessionId: activeSessionId,
+                resourceName: 'Ask Promptly',
+                path: activeSessionId ? `/app/assistant/${encodeURIComponent(activeSessionId)}` : '/app/assistant',
+                outcome: 'error',
+                status: 'failed',
+                completedAt: new Date().toISOString()
+            });
             setMessages(previous => [...previous, { id: `error_${Date.now()}`, sender: 'bot', kind: 'error', text: error.message || 'Sorry, I could not process that request.' }]);
         } finally {
             setIsTyping(false);
@@ -296,7 +346,7 @@ export default function ChatTab({ conversationId = null }) {
             return;
         }
         if (action?.type === 'open_connections') {
-            navigateTo({ page: 'settings', section: 'connections' });
+            requestSettingsModal('connections');
             return;
         }
         if (action?.type === 'retry') {

@@ -12,7 +12,8 @@ export const DEFAULT_ASSISTANT_STATE = Object.freeze({
     inFlightRequestId: null,
     inFlightStartedAt: null,
     inFlightLastActivityAt: null,
-    progress: null
+    progress: null,
+    lastTurn: null
 });
 
 const cloneState = state => ({ ...DEFAULT_ASSISTANT_STATE, ...(state || {}) });
@@ -48,6 +49,7 @@ export const createAssistantStateView = thread => {
         get inFlightStartedAt() { return stateForThread(thread).inFlightStartedAt; },
         get inFlightLastActivityAt() { return stateForThread(thread).inFlightLastActivityAt; },
         get progress() { return stateForThread(thread).progress; },
+        get lastTurn() { return stateForThread(thread).lastTurn; },
         get context() { return thread.context || {}; },
         async update(updates = {}, options = {}) {
             const current = stateForThread(thread);

@@ -16,6 +16,22 @@ const sameValue = (left, right) => stableJson(left) === stableJson(right);
 const activeFields = schema => (Array.isArray(schema?.fields) ? schema.fields : [])
     .filter(field => field && !field.deleted);
 
+const comparableSchema = schema => ({
+    ...(schema || {}),
+    settings: { ...((schema || {}).settings || {}) },
+    // Soft-deleted fields are not user-visible and cannot be moved by a form
+    // patch. Compare them as a stable side-list so their historical placement
+    // cannot make an otherwise valid visible reorder look unrepresentable.
+    fields: [
+        ...activeFields(schema),
+        ...(Array.isArray(schema?.fields) ? schema.fields : [])
+            .filter(field => field && field.deleted)
+            .sort((left, right) => String(left.id).localeCompare(String(right.id)))
+    ]
+});
+
+const sameComparableSchema = (left, right) => sameValue(comparableSchema(left), comparableSchema(right));
+
 const revisionError = (code, message) => new FormPatchValidationError(message, [{ code, path: 'proposal', message }]);
 
 const changedFieldUpdates = ({ source, target }) => {
@@ -32,18 +48,6 @@ const changedFieldUpdates = ({ source, target }) => {
     return Object.fromEntries(targetKeys
         .filter(key => !sameValue(source?.[key], target?.[key]))
         .map(key => [key, cloneJson(target[key])]));
-};
-
-const assertRetainedFieldOrder = ({ sourceFields, targetFields }) => {
-    const sourceIds = new Set(sourceFields.map(field => field.id));
-    const retainedSourceOrder = sourceFields.filter(field => targetFields.some(target => target.id === field.id)).map(field => field.id);
-    const retainedTargetOrder = targetFields.filter(field => sourceIds.has(field.id)).map(field => field.id);
-    if (!sameValue(retainedSourceOrder, retainedTargetOrder)) {
-        throw revisionError(
-            'FORM_PROPOSAL_REVISION_UNREPRESENTABLE',
-            'The revised draft reorders existing fields, which cannot be safely applied as a form proposal.'
-        );
-    }
 };
 
 const fieldAddPatches = ({ sourceFields, targetFields }) => {
@@ -105,8 +109,6 @@ export const rebaseFormProposalSchema = ({ currentSchema = {}, targetSchema = {}
     const sourceById = new Map(sourceFields.map(field => [field.id, field]));
     const targetById = new Map(targetFields.map(field => [field.id, field]));
 
-    assertRetainedFieldOrder({ sourceFields, targetFields });
-
     const patches = [];
     const metaUpdates = {};
     for (const key of ['title', 'description']) {
@@ -127,8 +129,31 @@ export const rebaseFormProposalSchema = ({ currentSchema = {}, targetSchema = {}
     }
     patches.push(...fieldAddPatches({ sourceFields, targetFields }));
 
+    // Reconcile retained-field ordering after additions/removals/updates have
+    // been expressed. Each move fixes the next active slot by placing the
+    // desired field before the field currently occupying that slot. This is
+    // deterministic, handles both forward and backward moves, and keeps field
+    // definitions untouched. Deleted records are intentionally excluded from
+    // this visible-order pass; the final comparison treats their placement as
+    // historical rather than user-visible state.
+    let workingSchema = applyFormPatches({ currentSchema, patches }).schema;
+    const targetOrder = targetFields.map(field => field.id);
+    for (let index = 0; index < targetOrder.length; index += 1) {
+        const currentOrder = activeFields(workingSchema).map(field => field.id);
+        const desiredId = targetOrder[index];
+        if (currentOrder[index] === desiredId) continue;
+
+        const movePatch = {
+            op: 'move',
+            id: desiredId,
+            insertBefore: currentOrder[index]
+        };
+        patches.push(movePatch);
+        workingSchema = applyFormPatches({ currentSchema, patches }).schema;
+    }
+
     const applied = applyFormPatches({ currentSchema, patches });
-    if (!sameValue(applied.schema, targetSchema)) {
+    if (!sameComparableSchema(applied.schema, targetSchema)) {
         throw revisionError(
             'FORM_PROPOSAL_REVISION_UNREPRESENTABLE',
             'The revised draft could not be represented as a safe proposal for the saved form.'

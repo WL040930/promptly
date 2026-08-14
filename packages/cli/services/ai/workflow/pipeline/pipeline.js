@@ -4,20 +4,27 @@ import { validateWorkflow } from '../../../engine/workflowValidator.js';
 import { recordAiDiagnostic } from '../../core/diagnosticsLogger.js';
 import {
     compileWorkflowDraft,
-    compileWorkflowEdits,
-    buildWorkflowEditView,
     loadWorkflowResource,
     loadWorkflowResourceContext,
     normalizeGeneratedResourceValues,
     validateGeneratedResourceValues,
-    validateGeneratedWorkflowCapabilities
+    validateGeneratedWorkflowCapabilities,
+    requiredCapabilitiesForRequest
 } from '../workflowAgentService.js';
+import { buildWorkflowEditView, compileWorkflowEdits } from '../domain/editCompiler/index.js';
 import { explicitRunIdFromRequest } from '../runDiagnostics.js';
 import { applyFormResponseSpreadsheetContract } from '../formSpreadsheetContract.js';
 import { discoverResource } from '../resourceDiscovery.js';
 import { resolveFormReference } from '../domain/formReferenceResolver.js';
 import { resolveSpreadsheetIntent } from '../domain/workflowSpreadsheetIntent.js';
+import { resolveApprovalPlacement } from '../domain/approvalPlacement.js';
 import { assembleLinearWorkflow } from '../domain/linearWorkflowAssembler.js';
+import { normalizeSemanticWorkflowOperations } from '../domain/semanticOperationNormalizer.js';
+import {
+    FORM_RESPONSE_SHEET_DESTINATIONS,
+    resolveFormResponseSheetDestination,
+    validateFormResponseSheetDestination
+} from '../domain/formResponseSheetDestination.js';
 import {
     buildWorkflowOutputRepairContext,
     buildWorkflowPlannerContext,
@@ -74,6 +81,18 @@ const workflowRenameFromRequest = request => {
     return name && name.length <= 255 ? name : null;
 };
 
+const conditionalBranchRequestPattern = /\bif\b[\s\S]{0,320}\b(?:otherwise|else|if\s+not)\b/i;
+const notificationActionPattern = /\b(?:send|email|notify|message)\b/i;
+const switchRouteRequestPattern = /\b(?:switch|router|routing)\b[\s\S]{0,200}\b(?:case|cases|default|otherwise|route)\b/i;
+const errorHandlerRequestPattern = /\b(?:catch|handle)\s+(?:an?\s+)?(?:error|failure)\b|\b(?:on|if|when)\s+(?:an?\s+)?(?:error|failure|failure occurs|step fails)\b/i;
+const branchJoinRequestPattern = /\b(?:join|merge|combine)\s+(?:the\s+)?(?:branches|paths|routes)\b/i;
+const isConditionalBranchRequest = request => conditionalBranchRequestPattern.test(String(request || ''));
+const isConditionalNotificationRequest = request => isConditionalBranchRequest(request)
+    && notificationActionPattern.test(String(request || ''));
+const isSwitchRouteRequest = request => switchRouteRequestPattern.test(String(request || ''));
+const isErrorHandlerRequest = request => errorHandlerRequestPattern.test(String(request || ''));
+const isBranchJoinRequest = request => branchJoinRequestPattern.test(String(request || ''));
+
 const workflowRenameProposal = ({ workflow, name, usage = {} }) => {
     if (name === String(workflow?.name || '').trim()) {
         return {
@@ -113,8 +132,23 @@ const workflowRenameProposal = ({ workflow, name, usage = {} }) => {
 export const workflowPipelineInternals = Object.freeze({
     WORKFLOW_COMPLEXITY_BUDGETS,
     workflowComplexityFor,
-    workflowRenameFromRequest
+    workflowRenameFromRequest,
+    isConditionalBranchRequest,
+    isConditionalNotificationRequest,
+    isSwitchRouteRequest,
+    isErrorHandlerRequest,
+    isBranchJoinRequest
 });
+
+const mergeRepairIssues = (first = [], latest = []) => {
+    const seen = new Set();
+    return [...first, ...latest].filter(item => {
+        const key = JSON.stringify([item?.code || '', item?.path || '', item?.value || '', item?.message || '']);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+};
 
 const createPipelineError = (message, code, issues = []) => {
     const error = new Error(message);
@@ -123,9 +157,46 @@ const createPipelineError = (message, code, issues = []) => {
     return error;
 };
 
+// Resource lookups are user-facing outcomes, not planner failures. Preserve
+// their stable error metadata so the assistant can render the right recovery
+// action (for example, a direct Google connection button) instead of reducing
+// everything to an un-actionable reply string.
+const resourceErrorReply = (error, tokenUsage, fallbackMessage = 'The account resource could not be loaded right now.') => {
+    const code = String(error?.code || 'WORKFLOW_RESOURCE_UNAVAILABLE');
+    const message = String(error?.message || fallbackMessage);
+    return {
+        type: 'reply',
+        message,
+        errorMetadata: {
+            code,
+            issues: [{ code, message }],
+            ...(error?.action ? { action: error.action } : {})
+        },
+        tokenUsage
+    };
+};
+
 const unique = values => [...new Set(values.filter(Boolean))];
 const nodeKeyFor = node => node?.nodeKey || (node?.type && node?.subType ? `${node.type}:${node.subType}` : null);
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+// Rejection is optional: without a rejection action the run simply ends.
+// Some providers emit an empty object for an omitted optional object field;
+// normalize only that exact harmless shape. Any meaningful but incomplete
+// rejection action remains visible to strict validation.
+const normalizeWorkflowOperations = ({ operations = [], knownNodeKeys = [] } = {}) => {
+    const semantic = normalizeSemanticWorkflowOperations({ operations, knownNodeKeys });
+    return {
+        ...semantic,
+        operations: semantic.operations.map(operation => {
+            if (operation?.op !== 'add_approval_gate' || !Object.hasOwn(operation, 'whenRejected')) return operation;
+            const rejected = operation.whenRejected;
+            if (rejected !== null && !(isObject(rejected) && Object.keys(rejected).length === 0)) return operation;
+            const { whenRejected: _whenRejected, ...normalized } = operation;
+            return normalized;
+        })
+    };
+};
 
 const withTrustedFormResource = (resourceContext, formSchema) => {
     if (!formSchema?.id) return resourceContext || {};
@@ -143,6 +214,59 @@ const withTrustedFormResource = (resourceContext, formSchema) => {
             // broad resource listing is temporarily unavailable.
             error: null,
             options: [...options, { value: formSchema.id, label: formSchema.title || 'Selected form' }]
+        }
+    };
+};
+
+const configuredSpreadsheetBindings = spreadsheetIntent => spreadsheetIntent?.source === 'current_workflow'
+    ? spreadsheetIntent.mode === 'workflow_configured'
+        ? spreadsheetIntent.bindings || []
+        : [{
+            spreadsheetId: spreadsheetIntent.spreadsheetId,
+            name: spreadsheetIntent.name || null,
+            range: spreadsheetIntent.range || null
+        }]
+    : [];
+
+const withTrustedConfiguredSpreadsheetResources = (resourceContext, spreadsheetIntent) => {
+    const bindings = configuredSpreadsheetBindings(spreadsheetIntent).filter(binding => binding?.spreadsheetId);
+    if (bindings.length === 0) return resourceContext || {};
+
+    const context = resourceContext || {};
+    const spreadsheets = context['google-spreadsheets'] || { resource: 'google-spreadsheets', options: [] };
+    const spreadsheetOptions = Array.isArray(spreadsheets.options) ? spreadsheets.options : [];
+    const ranges = context['google-sheet-ranges'] || { resource: 'google-sheet-ranges', options: [], variants: {} };
+    const variants = { ...(ranges.variants || {}) };
+
+    for (const binding of bindings) {
+        if (!spreadsheetOptions.some(option => String(option?.value) === String(binding.spreadsheetId))) {
+            spreadsheetOptions.push({ value: binding.spreadsheetId, label: binding.name || 'Configured Google Sheet' });
+        }
+        if (!binding.range) continue;
+        const key = JSON.stringify({ spreadsheetId: binding.spreadsheetId });
+        const variant = variants[key] || { resource: 'google-sheet-ranges', params: { spreadsheetId: binding.spreadsheetId }, options: [] };
+        const options = Array.isArray(variant.options) ? variant.options : [];
+        if (!options.some(option => String(option?.value) === binding.range)) {
+            options.push({ value: binding.range, label: binding.range });
+        }
+        variants[key] = { ...variant, error: null, options };
+    }
+
+    return {
+        ...context,
+        'google-spreadsheets': {
+            ...spreadsheets,
+            resource: spreadsheets.resource || 'google-spreadsheets',
+            // The ID came from an already-applied workflow node. A later edit
+            // may safely preserve it even if a broad account listing is down.
+            error: null,
+            options: spreadsheetOptions
+        },
+        'google-sheet-ranges': {
+            ...ranges,
+            resource: ranges.resource || 'google-sheet-ranges',
+            error: null,
+            variants
         }
     };
 };
@@ -242,19 +366,50 @@ const addDefaultSpreadsheetIntent = ({ plan, request, workflow, formSchema, spre
 
 const isExistingSpreadsheetIntent = intent => ['existing_named', 'existing_selected'].includes(intent?.mode);
 
-const isRuntimeSpreadsheetCreator = operation => ['create_node', 'insert_between', 'insert_after_route'].includes(operation?.op)
-    && operation?.node?.nodeKey === 'action:googleSheetsCreate';
+const removeRuntimeSpreadsheetCreatorFromPlan = plan => ({
+    ...plan,
+    selectedNodeKeys: (plan.selectedNodeKeys || []).filter(key => key !== 'action:googleSheetsCreate'),
+    capabilities: (plan.capabilities || []).filter(capability => capability !== 'per_submission_spreadsheet'),
+    linearSteps: (plan.linearSteps || []).filter(step => step?.nodeKey !== 'action:googleSheetsCreate')
+});
 
-const applySpreadsheetIntentToPlan = ({ plan, spreadsheetIntent }) => {
-    if (!['direct_plan', 'plan_complete'].includes(plan?.type) || !isExistingSpreadsheetIntent(spreadsheetIntent)) return plan;
-    return {
-        ...plan,
-        resourceIntent: spreadsheetIntent,
-        selectedNodeKeys: (plan.selectedNodeKeys || []).filter(key => key !== 'action:googleSheetsCreate'),
-        capabilities: (plan.capabilities || []).filter(capability => capability !== 'per_submission_spreadsheet'),
-        resourceChanges: (plan.resourceChanges || []).filter(change => change?.type !== 'create_google_spreadsheet'),
-        linearSteps: (plan.linearSteps || []).filter(step => step?.nodeKey !== 'action:googleSheetsCreate')
-    };
+/**
+ * A form response has exactly one Sheet destination mode. The planner may
+ * suggest an extra node, but the server owns the final mode so a one-time
+ * provision can never become a per-submission sheet creator by accident.
+ */
+const applyFormResponseSheetDestinationToPlan = ({
+    plan,
+    spreadsheetIntent,
+    formSchema,
+    perSubmissionRequested
+}) => {
+    if (!['direct_plan', 'plan_complete'].includes(plan?.type)) return plan;
+    const destination = resolveFormResponseSheetDestination({
+        resourceChanges: plan.resourceChanges || [],
+        spreadsheetIntent,
+        capabilities: plan.capabilities || [],
+        perSubmissionRequested,
+        formSchema
+    });
+    if (destination === FORM_RESPONSE_SHEET_DESTINATIONS.existing) {
+        return {
+            ...removeRuntimeSpreadsheetCreatorFromPlan(plan),
+            resourceChanges: (plan.resourceChanges || []).filter(change => change?.type !== 'create_google_spreadsheet')
+        };
+    }
+    if (destination === FORM_RESPONSE_SHEET_DESTINATIONS.provisionOnce) {
+        return removeRuntimeSpreadsheetCreatorFromPlan(plan);
+    }
+    if (destination === FORM_RESPONSE_SHEET_DESTINATIONS.perSubmission) {
+        return {
+            ...plan,
+            selectedNodeKeys: unique([...(plan.selectedNodeKeys || []), 'action:googleSheetsCreate', 'action:googleSheets']),
+            capabilities: unique([...(plan.capabilities || []), 'per_submission_spreadsheet']),
+            resourceChanges: (plan.resourceChanges || []).filter(change => change?.type !== 'create_google_spreadsheet')
+        };
+    }
+    return plan;
 };
 
 const selectedSpreadsheetRange = ({ resourceContext = {}, spreadsheetId } = {}) => {
@@ -299,6 +454,29 @@ const applySelectedSpreadsheetToOperations = ({ operations = [], workflow, sprea
     return operations.map(operation => {
         if (['create_node', 'insert_between', 'insert_after_route'].includes(operation?.op)) {
             return { ...operation, node: configureNode(operation.node) };
+        }
+        if (operation?.op === 'add_condition_branch') {
+            return {
+                ...operation,
+                whenTrue: configureNode(operation.whenTrue),
+                whenFalse: configureNode(operation.whenFalse)
+            };
+        }
+        if (operation?.op === 'add_switch_routes') {
+            return {
+                ...operation,
+                cases: (operation.cases || []).map(routeCase => ({ ...routeCase, action: configureNode(routeCase?.action) })),
+                otherwise: configureNode(operation.otherwise)
+            };
+        }
+        if (operation?.op === 'add_error_handler') {
+            return { ...operation, whenError: configureNode(operation.whenError) };
+        }
+        if (operation?.op === 'add_approval_gate') {
+            return { ...operation, whenRejected: configureNode(operation.whenRejected) };
+        }
+        if (operation?.op === 'join_branches') {
+            return { ...operation, continueWith: configureNode(operation.continueWith) };
         }
         if (operation?.op === 'update_node' && existingSheetRefs.has(operation.nodeRef)) {
             return {
@@ -432,7 +610,17 @@ const proposalDiff = ({ before, after, operations }) => {
             const next = after.nodes.find(candidate => candidate.id === node.id);
             return next && JSON.stringify(next) !== JSON.stringify(node);
         }).map(node => ({ id: node.id, title: after.nodes.find(candidate => candidate.id === node.id)?.title || node.title })),
-        edges: operations.filter(operation => ['connect', 'disconnect', 'insert_between', 'insert_after_route'].includes(operation.op))
+        edges: operations.filter(operation => [
+            'connect',
+            'disconnect',
+            'insert_between',
+            'insert_after_route',
+            'add_condition_branch',
+            'add_switch_routes',
+            'add_error_handler',
+            'add_approval_gate',
+            'join_branches'
+        ].includes(operation.op))
     };
 };
 
@@ -474,9 +662,13 @@ const applyAndValidate = async ({
     resourceContext,
     resourceChanges = [],
     bindExistingFormResponseValues = false,
+    spreadsheetIntent = null,
+    perSubmissionRequested = undefined,
     registry
 }) => {
-    const applied = compileWorkflowEdits({ currentWorkflow: workflow, operations, specs, registry });
+    // Form-response column mappings are server-owned. Compile the graph first,
+    // apply that mapping, then run the normal strict configuration validation.
+    const applied = compileWorkflowEdits({ currentWorkflow: workflow, operations, specs, registry, deferConfigValidation: true });
     const formTrigger = applied.nodes.find(node => node?.subType === 'form-submission');
     const resolvedFormSchema = formSchema || (
         formTrigger?.config?.formId && formLoader
@@ -518,6 +710,21 @@ const applyAndValidate = async ({
         nodes: normalizedResources.nodes,
         edges: applied.edges
     });
+    const destinationIssues = validateFormResponseSheetDestination({
+        nodes: compiled.nodes,
+        resourceChanges: responseSheetContract.resourceChanges,
+        spreadsheetIntent,
+        capabilities,
+        perSubmissionRequested,
+        formSchema: resolvedFormSchema
+    });
+    if (destinationIssues.length > 0) {
+        throw createPipelineError(
+            destinationIssues.map(item => item.message).join('; '),
+            'WORKFLOW_AI_PROPOSAL_INVALID',
+            destinationIssues
+        );
+    }
     const resourceIssues = validateGeneratedResourceValues({ nodes: compiled.nodes, specs, resourceContext, resourceChanges: responseSheetContract.resourceChanges });
     const capabilityIssues = validateGeneratedWorkflowCapabilities({
         requiredCapabilities: capabilities,
@@ -563,6 +770,70 @@ const applyAndValidate = async ({
         },
         diff: proposalDiff({ before: workflow, after: finalWorkflow, operations })
     };
+};
+
+const deterministicApprovalPlan = ({ operations, targetCount, scope }) => ({
+    type: 'direct_plan',
+    summary: scope === 'Separate approval before each email route'
+        ? 'Wait for owner approval separately before each email route.'
+        : `Wait for owner approval before sending ${targetCount === 1 ? 'the email' : 'either email route'}.`,
+    requirements: [{
+        id: 'req_owner_approval_before_email',
+        description: scope === 'Separate approval before each email route'
+            ? 'Require owner approval independently before each email route.'
+            : `Require owner approval before ${targetCount === 1 ? 'sending the selected email' : 'sending either email route'}.`
+    }],
+    selectedNodeKeys: ['logic:approval'],
+    capabilities: ['owner_approval'],
+    resourceChanges: [],
+    operations
+});
+
+const buildDeterministicApprovalProposal = async ({
+    placement,
+    workflow,
+    formSchema,
+    formLoader,
+    userId,
+    registry,
+    resourceLoader,
+    resourceSelections,
+    spreadsheetIntent,
+    usage
+}) => {
+    const plan = deterministicApprovalPlan({ operations: placement.operations, targetCount: placement.targets.length, scope: placement.scope });
+    const { specs } = specsForPlan({ workflow, planner: plan, registry });
+    const loadedResourceContext = await resourceLoader({ userId, specs, nodes: workflow.nodes || [], selections: resourceSelections });
+    const resourceContext = withTrustedConfiguredSpreadsheetResources(
+        withTrustedFormResource(loadedResourceContext, formSchema),
+        spreadsheetIntent
+    );
+    const compiled = await applyAndValidate({
+        workflow,
+        operations: plan.operations,
+        specs,
+        capabilities: plan.capabilities,
+        formSchema,
+        formLoader,
+        userId,
+        resourceContext,
+        resourceChanges: [],
+        spreadsheetIntent,
+        perSubmissionRequested: false,
+        registry
+    });
+    return buildProposalResult({
+        plan,
+        capabilities: plan.capabilities,
+        operations: plan.operations,
+        compiled,
+        verification: {
+            status: 'pass',
+            issues: [],
+            fulfilledRequirements: plan.requirements.map(requirement => requirement.id)
+        },
+        usage: { ...usage, requestCalls: usage.requestCalls || 0 }
+    });
 };
 
 const requestAndValidate = async ({
@@ -653,6 +924,7 @@ export const generateWorkflowTurn = async ({
         sourceText: turnIntent?.sourceText || '',
         clarificationState: turnContext?.command?.state || {},
         pendingProposal,
+        currentWorkflow,
         history
     });
 
@@ -700,57 +972,137 @@ export const generateWorkflowTurn = async ({
         };
     }
     if (isExistingSpreadsheetIntent(spreadsheetIntent)) {
-        let resourceResult;
-        try {
-            resourceResult = await resourceLookup({ userId, resource: 'google-spreadsheets' });
-        } catch (error) {
-            return { type: 'reply', message: error.message || 'Google Sheets could not be searched right now.', tokenUsage: { ...usage, requestCalls: budget.calls } };
-        }
-        if (resourceResult?.error) {
-            return { type: 'reply', message: resourceResult.error.message || 'Google Sheets could not be searched right now.', tokenUsage: { ...usage, requestCalls: budget.calls } };
-        }
-        const options = resourceResult?.options || [];
-        if (spreadsheetIntent.mode === 'existing_selected') {
-            const selected = options.find(option => String(option.value) === String(spreadsheetIntent.spreadsheetId));
-            if (!selected && spreadsheetIntent.source !== 'clarification') {
-                return {
-                    ...missingSpreadsheetClarification({ name: spreadsheetIntent.name || null }),
-                    tokenUsage: { ...usage, requestCalls: budget.calls }
-                };
-            }
-            spreadsheetIntent = {
-                ...spreadsheetIntent,
-                spreadsheetId: selected?.value || spreadsheetIntent.spreadsheetId,
-                ...(selected?.label ? { name: selected.label } : {})
+        if (spreadsheetIntent.source === 'current_workflow') {
+            inspectedResource = {
+                resource: 'google-spreadsheets',
+                selected: { id: spreadsheetIntent.spreadsheetId, name: spreadsheetIntent.name || null, description: null }
             };
+            resourceSelections = { 'google-spreadsheets': spreadsheetIntent.spreadsheetId };
         } else {
-            const discovery = discoverResource({ options, query: spreadsheetIntent.name });
-            if (discovery.status === 'missing') {
-                return {
-                    ...missingSpreadsheetClarification({ name: spreadsheetIntent.name }),
-                    tokenUsage: { ...usage, requestCalls: budget.calls }
+            let resourceResult;
+            try {
+                resourceResult = await resourceLookup({ userId, resource: 'google-spreadsheets' });
+            } catch (error) {
+                return resourceErrorReply(error, { ...usage, requestCalls: budget.calls }, 'Google Sheets could not be searched right now.');
+            }
+            if (resourceResult?.error) {
+                return resourceErrorReply(resourceResult.error, { ...usage, requestCalls: budget.calls }, 'Google Sheets could not be searched right now.');
+            }
+            const options = resourceResult?.options || [];
+            if (spreadsheetIntent.mode === 'existing_selected') {
+                const selected = options.find(option => String(option.value) === String(spreadsheetIntent.spreadsheetId));
+                if (!selected && spreadsheetIntent.source !== 'clarification') {
+                    return {
+                        ...missingSpreadsheetClarification({ name: spreadsheetIntent.name || null }),
+                        tokenUsage: { ...usage, requestCalls: budget.calls }
+                    };
+                }
+                spreadsheetIntent = {
+                    ...spreadsheetIntent,
+                    spreadsheetId: selected?.value || spreadsheetIntent.spreadsheetId,
+                    ...(selected?.label ? { name: selected.label } : {})
+                };
+            } else {
+                const discovery = discoverResource({ options, query: spreadsheetIntent.name });
+                if (discovery.status === 'missing') {
+                    return {
+                        ...missingSpreadsheetClarification({ name: spreadsheetIntent.name }),
+                        tokenUsage: { ...usage, requestCalls: budget.calls }
+                    };
+                }
+                if (discovery.status === 'ambiguous') {
+                    return {
+                        type: 'message',
+                        message: `I found several Google Sheets matching “${spreadsheetIntent.name}”. Choose the one to use.`,
+                        inputs: [{ id: 'spreadsheetId', type: 'resource_choice', label: 'Google Sheet', options: discovery.options.map(option => ({ id: option.value, name: option.label, description: option.description || null })) }],
+                        tokenUsage: { ...usage, requestCalls: budget.calls }
+                    };
+                }
+                spreadsheetIntent = {
+                    ...spreadsheetIntent,
+                    mode: 'existing_selected',
+                    spreadsheetId: discovery.option.value,
+                    name: discovery.option.label
                 };
             }
-            if (discovery.status === 'ambiguous') {
-                return {
-                    type: 'message',
-                    message: `I found several Google Sheets matching “${spreadsheetIntent.name}”. Choose the one to use.`,
-                    inputs: [{ id: 'spreadsheetId', type: 'resource_choice', label: 'Google Sheet', options: discovery.options.map(option => ({ id: option.value, name: option.label, description: option.description || null })) }],
-                    tokenUsage: { ...usage, requestCalls: budget.calls }
-                };
-            }
-            spreadsheetIntent = {
-                ...spreadsheetIntent,
-                mode: 'existing_selected',
-                spreadsheetId: discovery.option.value,
-                name: discovery.option.label
-            };
+            inspectedResource = { resource: 'google-spreadsheets', selected: { id: spreadsheetIntent.spreadsheetId, name: spreadsheetIntent.name || null, description: null } };
+            resourceSelections = { 'google-spreadsheets': spreadsheetIntent.spreadsheetId };
         }
-        inspectedResource = { resource: 'google-spreadsheets', selected: { id: spreadsheetIntent.spreadsheetId, name: spreadsheetIntent.name || null, description: null } };
-        resourceSelections = { 'google-spreadsheets': spreadsheetIntent.spreadsheetId };
     }
     const requestedRunId = explicitRunIdFromRequest(request);
     if (requestedRunId && runLoader) inspectedRun = await runLoader({ selector: 'referenced', runId: requestedRunId, userId, workflow: currentWorkflow });
+
+    // Approval placement is graph-sensitive: a phrase such as "the email"
+    // may refer to several branch outcomes. Resolve the small owner-approval
+    // follow-up directly from the current graph before a model can guess refs.
+    const approvalPlacement = resolveApprovalPlacement({
+        request: turnIntent?.sourceText || request,
+        workflow: currentWorkflow,
+        clarificationState: turnContext?.command?.state || {}
+    });
+    if (approvalPlacement.kind !== 'not_applicable') {
+        await recordAiDiagnostic({
+            event: 'workflow_approval_placement_resolved',
+            outcome: approvalPlacement.kind,
+            targetCount: approvalPlacement.targets?.length || 0
+        });
+        if (['clarification', 'unsupported_approver'].includes(approvalPlacement.kind)) {
+            return {
+                type: 'message',
+                message: approvalPlacement.message,
+                inputs: approvalPlacement.inputs,
+                tokenUsage: { ...usage, requestCalls: budget.calls }
+            };
+        }
+        if (['already_satisfied', 'cancelled'].includes(approvalPlacement.kind)) {
+            return {
+                type: 'reply',
+                message: approvalPlacement.message,
+                tokenUsage: { ...usage, requestCalls: budget.calls }
+            };
+        }
+        if (approvalPlacement.kind === 'unsafe_placement') {
+            if (approvalPlacement.inputs?.length) {
+                return {
+                    type: 'message',
+                    message: approvalPlacement.message,
+                    inputs: approvalPlacement.inputs,
+                    tokenUsage: { ...usage, requestCalls: budget.calls }
+                };
+            }
+            return {
+                type: 'reply',
+                message: approvalPlacement.message,
+                tokenUsage: { ...usage, requestCalls: budget.calls }
+            };
+        }
+        if (approvalPlacement.kind === 'operation') {
+            onProgress?.({
+                status: 'building', phase: 'draft', label: 'Placing approval safely',
+                message: 'Preparing the approval step',
+                detail: 'Promptly found the shared route before the email instructions.'
+            });
+            const proposal = await buildDeterministicApprovalProposal({
+                placement: approvalPlacement,
+                workflow: currentWorkflow,
+                formSchema: resolvedFormSchema,
+                formLoader,
+                userId,
+                registry,
+                resourceLoader,
+                resourceSelections,
+                spreadsheetIntent,
+                usage
+            });
+            onProgress?.({
+                status: 'verified', phase: 'check', label: 'Verified the approval placement',
+                message: 'The approval change is ready for review',
+                detail: 'The approval will gate every selected email route.'
+            });
+            return proposal;
+        }
+    }
+
     const buildPlannerContext = ({ inspectedFormSchema = null, formLookupUsed = false, forceDecision = false } = {}) => buildWorkflowPlannerContext({
         workflow: currentWorkflow,
         catalogue,
@@ -868,9 +1220,9 @@ export const generateWorkflowTurn = async ({
         try {
             resourceResult = await resourceLookup({ userId, resource: plan.resource });
         } catch (error) {
-            return { type: 'reply', message: error.message || 'Google Sheets could not be searched right now.', tokenUsage: { ...usage, requestCalls: budget.calls } };
+            return resourceErrorReply(error, { ...usage, requestCalls: budget.calls }, 'Google Sheets could not be searched right now.');
         }
-        if (resourceResult?.error) return { type: 'reply', message: resourceResult.error.message || 'Google Sheets could not be searched right now.', tokenUsage: { ...usage, requestCalls: budget.calls } };
+        if (resourceResult?.error) return resourceErrorReply(resourceResult.error, { ...usage, requestCalls: budget.calls }, 'Google Sheets could not be searched right now.');
         const discovery = discoverResource({ options: resourceResult?.options, query: plan.query });
         if (discovery.status === 'missing') {
             return {
@@ -1035,8 +1387,54 @@ export const generateWorkflowTurn = async ({
     if (['direct_plan', 'plan_complete'].includes(plan.type) && spreadsheetIntent.mode !== 'none') {
         plan = { ...plan, resourceIntent: spreadsheetIntent };
     }
-    plan = applySpreadsheetIntentToPlan({ plan, spreadsheetIntent });
+    const requiresOwnerApproval = requiredCapabilitiesForRequest(request).includes('owner_approval');
+    if (requiresOwnerApproval) {
+        plan = {
+            ...plan,
+            selectedNodeKeys: unique([...(plan.selectedNodeKeys || []), 'logic:approval']),
+            capabilities: unique([...(plan.capabilities || []), 'owner_approval'])
+        };
+    }
+    if (isConditionalBranchRequest(request)) {
+        plan = {
+            ...plan,
+            selectedNodeKeys: unique([
+                ...(plan.selectedNodeKeys || []),
+                'logic:condition',
+                ...(isConditionalNotificationRequest(request) ? ['action:email'] : [])
+            ])
+        };
+    }
+    if (isSwitchRouteRequest(request)) {
+        plan = {
+            ...plan,
+            selectedNodeKeys: unique([...(plan.selectedNodeKeys || []), 'logic:switch'])
+        };
+    }
+    if (isErrorHandlerRequest(request)) {
+        plan = {
+            ...plan,
+            selectedNodeKeys: unique([...(plan.selectedNodeKeys || []), 'logic:catchError'])
+        };
+    }
+    if (isBranchJoinRequest(request)) {
+        plan = {
+            ...plan,
+            selectedNodeKeys: unique([...(plan.selectedNodeKeys || []), 'logic:merge'])
+        };
+    }
+    const perSubmissionRequested = [
+        request,
+        turnContext?.intent?.sourceText,
+        turnContext?.intent?.latestText
+    ].some(value => perSubmissionSpreadsheetPattern.test(String(value || '')));
     plan = addDefaultSpreadsheetIntent({ plan, request, workflow: currentWorkflow, formSchema: resolvedFormSchema, spreadsheetIntent });
+    plan = applyFormResponseSheetDestinationToPlan({
+        plan,
+        spreadsheetIntent,
+        formSchema: resolvedFormSchema,
+        perSubmissionRequested
+    });
     const complexity = workflowComplexityFor({ workflow: currentWorkflow, plan, formSchema: resolvedFormSchema });
     budget.maxCalls = Math.max(budget.calls, complexity.maxProviderCalls);
 
@@ -1045,6 +1443,13 @@ export const generateWorkflowTurn = async ({
         throw createPipelineError('The workflow plan did not identify any supported nodes.', 'WORKFLOW_AI_NODE_SELECTION_REQUIRED');
     }
     const capabilities = unique(plan.capabilities || []);
+    const sheetDestination = resolveFormResponseSheetDestination({
+        resourceChanges: plan.resourceChanges || [],
+        spreadsheetIntent,
+        capabilities,
+        perSubmissionRequested,
+        formSchema: resolvedFormSchema
+    });
     onProgress?.({
         status: 'planning', phase: 'plan', label: `${complexity.label} budget selected`,
         message: 'Preparing a reliable workflow draft',
@@ -1055,7 +1460,10 @@ export const generateWorkflowTurn = async ({
         message: 'Loading workflow resources…', detail: `${specs.length} selected step type${specs.length === 1 ? '' : 's'} ready to configure.`
     });
     const loadedResourceContext = await resourceLoader({ userId, specs, nodes: currentWorkflow.nodes || [], selections: resourceSelections });
-    const resourceContext = withTrustedFormResource(loadedResourceContext, resolvedFormSchema);
+    const resourceContext = withTrustedConfiguredSpreadsheetResources(
+        withTrustedFormResource(loadedResourceContext, resolvedFormSchema),
+        spreadsheetIntent
+    );
     const spreadsheetRange = selectedSpreadsheetRange({ resourceContext, spreadsheetId: spreadsheetIntent.spreadsheetId });
     plan = applySelectedSpreadsheetToLinearSteps({ plan, spreadsheetIntent, range: spreadsheetRange });
     const linearAssembly = plan.type === 'plan_complete'
@@ -1063,6 +1471,11 @@ export const generateWorkflowTurn = async ({
         : { operations: null, reason: 'Only complete plans can provide a linear workflow blueprint.' };
     let previousResponse = null;
     let repairIssues = [];
+    let firstRepairIssues = [];
+    const captureRepairIssues = issues => {
+        repairIssues = issues || [];
+        if (firstRepairIssues.length === 0 && repairIssues.length > 0) firstRepairIssues = repairIssues;
+    };
     let unverifiedProposal = null;
 
     for (let attempt = 0; attempt < complexity.buildAttempts; attempt += 1) {
@@ -1097,6 +1510,7 @@ export const generateWorkflowTurn = async ({
                         requirements: plan.requirements,
                         capabilities,
                         resourceChanges: plan.resourceChanges || [],
+                        sheetDestination,
                         resourceContext,
                         resourceSelections,
                         formSchema: resolvedFormSchema,
@@ -1113,7 +1527,7 @@ export const generateWorkflowTurn = async ({
                 usage = addWorkflowUsage(usage, workerCall.response, label);
             } catch (error) {
                 if (!['WORKFLOW_AI_BUDGET_EXCEEDED', 'WORKFLOW_AI_PROVIDER_TIMEOUT', 'WORKFLOW_AI_PROVIDER_UNAVAILABLE', 'WORKFLOW_AI_RATE_LIMITED'].includes(error.code)) throw error;
-                repairIssues = error.issues || [{ code: error.code, message: error.message }];
+                captureRepairIssues(error.issues || [{ code: error.code, message: error.message }]);
                 await recordAiDiagnostic({
                     event: 'workflow_worker_unavailable_for_linear_fallback',
                     attempt: attempt + 1,
@@ -1123,30 +1537,34 @@ export const generateWorkflowTurn = async ({
             }
         }
 
-        const selectedOperations = applySelectedSpreadsheetToOperations({
+        const operationNormalization = normalizeWorkflowOperations({ operations: applySelectedSpreadsheetToOperations({
             operations: workerCall.value.operations,
             workflow: currentWorkflow,
             spreadsheetIntent,
             range: spreadsheetRange
-        });
+        }), knownNodeKeys: specs.map(spec => spec.nodeKey) });
+        const selectedOperations = operationNormalization.operations;
         workerCall = { ...workerCall, value: { ...workerCall.value, operations: selectedOperations } };
-        const destinationIssues = isExistingSpreadsheetIntent(spreadsheetIntent)
-            && Array.isArray(selectedOperations)
-            && selectedOperations.some(isRuntimeSpreadsheetCreator)
-            ? [{
-                code: 'WORKFLOW_SPREADSHEET_DESTINATION_CONFLICT',
-                path: 'operations',
-                message: 'An existing Google Sheet is selected, so do not add a Create Google Sheet step.'
-            }]
-            : [];
+        const destinationIssues = validateFormResponseSheetDestination({
+            operations: selectedOperations,
+            resourceChanges: plan.resourceChanges || [],
+            spreadsheetIntent,
+            capabilities,
+            perSubmissionRequested,
+            formSchema: resolvedFormSchema
+        }).map(issue => ({
+            ...issue,
+            path: issue.path === 'nodes' ? 'operations' : issue.path
+        }));
         const workerIssues = [
+            ...operationNormalization.issues,
             ...workflowOutputIssues({ call: workerCall, validate: validateWorkflowWorkerResult }),
             ...destinationIssues
         ];
         if (workerIssues.length > 0) {
             onProgress?.({ status: 'repairing', phase: 'draft', label: 'Repairing an invalid workflow draft', message: 'The draft needs a correction', detail: `${workerIssues.length} issue${workerIssues.length === 1 ? '' : 's'} found before the workflow could be checked.` });
             previousResponse = workerCall.rawText || workerCall.value;
-            repairIssues = workerIssues;
+            captureRepairIssues(workerIssues);
             continue;
         }
 
@@ -1163,12 +1581,14 @@ export const generateWorkflowTurn = async ({
                 resourceContext,
                 resourceChanges: plan.resourceChanges || [],
                 bindExistingFormResponseValues: isExistingSpreadsheetIntent(spreadsheetIntent),
+                spreadsheetIntent,
+                perSubmissionRequested,
                 registry
             });
         } catch (error) {
             onProgress?.({ status: 'repairing', phase: 'draft', label: 'Correcting workflow connections', message: 'The draft needs a correction', detail: `${(error.issues || []).length || 1} connection or configuration issue needs repair.` });
             previousResponse = workerCall.value;
-            repairIssues = error.issues || [{ code: error.code || 'WORKFLOW_AI_PROPOSAL_INVALID', message: error.message }];
+            captureRepairIssues(error.issues || [{ code: error.code || 'WORKFLOW_AI_PROPOSAL_INVALID', message: error.message }]);
             await recordAiDiagnostic({
                 event: 'workflow_proposal_rejected',
                 attempt: attempt + 1,
@@ -1213,7 +1633,7 @@ export const generateWorkflowTurn = async ({
         } catch (error) {
             if (!['WORKFLOW_AI_INVALID_VERIFIER', 'WORKFLOW_AI_BUDGET_EXCEEDED', 'WORKFLOW_AI_PROVIDER_TIMEOUT'].includes(error.code)) throw error;
             previousResponse = workerCall.value;
-            repairIssues = error.issues || [{ code: error.code, message: error.message }];
+            captureRepairIssues(error.issues || [{ code: error.code, message: error.message }]);
             unverifiedProposal = {
                 ...proposal,
                 verification: {
@@ -1234,11 +1654,11 @@ export const generateWorkflowTurn = async ({
         if (verifier.call.value.status === 'repair') {
             onProgress?.({ status: 'repairing', phase: 'check', label: 'Repairing a requirement mismatch', message: 'The verifier found a requirement to correct', detail: `${verifier.call.value.issues.length} requested detail${verifier.call.value.issues.length === 1 ? '' : 's'} still needs attention.` });
             previousResponse = workerCall.value;
-            repairIssues = verifier.call.value.issues.map(item => ({
+            captureRepairIssues(verifier.call.value.issues.map(item => ({
                 code: 'REQUIREMENT_NOT_SATISFIED',
                 path: item.requirementId || 'requirements',
                 message: item.message
-            }));
+            })));
             await recordAiDiagnostic({
                 event: 'workflow_verifier_repair_requested',
                 attempt: attempt + 1,
@@ -1306,7 +1726,7 @@ export const generateWorkflowTurn = async ({
                     registry
                 });
             } catch (error) {
-                repairIssues = error.issues || [{ code: error.code || 'WORKFLOW_LINEAR_FALLBACK_INVALID', message: error.message }];
+                captureRepairIssues(error.issues || [{ code: error.code || 'WORKFLOW_LINEAR_FALLBACK_INVALID', message: error.message }]);
                 await recordAiDiagnostic({
                     event: 'workflow_linear_fallback_rejected',
                     issues: repairIssues.slice(0, 20).map(item => ({ code: item.code, path: item.path, value: item.value }))
@@ -1400,6 +1820,6 @@ export const generateWorkflowTurn = async ({
     throw createPipelineError(
         'I could not safely prepare workflow changes that satisfy your request. No changes were applied.',
         'WORKFLOW_AI_UNSAFE_PROPOSAL',
-        repairIssues
+        mergeRepairIssues(firstRepairIssues, repairIssues)
     );
 };

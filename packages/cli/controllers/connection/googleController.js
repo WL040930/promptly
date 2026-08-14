@@ -14,6 +14,19 @@ const oauth2Client = new OAuth2Client(
 
 const getConnectionsPath = () => '/app/settings/connections';
 
+const safeReturnPath = value => {
+    const candidate = String(value || '').trim();
+    if (!candidate) return null;
+    try {
+        const origin = new URL(env.app.clientOrigin).origin;
+        const url = new URL(candidate, env.app.clientOrigin);
+        if (url.origin !== origin || !url.pathname.startsWith('/app/')) return null;
+        return `${url.pathname}${url.search}${url.hash}`;
+    } catch {
+        return null;
+    }
+};
+
 const tokenExpiryDate = tokens => {
     if (tokens?.expiry_date === null || tokens?.expiry_date === undefined || tokens?.expiry_date === '') return null;
     const timestamp = Number(tokens?.expiry_date);
@@ -26,8 +39,8 @@ const getGoogleConnectionStatus = async (req, res) => {
     return res.json(status);
 };
 
-const redirectToConnections = (res, params, user = null) => {
-    const redirectUrl = new URL(getConnectionsPath(), env.app.clientOrigin);
+const redirectToConnections = (res, params, user = null, returnTo = null) => {
+    const redirectUrl = new URL(safeReturnPath(returnTo) || getConnectionsPath(), env.app.clientOrigin);
 
     for (const [key, value] of Object.entries(params)) {
         redirectUrl.searchParams.set(key, value);
@@ -37,6 +50,7 @@ const redirectToConnections = (res, params, user = null) => {
 };
 
 const googleConnect = async (req, res) => {
+    const returnTo = safeReturnPath(req.query.returnTo) || getConnectionsPath();
     const url = oauth2Client.generateAuthUrl({
         access_type: 'offline',
         prompt: 'consent',
@@ -55,7 +69,8 @@ const googleConnect = async (req, res) => {
         state: jwt.sign({
             sub: req.user.id,
             purpose: 'google-oauth',
-            nonce: crypto.randomUUID()
+            nonce: crypto.randomUUID(),
+            returnTo
         }, env.jwt.secret, { expiresIn: '10m' })
     });
 
@@ -73,10 +88,12 @@ const googleCallback = async (req, res) => {
     }
 
     let userId;
+    let returnTo = getConnectionsPath();
     try {
         const statePayload = jwt.verify(state, env.jwt.secret);
         if (statePayload.purpose !== 'google-oauth') throw new Error('Invalid OAuth state purpose.');
         userId = statePayload.sub;
+        returnTo = safeReturnPath(statePayload.returnTo) || getConnectionsPath();
     } catch {
         return redirectToConnections(res, { settings: 'connections', error: 'invalid_oauth_state' });
     }
@@ -86,7 +103,7 @@ const googleCallback = async (req, res) => {
         return redirectToConnections(res, {
             settings: 'connections',
             error: 'user_not_found'
-        });
+        }, null, returnTo);
     }
 
     try {
@@ -120,13 +137,13 @@ const googleCallback = async (req, res) => {
         return redirectToConnections(res, {
             settings: 'connections',
             success: 'true'
-        }, user);
+        }, user, returnTo);
     } catch (err) {
         console.error('Google OAuth Error:', err);
         return redirectToConnections(res, {
             settings: 'connections',
             error: 'oauth_failed'
-        }, user);
+        }, user, returnTo);
     }
 };
 

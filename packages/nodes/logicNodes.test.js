@@ -56,22 +56,28 @@ test('switch supports JSON cases and deterministic default routing', async () =>
     const result = await run(SwitchNode, 'switch', {
         valueToTest: 'billing',
         cases: JSON.stringify([
-            { value: 'support', handle: 'support' },
-            { value: 'billing', handle: 'billing' }
-        ]),
-        defaultHandle: 'fallback'
+            { value: 'support', handle: 'branchA' },
+            { value: 'billing', handle: 'branchB' }
+        ])
     });
-    assert.equal(result.targetHandle, 'billing');
-    assert.equal(result.matchedCase.handle, 'billing');
+    assert.equal(result.targetHandle, 'branchB');
+    assert.equal(result.matchedCase.handle, 'branchB');
 
-    assert.equal(evaluateSwitch({ valueToTest: 'other', matchA: 'a', matchB: 'b' }).targetHandle, 'default');
+    assert.equal(evaluateSwitch({ valueToTest: 'other', cases: [] }).targetHandle, 'default');
 });
 
-test('switch rejects duplicate case handles', async () => {
+test('switch rejects duplicate or invented case handles', async () => {
     const result = await run(SwitchNode, 'switch', {
         valueToTest: 'a',
-        cases: JSON.stringify([{ value: 'a', handle: 'same' }, { value: 'b', handle: 'same' }])
+        cases: JSON.stringify([{ value: 'a', handle: 'branchA' }, { value: 'b', handle: 'branchA' }])
     });
     assert.equal(result.success, false);
     assert.equal(result.errorCode, 'SWITCH_FAILED');
+
+    const inventedHandle = await run(SwitchNode, 'switch', {
+        valueToTest: 'a',
+        cases: JSON.stringify([{ value: 'a', handle: 'billing' }])
+    });
+    assert.equal(inventedHandle.success, false);
+    assert.equal(inventedHandle.errorCode, 'SWITCH_FAILED');
 });
