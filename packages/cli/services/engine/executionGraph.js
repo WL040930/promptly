@@ -20,6 +20,7 @@ export const buildExecutionGraph = (nodes = [], edges = []) => {
 };
 
 export const selectOutgoingEdges = (node, result = {}, edges = [], nodeMap = null) => {
+    if (result.skipped === true) return [];
     if (result.success === false) {
         return edges.filter(edge => nodeMap?.get(nodeKey(edge.target))?.subType === 'catchError');
     }

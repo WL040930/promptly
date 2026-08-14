@@ -34,3 +34,27 @@ test('email retry helper retries transient failures and stops on permanent failu
     assert.equal(isRetryableEmailError({ responseCode: 400 }), false);
     assert.equal(isRetryableEmailError({ responseCode: 503 }), true);
 });
+
+test('Send Email defaults to durable asynchronous delivery and exposes queue outputs', async () => {
+    const schema = (await import('./integrations/generic-connectors/send-email/schema.json', { with: { type: 'json' } })).default;
+    const deliveryMode = schema.inputs.find(input => input.name === 'deliveryMode');
+    assert.equal(deliveryMode.defaultValue, 'async');
+    assert.deepEqual(deliveryMode.options.map(option => option.value), ['async', 'wait']);
+    assert.deepEqual(schema.outputs.filter(output => ['deliveryId', 'deliveryStatus'].includes(output.name)).map(output => output.name), ['deliveryId', 'deliveryStatus']);
+});
+
+test('email validation accepts normalized async messages with empty optional recipient arrays', () => {
+    const normalized = validateEmailMessage({
+        to: ['member@example.com'],
+        cc: [],
+        bcc: [],
+        replyTo: [],
+        subject: 'Welcome',
+        text: 'Hello',
+        html: ''
+    });
+    assert.deepEqual(normalized.to, ['member@example.com']);
+    assert.deepEqual(normalized.cc, []);
+    assert.deepEqual(normalized.bcc, []);
+    assert.deepEqual(normalized.replyTo, []);
+});

@@ -39,6 +39,25 @@ export const WAIT_CONTINUATION_CLAIM_SQL = `
     RETURNING continuation.*;
 `;
 
+export const EMAIL_CONTINUATION_CLAIM_SQL = `
+    WITH candidate AS (
+        SELECT id
+        FROM "workflow_continuations"
+        WHERE kind = 'email'
+          AND status = 'pending'
+          AND "availableAt" <= NOW()
+        ORDER BY "availableAt" ASC, "createdAt" ASC
+        FOR UPDATE SKIP LOCKED
+        LIMIT 1
+    )
+    UPDATE "workflow_continuations" AS continuation
+    SET status = 'resuming',
+        "updatedAt" = NOW()
+    FROM candidate
+    WHERE continuation.id = candidate.id
+    RETURNING continuation.*;
+`;
+
 export const claimQueueRow = async ({ model, query }) => {
     const [row] = await model.sequelize.query(query, { type: QueryTypes.SELECT });
     return row ? model.build(row, { isNewRecord: false }) : null;

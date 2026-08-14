@@ -22,6 +22,15 @@ test('selectOutgoingEdges follows a logic routing handle', () => {
     assert.deepEqual(selectOutgoingEdges({ type: 'action' }, {}, edges), edges);
 });
 
+test('a skipped logic node does not forward any of its routes', () => {
+    const edges = [
+        { id: 'approved_edge', sourceHandle: 'approved' },
+        { id: 'rejected_edge', sourceHandle: 'rejected' }
+    ];
+
+    assert.deepEqual(selectOutgoingEdges({ type: 'logic' }, { success: true, skipped: true }, edges), []);
+});
+
 test('selectOutgoingEdges keeps every destination on the selected logic route', () => {
     const edges = [
         { id: 'save_approved_response', sourceHandle: 'approved' },

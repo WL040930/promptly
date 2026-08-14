@@ -9,6 +9,7 @@ import {
     validateEmailMessage,
     withRetries
 } from './emailConnector.js';
+import { enqueueEmailDelivery } from '../../../../cli/services/engine/emailDeliveryService.js';
 
 const DEBUG_PREFIX = '[DEBUG-send-email]';
 const PENDING_TIMEOUT_MS = 10 * 60 * 1000;
@@ -120,6 +121,31 @@ export default class SendEmailNode extends BaseNode {
             });
         }
         contextWithNode.__runtime.currentNodeId = this.id;
+
+        if ((config.deliveryMode || 'async') === 'async') {
+            try {
+                const queued = await enqueueEmailDelivery({
+                    context: contextWithNode,
+                    nodeId: this.id,
+                    provider,
+                    message
+                });
+                return {
+                    success: true,
+                    outputData: queued,
+                    ...queued,
+                    to: message.to.join(', '),
+                    subject: message.subject,
+                    logEntry: { deliveryId: queued.deliveryId, deliveryStatus: queued.deliveryStatus, asynchronous: true },
+                    details: queued.deduplicated
+                        ? 'Email delivery was already queued for this event.'
+                        : 'Email queued for asynchronous delivery.'
+                };
+            } catch (error) {
+                return { success: false, errorCode: error.code || 'EMAIL_QUEUE_FAILED', error: error.message };
+            }
+        }
+
         let delivery;
         try {
             delivery = await getDelivery.call(this, contextWithNode, message, provider);

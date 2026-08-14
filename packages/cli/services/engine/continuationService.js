@@ -3,7 +3,12 @@ import { getDatabasePoolStats } from '../../db/index.js';
 import { User, WorkflowContinuation, AutomationRun, Workflow, FormResponse, Form } from '../../models/index.js';
 import { resumeWorkflowRun } from './executionEngine.js';
 import { createBackgroundWorkerPoller } from '../backgroundWorkerPoller.js';
-import { claimQueueRow, WAIT_CONTINUATION_CLAIM_SQL } from '../queueClaim.js';
+import { claimQueueRow, EMAIL_CONTINUATION_CLAIM_SQL, WAIT_CONTINUATION_CLAIM_SQL } from '../queueClaim.js';
+import {
+    EMAIL_DELIVERY_CONTINUATION_KIND,
+    processQueuedEmailContinuation,
+    recoverStaleEmailContinuations
+} from './emailDeliveryService.js';
 
 const SENSITIVE_KEY = /(authorization|cookie|password|secret|token|api[-_]?key|private[-_]?key)/i;
 const serviceError = (message, status, code) => Object.assign(new Error(message), { status, code });
@@ -28,6 +33,73 @@ const safeReviewValue = (value, key = '') => {
     return value;
 };
 
+const normalizeReviewKey = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const friendlyReviewLabel = value => String(value || '')
+    .replace(/^f[_-]?/i, '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^./, character => character.toUpperCase());
+
+const fieldAliases = field => new Set([
+    field?.id,
+    field?.name,
+    field?.label,
+    String(field?.id || '').replace(/^f[_-]?/i, '')
+].filter(Boolean).map(normalizeReviewKey));
+const fallbackReviewKey = key => normalizeReviewKey(String(key || '').replace(/^f[_-]?/i, ''));
+const isPrefixedReviewKey = key => /^f[_-]/i.test(String(key || ''));
+
+export const normalizeFormReviewEntries = ({ fields = [], values = {} } = {}) => {
+    const source = values && typeof values === 'object' ? values : {};
+    const sourceEntries = Object.entries(source);
+    const consumedKeys = new Set();
+    const entries = [];
+
+    for (const field of Array.isArray(fields) ? fields : []) {
+        if (!field?.id || field.deleted || ['heading', 'hidden'].includes(field.type)) continue;
+        const aliases = fieldAliases(field);
+        const matchingKeys = sourceEntries
+            .filter(([key]) => aliases.has(normalizeReviewKey(key)))
+            .map(([key]) => key);
+        if (matchingKeys.length === 0) continue;
+
+        const key = matchingKeys.find(candidate => candidate === field.id)
+            || matchingKeys.find(candidate => normalizeReviewKey(candidate) === normalizeReviewKey(field.id))
+            || matchingKeys[0];
+        consumedKeys.add(key);
+        matchingKeys.forEach(candidate => consumedKeys.add(candidate));
+        const label = field.label || field.name || friendlyReviewLabel(field.id);
+        entries.push({
+            id: field.id,
+            label,
+            type: field.type || 'text',
+            value: safeReviewValue(source[key], `${field.id} ${label}`)
+        });
+    }
+
+    const unknownEntries = new Map();
+    for (const [key, value] of sourceEntries) {
+        if (consumedKeys.has(key) || ['responseId', 'submittedAt'].includes(key)) continue;
+        const alias = fallbackReviewKey(key) || normalizeReviewKey(key);
+        const group = unknownEntries.get(alias) || [];
+        group.push([key, value]);
+        unknownEntries.set(alias, group);
+    }
+
+    for (const candidates of unknownEntries.values()) {
+        const [key, value] = candidates.find(([candidate]) => !isPrefixedReviewKey(candidate)) || candidates[0];
+        entries.push({
+            id: key,
+            label: friendlyReviewLabel(key) || key,
+            type: 'text',
+            value: safeReviewValue(value, key)
+        });
+    }
+    return entries;
+};
+
 const normalizeReviewData = async (input, responseRecord = null) => {
     const source = input && typeof input === 'object' ? input : {};
     const responseId = source.responseId || null;
@@ -35,10 +107,7 @@ const normalizeReviewData = async (input, responseRecord = null) => {
         const response = responseRecord || await FormResponse.findByPk(responseId, { include: [{ model: Form, as: 'form', attributes: ['id', 'title'] }] }).catch(() => null);
         const fields = response?.snapshot || [];
         const values = response?.responseData || source.fields || {};
-        const entries = Object.entries(values).map(([id, value]) => {
-            const field = fields.find(item => item?.id === id);
-            return { id, label: field?.label || field?.name || id, type: field?.type || 'text', value: safeReviewValue(value, `${id} ${field?.label || field?.name || ''}`) };
-        });
+        const entries = normalizeFormReviewEntries({ fields, values });
         return {
             kind: 'form_submission',
             form: response?.form ? { id: response.form.id, title: response.form.title } : null,
@@ -114,6 +183,10 @@ const assertDecisionNote = note => {
 
 const claimDueWait = async () => {
     return claimQueueRow({ model: WorkflowContinuation, query: WAIT_CONTINUATION_CLAIM_SQL });
+};
+
+const claimDueEmail = async () => {
+    return claimQueueRow({ model: WorkflowContinuation, query: EMAIL_CONTINUATION_CLAIM_SQL });
 };
 
 const resumeWait = async continuation => {
@@ -233,11 +306,25 @@ export const getApprovalSummary = async userId => ({
 });
 
 export const processDueContinuations = async ({ limit = 10 } = {}) => {
+    await recoverStaleEmailContinuations();
     let processed = 0;
     while (processed < limit) {
-        const continuation = await claimDueWait();
+        // Alternate queue priority so a busy delay queue cannot starve email
+        // deliveries, while scheduled waits still receive regular service.
+        const claims = processed % 2 === 0
+            ? [claimDueWait, claimDueEmail]
+            : [claimDueEmail, claimDueWait];
+        let continuation = null;
+        for (const claim of claims) {
+            continuation = await claim();
+            if (continuation) break;
+        }
         if (!continuation) break;
-        await resumeWait(continuation);
+        if (continuation.kind === EMAIL_DELIVERY_CONTINUATION_KIND) {
+            await processQueuedEmailContinuation(continuation);
+        } else {
+            await resumeWait(continuation);
+        }
         processed += 1;
     }
     return processed;

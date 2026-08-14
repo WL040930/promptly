@@ -14,6 +14,17 @@
       "defaultValue": "system-default"
     },
     {
+      "name": "deliveryMode",
+      "type": "select",
+      "label": "Send mode",
+      "defaultValue": "async",
+      "options": [
+        { "label": "Async (recommended)", "value": "async" },
+        { "label": "Wait for delivery", "value": "wait" }
+      ],
+      "helpText": "Async queues the email and lets the workflow continue. Choose wait only when a following step needs the provider message ID."
+    },
+    {
       "name": "to",
       "type": "text",
       "label": "To (recipient email)",
@@ -73,7 +84,19 @@
       "name": "messageId",
       "type": "string",
       "label": "Message ID",
-      "description": "The ID returned by the email provider after sending."
+      "description": "The ID returned by the email provider after sending. Available only when Send mode is set to Wait for delivery."
+    },
+    {
+      "name": "deliveryId",
+      "type": "string",
+      "label": "Delivery ID",
+      "description": "The durable ID for an asynchronous email delivery."
+    },
+    {
+      "name": "deliveryStatus",
+      "type": "string",
+      "label": "Delivery Status",
+      "description": "Queued or sent."
     },
     {
       "name": "to",

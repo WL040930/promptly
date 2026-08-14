@@ -20,5 +20,6 @@ Send a validated plain-text or HTML email through the system SMTP provider or th
 The LLM must configure this node with the following JSON schema:
 - `emailProvider`: `system-default`, `smtp`, or `user-gmail`.
 - `to`, `subject`, and `body` are required. `htmlBody`, `cc`, `bcc`, and `replyTo` are optional.
+- `deliveryMode` defaults to `async`: Promptly persists the resolved email, then the workflow continues while a durable worker sends it. Use `wait` only when a later step needs the provider's `messageId`.
 - Delivery retries require a trigger idempotency key; uncertain sends without one are not retried to avoid duplicate mail.
 - Form responses, webhooks with `x-idempotency-key`, and scheduled runs provide stable event keys for delivery deduplication.

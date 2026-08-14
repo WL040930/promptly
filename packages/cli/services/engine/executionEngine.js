@@ -334,7 +334,7 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
             runtimeState.currentNodeId = nodeId;
 
             if (!shouldExecute) {
-                completeNode(nodeId, node, { success: true, outputData: null }, inputNodeIds, { time: `${Date.now() - stepStartTime}ms`, details: 'Skipped because no incoming branch was selected.' }, 'skipped');
+                completeNode(nodeId, node, { success: true, skipped: true, outputData: null }, inputNodeIds, { time: `${Date.now() - stepStartTime}ms`, details: 'Skipped because no incoming branch was selected.' }, 'skipped');
                 continue;
             }
 
@@ -354,7 +354,7 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
                     errorMsg ||= failure.error;
                     stepDetails = executionResult.error || 'Node reported failure.';
                 } else {
-                    stepDetails = `Successfully executed ${node.title || node.type} (${node.subType})`;
+                    stepDetails = executionResult.details || `Successfully executed ${node.title || node.type} (${node.subType})`;
                 }
             } catch (error) {
                 if (error.code === RUN_CANCELLED_CODE) throw error;

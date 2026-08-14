@@ -183,8 +183,6 @@ function ApprovalRow({ item, selectedId, tab, onSelect }) {
             <span>{item.run?.trigger || "Workflow event"}</span>
             <span aria-hidden="true">|</span>
             <span>{formatDate(item.createdAt)}</span>
-            <span aria-hidden="true">|</span>
-            <span className="font-mono">{item.id}</span>
           </div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5 text-right">
@@ -247,9 +245,6 @@ function ApprovalInspector({ item, isOpen = true, onClose, onDecision }) {
             <h3 className="text-sm font-semibold text-slate-900 sm:text-base">
               Approval details
             </h3>
-            <span className="block max-w-64 truncate font-mono text-xs text-slate-500">
-              {item.id}
-            </span>
           </div>
           <button
             type="button"
@@ -318,6 +313,9 @@ function ApprovalInspector({ item, isOpen = true, onClose, onDecision }) {
               <summary className="cursor-pointer px-3 py-3 text-xs font-semibold text-slate-600">
                 Show technical input
               </summary>
+              <p className="border-t border-slate-200 px-3 pt-3 text-[11px] text-slate-500">
+                Request ID: <span className="font-mono">{item.id}</span>
+              </p>
               <pre className="max-h-64 overflow-auto border-t border-slate-200 px-3 py-3 text-[11px] leading-5 text-slate-600">
                 {JSON.stringify(item.payload?.input || {}, null, 2)}
               </pre>

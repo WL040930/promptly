@@ -22,9 +22,12 @@ const assertHeaderSafe = (value, fieldName) => {
 
 export const validateEmailMessage = message => {
     const to = parseRecipients(message.to);
-    const cc = message.cc ? parseRecipients(message.cc) : [];
-    const bcc = message.bcc ? parseRecipients(message.bcc) : [];
-    const replyTo = message.replyTo ? parseRecipients(message.replyTo) : [];
+    const hasRecipients = value => Array.isArray(value)
+        ? value.length > 0
+        : Boolean(String(value ?? '').trim());
+    const cc = hasRecipients(message.cc) ? parseRecipients(message.cc) : [];
+    const bcc = hasRecipients(message.bcc) ? parseRecipients(message.bcc) : [];
+    const replyTo = hasRecipients(message.replyTo) ? parseRecipients(message.replyTo) : [];
     const subject = String(message.subject ?? '').trim();
     const text = String(message.text ?? '');
     const html = message.html === undefined || message.html === null ? '' : String(message.html);
