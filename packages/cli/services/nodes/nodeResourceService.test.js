@@ -46,6 +46,34 @@ test('node resource service lists spreadsheets and derives friendly full-sheet r
     });
 });
 
+test('node resource service discovers Google Forms and resolves their linked response Sheet', async () => {
+    const service = createService({
+        getGoogleClient: async () => ({
+            connection: { accountEmail: 'owner@example.com' },
+            client: {
+                request: async ({ url }) => {
+                    if (url.includes('mimeType%3D%27application%2Fvnd.google-apps.form%27')) {
+                        return { data: { files: [{ id: 'form_event', name: 'Event Registration', modifiedTime: '2026-08-01T00:00:00Z' }] } };
+                    }
+                    if (url.includes('forms.googleapis.com/v1/forms/form_event')) {
+                        return { data: { info: { title: 'Event Registration' }, linkedSheetId: 'sheet_event' } };
+                    }
+                    if (url.includes('/drive/v3/files/sheet_12345678901234567890')) {
+                        return { data: { id: 'sheet_12345678901234567890', name: 'Event responses', mimeType: 'application/vnd.google-apps.spreadsheet' } };
+                    }
+                    return { data: { files: [] } };
+                }
+            }
+        })
+    });
+    const forms = await service.list({ userId: 'user_1', resource: 'google-forms' });
+    const linked = await service.list({ userId: 'user_1', resource: 'google-form-response-sheet', params: { formId: forms.options[0].value } });
+    const verified = await service.list({ userId: 'user_1', resource: 'google-spreadsheet', params: { spreadsheetId: 'sheet_12345678901234567890' } });
+    assert.equal(forms.options[0].label, 'Event Registration');
+    assert.deepEqual(linked.metadata, { formId: 'form_event', formTitle: 'Event Registration', linkedSheetId: 'sheet_event' });
+    assert.equal(verified.options[0].label, 'Event responses');
+});
+
 test('node resource service returns an actionable reconnect error for unavailable Google access', async () => {
     const service = createService({ getGoogleClient: async () => { throw new Error('missing'); } });
     await assert.rejects(

@@ -102,6 +102,11 @@ const normalizeOperation = ({ operation, index, aliases, ambiguous, knownNodeKey
                 whenRejected: actionDefinition({ definition: operation.whenRejected, generatedRef: `${prefix}_rejected`, aliases, ambiguous, knownNodeKeys })
             })
         };
+    case 'add_terminal_approval':
+        return {
+            ...operation,
+            approval: definitionRef(operation.approval, `${prefix}_approval`, aliases, ambiguous)
+        };
     case 'join_branches':
         return {
             ...operation,

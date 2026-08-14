@@ -327,7 +327,14 @@ export const publishWorkflow = asyncHandler(async (req, res) => {
     } catch (error) {
         await workflow.update({ isActive: false, status: 'Trigger setup failed' });
         await deactivateWorkflowTriggerBindings({ workflowId: workflow.id });
-        return res.status(503).json({ message: 'Automation trigger could not be connected.', error: error.message });
+        const message = error.code === 'TRIGGER_PUBLIC_ORIGIN_REQUIRED'
+            ? error.message
+            : 'Automation trigger could not be connected.';
+        return res.status(503).json({
+            message,
+            code: error.code || 'TRIGGER_CONNECTION_FAILED',
+            error: error.message
+        });
     }
     syncSchedule(workflow.id, req.user.id, workflow.nodes, true);
     res.json({ ...workflow.toJSON(), release: await releaseSummary(workflow) });

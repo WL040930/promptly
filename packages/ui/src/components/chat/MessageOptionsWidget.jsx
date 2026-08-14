@@ -1,10 +1,17 @@
 import { useState } from 'react';
-import { Check, ChevronRight, Sparkles } from 'lucide-react';
+import { Check, ChevronRight, Search, Sparkles } from 'lucide-react';
 import Button from '../ui/Button.jsx';
 import { choiceValues, clarificationState, textValue, updateChoiceValue } from '../../utils/clarificationState.js';
 import { resolveClarificationSubmission, updateClarificationDraft } from '../../../../shared/clarificationContract.js';
 
 const isResourceChoice = input => input.type === 'workflow_choice' || input.type === 'form_choice' || input.type === 'resource_choice';
+const isResourcePicker = input => input.type === 'resource_picker';
+const defaultDraftState = (options, state) => ({
+    ...Object.fromEntries((options || [])
+        .filter(input => input?.id && input.defaultValue !== undefined && input.defaultValue !== null && input.defaultValue !== '')
+        .map(input => [input.id, input.defaultValue])),
+    ...clarificationState(state)
+});
 
 export default function MessageOptionsWidget({
     message,
@@ -19,7 +26,8 @@ export default function MessageOptionsWidget({
     initialState = {},
     resolution = null
 }) {
-    const [formState, setFormState] = useState(() => clarificationState(initialState));
+    const [formState, setFormState] = useState(() => defaultDraftState(options, initialState));
+    const [pickerSearch, setPickerSearch] = useState({});
     const evaluation = resolveClarificationSubmission({ inputs: options, state: isResolved ? initialState : formState });
     const answers = resolution?.answers || evaluation.answers;
     const canSubmit = evaluation.complete;
@@ -90,6 +98,61 @@ export default function MessageOptionsWidget({
                 {(options || []).map((input, index) => {
                     const selected = choiceValues(formState?.[input.id]);
                     const questionLabel = input.label || `Question ${index + 1}`;
+
+                    if (isResourcePicker(input)) {
+                        const search = pickerSearch[input.id] || '';
+                        const normalizedSearch = search.trim().toLocaleLowerCase();
+                        const resources = (input.options || []).filter(resource => !normalizedSearch
+                            || [resource.name, resource.title, resource.description]
+                                .filter(Boolean)
+                                .some(value => String(value).toLocaleLowerCase().includes(normalizedSearch)));
+                        return (
+                            <fieldset key={input.id || index} className="space-y-2.5">
+                                <legend className="text-xs font-bold text-slate-700">{questionLabel}</legend>
+                                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 focus-within:border-violet-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-violet-100/70">
+                                    <Search size={15} className="shrink-0 text-slate-400" />
+                                    <input
+                                        type="search"
+                                        value={search}
+                                        disabled={isTyping}
+                                        onChange={event => setPickerSearch(previous => ({ ...previous, [input.id]: event.target.value }))}
+                                        placeholder={`Search ${input.label?.toLocaleLowerCase() || 'options'}…`}
+                                        className="min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+                                    />
+                                    {input.account && <span className="max-w-28 truncate text-[10px] font-semibold text-slate-400">{input.account}</span>}
+                                </div>
+                                <div className="max-h-60 space-y-2 overflow-y-auto pr-0.5">
+                                    {resources.map(resource => (
+                                        <button
+                                            key={resource.id}
+                                            type="button"
+                                            disabled={isTyping}
+                                            onClick={() => setFormState(previous => updateClarificationDraft({ inputs: options, state: previous, inputId: input.id, value: resource.id }))}
+                                            className={`group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${selected.includes(resource.id) ? 'border-violet-300 bg-violet-50 text-violet-950' : 'border-slate-200 bg-white hover:border-violet-300 hover:bg-violet-50/50'}`}
+                                        >
+                                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-500">{(resource.name || resource.title || '?').slice(0, 1).toUpperCase()}</span>
+                                            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-700">{resource.name || resource.title}</span>{resource.description && <span className="block truncate text-xs text-slate-500">{resource.description}</span>}</span>
+                                            {selected.includes(resource.id) ? <Check size={16} className="text-violet-600" /> : <ChevronRight size={16} className="text-slate-400" />}
+                                        </button>
+                                    ))}
+                                    {resources.length === 0 && <p className="px-1 py-2 text-xs text-slate-500">No matching options.</p>}
+                                </div>
+                                {input.allowCustom && (
+                                    <label className="block space-y-1.5 pt-0.5">
+                                        <span className="text-[11px] font-semibold text-slate-500">{input.customLabel || 'Paste URL or ID'}</span>
+                                        <input
+                                            type="text"
+                                            disabled={isTyping}
+                                            value={(input.options || []).some(option => option.id === selected[0]) ? '' : (selected[0] || '')}
+                                            onChange={event => setFormState(previous => updateClarificationDraft({ inputs: options, state: previous, inputId: input.id, value: event.target.value }))}
+                                            placeholder={input.customLabel || 'Paste URL or ID'}
+                                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-violet-400 focus:ring-4 focus:ring-violet-100"
+                                        />
+                                    </label>
+                                )}
+                            </fieldset>
+                        );
+                    }
 
                     if (isResourceChoice(input)) {
                         return (

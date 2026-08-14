@@ -60,6 +60,7 @@ const googleConnect = async (req, res) => {
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/drive.readonly',
             'https://www.googleapis.com/auth/drive.file',
+            'https://www.googleapis.com/auth/forms.body.readonly',
             'https://www.googleapis.com/auth/calendar.events',
             'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
             'https://www.googleapis.com/auth/gmail.send',

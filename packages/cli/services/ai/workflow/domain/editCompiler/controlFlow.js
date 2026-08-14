@@ -546,6 +546,66 @@ export const addApprovalGate = ({ operation, nodes, edges, refs, specsByNodeKey 
 };
 
 /**
+ * Add an Approval as the final step in a workflow. Unlike an inserted
+ * approval gate, there is no existing downstream connection to preserve:
+ * both approved and rejected outcomes deliberately end the run here.
+ */
+export const addTerminalApproval = ({ operation, nodes, edges, refs, specsByNodeKey }) => {
+    const { from, sourceNode } = requireNamedSourceRoute({
+        operation,
+        endpoint: operation.from,
+        label: 'source',
+        code: 'WORKFLOW_TERMINAL_APPROVAL_SOURCE_INVALID',
+        nodes,
+        refs,
+        specsByNodeKey
+    });
+    const approval = operation.approval;
+    assertNodeDefinition({
+        operation,
+        definition: approval,
+        path: 'approval',
+        message: 'add_terminal_approval requires an Approval definition.',
+        code: 'WORKFLOW_TERMINAL_APPROVAL_INVALID'
+    });
+    const approvalNode = addNodeFromEdit({
+        operation: operation.op,
+        nodeDefinition: {
+            ref: approval.ref,
+            nodeKey: CONTROL_FLOW_NODE_KEYS.approval,
+            title: approval.title,
+            description: approval.description,
+            config: approval.config,
+            afterNodeRef: approval.afterNodeRef || operation.from.nodeRef
+        },
+        nodes,
+        refs,
+        specsByNodeKey
+    });
+    assertNodePorts({
+        operation,
+        node: approvalNode,
+        outputs: ['approved', 'rejected'],
+        code: 'WORKFLOW_APPROVAL_GATE_SCHEMA_INVALID',
+        message: 'The Approval node schema does not expose approved and rejected routes.'
+    });
+    const approvalInput = requireSingleInputPort({
+        operation,
+        node: approvalNode,
+        code: 'WORKFLOW_APPROVAL_GATE_SCHEMA_INVALID',
+        message: 'The Approval node schema must expose exactly one connection input.'
+    });
+    connectNodes({
+        operation: operation.op,
+        edges,
+        from,
+        to: { nodeId: approvalNode.id, handle: approvalInput },
+        sourceNode,
+        targetNode: approvalNode
+    });
+};
+
+/**
  * Move an existing approval gate onto one different, AI-selected connection.
  * The AI identifies intent by choosing the current approval and route; the
  * compiler owns the fragile reconnection so the graph stays connected and any
@@ -794,6 +854,9 @@ export const compileControlFlowOperation = args => {
         return true;
     case 'add_approval_gate':
         addApprovalGate(args);
+        return true;
+    case 'add_terminal_approval':
+        addTerminalApproval(args);
         return true;
     case 'move_approval_gate':
         moveApprovalGate(args);

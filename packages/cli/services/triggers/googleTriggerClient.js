@@ -65,6 +65,13 @@ export const createGoogleClientForUser = ({
 export const getGoogleClientForUser = createGoogleClientForUser();
 
 export const requirePublicTriggerOrigin = () => {
-    if (!env.app.publicOrigin) throw new Error('TRIGGER_PUBLIC_ORIGIN must be configured for external Google triggers.');
+    if (!env.app.publicOrigin) {
+        const error = new Error(
+            'External Google triggers need a public HTTPS callback URL. Set TRIGGER_PUBLIC_ORIGIN to the URL of this API (or a local tunnel), restart the backend, and publish again.'
+        );
+        error.code = 'TRIGGER_PUBLIC_ORIGIN_REQUIRED';
+        error.status = 503;
+        throw error;
+    }
     return env.app.publicOrigin.replace(/\/$/, '');
 };

@@ -52,7 +52,7 @@ export const assembleLinearWorkflow = ({ workflow = {}, plan = {}, specs = [], f
     for (const [index, item] of resolvedSteps.entries()) {
         const outputs = connectionPorts(item.spec, 'outputs');
         const inputs = connectionPorts(item.spec, 'inputs');
-        if (outputs.length > 1 || inputs.length > 1) {
+        if (inputs.length > 1) {
             return unavailable('The requested workflow needs branching or multiple inputs, so it cannot use the linear assembler.');
         }
         if (index < resolvedSteps.length - 1 && outputs.length !== 1) {
@@ -84,6 +84,20 @@ export const assembleLinearWorkflow = ({ workflow = {}, plan = {}, specs = [], f
         if (missing.length > 0) {
             return unavailable(`The ${spec.nodeKey} step is missing required configuration: ${missing.join(', ')}.`);
         }
+        const isTerminalApproval = index === resolvedSteps.length - 1 && spec.nodeKey === 'logic:approval';
+        if (isTerminalApproval) {
+            const source = resolvedSteps[index - 1];
+            operations.push({
+                op: 'add_terminal_approval',
+                from: { nodeRef: source.step.ref, handle: connectionPorts(source.spec, 'outputs')[0] || null },
+                approval: {
+                    ref: step.ref,
+                    title: step.title || spec.title,
+                    config
+                }
+            });
+            continue;
+        }
         operations.push({
             op: 'create_node',
             node: {
@@ -99,6 +113,7 @@ export const assembleLinearWorkflow = ({ workflow = {}, plan = {}, specs = [], f
     for (let index = 0; index < resolvedSteps.length - 1; index += 1) {
         const from = resolvedSteps[index];
         const to = resolvedSteps[index + 1];
+        if (to.spec.nodeKey === 'logic:approval' && index + 1 === resolvedSteps.length - 1) continue;
         operations.push({
             op: 'connect',
             from: { nodeRef: from.step.ref, handle: connectionPorts(from.spec, 'outputs')[0] || null },

@@ -64,3 +64,17 @@ test('updating one alternative clears its peers without submitting the draft', (
         value: 'create'
     }), { createSpreadsheet: 'create' });
 });
+
+test('resource pickers accept a saved default while still requiring an explicit submit', () => {
+    const result = resolveClarificationSubmission({
+        inputs: [{
+            id: 'range',
+            type: 'resource_picker',
+            label: 'Response tab',
+            options: [{ id: "'Form Responses 1'!A1", name: 'Form Responses 1' }]
+        }],
+        state: { range: "'Form Responses 1'!A1" }
+    });
+    assert.equal(result.complete, true);
+    assert.deepEqual(result.answers, [{ id: 'range', label: 'Response tab', answer: 'Form Responses 1' }]);
+});

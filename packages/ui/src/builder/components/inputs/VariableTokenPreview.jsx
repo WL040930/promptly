@@ -1,6 +1,6 @@
 import { describeWorkflowVariable, splitWorkflowVariableTokens } from '../../utils/workflowVariableDisplay.js';
-import { describeWorkflowExpression, isWorkflowExpression } from '../../../../../shared/workflowExpressions.js';
-import { expressionPreviewParts, previewValueItems, workflowPreviewFallbackText } from '../../utils/workflowPreviewValue.js';
+import { isWorkflowExpression } from '../../../../../shared/workflowExpressions.js';
+import { previewValueItems, workflowExpressionPreviewParts, workflowPreviewFallbackText } from '../../utils/workflowPreviewValue.js';
 
 /** Read-only rich rendering for text that contains workflow {{variables}}. */
 export default function VariableTokenPreview({ value, nodes = [], formsById = {}, availableVars = [], className = '', tone = 'indigo' }) {
@@ -19,10 +19,9 @@ export default function VariableTokenPreview({ value, nodes = [], formsById = {}
     ><span className="truncate">{variable.label}</span></span>;
 
     if (isWorkflowExpression(value)) {
-        const description = describeWorkflowExpression(value, { nodes, formsById });
         return <span className={`flex flex-wrap items-center gap-1 ${className}`}>
-            {expressionPreviewParts(description).map((part, index) => part.reference
-                ? pill({ ...part.reference, runtimeReference: `${value.$expr === 'reference' ? value.nodeId : ''}` }, index)
+            {workflowExpressionPreviewParts(value, { nodes, formsById, availableVars }).map((part, index) => part.reference
+                ? pill(part.reference, index)
                 : part.text ? <span key={index} className="whitespace-pre-wrap">{part.text}</span> : null)}
         </span>;
     }

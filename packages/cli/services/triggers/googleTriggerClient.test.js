@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
-import { createGoogleClientForUser } from './googleTriggerClient.js';
+import env from '../../config/env.js';
+import { createGoogleClientForUser, requirePublicTriggerOrigin } from './googleTriggerClient.js';
 
 const createModels = connection => ({
     User: { findByPk: async id => ({ id }) },
@@ -69,4 +70,20 @@ test('refreshes and persists a legacy Google token before provider writes can be
     assert.equal(client.credentials.expiry_date, Date.parse('2026-08-13T00:00:00.000Z'));
     assert.equal(connection.accessToken, 'fresh_access_token');
     assert.equal(connection.tokenExpiresAt.toISOString(), '2026-08-13T00:00:00.000Z');
+});
+
+test('reports the required public callback setup when Google triggers run without one', () => {
+    const previousOrigin = env.app.publicOrigin;
+    env.app.publicOrigin = null;
+    try {
+        assert.throws(() => requirePublicTriggerOrigin(), error => {
+            assert.equal(error.code, 'TRIGGER_PUBLIC_ORIGIN_REQUIRED');
+            assert.equal(error.status, 503);
+            assert.match(error.message, /TRIGGER_PUBLIC_ORIGIN/);
+            assert.match(error.message, /public HTTPS callback URL/);
+            return true;
+        });
+    } finally {
+        env.app.publicOrigin = previousOrigin;
+    }
 });

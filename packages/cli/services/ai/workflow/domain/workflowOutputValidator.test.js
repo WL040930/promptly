@@ -21,6 +21,24 @@ test('planner validator accepts a form inspection request with an exact form ID'
     assert.deepEqual(issues, []);
 });
 
+test('planner validator accepts a Google Form response-source resolution request', () => {
+    const issues = validateWorkflowPlannerResult({
+        type: 'resolve_resource',
+        recipe: 'google_form_response_source',
+        query: 'Event Registration'
+    });
+    assert.deepEqual(issues, []);
+});
+
+test('planner validator accepts a Google Sheet new-row source resolution request', () => {
+    const issues = validateWorkflowPlannerResult({
+        type: 'resolve_resource',
+        recipe: 'google_sheet_row_source',
+        query: 'Event Registration'
+    });
+    assert.deepEqual(issues, []);
+});
+
 test('planner validator rejects a form inspection request without a form ID', () => {
     const issues = validateWorkflowPlannerResult({ type: 'inspect_form' });
     assert.ok(issues.some(item => item.code === 'REQUIRED' && item.path === 'formId'));

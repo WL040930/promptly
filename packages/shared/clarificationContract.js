@@ -18,7 +18,7 @@ const normalizedValue = (input, value) => {
         const selected = [...new Set((Array.isArray(value) ? value : [value]).map(text).filter(Boolean))];
         return selected.slice(0, 1);
     }
-    if (['resource_choice', 'workflow_choice', 'form_choice'].includes(input?.type)) {
+    if (['resource_choice', 'resource_picker', 'workflow_choice', 'form_choice'].includes(input?.type)) {
         return text(isRecord(value) ? value.id ?? value.value : value);
     }
     if (Array.isArray(value)) return value.map(text).filter(Boolean);
@@ -28,7 +28,8 @@ const normalizedValue = (input, value) => {
 const hasValue = value => Array.isArray(value) ? value.length > 0 : text(value).length > 0;
 
 const validChoice = (input, value) => {
-    if (!['single_choice', 'multiple_choice', 'resource_choice', 'workflow_choice', 'form_choice'].includes(input?.type)) return true;
+    if (!['single_choice', 'multiple_choice', 'resource_choice', 'resource_picker', 'workflow_choice', 'form_choice'].includes(input?.type)) return true;
+    if (input?.type === 'resource_picker' && input.allowCustom === true) return true;
     const allowed = new Set((input.options || []).map(optionId).filter(Boolean));
     const selected = Array.isArray(value) ? value : [value];
     return selected.length > 0 && selected.every(item => allowed.has(text(item)));
@@ -36,7 +37,7 @@ const validChoice = (input, value) => {
 
 const displayAnswer = (input, value) => {
     const selected = Array.isArray(value) ? value : [value];
-    if (['single_choice', 'multiple_choice', 'resource_choice', 'workflow_choice', 'form_choice'].includes(input?.type)) {
+    if (['single_choice', 'multiple_choice', 'resource_choice', 'resource_picker', 'workflow_choice', 'form_choice'].includes(input?.type)) {
         const options = new Map((input.options || []).map(option => [optionId(option), optionLabel(option)]));
         return selected.map(item => options.get(text(item)) || text(item)).filter(Boolean).join(', ');
     }

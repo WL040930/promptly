@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { isWorkflowExpression } from '../../../../../shared/workflowExpressions.js';
+import { workflowPreviewDisplayText } from '../../utils/workflowPreviewValue.js';
+import VariableInput from './VariableInput.jsx';
 
 const fieldClassName = 'w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#776bf2] focus:ring-2 focus:ring-[#5b4ee8]/10';
 const iconButtonClassName = 'rounded-lg border border-transparent p-2 text-slate-400 transition hover:border-rose-100 hover:bg-rose-50 hover:text-rose-600';
@@ -167,7 +170,31 @@ const gridValue = value => {
     return current.map(row => [...row, ...Array(width - row.length).fill('')]);
 };
 
-export function DataGridInput({ value, onChange }) {
+const GridCellInput = ({ cell, rowIndex, columnIndex, grid, commit, availableVars }) => {
+    const update = nextValue => commit(grid.map((currentRow, currentRowIndex) => currentRowIndex === rowIndex
+        ? currentRow.map((currentCell, currentColumnIndex) => currentColumnIndex === columnIndex ? nextValue : currentCell)
+        : currentRow));
+
+    if (isWorkflowExpression(cell)) {
+        return (
+            <div className="min-w-0">
+                <VariableInput value={cell} onChange={update} availableVars={availableVars}/>
+            </div>
+        );
+    }
+
+    return (
+        <input
+            value={workflowPreviewDisplayText(cell, { availableVars, compact: true })}
+            title={workflowPreviewDisplayText(cell, { availableVars }) || undefined}
+            aria-label={`Row ${rowIndex + 1}, Column ${columnIndex + 1}`}
+            onChange={event => update(event.target.value)}
+            className={`${fieldClassName} min-w-0`}
+        />
+    );
+};
+
+export function DataGridInput({ value, onChange, availableVars = [] }) {
     const serialized = useMemo(() => JSON.stringify(value ?? []), [value]);
     const [grid, setGrid] = useState(() => gridValue(value));
     useEffect(() => setGrid(gridValue(value)), [serialized]);
@@ -177,18 +204,30 @@ export function DataGridInput({ value, onChange }) {
         onChange?.(next.map(row => row.map(parseCell)));
     };
     const width = grid[0]?.length || 2;
+    const gridStyle = {
+        gridTemplateColumns: `28px repeat(${width}, minmax(0, 1fr)) 32px`,
+        minWidth: width > 6 ? `${28 + (width * 140) + 32}px` : '100%'
+    };
 
     return (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50/70">
-            <div className="overflow-x-auto p-2">
-                <div className="grid gap-1.5" style={{ gridTemplateColumns: `28px repeat(${width}, minmax(110px, 1fr)) 32px` }}>
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+            <div className="overflow-x-auto p-2.5">
+                <div className="grid gap-1.5" style={gridStyle}>
                     <span />
-                    {Array.from({ length: width }, (_, index) => <span key={index} className="px-2 text-[10px] font-bold uppercase text-slate-400">Column {index + 1}</span>)}
-                    <button type="button" title="Add column" onClick={() => commit(grid.map(row => [...row, '']))} className="text-lg font-bold text-[#5b4ee8]">+</button>
+                    {Array.from({ length: width }, (_, index) => <span key={index} className="truncate px-2 text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-400">Column {index + 1}</span>)}
+                    <button type="button" title="Add column" aria-label="Add column" onClick={() => commit(grid.map(row => [...row, '']))} className="rounded-md text-lg font-bold leading-none text-[#5b4ee8] transition hover:bg-[#ece9ff]">+</button>
                     {grid.flatMap((row, rowIndex) => [
-                        <span key={`label-${rowIndex}`} className="self-center text-center text-[10px] font-bold text-slate-400">{rowIndex + 1}</span>,
+                        <span key={`label-${rowIndex}`} className="flex h-full min-h-10 items-center justify-center rounded-lg bg-white text-[10px] font-extrabold text-slate-400 shadow-sm">{rowIndex + 1}</span>,
                         ...row.map((cell, columnIndex) => (
-                            <input key={`${rowIndex}-${columnIndex}`} value={typeof cell === 'string' ? cell : JSON.stringify(cell)} onChange={event => commit(grid.map((currentRow, currentRowIndex) => currentRowIndex === rowIndex ? currentRow.map((currentCell, currentColumnIndex) => currentColumnIndex === columnIndex ? event.target.value : currentCell) : currentRow))} className={fieldClassName}/>
+                            <GridCellInput
+                                key={`${rowIndex}-${columnIndex}`}
+                                cell={cell}
+                                rowIndex={rowIndex}
+                                columnIndex={columnIndex}
+                                grid={grid}
+                                commit={commit}
+                                availableVars={availableVars}
+                            />
                         )),
                         <button key={`remove-${rowIndex}`} type="button" title="Remove row" onClick={() => commit(grid.length === 1 ? [Array(width).fill('')] : grid.filter((_, index) => index !== rowIndex))} className={iconButtonClassName}>×</button>
                     ])}
@@ -211,4 +250,3 @@ export function NodeSelectInput({ value, onChange, nodes = [], currentNodeId, pl
         </div>
     );
 }
-

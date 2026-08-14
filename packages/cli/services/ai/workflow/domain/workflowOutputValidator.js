@@ -9,8 +9,8 @@ const MAX_TEXT = 4000;
 const MAX_REQUIREMENTS = 30;
 const MAX_OPERATIONS = 50;
 const MAX_VERIFIER_ISSUES = 3;
-const INPUT_TYPES = new Set(['single_choice', 'multiple_choice', 'text', 'textarea', 'resource_choice']);
-const PLANNER_TYPES = new Set(['reply', 'message', 'inspect_form', 'inspect_resource', 'diagnose_run', 'direct_plan', 'plan_complete']);
+const INPUT_TYPES = new Set(['single_choice', 'multiple_choice', 'text', 'textarea', 'resource_choice', 'resource_picker']);
+const PLANNER_TYPES = new Set(['reply', 'message', 'inspect_form', 'inspect_resource', 'resolve_resource', 'diagnose_run', 'direct_plan', 'plan_complete']);
 const CAPABILITIES = new Set(['respondent_confirmation', 'owner_approval', 'per_submission_spreadsheet']);
 const RESOURCE_CHANGE_TYPES = new Set(['create_google_spreadsheet']);
 
@@ -76,7 +76,7 @@ const validateInputs = inputs => {
                 input.options.forEach((option, optionIndex) => issues.push(...textIssues(option, `${path}.options[${optionIndex}]`, { required: true, max: 500 })));
             }
         }
-        if (input.type === 'resource_choice') {
+        if (['resource_choice', 'resource_picker'].includes(input.type)) {
             if (!Array.isArray(input.options) || input.options.length === 0) issues.push(issue('INVALID_RESOURCE_CHOICES', `${path}.options`, 'Resource choices require options.'));
             else input.options.forEach((option, optionIndex) => {
                 if (!isObject(option)) issues.push(issue('INVALID_RESOURCE_CHOICE', `${path}.options[${optionIndex}]`, 'Resource choice must be an object.'));
@@ -318,6 +318,18 @@ const validateApprovalGateOperation = (operation, path) => {
     return issues;
 };
 
+const validateTerminalApprovalOperation = (operation, path) => [
+    ...validateEndpoint(operation.from, `${path}.from`, {
+        code: 'WORKFLOW_TERMINAL_APPROVAL_SOURCE_INVALID',
+        message: 'A terminal approval needs the source route to review.',
+        requireHandle: true
+    }),
+    ...validateControlDefinition(operation.approval, `${path}.approval`, {
+        code: 'WORKFLOW_TERMINAL_APPROVAL_INVALID',
+        message: 'A terminal approval needs an Approval definition.'
+    })
+];
+
 const validateMoveApprovalGateOperation = (operation, path) => {
     const issues = [
         ...textIssues(operation.approvalNodeRef, `${path}.approvalNodeRef`, { required: true, max: 64 }),
@@ -440,6 +452,12 @@ export const validateWorkflowPlannerResult = result => {
         if (result.resource !== 'google-spreadsheets') issues.push(issue('INVALID_RESOURCE_LOOKUP', 'resource', 'Only Google Sheets can be inspected.'));
         issues.push(...textIssues(result.query, 'query', { required: true, max: 300 }));
     }
+    if (result.type === 'resolve_resource') {
+        if (!['google_form_response_source', 'google_sheet_row_source'].includes(result.recipe)) {
+            issues.push(issue('INVALID_RESOURCE_RECIPE', 'recipe', 'Unsupported resource resolution recipe.'));
+        }
+        issues.push(...textIssues(result.query, 'query', { max: 300 }));
+    }
     if (result.type === 'diagnose_run') {
         if (!['referenced', 'latest_failed', 'latest'].includes(result.selector)) {
             issues.push(issue('INVALID_RUN_SELECTOR', 'selector', 'Run selector must be referenced, latest_failed, or latest.'));
@@ -495,6 +513,8 @@ export const validateWorkflowWorkerResult = result => {
             return validateErrorHandlerOperation(operation, path);
         case 'add_approval_gate':
             return validateApprovalGateOperation(operation, path);
+        case 'add_terminal_approval':
+            return validateTerminalApprovalOperation(operation, path);
         case 'move_approval_gate':
             return validateMoveApprovalGateOperation(operation, path);
         case 'join_branches':

@@ -26,6 +26,18 @@ const option = (value, label, description = null, metadata = null) => ({
 
 const quoteSheetTitle = value => `'${String(value || 'Sheet1').replaceAll("'", "''")}'`;
 
+const googleFormId = value => {
+    const source = String(value || '').trim();
+    const match = source.match(/docs\.google\.com\/forms\/d(?:\/e)?\/([a-zA-Z0-9_-]+)/i);
+    return match?.[1] || source;
+};
+
+const googleSpreadsheetId = value => {
+    const source = String(value || '').trim();
+    const match = source.match(/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/i);
+    return match?.[1] || source;
+};
+
 const columnName = count => {
     let current = Math.max(1, Math.min(Number(count) || 26, 18278));
     let result = '';
@@ -131,6 +143,70 @@ export const createNodeResourceService = ({
                 emptyMessage: 'No Google Sheets are visible to this connection. You can paste a spreadsheet URL or ID.'
             };
         },
+        'google-spreadsheet': async ({ userId, params }) => {
+            const spreadsheetId = googleSpreadsheetId(params.spreadsheetId);
+            if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId)) {
+                return { options: [], emptyMessage: 'Paste a valid Google Sheets URL or ID.' };
+            }
+            const { client, connection } = await googleClient(getGoogleClient, userId);
+            const response = await googleRequest(client, {
+                url: `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(spreadsheetId)}?fields=id,name,mimeType,webViewLink`,
+                method: 'GET'
+            }, 'Reconnect Google to verify spreadsheet access.');
+            const file = response.data || {};
+            if (file.mimeType !== 'application/vnd.google-apps.spreadsheet') {
+                return { options: [], emptyMessage: 'That link is not a Google Sheet.' };
+            }
+            return {
+                options: [option(file.id, file.name || 'Google Sheet', 'Verified Google Sheet', { url: file.webViewLink || null })],
+                account: connection?.accountEmail || null,
+                emptyMessage: 'That Google Sheet could not be verified.'
+            };
+        },
+        'google-forms': async ({ userId }) => {
+            const { client, connection } = await googleClient(getGoogleClient, userId);
+            const params = new URLSearchParams({
+                q: "mimeType='application/vnd.google-apps.form' and trashed=false",
+                fields: 'files(id,name,modifiedTime,webViewLink)',
+                orderBy: 'modifiedTime desc',
+                pageSize: '100'
+            });
+            const response = await googleRequest(client, {
+                url: `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
+                method: 'GET'
+            }, 'Reconnect Google to browse your Google Forms.');
+            return {
+                options: (response.data?.files || []).map(file => option(
+                    file.id,
+                    file.name || 'Untitled Google Form',
+                    file.modifiedTime ? `Updated ${new Date(file.modifiedTime).toLocaleDateString('en-CA')}` : 'Google Form',
+                    { url: file.webViewLink || null }
+                )),
+                account: connection?.accountEmail || null,
+                emptyMessage: 'No Google Forms are visible to this connection.'
+            };
+        },
+        'google-form-response-sheet': async ({ userId, params }) => {
+            const formId = googleFormId(params.formId);
+            if (!/^[a-zA-Z0-9_-]{8,200}$/.test(formId)) {
+                return { options: [], emptyMessage: 'Select a Google Form first.' };
+            }
+            const { client, connection } = await googleClient(getGoogleClient, userId);
+            const response = await googleRequest(client, {
+                url: `https://forms.googleapis.com/v1/forms/${encodeURIComponent(formId)}`,
+                method: 'GET'
+            }, 'Reconnect Google to grant Google Forms access.');
+            const linkedSheetId = String(response.data?.linkedSheetId || '').trim();
+            const formTitle = String(response.data?.info?.title || response.data?.info?.documentTitle || 'Google Form').trim();
+            return {
+                options: linkedSheetId ? [option(linkedSheetId, formTitle, 'Linked response Sheet')] : [],
+                metadata: { formId, formTitle, linkedSheetId: linkedSheetId || null },
+                account: connection?.accountEmail || null,
+                emptyMessage: linkedSheetId
+                    ? 'The linked response Sheet is ready.'
+                    : 'This Google Form does not have a linked response Sheet.'
+            };
+        },
         'google-drive-files': async ({ userId }) => {
             const { client, connection } = await googleClient(getGoogleClient, userId);
             const response = await googleRequest(client, { url: 'https://www.googleapis.com/drive/v3/files?q=trashed=false&fields=files(id,name,mimeType,modifiedTime,webViewLink)&orderBy=modifiedTime desc&pageSize=100', method: 'GET' }, 'Reconnect Google to grant Drive access.');
@@ -209,7 +285,8 @@ export const createNodeResourceService = ({
             emptyMessage: result.emptyMessage || 'No options are available.',
             ...(result.action ? { action: result.action } : {}),
             ...(result.account ? { account: result.account } : {}),
-            ...(result.parentLabel ? { parentLabel: result.parentLabel } : {})
+            ...(result.parentLabel ? { parentLabel: result.parentLabel } : {}),
+            ...(result.metadata ? { metadata: result.metadata } : {})
         };
     };
 

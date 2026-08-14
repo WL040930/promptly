@@ -252,7 +252,94 @@ test('pipeline resolves an exact existing Google Sheet before the second planner
     assert.match(result.message, /found/i);
 });
 
-test('pipeline asks before creating a named Google Sheet that cannot be found', async () => {
+test('pipeline asks for a Google Form source through the adaptive resource picker', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const result = await generateWorkflowTurn({
+        request: 'When my Google Form receives a new response, send me an approval.',
+        currentWorkflow: { nodes: [], edges: [] },
+        provider: makeProvider([{ type: 'resolve_resource', recipe: 'google_form_response_source' }]),
+        registry: makeRegistry([triggerSpec, approvalSpec]),
+        resourceLoader,
+        resourceLookup: async ({ resource }) => {
+            assert.equal(resource, 'google-forms');
+            return { account: 'owner@example.com', options: [{ value: 'form_event', label: 'Event Registration' }] };
+        }
+    });
+
+    assert.equal(result.type, 'message');
+    assert.match(result.message, /Google Form/i);
+    assert.deepEqual(result.inputs[0], {
+        id: 'googleFormId',
+        type: 'resource_picker',
+        label: 'Google Form',
+        resource: 'google-forms',
+        account: 'owner@example.com',
+        options: [{ id: 'form_event', name: 'Event Registration', description: null }],
+        searchable: true,
+        allowCustom: true,
+        customLabel: 'Paste Google Form URL or ID'
+    });
+});
+
+test('pipeline turns a Google Sheet new-row trigger into a searchable resource picker', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const result = await generateWorkflowTurn({
+        request: 'when my google sheet receive new row, can u do like send a approval for me',
+        currentWorkflow: { nodes: [], edges: [] },
+        provider: makeProvider([{ type: 'resolve_resource', recipe: 'google_sheet_row_source' }]),
+        registry: makeRegistry([triggerSpec, approvalSpec]),
+        resourceLoader,
+        resourceLookup: async ({ resource }) => {
+            assert.equal(resource, 'google-spreadsheets');
+            return {
+                account: 'owner@example.com',
+                options: [{ value: 'sheet_event', label: 'Event Registration responses' }]
+            };
+        }
+    });
+
+    assert.equal(result.type, 'message');
+    assert.match(result.message, /Google Sheet to watch/i);
+    assert.deepEqual(result.inputs[0], {
+        id: 'googleSheetTriggerSpreadsheetId',
+        type: 'resource_picker',
+        label: 'Google Sheet',
+        resource: 'google-spreadsheets',
+        account: 'owner@example.com',
+        options: [{ id: 'sheet_event', name: 'Event Registration responses', description: null }],
+        searchable: true,
+        allowCustom: true,
+        customLabel: 'Paste Google Sheets URL or ID'
+    });
+});
+
+test('pipeline reroutes a free-text Google Sheet clarification to the resource picker', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const result = await generateWorkflowTurn({
+        request: 'when my google sheet receive new row, can u do like send a approval for me',
+        currentWorkflow: { nodes: [], edges: [] },
+        provider: makeProvider([
+            {
+                type: 'message',
+                message: 'Which Google Sheet should trigger the approval when a new row is added?',
+                inputs: [{ id: 'googleSheet', type: 'text', label: 'Google Sheet name (or URL)' }]
+            },
+            { type: 'resolve_resource', recipe: 'google_sheet_row_source' }
+        ]),
+        registry: makeRegistry([triggerSpec, approvalSpec]),
+        resourceLoader,
+        resourceLookup: async ({ resource }) => {
+            assert.equal(resource, 'google-spreadsheets');
+            return { options: [{ value: 'sheet_event', label: 'Event Registration responses' }] };
+        }
+    });
+
+    assert.equal(result.type, 'message');
+    assert.equal(result.inputs[0].type, 'resource_picker');
+    assert.equal(result.inputs[0].id, 'googleSheetTriggerSpreadsheetId');
+});
+
+test('pipeline opens a searchable Sheet picker when a named Google Sheet cannot be found', async () => {
     const { generateWorkflowTurn } = await import('./pipeline.js');
     let providerCalls = 0;
     const result = await generateWorkflowTurn({
@@ -267,9 +354,9 @@ test('pipeline asks before creating a named Google Sheet that cannot be found', 
     assert.equal(providerCalls, 0);
     assert.equal(result.type, 'message');
     assert.match(result.message, /could not find/i);
-    assert.deepEqual(result.inputs.map(input => input.id), ['spreadsheetId', 'createSpreadsheet']);
-    assert.equal(result.inputs[0].alternativeGroup, 'spreadsheetDestination');
-    assert.equal(result.inputs[1].alternativeGroup, 'spreadsheetDestination');
+    assert.deepEqual(result.inputs.map(input => input.id), ['spreadsheetId']);
+    assert.equal(result.inputs[0].type, 'resource_picker');
+    assert.equal(result.inputs[0].allowCustom, true);
 });
 
 test('pipeline resumes the Create Sheet clarification using structured state and the original destination name', async () => {
@@ -484,7 +571,7 @@ test('pipeline asks the user to choose between ambiguous named Google Sheets', a
     });
 
     assert.equal(result.type, 'message');
-    assert.equal(result.inputs[0].type, 'resource_choice');
+    assert.equal(result.inputs[0].type, 'resource_picker');
     assert.deepEqual(result.inputs[0].options.map(option => option.id), ['sheet_current', 'sheet_archive']);
 });
 
@@ -1783,8 +1870,9 @@ test('pipeline assembles repeated actions in a generic linear workflow', async (
     assert.equal(result.warnings.some(warning => warning.code === 'WORKFLOW_DETERMINISTIC_FALLBACK_USED'), false);
 });
 
-test('pipeline does not use the linear fallback for a branching workflow', async () => {
+test('pipeline assembles a terminal approval without asking the worker to invent an outcome route', async () => {
     const { generateWorkflowTurn } = await import('./pipeline.js');
+    let workerCalls = 0;
     const provider = {
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
@@ -1803,6 +1891,7 @@ test('pipeline does not use the linear fallback for a branching workflow', async
                 };
             }
             if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
+                workerCalls += 1;
                 return {
                     text: JSON.stringify({
                         operations: [
@@ -1815,13 +1904,20 @@ test('pipeline does not use the linear fallback for a branching workflow', async
         }
     };
 
-    await assert.rejects(() => generateWorkflowTurn({
+    const result = await generateWorkflowTurn({
         request: 'When a webhook arrives, ask me to approve it.',
         currentWorkflow: { nodes: [], edges: [] },
         provider,
         registry: makeRegistry([triggerSpec, approvalSpec]),
         resourceLoader
-    }), error => error.code === 'WORKFLOW_AI_UNSAFE_PROPOSAL');
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(workerCalls, 0);
+    assert.equal(result.nodes.filter(node => node.nodeKey === 'logic:approval').length, 1);
+    assert.equal(result.edges.length, 1);
+    assert.equal(result.edges[0].sourceHandle, 'event');
+    assert.equal(result.edges[0].targetHandle, 'event');
 });
 
 test('pipeline compiles an if/otherwise notification branch when the worker repeats refs and aliases an action node', async () => {

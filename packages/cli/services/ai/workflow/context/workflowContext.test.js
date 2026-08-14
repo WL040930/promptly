@@ -112,7 +112,7 @@ test('representative planner prompt remains within the compact prompt budget', a
 
     assert.ok(instruction.length <= 4200, 'planner instruction should remain compact');
     assert.match(instruction, /untrusted data/);
-    for (const outcome of ['reply', 'message', 'inspect_form', 'inspect_resource', 'diagnose_run', 'direct_plan', 'plan_complete']) {
+    for (const outcome of ['reply', 'message', 'inspect_form', 'inspect_resource', 'resolve_resource', 'diagnose_run', 'direct_plan', 'plan_complete']) {
         assert.match(instruction, new RegExp(`\\\`${outcome}\\\``));
     }
     assert.ok(result.metrics.catalogueCharacters <= 6000, 'full enabled catalogue should remain compact');
