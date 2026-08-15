@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { createAIConfig } from './aiConfig.js';
+import { normalizeOrigin } from './origin.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -33,6 +34,8 @@ const readIntegerEnv = (key, fallback, { min = Number.MIN_SAFE_INTEGER, max = Nu
     return value;
 };
 
+const readOriginEnv = (key, fallback = null) => normalizeOrigin(process.env[key] || fallback, key);
+
 const dbPoolMax = readIntegerEnv('DB_POOL_MAX', 5, { min: 1, max: 50 });
 const dbPoolMin = readIntegerEnv('DB_POOL_MIN', 0, { min: 0, max: dbPoolMax });
 const dbPoolAcquireMs = readIntegerEnv('DB_POOL_ACQUIRE_MS', 10_000, { min: 100, max: 300_000 });
@@ -44,9 +47,13 @@ const aiConfig = createAIConfig();
 const env = {
     app: {
         port: Number(process.env.PORT || 3000),
-        clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
-        publicOrigin: process.env.TRIGGER_PUBLIC_ORIGIN || null,
-        siteUrl: process.env.SITE_URL || process.env.TRIGGER_PUBLIC_ORIGIN || null,
+        // Browser-facing frontend origin. Used for CORS and post-auth redirects.
+        clientOrigin: readOriginEnv('CLIENT_ORIGIN', 'http://localhost:5173'),
+        // Public origin that routes provider callbacks and external triggers to the API.
+        triggerPublicOrigin: readOriginEnv('TRIGGER_PUBLIC_ORIGIN'),
+        // Canonical site origin used by robots.txt and sitemap.xml. This is
+        // intentionally independent from the trigger/API origin.
+        siteOrigin: readOriginEnv('SITE_URL'),
         slowRequestMs: Number(process.env.PERF_SLOW_REQUEST_MS || 750)
     },
     db: {

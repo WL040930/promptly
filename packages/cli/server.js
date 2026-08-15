@@ -33,8 +33,12 @@ const startServer = async () => {
     ]);
 
     app.listen(env.app.port, () => {
-      console.log(`🚀 Server running on http://localhost:${env.app.port}`);
-      console.log(`📚 API Health: http://localhost:${env.app.port}/api/health`);
+      const localApiOrigin = `http://localhost:${env.app.port}`;
+      console.log(`🚀 API running at ${localApiOrigin}`);
+      console.log(`📚 API health: ${localApiOrigin}/api/health`);
+      console.log(`🖥️ Browser origin: ${env.app.clientOrigin}`);
+      if (env.app.siteOrigin) console.log(`🌐 Site origin: ${env.app.siteOrigin}`);
+      if (env.app.triggerPublicOrigin) console.log(`🔔 Trigger origin: ${env.app.triggerPublicOrigin}`);
       void startBackgroundRuntimes();
     });
   } catch (error) {

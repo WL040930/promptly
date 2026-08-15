@@ -46,11 +46,22 @@ npm install
 
 Create a `.env` file in the root directory and configure the following variables:
 
+For the complete local, tunnel, and Google OAuth setup—including which URL belongs in each variable—see [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md). A safe starting point is also available in [.env.example](.env.example).
+
 ```env
+# Browser-facing frontend origin. This is where you open the app.
+CLIENT_ORIGIN=http://localhost:5173
+
+# Canonical site origin used by robots.txt and sitemap.xml.
+# Leave unset locally; set this to the real frontend origin in production.
+# SITE_URL=https://app.example.com
+
+# Public HTTPS origin used for Google triggers and other external callbacks.
+# Leave unset locally unless you are using a tunnel.
+# TRIGGER_PUBLIC_ORIGIN=https://your-public-api.example.com
+
 # Server
 PORT=3000
-# Canonical public URL used in robots.txt and sitemap.xml, for example:
-SITE_URL=https://app.example.com
 
 # Database (PostgreSQL)
 DB_HOST=localhost
@@ -69,11 +80,12 @@ DB_APPLICATION_NAME=promptly-api
 # Google OAuth
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
+# This is an exact callback URL, not a bare origin.
 GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
 
 # External trigger callbacks
-# Required for Google Sheets and Gmail push triggers.
-TRIGGER_PUBLIC_ORIGIN=https://your-public-api.example.com
+# Required for Google Sheets and Gmail push triggers. This must be the public
+# origin that actually routes to the API.
 GOOGLE_GMAIL_PUBSUB_TOPIC=projects/your-project/topics/promptly-gmail
 GOOGLE_PUBSUB_AUDIENCE=https://your-public-api.example.com/api/provider-events/gmail
 
@@ -135,6 +147,8 @@ This uses `concurrently` to run:
 - Frontend UI (vite dev server) on `http://localhost:5173`
 
 Normal startup does not alter the database schema. The development command only invokes bootstrap when one or more Promptly tables are missing.
+
+The frontend dev server proxies `/api` requests to the local backend. Keep both processes running when using a tunnel; the tunnel setup is documented in [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md).
 
 ## 📁 Project Structure
 

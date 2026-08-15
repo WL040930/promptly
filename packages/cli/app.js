@@ -16,11 +16,7 @@ const __dirname = dirname(__filename);
 
 const app = express();
 
-const publicOriginFor = req => {
-    const configuredOrigin = env.app.siteUrl || env.app.publicOrigin;
-    if (configuredOrigin) return configuredOrigin.replace(/\/$/, '');
-    return `${req.protocol}://${req.get('host')}`;
-};
+const siteOriginFor = req => env.app.siteOrigin || `${req.protocol}://${req.get('host')}`;
 
 const sitemapXmlFor = origin => {
     const urls = sitemapPaths().map(path => `  <url><loc>${origin}${path}</loc></url>`).join('\n');
@@ -70,7 +66,7 @@ app.get('/api', (req, res) => {
 app.use('/api', routes);
 
 app.get('/robots.txt', (req, res) => {
-    const origin = publicOriginFor(req);
+    const origin = siteOriginFor(req);
     res.type('text/plain').send([
         'User-agent: *',
         'Allow: /',
@@ -86,7 +82,7 @@ app.get('/robots.txt', (req, res) => {
 });
 
 app.get('/sitemap.xml', (req, res) => {
-    res.type('application/xml').send(sitemapXmlFor(publicOriginFor(req)));
+    res.type('application/xml').send(sitemapXmlFor(siteOriginFor(req)));
 });
 
 app.get('/landing/security', (req, res) => {

@@ -73,8 +73,8 @@ test('refreshes and persists a legacy Google token before provider writes can be
 });
 
 test('reports the required public callback setup when Google triggers run without one', () => {
-    const previousOrigin = env.app.publicOrigin;
-    env.app.publicOrigin = null;
+    const previousOrigin = env.app.triggerPublicOrigin;
+    env.app.triggerPublicOrigin = null;
     try {
         assert.throws(() => requirePublicTriggerOrigin(), error => {
             assert.equal(error.code, 'TRIGGER_PUBLIC_ORIGIN_REQUIRED');
@@ -84,6 +84,6 @@ test('reports the required public callback setup when Google triggers run withou
             return true;
         });
     } finally {
-        env.app.publicOrigin = previousOrigin;
+        env.app.triggerPublicOrigin = previousOrigin;
     }
 });
