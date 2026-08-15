@@ -6,10 +6,11 @@ import { useChangePassword, useDisconnectGoogle, useGoogleConnect } from '../api
 import { useToast } from '../context/ToastContext.jsx';
 import { useBrowserNotifications } from '../context/BrowserNotificationContext.jsx';
 import Button from '../components/ui/Button.jsx';
+import { EDITOR_PREFERENCES, getEditorPreference, setEditorPreference } from '../utils/storage.js';
 
 export default function SettingsModal({ user, onClose, onLogout, initialTab = 'general' }) {
     const [activeTab, setActiveTab] = useState(initialTab);
-    const [editorPreference, setEditorPreference] = useState(() => window.localStorage.getItem('promptly.default-editor') || 'last_used');
+    const [editorPreference, setEditorPreferenceState] = useState(() => getEditorPreference());
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showNewPassword, setShowNewPassword] = useState(false);
@@ -38,8 +39,8 @@ export default function SettingsModal({ user, onClose, onLogout, initialTab = 'g
     };
 
     const savePreference = value => {
+        setEditorPreferenceState(value);
         setEditorPreference(value);
-        window.localStorage.setItem('promptly.default-editor', value);
         toast.success('Editing preference saved.');
     };
 
@@ -114,12 +115,11 @@ export default function SettingsModal({ user, onClose, onLogout, initialTab = 'g
                         <div className="space-y-8 p-6">
                             <section>
                                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">Opening preference</h3>
-                                <p className="mt-1 text-sm text-slate-500">Choose which editor opens first. You can always switch inside an automation.</p>
-                                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                                <p className="mt-1 text-sm text-slate-500">Choose the workspace you want when creating a new automation. You can always switch later.</p>
+                                <div className="mt-4 grid gap-3 sm:grid-cols-2">
                                     {[
-                                        ['last_used', 'Resume last editor', 'Continue where you left off.'],
-                                        ['ai', 'AI editor', 'Describe changes in plain language.'],
-                                        ['visual', 'Visual editor', 'Arrange steps on the canvas.']
+                                        [EDITOR_PREFERENCES.AI, 'AI editor', 'Recommended for beginners: describe what you want, and Promptly helps build the workflow.'],
+                                        [EDITOR_PREFERENCES.VISUAL, 'Visual editor', 'Best when you already know the steps and want to arrange them yourself.']
                                     ].map(([value, label, description]) => <button key={value} type="button" onClick={() => savePreference(value)} className={`rounded-xl border-2 p-4 text-left transition ${editorPreference === value ? 'border-indigo-500 bg-indigo-50/60' : 'border-slate-200 hover:border-indigo-200'}`}><p className="font-bold text-slate-800">{label}</p><p className="mt-1 text-xs leading-5 text-slate-500">{description}</p></button>)}
                                 </div>
                             </section>

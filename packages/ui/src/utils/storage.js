@@ -3,6 +3,48 @@ import { isClarificationMode } from '../../../shared/agentContract.js';
 const TOKEN_KEY = 'auth_token';
 const USER_KEY = 'auth_user';
 const CLARIFICATION_MODE_KEY = 'promptly_clarification_mode';
+const EDITOR_PREFERENCE_KEY = 'promptly.default-editor';
+
+export const EDITOR_PREFERENCES = Object.freeze({
+    AI: 'ai',
+    VISUAL: 'visual'
+});
+
+export const isEditorPreference = value => Object.values(EDITOR_PREFERENCES).includes(value);
+
+const getLocalStorage = () => {
+    if (typeof window === 'undefined') return null;
+    try {
+        return window.localStorage;
+    } catch {
+        return null;
+    }
+};
+
+export const getEditorPreference = () => {
+    const storage = getLocalStorage();
+    if (!storage) return EDITOR_PREFERENCES.AI;
+    try {
+        const value = storage.getItem(EDITOR_PREFERENCE_KEY);
+        return isEditorPreference(value) ? value : EDITOR_PREFERENCES.AI;
+    } catch {
+        return EDITOR_PREFERENCES.AI;
+    }
+};
+
+export const setEditorPreference = value => {
+    if (!isEditorPreference(value)) return;
+    const storage = getLocalStorage();
+    try {
+        storage?.setItem(EDITOR_PREFERENCE_KEY, value);
+    } catch {
+        // Browser storage is best effort.
+    }
+};
+
+export const getPreferredEditorForNewAutomation = () => {
+    return getEditorPreference();
+};
 
 const getAuthToken = () => localStorage.getItem(TOKEN_KEY);
 const setAuthToken = (token) => localStorage.setItem(TOKEN_KEY, token);

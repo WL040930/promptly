@@ -313,6 +313,31 @@ test('pipeline turns a Google Sheet new-row trigger into a searchable resource p
     });
 });
 
+test('pipeline does not replace an active Promptly form trigger with a Google Sheet row-source picker', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const result = await generateWorkflowTurn({
+        request: 'When this form receives responses, ask for my approval and append approved applications to Google Sheets.',
+        currentWorkflow: { nodes: [], edges: [] },
+        formSchema: { id: 'form_job_application', title: 'Job Application', fields: [{ id: 'email', label: 'Email', type: 'email' }] },
+        turnContext: {
+            intent: {
+                sourceText: 'When this form receives responses, ask for my approval and append approved applications to Google Sheets.',
+                activeFormSource: { id: 'form_job_application', title: 'Job Application' }
+            }
+        },
+        provider: makeProvider([
+            { type: 'resolve_resource', recipe: 'google_sheet_row_source' },
+            { type: 'reply', message: 'I will use the selected Job Application form as the trigger.' }
+        ]),
+        registry: makeRegistry([formSubmissionSpec, approvalSpec, googleSheetsSpec]),
+        resourceLoader,
+        resourceLookup: async () => { throw new Error('An active Promptly form must not open the Google Sheet trigger picker.'); }
+    });
+
+    assert.equal(result.type, 'reply');
+    assert.match(result.message, /Job Application/i);
+});
+
 test('pipeline reroutes a free-text Google Sheet clarification to the resource picker', async () => {
     const { generateWorkflowTurn } = await import('./pipeline.js');
     const result = await generateWorkflowTurn({

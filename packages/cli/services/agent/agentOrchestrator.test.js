@@ -216,6 +216,26 @@ test('Ask Promptly forwards structured clarification state to its workflow speci
     });
 });
 
+test('Ask Promptly marks an AI-referenced active form as the workflow trigger source', () => {
+    const context = workflowTurnContextForAgent({
+        message: 'When this form receives a response, request approval.',
+        context: {},
+        intent: { resourceReferences: [{ type: 'form', query: 'this form' }] },
+        form: { id: 'form_job_application', title: 'Job Application' }
+    });
+
+    assert.deepEqual(context, {
+        intent: {
+            sourceText: 'When this form receives a response, request approval.',
+            latestText: '',
+            relationToPending: 'none',
+            authority: 'user',
+            clarificationMode: 'important_only',
+            activeFormSource: { id: 'form_job_application', title: 'Job Application' }
+        }
+    });
+});
+
 test('Ask Promptly forwards structured clarification state to its form specialist', () => {
     assert.deepEqual(formTurnContextForAgent({
         message: 'Design a job application form for Software Engineer applicants.',

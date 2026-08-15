@@ -1131,6 +1131,10 @@ export const generateWorkflowTurn = async ({
     });
     usage = plannerResult.usage;
     let plan = plannerResult.call.value;
+    const activePromptlyFormSource = turnIntent?.activeFormSource?.id
+        && String(turnIntent.activeFormSource.id) === String(resolvedFormSchema?.id || '')
+        ? turnIntent.activeFormSource
+        : null;
 
     // Models occasionally describe a resource choice as a free-text question
     // even though the resource picker is available. Run one constrained review
@@ -1141,6 +1145,27 @@ export const generateWorkflowTurn = async ({
             label: 'planner',
             prompt: plannerContext.prompt,
             instruction: resourceClarificationReviewInstruction(plan),
+            validate: validatePlannerForCatalogue,
+            provider,
+            budget,
+            usage,
+            onActivity: reportProviderActivity
+        });
+        usage = plannerResult.usage;
+        plan = plannerResult.call.value;
+    }
+
+    if (plan.type === 'resolve_resource' && plan.recipe === 'google_sheet_row_source' && activePromptlyFormSource) {
+        plannerResult = await requestAndValidate({
+            label: 'planner',
+            prompt: plannerContext.prompt,
+            instruction: [
+                workflowPlannerInstruction,
+                '',
+                `The selected Promptly form “${activePromptlyFormSource.title || 'Selected form'}” is the requested trigger.`,
+                'Do not replace it with a Google Sheet new-row trigger and do not request a source spreadsheet.',
+                'Return the workflow plan for form submission, approval, and any destination actions.'
+            ].join('\n'),
             validate: validatePlannerForCatalogue,
             provider,
             budget,

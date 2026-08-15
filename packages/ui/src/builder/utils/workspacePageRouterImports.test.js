@@ -9,3 +9,11 @@ test('WorkspacePageRouter declares ChatTab before rendering the assistant route'
 
     assert.match(source, /const ChatTab = React\.lazy\(\(\) => import\('\.\.\/chat\/components\/ChatTab\.jsx'\)\);/);
 });
+
+test('new automation creation awaits the created workflow before opening its builder', async () => {
+    const file = fileURLToPath(new URL('../../workspace/WorkspacePageRouter.jsx', import.meta.url));
+    const source = await readFile(file, 'utf8');
+
+    assert.match(source, /createAutomationMutation\.mutateAsync/);
+    assert.match(source, /page: 'automation-build'/);
+});

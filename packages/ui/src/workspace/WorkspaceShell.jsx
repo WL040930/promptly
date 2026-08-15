@@ -6,6 +6,7 @@ import { useGoogleConnectionHealth } from '../api/hooks/useAuth.js';
 import Button from '../components/ui/Button.jsx';
 import GoogleConnectionHealthModal from '../components/modals/GoogleConnectionHealthModal.jsx';
 import { subscribeToSettingsModal } from '../utils/settingsModal.js';
+import { getPreferredEditorForNewAutomation } from '../utils/storage.js';
 
 const SettingsModal = lazy(() => import('../dashboard/SettingsModal.jsx'));
 
@@ -227,7 +228,7 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
 
     const createAutomation = () => {
         setMobileNavOpen(false);
-        navigateTo({ page: 'automation-new', method: 'ai' });
+        navigateTo({ page: 'automation-new', method: getPreferredEditorForNewAutomation() });
     };
 
     const go = (page) => {

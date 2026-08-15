@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useRef } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef } from 'react';
 import { navigateTo } from '../utils/router.js';
 import { useCreateWorkflow } from '../api/hooks/useWorkflows.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
@@ -39,34 +39,33 @@ function AutomationDetailPage({ automationId }) {
 function NewAutomationPage({ method = 'ai', prompt = '' }) {
     const createAutomationMutation = useCreateWorkflow();
     const started = useRef(false);
-
-    useEffect(() => {
-        if (started.current) return;
-        started.current = true;
-        createAutomationMutation.mutate({
+    const openCreatedAutomation = useCallback(workflow => {
+        if (!workflow?.id) return;
+        navigateTo({
+            page: 'automation-build',
+            automationId: workflow.id,
+            editor: method === 'visual' ? 'visual' : 'ai',
+            ...(prompt ? { prompt } : {})
+        });
+    }, [method, prompt]);
+    const createAndOpenAutomation = useCallback(() => {
+        void createAutomationMutation.mutateAsync({
             name: DEFAULT_AUTOMATION_NAME,
             lifecycleStatus: 'draft',
             status: 'Draft',
             isActive: false,
             nodes: [],
             edges: []
+        }).then(openCreatedAutomation).catch(() => {
+            // The mutation state renders the actionable error screen below.
         });
+    }, [createAutomationMutation, openCreatedAutomation]);
 
-    }, []);
-
-    // Mutation callbacks passed to mutate() can be detached while React Strict
-    // Mode replays effects in development. The mutation state survives that
-    // replay, so navigate from the successful result instead.
     useEffect(() => {
-        const automationId = createAutomationMutation.data?.id;
-        if (!automationId) return;
-        navigateTo({
-            page: 'automation-build',
-            automationId,
-            editor: method === 'visual' ? 'visual' : 'ai',
-            ...(prompt ? { prompt } : {})
-        });
-    }, [createAutomationMutation.data?.id, method, prompt]);
+        if (started.current) return;
+        started.current = true;
+        createAndOpenAutomation();
+    }, [createAndOpenAutomation]);
 
     if (createAutomationMutation.isError) {
         return (
@@ -77,7 +76,7 @@ function NewAutomationPage({ method = 'ai', prompt = '' }) {
                         <p className="mt-2 text-sm leading-6 text-slate-600">{createAutomationMutation.error?.message || 'The request failed before the editor could open.'}</p>
                         <div className="mt-5 flex flex-wrap justify-center gap-3">
                             <button type="button" onClick={() => navigateTo({ page: 'automations' })} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Back to automations</button>
-                            <button type="button" onClick={() => createAutomationMutation.mutate({ name: DEFAULT_AUTOMATION_NAME, lifecycleStatus: 'draft', status: 'Draft', isActive: false, nodes: [], edges: [] })} disabled={createAutomationMutation.isPending} className="rounded-xl bg-[#5b4ee8] px-4 py-2 text-sm font-bold text-white hover:bg-[#4e42d0] disabled:opacity-60">Try again</button>
+                            <button type="button" onClick={createAndOpenAutomation} disabled={createAutomationMutation.isPending} className="rounded-xl bg-[#5b4ee8] px-4 py-2 text-sm font-bold text-white hover:bg-[#4e42d0] disabled:opacity-60">Try again</button>
                         </div>
                     </div>
                 </div>

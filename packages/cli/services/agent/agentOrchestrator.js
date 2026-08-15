@@ -336,30 +336,38 @@ export const buildWorkflowProposalContent = ({ result, workflow = null, form = n
     };
 };
 
-export const workflowTurnContextForAgent = ({ message, context = {} } = {}) => {
+export const workflowTurnContextForAgent = ({ message, context = {}, intent = null, form = null } = {}) => {
     const state = context?.clarificationState;
     const delegated = context?.clarificationDecision === 'decide_for_me';
     const hasState = state && typeof state === 'object' && !Array.isArray(state) && Object.keys(state).length > 0;
-    if (!delegated && !hasState) return null;
+    const formWasReferenced = Array.isArray(intent?.resourceReferences)
+        && intent.resourceReferences.some(reference => reference?.type === 'form');
+    const activeFormSource = form?.id && formWasReferenced
+        ? { id: form.id, title: form.title || 'Selected form' }
+        : null;
+    if (!delegated && !hasState && !activeFormSource) return null;
     return {
-        command: {
-            type: delegated ? 'decide_for_me' : 'submit_clarification',
-            ...(delegated
-                ? {
-                    clarificationId: context.clarificationId || null,
-                    ...(hasState ? { state } : {})
-                }
-                : {
-                    text: String(context.clarificationText || '').trim(),
-                    state
-                })
-        },
+        ...((delegated || hasState) ? {
+            command: {
+                type: delegated ? 'decide_for_me' : 'submit_clarification',
+                ...(delegated
+                    ? {
+                        clarificationId: context.clarificationId || null,
+                        ...(hasState ? { state } : {})
+                    }
+                    : {
+                        text: String(context.clarificationText || '').trim(),
+                        state
+                    })
+            }
+        } : {}),
         intent: {
             sourceText: String(message || '').trim(),
             latestText: delegated ? '' : String(context.clarificationText || '').trim(),
             relationToPending: 'none',
             authority: delegated ? 'assistant' : 'user',
-            clarificationMode: normalizeClarificationMode(context.clarificationMode)
+            clarificationMode: normalizeClarificationMode(context.clarificationMode),
+            ...(activeFormSource ? { activeFormSource } : {})
         }
     };
 };
@@ -533,7 +541,7 @@ const createSolutionCapabilityRegistry = ({
                     source: { artifactKey: 'form_proposal', appliedResource: 'id' }
                 } : null,
                 respondentEmailFieldId: context.input?.context?.respondentEmailFieldId || null,
-                turnContext: workflowTurnContextForAgent({ message, context: context.input?.context || {} }),
+                turnContext: workflowTurnContextForAgent({ message, context: context.input?.context || {}, intent, form }),
                 onEvent
             });
             if (result.status === 'clarification') {
@@ -992,7 +1000,16 @@ export const resumeAgentAfterForm = async ({ run, session, userId, formId, onEve
     const form = await Form.findOne({ where: { id: formId, userId } });
     if (!form) throw new Error('The approved form could not be found.');
     const existingWorkflow = context.workflowId ? await Workflow.findOne({ where: { id: context.workflowId, userId } }) : null;
-    const result = await designWorkflow({ run, userId, message: request, workflow: existingWorkflow, form, formArtifactId: null, onEvent });
+    const result = await designWorkflow({
+        run,
+        userId,
+        message: request,
+        workflow: existingWorkflow,
+        form,
+        formArtifactId: null,
+        turnContext: workflowTurnContextForAgent({ message: request, context, intent: run.intent, form }),
+        onEvent
+    });
     if (result.status === 'clarification') {
         await updateRun(run, { status: 'awaiting_clarification', currentStep: 'design_workflow', tokenUsage: result.tokenUsage || {} });
         await replaceChatSessionState(session, { status: 'awaiting_agent_clarification', runId: run.id });
