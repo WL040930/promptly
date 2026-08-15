@@ -1,15 +1,17 @@
 import { AssistantMessage, AutomationRun, Form, Workflow, User } from '../../models/index.js';
 import { runFormTurn } from '../ai/formAIService.js';
+import { resolveFormTurnContext } from '../ai/form/domain/formTurnContext.js';
 import {
     requiredCapabilitiesForRequest
 } from '../ai/workflow/workflowAgentService.js';
 import { generateWorkflowTurn } from '../ai/workflow/pipeline/pipeline.js';
 import { resolveResource } from '../chat/resourceResolver.js';
 import { addUsage, requestAgentJson } from './agentAi.js';
+import { decideAgentIntent } from './agentIntentRouter.js';
 import { createAgentCapabilityRegistry } from './agentCapabilityRegistry.js';
 import { createAgentRuntime } from './agentRuntime.js';
 import env from '../../config/env.js';
-import { makeError, makeIntent } from './agentContracts.js';
+import { makeError } from './agentContracts.js';
 import {
     compileExecutionPlan,
     makeAdaptivePlan,
@@ -33,6 +35,7 @@ import {
 } from './agentRunStore.js';
 
 const planReviewPattern = /(?:\b(show|give|provide|present|review|explain|outline|draft)\b.{0,50}\b(plan|steps|approach)\b|\b(plan|steps|approach)\b.{0,50}\b(before|first|review|approve|proceed)\b|\bplan first\b)/i;
+const DEFAULT_NEW_FORM_TITLE = 'Untitled Form';
 
 export const shouldPauseForPlanReview = message => planReviewPattern.test(String(message || ''));
 
@@ -55,6 +58,35 @@ export const ensureRespondentEmailField = (schema = {}) => {
             { id, type: 'email', label: 'Email address', required: true }
         ]
     };
+};
+
+const titleFromFormCreateIntent = (intent = null) => {
+    const operation = (intent?.requestedOperations || []).find(candidate =>
+        candidate?.domain === 'form' && candidate?.action === 'create' && typeof candidate?.target === 'string'
+    );
+    const target = String(operation?.target || '')
+        .trim()
+        .replace(/^(?:a|an|the|new)\s+/i, '');
+    if (!target || /^form$/i.test(target)) return null;
+
+    return target.replace(/\b[a-z]/g, letter => letter.toUpperCase());
+};
+
+export const applyIntentFormTitleFallback = ({ schema = {}, patches = [], intent = null, isNewForm = false } = {}) => {
+    if (!isNewForm || String(schema.title || '').trim() !== DEFAULT_NEW_FORM_TITLE) return { schema, patches };
+    const title = titleFromFormCreateIntent(intent);
+    if (!title) return { schema, patches };
+
+    let hasMetadataPatch = false;
+    const nextPatches = patches.map(patch => {
+        if (patch?.op !== 'update_meta') return patch;
+        hasMetadataPatch = true;
+        return { ...patch, updates: { ...(patch.updates || {}), title } };
+    });
+    if (!hasMetadataPatch) {
+        nextPatches.unshift({ op: 'update_meta', patchId: 'metadata', updates: { title } });
+    }
+    return { schema: { ...schema, title }, patches: nextPatches };
 };
 
 const messagePayload = message => {
@@ -100,133 +132,69 @@ const compactWorkflow = workflow => workflow ? ({
     nodeCount: Array.isArray(workflow.nodes) ? workflow.nodes.length : 0
 }) : null;
 
-const deterministicIntent = ({ message, context = {} }) => {
-    const text = String(message || '');
-    const domains = [];
-    const formMutation = /\b(create|build|design|update|modify|edit|change|remove|delete)\b[^.!?]{0,55}\b(form|survey)\b/i.test(text)
-        && !/\bworkflow\b[^.!?]{0,80}\b(form|survey)\b/i.test(text);
-    if (formMutation) domains.push('form');
-    const explicitWorkflow = /\b(workflow|automation|trigger|node|sheet|spreadsheet|webhook|database)\b/i.test(text);
-    const respondentAction = requiredCapabilitiesForRequest(text).length > 0;
-    const emailAction = /\b(send|notify|email|confirmation|thank[- ]?you)\b/i.test(text)
-        && !/\bemail\s+field\b/i.test(text);
-    if (explicitWorkflow || respondentAction || emailAction) domains.push('workflow');
-    if (/\b(execution|run|failed|failure|error|diagnos)\b/i.test(text)) domains.push('execution');
-    if (/\b(connect|integration|google|gmail|sheets|webhook)\b/i.test(text)) domains.push('integration');
-    if (context.formId && !domains.includes('form')) domains.push('form');
-    if (context.workflowId && !domains.includes('workflow')) domains.push('workflow');
-    if (context.executionId && !domains.includes('execution')) domains.push('execution');
-    const isDeletion = /\b(delete|remove|clear)\b/i.test(text);
-    const isModification = /\b(modify|update|change|add|remove|edit|improve)\b/i.test(text);
-    const isActionRequest = /\b(create|build|design|draft|make|set up|setup|automate|connect|i need|i want|please)\b/i.test(text);
-    const requestedOperations = [
-        ...(formMutation ? [{ domain: 'form', action: isModification ? 'modify' : 'create', target: 'form' }] : []),
-        ...((explicitWorkflow || respondentAction || emailAction)
-            ? [{ domain: 'workflow', action: isModification ? 'modify' : 'create', target: 'workflow' }]
-            : [])
-    ];
-    const resourceInputs = !formMutation && /\b(form|survey)\b/i.test(text)
-        ? [{ type: 'form', query: context.formId || 'mentioned form', role: 'workflow trigger input' }]
-        : [];
-    return makeIntent({
-        goal: isDeletion ? 'delete' : isModification ? 'modify' : isActionRequest ? 'create' : 'explain',
-        domains,
-        requestedOperations,
-        resourceInputs,
-        resourceReferences: [
-            context.formId ? { type: 'form', query: context.formId } : null,
-            context.workflowId ? { type: 'workflow', query: context.workflowId } : null,
-            context.executionId ? { type: 'execution', query: context.executionId } : null
-        ].filter(Boolean),
-        requirements: [text],
-        confidence: 0.45,
-        risk: /\b(remove|delete|disconnect)\b/i.test(text) ? 'high' : 'medium'
-    });
-};
-
-export { deterministicIntent };
-
-const analyzeIntent = async ({ message, context, onActivity = null }) => {
-    const fallback = deterministicIntent({ message, context });
-    if (fallback.goal === 'delete') return { intent: fallback, tokenUsage: {} };
-    try {
-        const result = await requestAgentJson({
-            label: 'intent',
-            prompt: [
-                'User request:', message,
-                '',
-                'Selected UI context:', JSON.stringify({ formId: context.formId || null, workflowId: context.workflowId || null, executionId: context.executionId || null }),
-                'Answers already provided for this run:', JSON.stringify(context.clarificationAnswers || []),
-                '',
-                'Return the typed intent. Keep requirements concise.'
-            ].join('\n'),
-            onActivity
-        });
-        const intent = makeIntent(result.value);
-        if (intent.domains.length === 0 && intent.requestedOperations.length === 0) return { intent: fallback, tokenUsage: result.tokenUsage };
-        // A model may mention a form as an input to a workflow. Preserve only
-        // domains supported by the deterministic request reading; references
-        // are not mutation requests.
-        const requiredDomains = fallback.domains;
-        const modelDomains = intent.domains.filter(domain => requiredDomains.includes(domain));
-        return {
-            intent: makeIntent({
-                ...intent,
-                domains: [...new Set([...modelDomains, ...requiredDomains])],
-                requestedOperations: fallback.requestedOperations.length > 0
-                    ? fallback.requestedOperations
-                    : intent.requestedOperations,
-                resourceInputs: [...fallback.resourceInputs, ...intent.resourceInputs]
-            }),
-            tokenUsage: result.tokenUsage
-        };
-    } catch {
-        return { intent: fallback, tokenUsage: {} };
-    }
-};
-
-const research = async ({ userId, intent, context }) => {
+export const research = async ({
+    userId,
+    intent,
+    context,
+    resolve = resolveResource,
+    models = { Form, Workflow, AutomationRun }
+}) => {
     const resources = [];
     const seen = new Set();
-    const references = [
+    const contextReferences = [
         context.formId ? { type: 'form', query: context.formId } : null,
         context.workflowId ? { type: 'workflow', query: context.workflowId } : null,
-        context.executionId ? { type: 'execution', query: context.executionId } : null,
+        context.executionId ? { type: 'execution', query: context.executionId } : null
+    ].filter(Boolean);
+    const contextTypes = new Set(contextReferences.map(reference => reference.type));
+    const requestedReferences = [
         ...(intent.resourceReferences || []),
         ...(intent.resourceInputs || []).filter(reference => reference.query && reference.query !== 'mentioned form')
     ].filter(Boolean);
 
-    for (const reference of references) {
+    const addResolvedResource = async (reference, result) => {
+        const resourceModel = reference.type === 'form' ? models.Form : reference.type === 'workflow' ? models.Workflow : models.AutomationRun;
+        const resource = await resourceModel.findOne({ where: { id: result.resource.id, userId } });
+        if (!resource) return;
+        resources.push({
+            type: reference.type,
+            id: resource.id,
+            resource: reference.type === 'form'
+                ? compactForm(resource)
+                : reference.type === 'workflow'
+                    ? compactWorkflow(resource)
+                    : { id: resource.id, type: 'execution', updatedAt: resource.updatedAt, status: resource.status, workflowId: resource.workflowId },
+            full: resource
+        });
+    };
+
+    for (const reference of requestedReferences) {
         const key = `${reference.type}:${reference.query}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const result = await resolveResource({ userId, type: reference.type, reference: reference.query });
+        const result = await resolve({ userId, type: reference.type, reference: reference.query });
+        if (result.status === 'ambiguous' && contextTypes.has(reference.type)) continue;
         if (result.status === 'ambiguous') return { status: 'ambiguous', type: reference.type, candidates: result.candidates };
         if (result.status === 'not_found' && intent.goal === 'modify') {
             return { status: 'not_found', type: reference.type, query: reference.query };
         }
-        if (result.status === 'resolved') {
-            const resourceModel = reference.type === 'form' ? Form : reference.type === 'workflow' ? Workflow : AutomationRun;
-            const resource = await resourceModel.findOne({ where: { id: result.resource.id, userId } });
-            if (!resource) continue;
-            resources.push({
-                type: reference.type,
-                id: resource.id,
-                resource: reference.type === 'form'
-                    ? compactForm(resource)
-                    : reference.type === 'workflow'
-                        ? compactWorkflow(resource)
-                        : { id: resource.id, type: 'execution', updatedAt: resource.updatedAt, status: resource.status, workflowId: resource.workflowId },
-                full: resource
-            });
-        }
+        if (result.status === 'resolved') await addResolvedResource(reference, result);
+    }
+
+    for (const reference of contextReferences) {
+        if (resources.some(resource => resource.type === reference.type)) continue;
+        const key = `${reference.type}:${reference.query}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const result = await resolve({ userId, type: reference.type, reference: reference.query });
+        if (result.status === 'resolved') await addResolvedResource(reference, result);
     }
     return { status: 'resolved', resources };
 };
 
 const resourceByType = (resources, type) => resources.find(item => item.type === type)?.full || null;
 
-const planSolution = async ({ intent, resources, availableCapabilities = [], clarificationMode = DEFAULT_CLARIFICATION_MODE, onActivity = null }) => {
+const planSolution = async ({ intent, clarificationMode = DEFAULT_CLARIFICATION_MODE, onActivity = null }) => {
     const needsModelPlan = intent.goal === 'modify'
         || intent.risk === 'high'
         || intent.domains.length > 1
@@ -240,11 +208,9 @@ const planSolution = async ({ intent, resources, availableCapabilities = [], cla
                 '',
                 'Resolved resources:', JSON.stringify(resources.map(item => item.resource)),
                 '',
-                'Available capabilities:', JSON.stringify(availableCapabilities),
-                '',
                 'Clarification:', `${clarificationMode} - ${getClarificationModeInstruction(clarificationMode)}`,
                 '',
-                'Create a short outcome plan and flexible executable capability steps. Preserve useful step IDs and dependencies. Do not add a verify or approval step; verification and approval are runtime policies.'
+                'Create a short outcome plan only. The runtime will construct supported executable steps from the typed intent. Do not add a verify or approval step; verification and approval are runtime policies.'
             ].join('\n'),
             onActivity
         });
@@ -264,7 +230,7 @@ const formHistory = async sessionId => {
     return messages.reverse().map(message => ({ sender: message.sender, text: message.text }));
 };
 
-const designForm = async ({ run, session, message, form, intent = null, clarificationMode = DEFAULT_CLARIFICATION_MODE, onEvent = null }) => {
+const designForm = async ({ run, session, message, form, intent = null, clarificationMode = DEFAULT_CLARIFICATION_MODE, turnContext = null, onEvent = null }) => {
     const step = await createStep(run, { stepKey: 'design_form', type: 'design_form' });
     await startStep(step);
     try {
@@ -287,6 +253,7 @@ const designForm = async ({ run, session, message, form, intent = null, clarific
             currentSchema: form?.toJSON?.() || form || {},
             history: await formHistory(session.id),
             clarificationMode,
+            turnContext,
             onProgress: progress => onEvent?.({ type: 'form.design.progress', runId: run.id, progress })
         });
         if (result.kind === 'reply' && form && /\b(already|current|existing|no changes? needed|nothing to change|no further changes?)\b/i.test(String(result.message || ''))) {
@@ -298,14 +265,20 @@ const designForm = async ({ run, session, message, form, intent = null, clarific
             await completeStep(step, { result, tokenUsage: result.tokenUsage || {} });
             return { status: 'clarification', result, tokenUsage: result.tokenUsage || {} };
         }
-        const schema = requiredCapabilitiesForRequest(message).includes('respondent_confirmation')
+        const baseSchema = requiredCapabilitiesForRequest(message).includes('respondent_confirmation')
             ? ensureRespondentEmailField(result.schema || {})
             : result.schema;
+        const proposal = applyIntentFormTitleFallback({
+            schema: baseSchema,
+            patches: result.patches || [],
+            intent,
+            isNewForm: !form
+        });
         const content = {
             action: form ? 'edit_form' : 'create_form',
             formId: form?.id || null,
-            schema,
-            patches: result.patches || [],
+            schema: proposal.schema,
+            patches: proposal.patches,
             requirements: result.requirements || [],
             verification: result.verification || null,
             warnings: result.warnings || [],
@@ -365,20 +338,55 @@ export const buildWorkflowProposalContent = ({ result, workflow = null, form = n
 
 export const workflowTurnContextForAgent = ({ message, context = {} } = {}) => {
     const state = context?.clarificationState;
-    if (!state || typeof state !== 'object' || Array.isArray(state) || Object.keys(state).length === 0) return null;
+    const delegated = context?.clarificationDecision === 'decide_for_me';
+    const hasState = state && typeof state === 'object' && !Array.isArray(state) && Object.keys(state).length > 0;
+    if (!delegated && !hasState) return null;
     return {
         command: {
-            type: 'submit_clarification',
-            text: String(context.clarificationText || '').trim(),
-            state
+            type: delegated ? 'decide_for_me' : 'submit_clarification',
+            ...(delegated
+                ? {
+                    clarificationId: context.clarificationId || null,
+                    ...(hasState ? { state } : {})
+                }
+                : {
+                    text: String(context.clarificationText || '').trim(),
+                    state
+                })
         },
         intent: {
             sourceText: String(message || '').trim(),
-            latestText: String(context.clarificationText || '').trim(),
+            latestText: delegated ? '' : String(context.clarificationText || '').trim(),
             relationToPending: 'none',
-            authority: 'user',
+            authority: delegated ? 'assistant' : 'user',
             clarificationMode: normalizeClarificationMode(context.clarificationMode)
         }
+    };
+};
+
+export const formTurnContextForAgent = ({ message, context = {} } = {}) => {
+    const state = context?.clarificationState;
+    const hasState = state && typeof state === 'object' && !Array.isArray(state) && Object.keys(state).length > 0;
+    const clarificationText = String(context.clarificationText || '').trim();
+    const delegated = context?.clarificationDecision === 'decide_for_me';
+    if (!delegated && !hasState && !clarificationText) return null;
+
+    const resolved = resolveFormTurnContext({
+        command: delegated
+            ? { type: 'decide_for_me', clarificationId: context.clarificationId || null }
+            : { type: 'submit_text', text: clarificationText },
+        activeWork: { sourceText: String(message || '').trim() },
+        clarificationMode: context.clarificationMode
+    });
+
+    return {
+        ...resolved.intent,
+        // The coordinator has already selected the form capability, so a
+        // completed clarification remains an actionable form request even
+        // when its latest answer is only a list of choices.
+        expectsMutation: true,
+        ...(hasState ? { clarificationState: state } : {}),
+        ...(delegated ? { clarificationDecision: 'decide_for_me' } : {})
     };
 };
 
@@ -469,6 +477,7 @@ const createSolutionCapabilityRegistry = ({
     resources,
     intent,
     clarificationMode,
+    formTurnContext,
     userId,
     actorEmail,
     onEvent
@@ -486,7 +495,7 @@ const createSolutionCapabilityRegistry = ({
         risk: 'proposal',
         produces: ['form_proposal', 'form_resource'],
         execute: async () => {
-            const result = await designForm({ run, session, message, form, intent, clarificationMode, onEvent });
+            const result = await designForm({ run, session, message, form, intent, clarificationMode, turnContext: formTurnContext, onEvent });
             if (result.status === 'clarification') {
                 return {
                     status: 'awaiting_clarification',
@@ -602,52 +611,15 @@ const repairExecutionPlan = async ({ plan, intent, issues, preserveOutcomes = tr
     };
 };
 
-const compilePlanWithRepair = async ({ plan, intent, registry, onActivity = null }) => {
-    let currentPlan = plan;
-    let tokenUsage = {};
-    let lastResult = null;
-    for (let attempt = 0; attempt <= 2; attempt += 1) {
-        lastResult = compileExecutionPlan({ plan: currentPlan, registry });
-        if (lastResult.valid) {
-            return { plan: currentPlan, graph: lastResult.graph, tokenUsage };
-        }
-        if (attempt === 2) break;
-        try {
-            const repaired = await repairExecutionPlan({ plan: currentPlan, intent, issues: lastResult.issues, onActivity });
-            currentPlan = repaired.plan;
-            tokenUsage = addUsage(tokenUsage, repaired.tokenUsage);
-        } catch {
-            break;
-        }
-    }
-    const error = new Error('The requested operation needs clarification before it can be executed.');
-    error.code = 'AGENT_PLAN_UNSUPPORTED';
-    error.issues = lastResult?.issues || [];
-    error.tokenUsage = tokenUsage;
-    throw error;
-};
+const compilePlanWithRepair = ({ plan, intent, registry }) => {
+    const canonicalPlan = makeAdaptivePlan(plan, intent);
+    const compiled = compileExecutionPlan({ plan: canonicalPlan, registry });
+    if (compiled.valid) return { plan: canonicalPlan, graph: compiled.graph, tokenUsage: {} };
 
-const savePlanCapabilityClarification = async ({ session, run, plan, error, tokenUsage }) => {
-    await updateRun(run, {
-        status: 'awaiting_clarification',
-        currentStep: 'plan',
-        error: { code: error.code, message: error.message, issues: error.issues || [] },
-        tokenUsage,
-        plan
-    });
-    await replaceChatSessionState(session, { status: 'awaiting_agent_clarification', runId: run.id });
-    const capabilities = [...new Set((error.issues || [])
-        .map(item => item.capability)
-        .filter(Boolean))];
-    const text = capabilities.length > 0
-        ? `I can continue with the supported parts, but I cannot execute ${capabilities.join(', ')} yet. Please choose a supported alternative or remove that part of the request.`
-        : error.message;
-    return saveReply(session, {
-        text,
-        kind: 'clarification',
-        payload: { runId: run.id, plan, issues: error.issues || [], capabilities },
-        tokenUsage
-    });
+    const error = new Error('Promptly could not prepare a safe executable proposal. Please try the request again.');
+    error.code = 'AGENT_PLAN_INVALID';
+    error.issues = compiled.issues;
+    throw error;
 };
 
 const saveClarification = async ({ session, run, type, candidates, text }) => {
@@ -670,30 +642,64 @@ const saveClarification = async ({ session, run, type, candidates, text }) => {
     });
 };
 
-export const processAgenticTurn = async ({ session, userId, message, context = {}, run: existingRun = null, force = false, skipPlanReview = false, approvedPlan = null, onEvent = null }) => {
-    // Intent classification is the routing seam. The old implementation used
-    // a fixed keyword gate here, which made natural-language requests fall
-    // into a different agent. Keep the exported predicate for compatibility,
-    // but let the typed classifier decide whether this is an agentic turn.
-    const preAnalyzed = !force ? await analyzeIntent({ message, context, onActivity: event => onEvent?.(event) }) : null;
-    const isActionable = ['create', 'modify', 'connect'].includes(preAnalyzed?.intent?.goal)
-        && preAnalyzed?.intent?.domains?.length > 0;
-    if (!force && !isActionable) return { handled: false };
+const persistedContextFor = context => ({
+    surface: context.surface || 'chat',
+    formId: context.formId || null,
+    workflowId: context.workflowId || null,
+    executionId: context.executionId || null,
+    activeResource: context.activeResource || null,
+    respondentEmailFieldId: context.respondentEmailFieldId || null,
+    clarificationAnswers: Array.isArray(context.clarificationAnswers) ? context.clarificationAnswers.slice(-8) : [],
+    clarificationState: context.clarificationState && typeof context.clarificationState === 'object' && !Array.isArray(context.clarificationState)
+        ? context.clarificationState
+        : {},
+    clarificationText: String(context.clarificationText || '').trim(),
+    clarificationDecision: context.clarificationDecision === 'decide_for_me' ? 'decide_for_me' : null,
+    clarificationId: context.clarificationId || null,
+    clarificationMode: normalizeClarificationMode(context.clarificationMode)
+});
 
-    const persistedContext = {
-        surface: context.surface || 'chat',
-        formId: context.formId || null,
-        workflowId: context.workflowId || null,
-        executionId: context.executionId || null,
-        activeResource: context.activeResource || null,
-        respondentEmailFieldId: context.respondentEmailFieldId || null,
-        clarificationAnswers: Array.isArray(context.clarificationAnswers) ? context.clarificationAnswers.slice(-8) : [],
-        clarificationState: context.clarificationState && typeof context.clarificationState === 'object' && !Array.isArray(context.clarificationState)
-            ? context.clarificationState
-            : {},
-        clarificationText: String(context.clarificationText || '').trim(),
-        clarificationMode: normalizeClarificationMode(context.clarificationMode)
-    };
+export const processAgenticTurn = async ({ session, userId, message, context = {}, decision = null, run: existingRun = null, force = false, skipPlanReview = false, approvedPlan = null, onEvent = null }) => {
+    const preAnalyzed = decision || (!force
+        ? await decideAgentIntent({ message, context, onActivity: event => onEvent?.(event) })
+        : null);
+    if (!force && preAnalyzed?.route === 'conversation') return { handled: false };
+    if (!force && preAnalyzed?.route === 'unavailable') {
+        const reply = await saveReply(session, {
+            text: preAnalyzed.error?.message || 'Promptly could not understand the request right now. Please try again.',
+            kind: 'error',
+            payload: { code: preAnalyzed.error?.code || 'AGENT_INTENT_UNAVAILABLE' },
+            tokenUsage: preAnalyzed.tokenUsage || {}
+        });
+        return { handled: true, replyObj: reply, totalTokenUsage: preAnalyzed.tokenUsage || {} };
+    }
+
+    const persistedContext = persistedContextFor(context);
+    if (!force && preAnalyzed?.route === 'clarification') {
+        const run = await createRun({ threadId: session.id, userId, metadata: { request: message, context: persistedContext } });
+        await updateRun(run, {
+            status: 'awaiting_clarification',
+            currentStep: 'understand',
+            intent: preAnalyzed.intent,
+            tokenUsage: preAnalyzed.tokenUsage || {}
+        });
+        await replaceChatSessionState(session, { status: 'awaiting_agent_clarification', runId: run.id });
+        const reply = await saveReply(session, {
+            text: preAnalyzed.clarification?.question || 'Could you clarify what you would like Promptly to prepare?',
+            kind: 'clarification',
+            payload: {
+                runId: run.id,
+                intent: preAnalyzed.intent,
+                options: preAnalyzed.clarification?.options || [],
+                allowDecide: true
+            },
+            tokenUsage: preAnalyzed.tokenUsage || {}
+        });
+        return { handled: true, replyObj: reply, totalTokenUsage: preAnalyzed.tokenUsage || {} };
+    }
+
+    if (!force && preAnalyzed?.route !== 'agent') return { handled: false };
+
     const run = existingRun || await createRun({ threadId: session.id, userId, metadata: { request: message, context: persistedContext } });
     if (existingRun) {
         await updateRun(run, {
@@ -711,7 +717,8 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
         onEvent?.({ type: 'step.started', runId: run.id, step: 'understand' });
         const intentStep = await createStep(run, { stepKey: 'understand', type: 'understand' });
         await startStep(intentStep);
-        const analyzed = preAnalyzed || await analyzeIntent({ message, context, onActivity: event => onEvent?.(event) });
+        const analyzed = preAnalyzed || await decideAgentIntent({ message, context, onActivity: event => onEvent?.(event) });
+        if (!analyzed?.intent) throw Object.assign(new Error('Promptly could not prepare a typed intent.'), { code: 'AGENT_INTENT_INVALID' });
         totalUsage = addUsage(totalUsage, analyzed.tokenUsage);
         await updateRun(run, { intent: analyzed.intent, tokenUsage: totalUsage });
         await completeStep(intentStep, { result: analyzed.intent, tokenUsage: analyzed.tokenUsage });
@@ -753,6 +760,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
             resources: researched.resources,
             intent: analyzed.intent,
             clarificationMode: persistedContext.clarificationMode,
+            formTurnContext: formTurnContextForAgent({ message, context: persistedContext }),
             userId,
             actorEmail: actor?.email || null,
             onEvent
@@ -762,8 +770,6 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
             ? { plan: approvedPlan, tokenUsage: {} }
             : await planSolution({
                 intent: analyzed.intent,
-                resources: researched.resources,
-                availableCapabilities: capabilityRegistry.list().map(capability => ({ name: capability.name, description: capability.description, risk: capability.risk, produces: capability.produces })),
                 clarificationMode: persistedContext.clarificationMode,
                 onActivity: event => onEvent?.(event)
             });
@@ -794,17 +800,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
 
         await updateRun(run, { status: 'designing', currentStep: 'design' });
         onEvent?.({ type: 'step.started', runId: run.id, step: 'design' });
-        let compiled;
-        try {
-            compiled = await compilePlanWithRepair({ plan, intent: analyzed.intent, registry: capabilityRegistry, onActivity: event => onEvent?.(event) });
-        } catch (error) {
-            totalUsage = addUsage(totalUsage, error.tokenUsage || {});
-            if (error.code === 'AGENT_PLAN_UNSUPPORTED') {
-                const reply = await savePlanCapabilityClarification({ session, run, plan, error, tokenUsage: totalUsage });
-                return { handled: true, replyObj: reply, totalTokenUsage: totalUsage };
-            }
-            throw error;
-        }
+        const compiled = compilePlanWithRepair({ plan, intent: analyzed.intent, registry: capabilityRegistry });
         totalUsage = addUsage(totalUsage, compiled.tokenUsage);
         const executablePlan = {
             ...compiled.plan,
@@ -825,7 +821,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
                 const next = compileExecutionPlan({ plan: repaired.plan, registry: capabilityRegistry });
                 if (!next.valid) {
                     const error = new Error('The replanned operation is not executable.');
-                    error.code = 'AGENT_PLAN_UNSUPPORTED';
+                    error.code = 'AGENT_PLAN_INVALID';
                     error.issues = next.issues;
                     throw error;
                 }
@@ -896,7 +892,7 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
             const reply = await saveReply(session, {
                 text: formTurn.message,
                 kind: 'clarification',
-                payload: { runId: run.id, options: formTurn.inputs || formTurn.options || [] },
+                payload: { runId: run.id, options: formTurn.inputs || formTurn.options || [], allowDecide: true },
                 tokenUsage: totalUsage
             });
             return { handled: true, replyObj: reply, totalTokenUsage: totalUsage };
@@ -1003,7 +999,7 @@ export const resumeAgentAfterForm = async ({ run, session, userId, formId, onEve
         const reply = await saveReply(session, {
             text: result.result.message,
             kind: 'clarification',
-            payload: { runId: run.id, options: result.result.inputs || [] },
+            payload: { runId: run.id, options: result.result.inputs || [], allowDecide: true },
             tokenUsage: result.tokenUsage || {}
         });
         return { reply, tokenUsage: result.tokenUsage || {} };
@@ -1030,6 +1026,12 @@ export const resumeAgentAfterClarification = async ({ run, session, userId, answ
     // the run's original context as well so a clarification cannot discard
     // the selected form, workflow, or other trusted inputs from the request.
     const nextContext = { ...(metadata.context || {}), ...(context || {}) };
+    // A later user answer must take authority back from an earlier
+    // "decide for me" request. Keep delegation scoped to the one resume turn.
+    nextContext.clarificationDecision = context?.clarificationDecision === 'decide_for_me'
+        ? 'decide_for_me'
+        : null;
+    nextContext.clarificationId = context?.clarificationId || null;
     nextContext.clarificationAnswers = [
         ...(Array.isArray(nextContext.clarificationAnswers) ? nextContext.clarificationAnswers : []),
         String(answer || '').trim()

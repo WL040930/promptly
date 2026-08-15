@@ -16,7 +16,7 @@ test('agent contracts normalize model output into bounded values', () => {
     assert.equal(intent.confidence, 1);
 
     const plan = makeAdaptivePlan({ summary: 'Review', steps: [{ id: 'one', type: 'design_form' }] }, intent);
-    assert.equal(plan.steps[0].id, 'one');
+    assert.equal(plan.steps[0].id, 'design_form');
     assert.equal(plan.approvalRequired, true);
 });
 

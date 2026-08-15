@@ -3,6 +3,7 @@ import { ArrowUp, LoaderCircle, Trash2 } from 'lucide-react';
 import AgentMessage from './AgentMessage.jsx';
 import ChatHistorySkeleton from './ChatHistorySkeleton.jsx';
 import ConfirmModal from '../modals/ConfirmModal.jsx';
+import { coalesceAskPromptlyProposalMessages } from '../../utils/askPromptlyProposalPresentation.js';
 
 export default function GenericChatWidget({
     messages = [],
@@ -98,6 +99,9 @@ export default function GenericChatWidget({
             // the user can retry without losing their place in the chat.
         }
     };
+    const presentedMessages = coalesceAskPromptlyProposalMessages(
+        messages.filter(message => !['tool_call', 'tool_response'].includes(message.kind))
+    );
 
     return (
         <div className="flex min-h-0 flex-1 flex-col w-full bg-transparent relative overflow-hidden">
@@ -139,7 +143,7 @@ export default function GenericChatWidget({
                 {isLoadingHistory ? (
                     <ChatHistorySkeleton />
                 ) : (
-                    messages.filter(msg => !['tool_call', 'tool_response'].includes(msg.kind)).map((message, index, arr) => (
+                    presentedMessages.map((message, index, arr) => (
                         <AgentMessage
                             key={message.id}
                             message={message}

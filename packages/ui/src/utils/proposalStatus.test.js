@@ -30,6 +30,12 @@ test('canonical display labels remain terminal in the proposal widget', () => {
     assert.equal(shouldShowProposalActions('applied'), false);
 });
 
+test('legacy ignored proposal status is terminal and renders as ignored', () => {
+    assert.equal(proposalStatusLabel('ignored'), 'Ignored');
+    assert.equal(isRejectedProposalStatus('ignored'), true);
+    assert.equal(shouldShowProposalActions('ignored'), false);
+});
+
 test('only the active workflow proposal remains actionable when a newer proposal arrives', () => {
     const messages = markSupersededWorkflowProposals([
         { id: 'proposal_old', kind: 'workflow_proposal', proposalStatus: 'pending' },

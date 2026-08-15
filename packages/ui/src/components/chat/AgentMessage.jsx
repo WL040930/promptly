@@ -4,7 +4,7 @@ import WorkflowProposalWidget from './WorkflowProposalWidget.jsx';
 import MarkdownRenderer from '../ui/MarkdownRenderer.jsx';
 import MessageOptionsWidget from './MessageOptionsWidget.jsx';
 import AssistantFailureCard from './AssistantFailureCard.jsx';
-import AssistantWorkCard from './AssistantWorkCard.jsx';
+import AssistantWorkCard, { AssistantWorkDetails } from './AssistantWorkCard.jsx';
 import { clarificationMessageData } from './clarificationMessage.js';
 import { proposalStatusLabel, shouldShowProposalActions } from './proposalStatus.js';
 import { messagePresentation } from './messagePresentation.js';
@@ -69,6 +69,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
     const presentation = messagePresentation(message);
     const isCompactWork = presentation === 'work';
     const isProposalWork = presentation === 'proposal_work';
+    const isTerminalWork = presentation === 'terminal_work';
     const workLabel = work?.activities?.find(activity => activity.status === 'active')?.label
         || work?.activities?.at(-1)?.label
         || 'Thinking';
@@ -115,9 +116,11 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
             badge: 'border-indigo-200 bg-white text-indigo-700'
         };
 
+    if (isTerminalWork) return null;
+
     return (
         <div className={`flex w-full ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {message.sender !== 'user' && !isProposalWork && (
+            {message.sender !== 'user' && (
                 <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-4 mr-2.5 shadow-sm border border-indigo-200/50">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="14" x="3" y="8" rx="2" /><path d="M12 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" /><path d="M12 5v3" /><path d="M8 14h.01" /><path d="M16 14h.01" /><path d="M9 19h6" /></svg>
                 </div>
@@ -127,7 +130,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                     {message.sender === 'user' ? 'You' : 'Promptly AI'}
                 </span>
                 {isProposalWork ? (
-                    <AssistantWorkCard work={work} tokenUsage={message.tokenUsage} />
+                    <AssistantWorkCard work={work} tokenUsage={message.tokenUsage} messageKind={kind} />
                 ) : isCompactWork ? (
                     <div className="inline-flex items-center gap-2 rounded-2xl rounded-tl-none border border-slate-200/70 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-500 shadow-sm" role="status" aria-label="Promptly is working">
                         <LoaderCircle size={14} className="animate-spin text-violet-600" />
@@ -216,7 +219,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                         onAccept={(filteredSchema, selectedPatchIds) => onApply?.(message, filteredSchema, selectedPatchIds)}
                         onIgnore={() => onIgnore?.(message)}
                         onPreview={(filteredProposal) => onOption?.({ type: 'preview_form', proposal: { ...(filteredProposal || payload), messageId: message.id }, formId: payload.formId })}
-                        onPreviewUpdate={(filteredProposal) => onOption?.({ type: 'preview_update', proposal: filteredProposal, formId: payload.formId })}
+                        onPreviewUpdate={(filteredProposal) => onOption?.({ type: 'preview_update', proposal: { ...(filteredProposal || payload), messageId: message.id }, formId: payload.formId })}
                         onRegenerate={() => onOption?.({ type: 'regenerate_proposal', text: payload.work?.title || message.text || '' })}
                         accepting={isAccepting}
                         rejecting={isRejecting}
@@ -308,6 +311,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                                     )}
                                 </div>
                             )}
+                            {payload.work && <AssistantWorkDetails work={payload.work} tokenUsage={message.tokenUsage} />}
                             {!showProposalActions ? (
                                 <div className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold ${status === 'Applied' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
                                     {status === 'Applied' ? <CheckCircle2 size={14} /> : null}

@@ -5,25 +5,26 @@ import { ASSISTANT_TURN_EVENTS } from '../../../shared/assistantTurnContract.js'
  * the specialist agent runtime. It deliberately owns routing and event shape,
  * while Form AI and Workflow AI keep ownership of their domain planning.
  */
-export const createAskPromptlyCoordinator = ({ processAgenticTurn, classifyIntent } = {}) => {
+export const createAskPromptlyCoordinator = ({ processAgenticTurn, decideIntent, recoverContext = null } = {}) => {
     if (typeof processAgenticTurn !== 'function') throw new TypeError('processAgenticTurn is required.');
-    if (typeof classifyIntent !== 'function') throw new TypeError('classifyIntent is required.');
+    if (typeof decideIntent !== 'function') throw new TypeError('decideIntent is required.');
 
     const coordinate = async ({ session, userId, message, context = {}, onEvent = null } = {}) => {
-        const deterministic = classifyIntent({ message, context });
-        const requestedDomains = Array.isArray(deterministic?.domains) ? deterministic.domains : [];
-        const route = ['create', 'modify', 'delete', 'connect'].includes(deterministic?.goal) && requestedDomains.length > 0
-            ? 'coordination'
-            : 'conversation';
+        const decision = await decideIntent({ message, context, onActivity: event => onEvent?.(event) });
+        const requestedDomains = Array.isArray(decision?.intent?.domains) ? decision.intent.domains : [];
 
         onEvent?.({
             type: ASSISTANT_TURN_EVENTS.ROUTED,
-            route,
+            route: decision?.route || 'unavailable',
             domains: requestedDomains,
-            goal: deterministic?.goal || 'explain'
+            goal: decision?.intent?.goal || 'explain',
+            confidence: decision?.confidence ?? null
         });
 
-        return processAgenticTurn({ session, userId, message, context, onEvent });
+        const resolvedContext = typeof recoverContext === 'function'
+            ? await recoverContext({ session, userId, context, decision })
+            : context;
+        return processAgenticTurn({ session, userId, message, context: resolvedContext, decision, onEvent });
     };
 
     return Object.freeze({ coordinate });

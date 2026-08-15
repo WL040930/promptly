@@ -66,6 +66,11 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal, onApply,
     const metaUpdate = patches.find(p => p.op === 'update_meta');
     const settingsUpdate = patches.find(p => p.op === 'update_settings');
     const memoryUpdate = patches.find(p => p.op === 'update_memory');
+    const hasVisibleMetaChange = Boolean(metaUpdate && (
+        currentForm
+            ? Object.entries(metaUpdate.updates || {}).some(([key, value]) => value !== currentForm?.[key])
+            : (metaUpdate.updates?.title && metaUpdate.updates.title !== 'Untitled Form') || metaUpdate.updates?.description
+    ));
 
     const diffFields = useMemo(() => {
         if (!proposal) return [];
@@ -149,9 +154,9 @@ const FormDiffPreviewModal = ({ isOpen, onClose, currentForm, proposal, onApply,
                         )}
                         
                         {/* Form Title & Description */}
-                        <div className={`mb-10 pb-6 border-b border-slate-100 p-4 rounded-xl -mx-4 -mt-4 ${metaUpdate ? 'bg-amber-50/40 border border-amber-200' : ''}`}>
-                            {metaUpdate && (
-                                <div className="text-[10px] font-bold text-amber-600 uppercase tracking-wider mb-2">~ Form Properties Modified</div>
+                        <div className={`mb-10 pb-6 border-b border-slate-100 p-4 rounded-xl -mx-4 -mt-4 ${hasVisibleMetaChange ? 'bg-amber-50/40 border border-amber-200' : ''}`}>
+                            {hasVisibleMetaChange && (
+                                <div className="text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-2">Form details</div>
                             )}
                             <h1 className="text-3xl font-black text-slate-900 tracking-tight">{proposedSchema.title || 'Untitled Form'}</h1>
                             {proposedSchema.description && (

@@ -1,6 +1,10 @@
 const TERMINAL_STATUSES = new Map([
     ['applied', 'Applied'],
     ['rejected', 'Rejected'],
+    // AgentRun and older chat event paths use "ignored" for the same
+    // user decision. Keep it terminal so those proposals cannot remain
+    // actionable after the request has been rejected.
+    ['ignored', 'Ignored'],
     ['superseded', 'Superseded'],
     ['stale', 'Stale']
 ]);
@@ -12,7 +16,7 @@ export const proposalStatusLabel = status => TERMINAL_STATUSES.get(normalizeProp
 export const shouldShowProposalActions = status => !TERMINAL_STATUSES.has(normalizeProposalStatus(status));
 
 export const isAcceptedProposalStatus = status => normalizeProposalStatus(status) === 'applied';
-export const isRejectedProposalStatus = status => normalizeProposalStatus(status) === 'rejected';
+export const isRejectedProposalStatus = status => ['rejected', 'ignored'].includes(normalizeProposalStatus(status));
 export const isStaleProposalStatus = status => ['stale', 'superseded'].includes(normalizeProposalStatus(status));
 
 /** Marks one rejected-by-revision workflow proposal terminal without waiting for a history refetch. */

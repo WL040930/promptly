@@ -27,8 +27,23 @@ test('active work expands only after the planner identifies a proposal outcome',
     }), 'proposal_work');
 });
 
-test('Ask Promptly coordinator work uses the detailed run presentation from the first real run event', () => {
+test('Ask Promptly coordinator work stays compact until it becomes a proposal', () => {
     assert.equal(messagePresentation({
         sender: 'bot', kind: 'assistant_work', payload: { work: { surface: 'ask_promptly' } }
+    }), 'work');
+});
+
+test('Ask Promptly coordinator work expands after a proposal outcome', () => {
+    assert.equal(messagePresentation({
+        sender: 'bot', kind: 'assistant_work', payload: { work: { surface: 'ask_promptly', outcomeKind: 'proposal' } }
     }), 'proposal_work');
+});
+
+test('terminal non-proposal work is not presented as live progress', () => {
+    assert.equal(messagePresentation({
+        sender: 'bot', kind: 'assistant_work', payload: { work: { surface: 'ask_promptly', status: 'completed' } }
+    }), 'terminal_work');
+    assert.equal(messagePresentation({
+        sender: 'bot', kind: 'assistant_work', payload: { work: { surface: 'ask_promptly', status: 'needs_input' } }
+    }), 'terminal_work');
 });

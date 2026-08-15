@@ -5,13 +5,13 @@ const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).
 
 const normalizeRun = run => run.toJSON ? run.toJSON() : run;
 
-const updateJsonCollection = async (run, field, key, updates) => {
+const updateJsonCollection = async (run, field, key, updates, options = {}) => {
     const current = Array.isArray(run[field]) ? run[field] : [];
     const index = current.findIndex(item => item[key] === updates[key]);
     const next = [...current];
     if (index === -1) next.push(updates);
     else next[index] = { ...next[index], ...updates };
-    await run.update({ [field]: next });
+    await run.update({ [field]: next }, options);
     run[field] = next;
     return next[index === -1 ? next.length - 1 : index];
 };
@@ -98,7 +98,7 @@ export const createArtifact = async ({ run, runId, type, artifactKey, content, b
     return artifact;
 };
 
-export const updateArtifact = async (run, artifactKey, updates = {}) => {
+export const updateArtifact = async (run, artifactKey, updates = {}, options = {}) => {
     const current = (Array.isArray(run?.artifacts) ? run.artifacts : []).find(artifact => artifact.artifactKey === artifactKey);
     if (!current) throw new Error(`Agent artifact '${artifactKey}' was not found.`);
     const content = updates.content === undefined ? current.content : updates.content;
@@ -108,7 +108,7 @@ export const updateArtifact = async (run, artifactKey, updates = {}) => {
         artifactKey,
         content,
         contentHash: hash(content)
-    });
+    }, options);
 };
 
 export const createApproval = async ({ run, userId, artifactIds, idempotencyKey }) => {

@@ -23,7 +23,12 @@ export const cancelRun = asyncHandler(async (req, res) => {
 
 export const approveRun = asyncHandler(async (req, res) => {
     const idempotencyKey = req.body?.idempotencyKey || req.get('Idempotency-Key');
-    const result = await approveAgentRun({ runId: req.params.runId, userId: req.user.id, idempotencyKey });
+    const result = await approveAgentRun({
+        runId: req.params.runId,
+        userId: req.user.id,
+        idempotencyKey,
+        formOverrides: req.body?.formOverrides || null
+    });
     res.json(result);
 });
 

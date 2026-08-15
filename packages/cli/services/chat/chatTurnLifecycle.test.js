@@ -4,10 +4,38 @@ import {
     advanceChatTurn,
     attachChatTurnMessages,
     finishChatTurn,
+    progressForChatEvent,
     reconcileStaleChatTurn,
     replaceChatSessionState,
-    startChatTurn
+    startChatTurn,
+    workStatusForAssistantReply
 } from './chatTurnLifecycle.js';
+
+test('assistant reply kinds map to durable work statuses', () => {
+    assert.equal(workStatusForAssistantReply({ kind: 'clarification' }), 'needs_input');
+    assert.equal(workStatusForAssistantReply({ kind: 'solution_proposal' }), 'awaiting_review');
+    assert.equal(workStatusForAssistantReply({ kind: 'text' }), 'completed');
+    assert.equal(workStatusForAssistantReply({ kind: 'error', isError: true }), 'failed');
+});
+
+test('approval events promote Ask Promptly work into proposal presentation', () => {
+    assert.equal(progressForChatEvent({ type: 'approval.required' }).outcomeKind, 'proposal');
+    assert.equal(progressForChatEvent({
+        type: 'approval.required',
+        progress: { id: 'approval:custom', message: 'Review the generated changes.' }
+    }).outcomeKind, 'proposal');
+});
+
+test('runtime step objects receive a readable progress label', () => {
+    const progress = progressForChatEvent({
+        type: 'step.started',
+        step: { id: 'design_form', type: 'design_form', title: 'Prepare the form proposal' }
+    });
+
+    assert.equal(progress.label, 'Working on Prepare the form proposal');
+    assert.equal(progress.id, 'step:design_form:1');
+    assert.doesNotMatch(progress.label, /\[object Object\]/);
+});
 
 const createMemory = () => {
     const rows = [];

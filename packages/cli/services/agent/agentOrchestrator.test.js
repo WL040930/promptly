@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     buildWorkflowProposalContent,
-    deterministicIntent,
     ensureRespondentEmailField,
+    formTurnContextForAgent,
+    applyIntentFormTitleFallback,
     proposedFormSchemaForWorkflow,
+    research,
     shouldPauseForPlanReview,
     workflowTurnContextForAgent
 } from './agentOrchestrator.js';
@@ -17,31 +19,28 @@ const compoundIntent = {
     requirements: ['Create a form and follow up after submission.']
 };
 
-const genericIntent = {
-    domains: [],
-    resourceReferences: [],
-    requirements: ['Prepare the requested steps.']
-};
-
-test('adaptive plans preserve model step IDs, order, and dependencies', () => {
+test('adaptive plans ignore model capability placeholders and compile a canonical compound graph', () => {
     const registry = createAgentCapabilityRegistry([
-        { name: 'prepare_data', inputSchema: { type: 'object', additionalProperties: false }, execute: async () => ({}) },
-        { name: 'create_form', inputSchema: { type: 'object', additionalProperties: false }, execute: async () => ({}) },
-        { name: 'send_email', inputSchema: { type: 'object', properties: { source: { type: 'string' } }, additionalProperties: false }, execute: async () => ({}) }
+        { name: 'design_form', inputSchema: { type: 'object', additionalProperties: false }, execute: async () => ({}) },
+        { name: 'design_workflow', inputSchema: { type: 'object', additionalProperties: false }, execute: async () => ({}) }
     ]);
     const plan = makeAdaptivePlan({
         summary: 'Create and notify.',
-        outcomes: [{ id: 'notify', title: 'Notify the respondent' }],
+        outcomes: [
+            { id: 'form_modify', title: 'Create the form', artifactTypes: ['form_proposal'], dependsOn: ['design_form'] },
+            { id: 'workflow_modify', title: 'Create the workflow', artifactTypes: ['workflow_proposal'], dependsOn: ['design_workflow'] }
+        ],
         steps: [
-            { id: 'email_step', type: 'send_email', args: { source: '$step.form_step' } },
-            { id: 'form_step', type: 'create_form' }
+            { id: 'registered_form', type: 'registered_capability' },
+            { id: 'registered_workflow', type: 'registered_capability' }
         ]
-    }, genericIntent);
+    }, compoundIntent);
     const result = compileExecutionPlan({ plan, registry });
     assert.equal(result.valid, true);
-    assert.deepEqual(result.graph.order, ['form_step', 'email_step']);
-    assert.equal(result.graph.steps[0].id, 'email_step');
-    assert.deepEqual(result.graph.steps[0].dependsOn, ['form_step']);
+    assert.deepEqual(result.graph.order, ['design_form', 'design_workflow']);
+    assert.deepEqual(result.graph.steps.map(step => step.type), ['design_form', 'design_workflow']);
+    assert.deepEqual(plan.outcomes.map(outcome => outcome.id), ['form_solution', 'workflow_solution']);
+    assert.deepEqual(plan.outcomes[1].dependsOn, ['form_solution']);
 });
 
 test('compound requests proceed without plan review unless explicitly requested', () => {
@@ -89,6 +88,41 @@ test('respondent confirmation forms add a non-colliding email field when none ex
     assert.notEqual(schema.fields.at(-1).id, 'email');
 });
 
+test('Ask Promptly replaces an unnamed new-form fallback with the AI-selected form target', () => {
+    const proposal = applyIntentFormTitleFallback({
+        schema: { title: 'Untitled Form', description: '', fields: [] },
+        patches: [{ op: 'update_meta', patchId: 'metadata', updates: { title: 'Untitled Form' } }],
+        intent: {
+            goal: 'create',
+            requestedOperations: [{ domain: 'form', action: 'create', target: 'job application form' }]
+        },
+        isNewForm: true
+    });
+
+    assert.equal(proposal.schema.title, 'Job Application Form');
+    assert.equal(proposal.patches[0].updates.title, 'Job Application Form');
+});
+
+test('research uses the active form when a conversational reference matches several forms', async () => {
+    const resource = { id: 'form_recent', title: 'Untitled Form', fields: [], updatedAt: new Date() };
+    const result = await research({
+        userId: 'user_1',
+        intent: {
+            goal: 'modify',
+            resourceReferences: [{ type: 'form', query: 'the form just now' }],
+            resourceInputs: []
+        },
+        context: { formId: 'form_recent' },
+        resolve: async ({ reference }) => reference === 'the form just now'
+            ? { status: 'ambiguous', candidates: [{ id: 'form_recent', name: 'Untitled Form' }, { id: 'form_other', name: 'Contact Form' }] }
+            : { status: 'resolved', resource: { id: 'form_recent' } },
+        models: { Form: { findOne: async () => resource } }
+    });
+
+    assert.equal(result.status, 'resolved');
+    assert.deepEqual(result.resources.map(item => item.id), ['form_recent']);
+});
+
 test('fallback plans describe supported outcomes without adding a verification capability', () => {
     const result = makeFallbackOutcomePlan({ domains: ['form', 'workflow'], risk: 'medium' });
 
@@ -98,26 +132,37 @@ test('fallback plans describe supported outcomes without adding a verification c
 });
 
 test('form references used by a workflow are inputs, not form work', () => {
-    const intent = deterministicIntent({
-        message: 'Create a new workflow when the user submits the form, then send an email.'
-    });
-    assert.deepEqual(intent.requestedOperations.map(operation => operation.domain), ['workflow']);
+    const intent = {
+        goal: 'create',
+        domains: ['workflow'],
+        requestedOperations: [{ domain: 'workflow', action: 'create', target: 'submission workflow' }]
+    };
     const plan = makeAdaptivePlan({}, intent);
     assert.deepEqual(plan.steps.map(step => step.type), ['design_workflow']);
     assert.deepEqual(plan.outcomes.map(outcome => outcome.artifactTypes[0]), ['workflow_proposal']);
 });
 
 test('compound form and workflow requests retain both requested operations', () => {
-    const intent = deterministicIntent({
-        message: 'Create a job application form, then approve submissions and email the applicant.'
-    });
+    const intent = {
+        goal: 'create',
+        domains: ['form', 'workflow'],
+        requestedOperations: [
+            { domain: 'form', action: 'create', target: 'job application form' },
+            { domain: 'workflow', action: 'create', target: 'submission notification' }
+        ]
+    };
     assert.deepEqual(intent.requestedOperations.map(operation => operation.domain), ['form', 'workflow']);
 });
 
 test('Ask Promptly treats a natural form-then-save-responses request as an ordered compound solution', () => {
-    const intent = deterministicIntent({
-        message: 'Can u design the conference registration form, then when the form receive the responses, save the responses inside the sheet'
-    });
+    const intent = {
+        goal: 'create',
+        domains: ['form', 'workflow'],
+        requestedOperations: [
+            { domain: 'form', action: 'create', target: 'conference registration form' },
+            { domain: 'workflow', action: 'create', target: 'response storage' }
+        ]
+    };
     const plan = makeAdaptivePlan({}, intent);
 
     assert.deepEqual(intent.requestedOperations.map(operation => operation.domain), ['form', 'workflow']);
@@ -169,6 +214,64 @@ test('Ask Promptly forwards structured clarification state to its workflow speci
             clarificationMode: 'important_only'
         }
     });
+});
+
+test('Ask Promptly forwards structured clarification state to its form specialist', () => {
+    assert.deepEqual(formTurnContextForAgent({
+        message: 'Design a job application form for Software Engineer applicants.',
+        context: {
+            clarificationState: {
+                jobTitle: 'Software Engineer',
+                sections: ['Personal Information', 'Work Experience', 'Resume/File Upload']
+            },
+            clarificationText: 'Target job title(s): Software Engineer\nCore sections: Personal Information, Work Experience, Resume/File Upload',
+            clarificationMode: 'important_only'
+        }
+    }), {
+        sourceText: 'Design a job application form for Software Engineer applicants.',
+        scope: 'general_form_change',
+        relationToPending: 'none',
+        authority: 'user',
+        clarificationMode: 'important_only',
+        expectsMutation: true,
+        clarificationState: {
+            jobTitle: 'Software Engineer',
+            sections: ['Personal Information', 'Work Experience', 'Resume/File Upload']
+        }
+    });
+});
+
+test('Ask Promptly can delegate unanswered form choices to the assistant', () => {
+    const context = formTurnContextForAgent({
+        message: 'Design a job application form.',
+        context: {
+            clarificationDecision: 'decide_for_me',
+            clarificationId: 'clarification-1',
+            clarificationMode: 'important_only'
+        }
+    });
+
+    assert.equal(context.authority, 'assistant');
+    assert.equal(context.expectsMutation, true);
+    assert.equal(context.clarificationDecision, 'decide_for_me');
+    assert.equal(context.clarificationState, undefined);
+});
+
+test('Ask Promptly can delegate unanswered workflow choices to the assistant', () => {
+    const context = workflowTurnContextForAgent({
+        message: 'Send a confirmation email after a form submission.',
+        context: {
+            clarificationDecision: 'decide_for_me',
+            clarificationId: 'clarification-2',
+            clarificationState: { provider: ['Gmail'] },
+            clarificationMode: 'important_only'
+        }
+    });
+
+    assert.equal(context.command.type, 'decide_for_me');
+    assert.equal(context.command.clarificationId, 'clarification-2');
+    assert.deepEqual(context.command.state, { provider: ['Gmail'] });
+    assert.equal(context.intent.authority, 'assistant');
 });
 
 test('self dependencies are normalized before cycle validation', () => {

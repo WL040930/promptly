@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useToast } from '../../context/ToastContext.jsx';
@@ -8,9 +8,10 @@ import Button from '../../components/ui/Button.jsx';
 import GenericChatWidget from '../../components/chat/GenericChatWidget.jsx';
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 import FormDiffPreviewModal from '../../forms/ai/FormDiffPreviewModal.jsx';
-import { navigateTo, parsePath, getQuery } from '../../utils/router.js';
+import { assistantConversationPath, navigate, navigateTo, parsePath, getQuery } from '../../utils/router.js';
 import { requestSettingsModal } from '../../utils/settingsModal.js';
 import { formatCompactRelativeTime } from '../../utils/time.js';
+import { eventForAssistantOption } from '../../utils/assistantOptionRouting.js';
 import ChatSessionsSkeleton from '../../components/chat/ChatSessionsSkeleton.jsx';
 import ClarificationModeSelect from '../../components/chat/ClarificationModeSelect.jsx';
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
@@ -24,6 +25,7 @@ import { emitAITurnLifecycle } from '../../utils/browserNotifications.js';
 import { outcomeForAssistantMessage } from '../../../../shared/assistantTurnNotification.js';
 
 const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I can build automations and forms from a description. What would you like to automate?' };
+const WorkflowDiffPreviewModal = lazy(() => import('../../builder/components/modals/WorkflowDiffPreviewModal.jsx'));
 
 export default function ChatTab({ conversationId = null }) {
     const toast = useToast();
@@ -40,6 +42,7 @@ export default function ChatTab({ conversationId = null }) {
     const [sidebarSearch, setSidebarSearch] = useState('');
     const [chatToDelete, setChatToDelete] = useState(null);
     const [previewProposal, setPreviewProposal] = useState(null);
+    const [workflowPreviewProposal, setWorkflowPreviewProposal] = useState(null);
     const [previewFormId, setPreviewFormId] = useState(null);
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
@@ -116,13 +119,11 @@ export default function ChatTab({ conversationId = null }) {
     }, [sessions, sidebarSearch]);
 
     const appendResponse = (response) => {
-        if (response?.sessionId) {
-            setSessionId(response.sessionId);
-            // Replace url to have new session id without refreshing page
-            const parsed = parsePath(window.location.href);
-            if (!parsed.conversationId) {
-                navigateTo({ page: 'assistant', conversationId: response.sessionId });
-            }
+        const responseSessionId = String(response?.sessionId || '').trim();
+        if (responseSessionId) {
+            setSessionId(responseSessionId);
+            const nextPath = assistantConversationPath(responseSessionId, window.location.href);
+            if (nextPath) navigate(nextPath);
         }
         if (response?.reply || response?.clarification) {
             const supersededMessageIds = new Set(response.reply?.payload?.supersededMessageIds || []);
@@ -270,30 +271,48 @@ export default function ChatTab({ conversationId = null }) {
         }
     };
 
-    const handleApply = async (message, filteredSchema = null) => {
+    const handleApply = async (message, formSelection = null, selectedPatchIds = null) => {
         setAcceptingProposalId(message.id);
         try {
             const payload = message.payload || {};
+            const selection = formSelection && typeof formSelection === 'object' && !Array.isArray(formSelection)
+                ? formSelection
+                : { schema: formSelection, selectedPatchIds };
             if (payload.runId) {
+                const formOverrides = message.kind === 'form_proposal' && Array.isArray(selection.selectedPatchIds)
+                    ? { selectedPatchIds: selection.selectedPatchIds }
+                    : null;
                 const result = await approveAgentRunMutation.mutateAsync({
                     runId: payload.runId,
-                    idempotencyKey: `${payload.runId}:${message.id}`
+                    idempotencyKey: `${payload.runId}:${message.id}`,
+                    formOverrides
                 });
                 setMessages(previous => [
-                    ...previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied' } : item),
+                    ...previous.map(item => item.id === message.id ? {
+                        ...item,
+                        proposalStatus: 'applied',
+                        ...(formOverrides ? {
+                            payload: {
+                                ...item.payload,
+                                ...(selection.schema ? { schema: selection.schema } : {}),
+                                ...(Array.isArray(selection.patches) ? { patches: selection.patches } : {}),
+                                selectedPatchIds: selection.selectedPatchIds
+                            }
+                        } : {})
+                    } : item),
                     ...(result.followUpReply ? [result.followUpReply] : [])
                 ]);
                 toast.success(result.followUpReply ? 'Form applied. Automation proposal is ready.' : 'Proposal applied.');
-                return;
+                return true;
             }
             let result;
             if (['form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
                 result = await decideChatProposalMutation.mutateAsync({ sessionId, messageId: message.id, action: 'approve' });
                 setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied', payload: result?.message?.payload || item.payload } : item));
                 toast.success(message.kind === 'form_bulk_delete_proposal' ? 'Forms deleted.' : message.kind === 'form_delete_proposal' ? 'Form deleted.' : message.kind === 'form_response_clear_proposal' ? 'Form responses cleared.' : 'Form duplicated.');
-                return;
+                return true;
             } else if (['solution_proposal', 'form_proposal', 'workflow_diff', 'workflow_proposal'].includes(message.kind)) {
-                const overrides = message.kind === 'form_proposal' && filteredSchema ? { schema: filteredSchema } : null;
+                const overrides = message.kind === 'form_proposal' && selection.schema ? { schema: selection.schema } : null;
                 const decision = await decideChatProposalMutation.mutateAsync({ sessionId, messageId: message.id, action: 'approve', overrides });
                 result = decision.resource;
                 setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied', payload: decision?.message?.payload || item.payload } : item));
@@ -304,6 +323,7 @@ export default function ChatTab({ conversationId = null }) {
                 navigateTo({ page: 'automation-build', automationId: result.workflowId, editor: 'ai' });
             }
             toast.success('Proposal applied.');
+            return true;
         } catch (error) {
             if (error.payload?.code === 'FORM_PROPOSAL_STALE') {
                 setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'stale' } : item));
@@ -316,6 +336,7 @@ export default function ChatTab({ conversationId = null }) {
             } else {
                 toast.error(error.message || 'Failed to apply proposal.');
             }
+            return false;
         } finally {
             setAcceptingProposalId(null);
         }
@@ -361,9 +382,8 @@ export default function ChatTab({ conversationId = null }) {
         if (option?.type === 'agent_plan_approved' || option?.type === 'agent_plan_rejected') {
             return send(null, { type: option.type, runId: option.runId });
         }
-        if (option?.type === 'submit_clarification') {
-            return send(null, option);
-        }
+        const assistantEvent = eventForAssistantOption(option);
+        if (assistantEvent) return send(null, assistantEvent);
         if (option?.id && option?.title) return send(null, { type: 'form_target_selected', formId: option.id });
         if (option?.type === 'preview_form') {
             setPreviewFormId(option.formId || null);
@@ -372,11 +392,15 @@ export default function ChatTab({ conversationId = null }) {
         }
         if (option?.type === 'preview_update') {
             setPreviewProposal(prev => {
-                if (prev && prev.formId === option.proposal.formId) {
+                if (prev && prev.messageId === option.proposal.messageId) {
                     return option.proposal;
                 }
                 return prev;
             });
+            return;
+        }
+        if (option?.type === 'preview_workflow') {
+            setWorkflowPreviewProposal(option.proposal);
             return;
         }
         if (option?.type === 'regenerate_proposal') {
@@ -393,6 +417,8 @@ export default function ChatTab({ conversationId = null }) {
         setMessages([welcome]); 
         setClarificationMode(getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
         setPreviewFormId(null);
+        setPreviewProposal(null);
+        setWorkflowPreviewProposal(null);
         setIsSidebarOpen(false); 
         navigateTo({ page: 'assistant' });
     };
@@ -404,6 +430,9 @@ export default function ChatTab({ conversationId = null }) {
         setSessionId(id);
         setMessages([welcome]);
         setClarificationMode(getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
+        setPreviewFormId(null);
+        setPreviewProposal(null);
+        setWorkflowPreviewProposal(null);
         setIsSidebarOpen(false);
         navigateTo({ page: 'assistant', conversationId: id });
     };
@@ -554,9 +583,10 @@ export default function ChatTab({ conversationId = null }) {
                     isTyping={effectiveIsTyping}
                     isLoadingHistory={Boolean(sessionId && isSessionPending)}
                     handleSend={send}
-                    handleApply={(msg, filteredSchema) => {
-                        handleApply(msg, filteredSchema);
-                        setPreviewProposal(null);
+                    handleApply={(msg, formSelection, selectedPatchIds) => {
+                        void handleApply(msg, formSelection, selectedPatchIds).then(applied => {
+                            if (applied) setPreviewProposal(null);
+                        });
                     }}
                     handleIgnore={(msg) => {
                         handleIgnore(msg);
@@ -596,12 +626,44 @@ export default function ChatTab({ conversationId = null }) {
                 onClose={() => setPreviewProposal(null)}
                 currentForm={previewForm}
                 proposal={previewProposal}
-                onApply={() => {
+                onApply={async () => {
                     const message = messages.find(item => item.id === previewProposal?.messageId);
-                    if (message) handleApply(message, previewProposal?.schema);
+                    if (!message) {
+                        toast.error('This proposal is no longer available. Refresh and try again.');
+                        return;
+                    }
+                    const applied = await handleApply(message, previewProposal);
+                    if (applied) setPreviewProposal(null);
                 }}
                 isApplying={acceptingProposalId === previewProposal?.messageId}
             />
+            {workflowPreviewProposal && (
+                <Suspense fallback={null}>
+                    <WorkflowDiffPreviewModal
+                        isOpen
+                        onClose={() => setWorkflowPreviewProposal(null)}
+                        currentWorkflow={null}
+                        versionWorkflow={workflowPreviewProposal}
+                        confirmText="Apply Changes"
+                        loadingText="Applying…"
+                        title="Review workflow changes"
+                        description="Review the proposed workflow before applying it."
+                        mode="proposal"
+                        canConfirm={workflowPreviewProposal?.readiness?.canApply !== false && workflowPreviewProposal?.readiness?.ready !== false}
+                        confirmDisabledReason={(workflowPreviewProposal?.readiness?.issues || []).map(issue => issue.message).filter(Boolean).join(' ')}
+                        isRestoring={acceptingProposalId === workflowPreviewProposal?.messageId}
+                        onRestore={async () => {
+                            const message = messages.find(item => item.id === workflowPreviewProposal?.messageId);
+                            if (!message) {
+                                toast.error('This workflow proposal is no longer available. Refresh and try again.');
+                                return;
+                            }
+                            const applied = await handleApply(message);
+                            if (applied) setWorkflowPreviewProposal(null);
+                        }}
+                    />
+                </Suspense>
+            )}
         </div>
     );
 }

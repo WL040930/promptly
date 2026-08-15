@@ -3,7 +3,7 @@ import { normalizeProposalStatus } from './proposalStatus.js';
 const statusLabel = status => {
     const normalized = normalizeProposalStatus(status);
     if (normalized === 'applied') return 'Applied';
-    if (normalized === 'rejected') return 'Ignored';
+    if (normalized === 'rejected' || normalized === 'ignored') return 'Ignored';
     if (normalized === 'superseded') return 'Replaced';
     if (normalized === 'stale') return 'Outdated';
     return 'Awaiting approval';

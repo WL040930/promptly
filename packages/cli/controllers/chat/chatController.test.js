@@ -102,6 +102,7 @@ test('assistant turn SSE exposes a reviewable plan result through the API bounda
 
 test('assistant clarification events return the resolved card so the browser closes it immediately', async () => {
     const response = responseRecorder();
+    const persistedMessages = [];
     const session = {
         id: 'session_1',
         state: {},
@@ -131,7 +132,24 @@ test('assistant clarification events return the resolved card so the browser clo
             tokenUsage: {},
             clarification: resolvedClarification
         }),
-        assistantMessageModel: { update: async () => {} }
+        assistantMessageModel: {
+            async create(value) {
+                const message = {
+                    ...value,
+                    id: value.id || `message_${persistedMessages.length + 1}`,
+                    async update(patch) {
+                        Object.assign(this, patch);
+                        return this;
+                    }
+                };
+                persistedMessages.push(message);
+                return message;
+            },
+            async findOne({ where }) {
+                return persistedMessages.find(message => Object.entries(where || {}).every(([key, value]) => message[key] === value)) || null;
+            },
+            update: async () => {}
+        }
     });
 
     await handler({
@@ -143,4 +161,5 @@ test('assistant clarification events return the resolved card so the browser clo
     assert.equal(response.body.clarification.id, 'clarification_1');
     assert.equal(response.body.clarification.payload.resolution.type, 'answered');
     assert.equal(response.body.reply.kind, 'workflow_proposal');
+    assert.equal(persistedMessages.filter(message => message.kind === 'assistant_work').length, 1);
 });

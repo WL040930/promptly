@@ -228,7 +228,18 @@ export default function MessageOptionsWidget({
                     Continue drafting
                 </Button>
                 {allowDecide && (
-                    <Button variant="ghost" size="sm" onClick={() => onSend?.({ type: 'decide_for_me', clarificationId })} disabled={isTyping} className="w-full text-xs sm:w-auto">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onSend?.({
+                            type: 'decide_for_me',
+                            ...(clarificationId ? { clarificationId } : {}),
+                            ...(clarificationMessageId ? { clarificationMessageId } : {}),
+                            ...(runId ? { runId } : {})
+                        })}
+                        disabled={isTyping}
+                        className="w-full text-xs sm:w-auto"
+                    >
                         Let Promptly decide
                     </Button>
                 )}

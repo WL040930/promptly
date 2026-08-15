@@ -50,12 +50,6 @@ const outcomesFrom = (value = {}) => {
     if (Array.isArray(value.outcomes) && value.outcomes.length > 0) {
         return value.outcomes.slice(0, 12).map(normalizeOutcome);
     }
-    if (Array.isArray(value.steps)) {
-        return value.steps.slice(0, 12).map((step, index) => normalizeOutcome({
-            ...step,
-            artifactTypes: step?.artifactTypes || (stepCapability(step) ? [`${stepCapability(step)}_proposal`] : [])
-        }, index));
-    }
     return [];
 };
 
@@ -81,83 +75,28 @@ const requiredOutcomeDefinitions = (intent = {}) => {
 };
 
 const ensureOutcomeCoverage = (outcomes, intent = {}) => {
-    const next = outcomes.map(outcome => ({ ...outcome, dependsOn: [...(outcome.dependsOn || [])] }));
     const required = requiredOutcomeDefinitions(intent);
-    const idsByArtifact = new Map();
-
-    for (const artifactType of ['form_proposal', 'workflow_proposal']) {
-        const match = next.find(outcome => outcomeMatchesArtifact(outcome, artifactType));
-        if (match) idsByArtifact.set(artifactType, match.id);
-    }
-
-    for (const definition of required) {
-        const artifactType = definition.artifactTypes[0];
-        if (!idsByArtifact.has(artifactType)) {
-            next.push(normalizeOutcome(definition, next.length));
-            idsByArtifact.set(artifactType, definition.id);
-        }
-    }
-
-    const formId = idsByArtifact.get('form_proposal');
-    const workflowId = idsByArtifact.get('workflow_proposal');
-    if (formId && workflowId) {
-        const workflow = next.find(outcome => outcome.id === workflowId);
-        if (workflow && !workflow.dependsOn.includes(formId)) workflow.dependsOn.push(formId);
-    }
-    const requiredIds = new Set([formId, workflowId].filter(Boolean));
+    const canonical = required.map((definition, index) => {
+        const source = outcomes.find(outcome => outcomeMatchesArtifact(outcome, definition.artifactTypes[0]));
+        return normalizeOutcome({
+            ...definition,
+            ...(source || {}),
+            id: definition.id,
+            dependsOn: definition.dependsOn || []
+        }, index);
+    });
+    const requiredIds = new Set(canonical.map(outcome => outcome.id));
+    const canonicalIds = new Set(required.map(outcome => outcome.id));
+    const extras = outcomes
+        .filter(outcome => !outcomeMatchesArtifact(outcome, 'form_proposal') && !outcomeMatchesArtifact(outcome, 'workflow_proposal'))
+        .map((outcome, index) => normalizeOutcome({
+            ...outcome,
+            dependsOn: (outcome.dependsOn || []).filter(dependency => canonicalIds.has(dependency))
+        }, canonical.length + index));
     return [
-        ...next.filter(outcome => requiredIds.has(outcome.id)),
-        ...next.filter(outcome => !requiredIds.has(outcome.id))
+        ...canonical.filter(outcome => requiredIds.has(outcome.id)),
+        ...extras
     ].slice(0, 12);
-};
-
-const uniqueStepId = (steps, preferred) => {
-    const used = new Set(steps.map(step => String(step?.id || '').trim()).filter(Boolean));
-    if (!used.has(preferred)) return preferred;
-    let suffix = 2;
-    while (used.has(`${preferred}_${suffix}`)) suffix += 1;
-    return `${preferred}_${suffix}`;
-};
-
-const ensureExecutionCoverage = (steps, intent = {}) => {
-    const domains = requestedDomains(intent);
-    const next = steps.map(step => ({
-        ...step,
-        dependsOn: Array.isArray(step?.dependsOn) ? [...new Set(step.dependsOn.map(String))] : []
-    }));
-    const ensureStep = (capability, title, description) => {
-        let step = next.find(candidate => stepCapability(candidate) === capability);
-        if (!step) {
-            step = {
-                id: uniqueStepId(next, capability),
-                type: capability,
-                title,
-                description,
-                args: {},
-                dependsOn: []
-            };
-            next.push(step);
-        }
-        return step;
-    };
-
-    const formStep = domains.includes('form')
-        ? ensureStep('design_form', 'Prepare the form proposal', 'Prepare a reviewable form proposal.')
-        : null;
-    const workflowStep = domains.includes('workflow')
-        ? ensureStep('design_workflow', 'Prepare the workflow proposal', 'Prepare a reviewable workflow proposal.')
-        : null;
-    if (formStep && workflowStep && !workflowStep.dependsOn.includes(formStep.id)) {
-        workflowStep.dependsOn.push(formStep.id);
-    }
-
-    const requiredCapabilities = new Set(
-        ['design_form', 'design_workflow'].filter(capability => domains.includes(capability === 'design_form' ? 'form' : 'workflow'))
-    );
-    return [
-        ...next.filter(step => requiredCapabilities.has(stepCapability(step))),
-        ...next.filter(step => !requiredCapabilities.has(stepCapability(step)))
-    ].slice(0, MAX_STEPS);
 };
 
 export const makeOutcomePlan = (value = {}, intent = {}) => ({
@@ -178,11 +117,10 @@ export const makeOutcomePlan = (value = {}, intent = {}) => ({
 
 export const makeAdaptivePlan = (value = {}, intent = {}) => {
     const outcomePlan = makeOutcomePlan(value, intent);
-    const candidateSteps = Array.isArray(value.steps) ? value.steps : value.execution?.steps;
-    const rawSteps = Array.isArray(candidateSteps) && candidateSteps.length > 0
-        ? candidateSteps.slice(0, MAX_STEPS)
-        : makeFallbackExecutionSteps(intent);
-    return { ...outcomePlan, steps: clone(ensureExecutionCoverage(rawSteps, intent)) };
+    // The model owns outcomes; the compiler owns the executable capability graph.
+    // This prevents model output such as `registered_capability` from reaching
+    // the runtime and keeps the graph deterministic for supported domains.
+    return { ...outcomePlan, steps: clone(makeFallbackExecutionSteps(intent)) };
 };
 
 const makeFallbackExecutionSteps = (intent = {}) => {

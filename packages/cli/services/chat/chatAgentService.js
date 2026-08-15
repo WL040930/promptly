@@ -7,7 +7,9 @@ import { AI_TASKS } from '../ai/core/aiTasks.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import env from '../../config/env.js';
 import { mergeAgentContext } from './resourceResolver.js';
-import { deterministicIntent, processAgenticTurn, resumeAgentAfterClarification, resumeAgentAfterForm, resumeAgentAfterPlanReview } from '../agent/agentOrchestrator.js';
+import { recoverHistoricalFormContext } from './legacyFormContext.js';
+import { processAgenticTurn, resumeAgentAfterClarification, resumeAgentAfterForm, resumeAgentAfterPlanReview } from '../agent/agentOrchestrator.js';
+import { decideAgentIntent } from '../agent/agentIntentRouter.js';
 import { createAskPromptlyCoordinator } from '../agent/askPromptlyCoordinator.js';
 import { decidePendingTurn } from '../agent/turnCoordinator.js';
 import { createChatCapabilityRegistry } from './chatCapabilityRegistry.js';
@@ -24,7 +26,14 @@ import { resolveClarificationSubmission } from '../../../shared/clarificationCon
 
 const askPromptlyCoordinator = createAskPromptlyCoordinator({
     processAgenticTurn,
-    classifyIntent: deterministicIntent
+    decideIntent: decideAgentIntent,
+    recoverContext: async ({ session, userId, context, decision }) => {
+        const recovered = await recoverHistoricalFormContext({ threadId: session.id, userId, context, decision });
+        if (recovered.formId && recovered.formId !== context.formId) {
+            await session.update({ context: mergeAgentContext(session.context || {}, { formId: recovered.formId }) });
+        }
+        return recovered;
+    }
 });
 
 const messagePayload = (message) => {
@@ -437,6 +446,62 @@ export const applyEvent = async (session, userId, event, onEvent = null) => {
         await clearChatSessionState(session);
         return { reply: await saveReply(session, { text: 'I stopped before making any form or workflow changes.', kind: 'status', payload: { status: 'cancelled', runId: run.id } }) };
     }
+    if (event.type === 'decide_for_me') {
+        const run = state.runId
+            ? await AgentRun.findOne({ where: { id: state.runId, threadId: session.id, userId } })
+            : null;
+        if (!run || state.status !== 'awaiting_agent_clarification') {
+            return { reply: await saveReply(session, { text: 'That question is no longer waiting for an answer. Please send the request again.', kind: 'error' }) };
+        }
+        if (event.runId && event.runId !== run.id) {
+            return { reply: await saveReply(session, { text: 'That question belongs to an older request. Please use the latest question instead.', kind: 'error' }) };
+        }
+        const clarification = await AssistantMessage.findOne({
+            where: {
+                threadId: session.id,
+                sender: 'bot',
+                kind: 'clarification',
+                ...(event.clarificationMessageId ? { id: event.clarificationMessageId } : {})
+            },
+            order: [['createdAt', 'DESC']]
+        });
+        if (!clarification || clarification.payload?.runId !== run.id) {
+            const error = new Error('The pending clarification is no longer available. Please send the request again.');
+            error.code = 'AGENT_CLARIFICATION_NOT_FOUND';
+            error.status = 409;
+            throw error;
+        }
+
+        const resolution = {
+            type: 'defaulted',
+            answeredAt: new Date().toISOString(),
+            answers: []
+        };
+        await clarification.update({ payload: {
+            ...(clarification.payload || {}),
+            selectedState: {},
+            resolution
+        } });
+
+        const resumed = await resumeAgentAfterClarification({
+            run,
+            session,
+            userId,
+            answer: 'Use sensible defaults.',
+            state: {},
+            context: {
+                ...(session.context || {}),
+                clarificationDecision: 'decide_for_me',
+                clarificationId: event.clarificationId || clarification.payload?.clarificationId || clarification.id
+            },
+            onEvent
+        });
+        return {
+            reply: resumed.replyObj,
+            tokenUsage: resumed.totalTokenUsage,
+            clarification: messagePayload(clarification)
+        };
+    }
     if (event.type === 'submit_clarification') {
         const run = state.runId
             ? await AgentRun.findOne({ where: { id: state.runId, threadId: session.id, userId } })
@@ -500,6 +565,7 @@ export const applyEvent = async (session, userId, event, onEvent = null) => {
         const run = await AgentRun.findOne({ where: { id: event.runId, threadId: session.id, userId } });
         if (!run) return { reply: await saveReply(session, { text: 'That agent run is no longer available.', kind: 'error' }) };
         if (event.messageId) await AssistantMessage.update({ proposalStatus: 'applied' }, { where: { id: event.messageId, threadId: session.id } });
+        await session.update({ context: mergeAgentContext(session.context || {}, { formId: event.formId }) });
         const resumed = await resumeAgentAfterForm({ run, session, userId, formId: event.formId, onEvent });
         await replaceChatSessionState(session, { status: 'awaiting_agent_approval', runId: run.id });
         return { reply: resumed.reply, tokenUsage: resumed.tokenUsage };

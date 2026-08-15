@@ -1,6 +1,37 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { prepareAgentWorkflowArtifact } from './agentApplyService.js';
+import { contextAfterApplyingForm, prepareAgentWorkflowArtifact, selectFormProposalPatches } from './agentApplyService.js';
+
+test('Ask Promptly applies the same selected form patch set shown in the Form AI preview', () => {
+    const patches = [
+        { op: 'update_meta', patchId: 'title' },
+        { op: 'add', patchId: 'resume' },
+        { op: 'add', patchId: 'cover-letter' }
+    ];
+
+    const selected = selectFormProposalPatches({
+        patches,
+        selectedPatchIds: ['title', 'cover-letter']
+    });
+
+    assert.deepEqual(selected.selectedPatchIds, ['title', 'cover-letter']);
+    assert.deepEqual(selected.patches.map(patch => patch.patchId), ['title', 'cover-letter']);
+    assert.equal(selected.selectionApplied, true);
+});
+
+test('Ask Promptly rejects a patch selection that did not come from the proposal', () => {
+    assert.throws(
+        () => selectFormProposalPatches({ patches: [{ op: 'add', patchId: 'name' }], selectedPatchIds: ['unknown'] }),
+        error => error.code === 'AGENT_INVALID_PROPOSAL'
+    );
+});
+
+test('Ask Promptly remembers an applied form for the next conversational request', () => {
+    assert.deepEqual(
+        contextAfterApplyingForm({ workflowId: 'workflow_1', clarificationMode: 'ask_important' }, 'form_1'),
+        { workflowId: 'workflow_1', formId: 'form_1', clarificationMode: 'ask_important' }
+    );
+});
 
 test('Ask Promptly prepares a compound workflow artifact by provisioning its response Sheet once', async () => {
     const formArtifact = {

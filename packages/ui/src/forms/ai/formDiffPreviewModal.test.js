@@ -11,3 +11,11 @@ test('form preview actions stay in the modal hit layer and use the shared button
     assert.match(source, /className="relative z-10 bg-slate-50/);
     assert.match(source, /<Button[\s\S]*onClick=\{onApply\}[\s\S]*isLoading=\{isApplying\}/);
 });
+
+test('form metadata preview uses plain, user-facing wording', async () => {
+    const source = await readFile(sourceUrl, 'utf8');
+
+    assert.doesNotMatch(source, /Form Properties Modified/);
+    assert.match(source, /Form details/);
+    assert.match(source, /hasVisibleMetaChange/);
+});

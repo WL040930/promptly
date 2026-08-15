@@ -8,6 +8,14 @@ const toIso = value => (value instanceof Date ? value : new Date(value)).toISOSt
 const nowDate = () => new Date();
 const activeTurn = session => session?.state?.turn || null;
 
+export const workStatusForAssistantReply = ({ kind = null, isError = false, status = null } = {}) => {
+    const outcome = outcomeForAssistantMessage({ kind, status, isError });
+    if (outcome === 'error') return 'failed';
+    if (outcome === 'clarification') return 'needs_input';
+    if (outcome === 'proposal') return 'awaiting_review';
+    return status === 'failed' ? 'failed' : 'completed';
+};
+
 const updateState = async (session, state, options = {}) => {
     await session.update({ state }, options);
     return state;
@@ -260,10 +268,32 @@ export const reconcileStaleChatTurn = async ({ session, messageModel = Assistant
 };
 
 const phaseForOperation = operation => /plan|intent|research/.test(String(operation || '')) ? 'plan' : 'draft';
+const stepLabelForProgress = step => {
+    const value = typeof step === 'string'
+        ? step
+        : step?.title || step?.description || step?.stepKey || step?.type || step?.id || 'the next step';
+    return String(value).replace(/_/g, ' ').trim() || 'the next step';
+};
+const stepIdForProgress = step => {
+    const value = typeof step === 'string' ? step : step?.id || step?.stepKey || step?.type || 'respond';
+    return String(value).trim() || 'respond';
+};
 
 /** Convert runtime events into persisted user-visible work without treating heartbeats as progress. */
 export const progressForChatEvent = event => {
     if (!event || event.type === 'turn.heartbeat') return null;
+    if (event.type === 'approval.required') {
+        return {
+            ...(event.progress && typeof event.progress === 'object' ? event.progress : {}),
+            id: event.progress?.id || 'approval:required',
+            status: event.progress?.status || 'awaiting_review',
+            phase: event.progress?.phase || 'check',
+            label: event.progress?.label || 'Prepared a proposal for review',
+            message: event.progress?.message || 'Your review is needed',
+            detail: event.progress?.detail || 'The requested changes are ready for you to review.',
+            outcomeKind: 'proposal'
+        };
+    }
     if (event.progress && typeof event.progress === 'object') return event.progress;
 
     if (event.type === 'provider_attempt' || event.type === 'provider_waiting') {
@@ -300,17 +330,13 @@ export const progressForChatEvent = event => {
         message: 'Preparing the task plan', detail: 'Checking the requested form, workflow, and available capabilities.'
     };
     if (event.type === 'step.started' || event.type === 'assistant_step_started') return {
-        id: `step:${event.step || 'respond'}:${event.attempt || 1}`, status: 'working', phase: 'draft',
-        label: event.step ? `Working on ${String(event.step).replace(/_/g, ' ')}` : 'Drafting the response',
+        id: `step:${stepIdForProgress(event.step)}:${event.attempt || 1}`, status: 'working', phase: 'draft',
+        label: event.step ? `Working on ${stepLabelForProgress(event.step)}` : 'Drafting the response',
         message: 'Working on the next step', detail: 'Promptly is progressing through the request.'
     };
     if (event.type === 'plan.ready' || event.type === 'plan.revised') return {
         id: event.type, status: 'working', phase: 'plan', label: event.type === 'plan.revised' ? 'Adjusted the plan' : 'Prepared the plan',
         message: 'Planning is complete', detail: event.type === 'plan.revised' ? 'Adjusted the plan after checking the workspace.' : 'Moving from planning into the requested work.'
-    };
-    if (event.type === 'approval.required') return {
-        id: 'approval:required', status: 'awaiting_review', phase: 'check', label: 'Prepared a proposal for review',
-        message: 'Your review is needed', detail: 'The requested changes are ready for you to review.'
     };
     return null;
 };

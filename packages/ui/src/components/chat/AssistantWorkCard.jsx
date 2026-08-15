@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Check, ChevronDown, CircleAlert, FilePenLine, LoaderCircle, Route, Sparkles, Wrench, Zap } from 'lucide-react';
+import { assistantWorkStatus, assistantWorkStatusLabel, isAssistantWorkTerminal } from './assistantWorkPresentation.js';
 
 const phases = [
     { id: 'understand', label: 'Understand' },
@@ -8,7 +9,6 @@ const phases = [
     { id: 'check', label: 'Check' }
 ];
 
-const terminal = new Set(['awaiting_review', 'needs_input', 'completed', 'failed', 'applied', 'ignored']);
 const duration = (start, end) => {
     if (!start || !end) return null;
     const seconds = Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 1000));
@@ -56,12 +56,14 @@ export function AssistantWorkDetails({ work, tokenUsage, defaultExpanded = false
     );
 }
 
-export default function AssistantWorkCard({ work, tokenUsage }) {
-    const isTerminal = terminal.has(work?.status);
+export default function AssistantWorkCard({ work, tokenUsage, messageKind = null }) {
+    const status = assistantWorkStatus({ work, messageKind });
+    const isTerminal = isAssistantWorkTerminal(status);
     const activities = work?.activities || [];
     const active = activities.find(activity => activity.status === 'active') || activities.at(-1);
     const isCoordinator = work?.surface === 'ask_promptly';
-    const statusLabel = work?.status === 'failed' ? 'Couldn’t finish' : isTerminal ? 'Ready to review' : isCoordinator ? 'Working' : 'Drafting';
+    const statusLabel = assistantWorkStatusLabel(status) || (isCoordinator ? 'Working' : 'Drafting');
+    const statusNeedsAttention = status === 'needs_input';
 
     return (
         <section className="w-full min-w-0 overflow-hidden rounded-[22px] border border-violet-200/80 bg-white shadow-[0_12px_35px_rgba(58,34,118,0.08)]">
@@ -74,8 +76,8 @@ export default function AssistantWorkCard({ work, tokenUsage }) {
                     <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-3">
                             <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-violet-700">{work?.surface === 'form' ? 'Form proposal' : isCoordinator ? 'Ask Promptly' : 'Workflow proposal'}</span>
-                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-bold ${work?.status === 'failed' ? 'bg-rose-100 text-rose-700' : 'bg-violet-600 text-white'}`}>
-                                {work?.status === 'failed' ? <CircleAlert size={12} /> : <LoaderCircle size={12} className="motion-safe:animate-spin" />}
+                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-bold ${status === 'failed' ? 'bg-rose-100 text-rose-700' : statusNeedsAttention ? 'bg-amber-100 text-amber-800' : 'bg-violet-600 text-white'}`}>
+                                {status === 'failed' || statusNeedsAttention ? <CircleAlert size={12} /> : isTerminal ? <Check size={12} /> : <LoaderCircle size={12} className="motion-safe:animate-spin" />}
                                 {statusLabel}
                             </span>
                         </div>

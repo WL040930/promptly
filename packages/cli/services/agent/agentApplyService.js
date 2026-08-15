@@ -1,6 +1,7 @@
 import sequelize from '../../db/index.js';
 import { AgentRun, AssistantMessage, AssistantThread, Form, Workflow } from '../../models/index.js';
 import { applyFormPatches } from '../ai/form/domain/formPatchEngine.js';
+import { validateQuestionCardinality } from '../ai/form/context/formContext.js';
 import { validateFormSchema } from '../ai/form/domain/formSchemaValidator.js';
 import { validateWorkflow } from '../engine/workflowValidator.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
@@ -9,6 +10,7 @@ import { createApproval, getRunArtifacts, getRunForUser, serializeRun, updateArt
 import { makeError } from './agentContracts.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 import { clearChatSessionState, replaceChatSessionState } from '../chat/chatTurnLifecycle.js';
+import { mergeAgentContext } from '../chat/resourceResolver.js';
 import googleSpreadsheetService from '../nodes/googleSpreadsheetService.js';
 import { applyFormResponseSpreadsheetContract } from '../ai/workflow/formSpreadsheetContract.js';
 import { provisionWorkflowResources } from '../ai/workflow/workflowResourceProvisioner.js';
@@ -76,7 +78,34 @@ export const prepareAgentWorkflowArtifact = async ({
     return updateArtifact(run, artifact.artifactKey, { content: workingContent });
 };
 
-const applyFormArtifact = async ({ artifact, userId, transaction }) => {
+const normalizeFormPatches = patches => (Array.isArray(patches) ? patches : [])
+    .map((patch, index) => ({ ...patch, patchId: patch.patchId || `patch_${index + 1}` }));
+
+export const selectFormProposalPatches = ({ patches, selectedPatchIds }) => {
+    if (selectedPatchIds === undefined || selectedPatchIds === null) {
+        return { patches, selectedPatchIds: patches.map(patch => patch.patchId), selectionApplied: false };
+    }
+    if (!Array.isArray(selectedPatchIds)) {
+        throw Object.assign(new Error('The form proposal patch selection is invalid.'), { code: 'AGENT_INVALID_PROPOSAL' });
+    }
+    const knownPatchIds = new Set(patches.map(patch => patch.patchId));
+    const requestedPatchIds = [...new Set(selectedPatchIds)];
+    if (requestedPatchIds.some(patchId => !knownPatchIds.has(patchId))) {
+        throw Object.assign(new Error('The form proposal contains an unknown patch selection.'), { code: 'AGENT_INVALID_PROPOSAL' });
+    }
+    const requested = new Set(requestedPatchIds);
+    return {
+        patches: patches.filter(patch => requested.has(patch.patchId)),
+        selectedPatchIds: requestedPatchIds,
+        selectionApplied: true
+    };
+};
+
+export const contextAfterApplyingForm = (context = {}, formId = null) => formId
+    ? mergeAgentContext(context, { formId })
+    : { ...context };
+
+const applyFormArtifact = async ({ artifact, userId, transaction, formOverrides = null }) => {
     const content = artifact.content || {};
     const source = content.formId
         ? await Form.findOne({ where: { id: content.formId, userId }, transaction, lock: transaction.LOCK.UPDATE })
@@ -86,11 +115,38 @@ const applyFormArtifact = async ({ artifact, userId, transaction }) => {
         throw Object.assign(new Error('The form changed after this proposal was created.'), { code: 'AGENT_STALE_RESOURCE' });
     }
 
-    const schema = source && Array.isArray(content.patches)
-        ? applyFormPatches({ currentSchema: source.toJSON(), patches: content.patches }).schema
-        : content.schema;
+    const hasSelection = formOverrides !== null && formOverrides !== undefined;
+    if (hasSelection && (typeof formOverrides !== 'object' || Array.isArray(formOverrides) || !Object.hasOwn(formOverrides, 'selectedPatchIds'))) {
+        throw Object.assign(new Error('The form proposal selection is invalid.'), { code: 'AGENT_INVALID_PROPOSAL' });
+    }
+    const normalizedPatches = normalizeFormPatches(content.patches);
+    const selection = hasSelection
+        ? selectFormProposalPatches({ patches: normalizedPatches, selectedPatchIds: formOverrides.selectedPatchIds })
+        : { patches: normalizedPatches, selectedPatchIds: normalizedPatches.map(patch => patch.patchId), selectionApplied: false };
+    if (hasSelection && !Array.isArray(content.patches)) {
+        throw Object.assign(new Error('The form proposal does not contain selectable changes.'), { code: 'AGENT_INVALID_PROPOSAL' });
+    }
+
+    let schema;
+    let appliedPatches = content.patches || [];
+    if (hasSelection) {
+        const applied = applyFormPatches({ currentSchema: source?.toJSON?.() || {}, patches: selection.patches });
+        schema = applied.schema;
+        appliedPatches = applied.patches;
+    } else {
+        schema = source && Array.isArray(content.patches)
+            ? applyFormPatches({ currentSchema: source.toJSON(), patches: content.patches }).schema
+            : content.schema;
+    }
     const issues = validateFormSchema(schema || {});
     if (issues.length > 0) throw Object.assign(new Error('The form proposal failed validation.'), { code: 'AGENT_INVALID_PROPOSAL', issues });
+    if (hasSelection) {
+        const cardinalityIssue = validateQuestionCardinality({ schema, cardinality: content.cardinality });
+        if (cardinalityIssue) throw Object.assign(new Error('The selected form changes do not satisfy the requested question count.'), {
+            code: 'AGENT_INVALID_PROPOSAL',
+            issues: [cardinalityIssue]
+        });
+    }
 
     const form = source || await Form.create({
         title: schema.title,
@@ -105,7 +161,13 @@ const applyFormArtifact = async ({ artifact, userId, transaction }) => {
         settings: schema.settings || {},
         fields: schema.fields || []
     }, { transaction });
-    return form;
+    return {
+        form,
+        schema,
+        patches: appliedPatches,
+        selectedPatchIds: hasSelection ? selection.selectedPatchIds : null,
+        selectionApplied: Boolean(hasSelection)
+    };
 };
 
 const applyWorkflowArtifact = async ({ artifact, userId, form, transaction }) => {
@@ -158,15 +220,20 @@ const applyWorkflowArtifact = async ({ artifact, userId, form, transaction }) =>
     return workflow;
 };
 
-const markProposalMessage = (run, proposalStatus, transaction = undefined) => {
-    if (!run.metadata?.proposalMessageId) return Promise.resolve();
-    return AssistantMessage.update(
-        { proposalStatus },
-        { where: { id: run.metadata.proposalMessageId }, ...(transaction ? { transaction } : {}) }
-    );
+const markProposalMessage = async (run, proposalStatus, transaction = undefined, payloadUpdates = null) => {
+    if (!run.metadata?.proposalMessageId) return;
+    const message = await AssistantMessage.findOne({
+        where: { id: run.metadata.proposalMessageId },
+        ...(transaction ? { transaction } : {})
+    });
+    if (!message) return;
+    await message.update({
+        proposalStatus,
+        ...(payloadUpdates ? { payload: { ...(message.payload || {}), ...payloadUpdates } } : {})
+    }, transaction ? { transaction } : undefined);
 };
 
-export const approveAgentRun = async ({ runId, userId, idempotencyKey }) => {
+export const approveAgentRun = async ({ runId, userId, idempotencyKey, formOverrides = null }) => {
     const run = await AgentRun.findOne({ where: { id: runId, userId } });
     if (!run) throw Object.assign(new Error('Agent run not found.'), { code: 'AGENT_RUN_NOT_FOUND' });
     if (run.status === 'completed') return serializeRun(await getRunForUser(runId, userId));
@@ -194,7 +261,22 @@ export const approveAgentRun = async ({ runId, userId, idempotencyKey }) => {
             workflowArtifact = pendingArtifacts.find(artifact => artifact.type === 'workflow_proposal');
         }
         await sequelize.transaction(async transaction => {
-            if (formArtifact) form = await applyFormArtifact({ artifact: formArtifact, userId, transaction });
+            let appliedForm = null;
+            if (formArtifact) {
+                appliedForm = await applyFormArtifact({ artifact: formArtifact, userId, transaction, formOverrides });
+                form = appliedForm.form;
+                if (appliedForm.selectionApplied) {
+                    formArtifact = await updateArtifact(run, formArtifact.artifactKey, {
+                        content: {
+                            ...formArtifact.content,
+                            schema: appliedForm.schema,
+                            patches: appliedForm.patches,
+                            selectedPatchIds: appliedForm.selectedPatchIds
+                        }
+                    }, { transaction });
+                    artifacts = getRunArtifacts(run);
+                }
+            }
             if (workflowArtifact) appliedWorkflow = await applyWorkflowArtifact({ artifact: workflowArtifact, userId, form, transaction });
 
             const appliedIds = new Set(pendingArtifacts.map(artifact => artifact.id));
@@ -205,7 +287,11 @@ export const approveAgentRun = async ({ runId, userId, idempotencyKey }) => {
                 artifactIds: artifacts.map(artifact => artifact.id),
                 approvedAt: workflowArtifact ? new Date() : null
             };
-            await markProposalMessage(run, 'applied', transaction);
+            await markProposalMessage(run, 'applied', transaction, appliedForm?.selectionApplied ? {
+                schema: appliedForm.schema,
+                patches: appliedForm.patches,
+                selectedPatchIds: appliedForm.selectedPatchIds
+            } : null);
             await run.update({
                 artifacts: nextArtifacts,
                 approval: nextApproval,
@@ -233,6 +319,7 @@ export const approveAgentRun = async ({ runId, userId, idempotencyKey }) => {
                 metadata: { ...(run.metadata || {}), setupRequired: true }
             });
             const session = await AssistantThread.findByPk(run.threadId);
+            if (session && form) await session.update({ context: contextAfterApplyingForm(session.context || {}, form.id) });
             if (session) await clearChatSessionState(session);
             return serializeRun(await getRunForUser(runId, userId));
         }
@@ -240,6 +327,7 @@ export const approveAgentRun = async ({ runId, userId, idempotencyKey }) => {
         if (form && !workflowArtifact && run.intent?.domains?.includes('workflow')) {
             const session = await AssistantThread.findByPk(run.threadId);
             if (session) {
+                await session.update({ context: contextAfterApplyingForm(session.context || {}, form.id) });
                 const { resumeAgentAfterForm } = await import('./agentOrchestrator.js');
                 const resumed = await resumeAgentAfterForm({ run, session, userId, formId: form.id });
                 await replaceChatSessionState(session, { status: 'awaiting_agent_approval', runId });
@@ -248,6 +336,7 @@ export const approveAgentRun = async ({ runId, userId, idempotencyKey }) => {
         }
 
         const session = await AssistantThread.findByPk(run.threadId);
+        if (session && form) await session.update({ context: contextAfterApplyingForm(session.context || {}, form.id) });
         if (session) await clearChatSessionState(session);
         return serializeRun(await getRunForUser(runId, userId));
     } catch (error) {

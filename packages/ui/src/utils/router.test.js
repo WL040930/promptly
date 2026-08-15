@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPath, parsePath } from './router.js';
+import { assistantConversationPath, buildPath, parsePath } from './router.js';
 
 test('canonical workspace routes keep AI and visual editing on one automation', () => {
     assert.deepEqual(parsePath('/app/automations/auto_1/build?editor=ai'), { page: 'automation-build', automationId: 'auto_1', editor: 'ai' });
@@ -25,4 +25,11 @@ test('a settings query can open the connections modal without changing the works
         editor: 'ai',
         settingsTab: 'connections'
     });
+});
+
+test('new Ask Promptly sessions get a canonical URL when the response returns their ID', () => {
+    assert.equal(assistantConversationPath('ath_new', '/app/assistant'), '/app/assistant/ath_new');
+    assert.equal(assistantConversationPath('ath_new', '/app/assistant/ath_old'), '/app/assistant/ath_new');
+    assert.equal(assistantConversationPath('ath_new', '/app/assistant/ath_new'), null);
+    assert.equal(assistantConversationPath('', '/app/assistant'), null);
 });

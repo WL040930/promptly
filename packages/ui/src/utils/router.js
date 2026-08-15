@@ -139,6 +139,13 @@ export function buildPath(route = {}) {
     }
 }
 
+export function assistantConversationPath(sessionId, currentPath = window.location.href) {
+    const normalizedSessionId = String(sessionId || '').trim();
+    if (!normalizedSessionId) return null;
+    if (parsePath(currentPath).conversationId === normalizedSessionId) return null;
+    return buildPath({ page: 'assistant', conversationId: normalizedSessionId });
+}
+
 export function navigateTo(route) {
     navigate(buildPath(route));
 }

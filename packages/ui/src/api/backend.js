@@ -78,10 +78,10 @@ export const getDashboardMetrics = () => apiRequest('/api/dashboard/metrics');
 export const getChatSessions = () => apiRequest('/api/conversations');
 export const getChatSession = (sessionId) => apiRequest(`/api/conversations/${sessionId}`);
 export const deleteChatSession = (sessionId) => apiRequest(`/api/conversations/${sessionId}`, { method: 'DELETE' });
-export const approveAgentRun = (runId, idempotencyKey) => apiRequest(`/api/conversations/agent-runs/${runId}/approve`, {
+export const approveAgentRun = (runId, idempotencyKey, formOverrides = null) => apiRequest(`/api/conversations/agent-runs/${runId}/approve`, {
     method: 'POST',
     headers: { 'Idempotency-Key': idempotencyKey },
-    body: JSON.stringify({ idempotencyKey })
+    body: JSON.stringify({ idempotencyKey, ...(formOverrides ? { formOverrides } : {}) })
 });
 export const rejectAgentRun = (runId) => apiRequest(`/api/conversations/agent-runs/${runId}/reject`, { method: 'POST' });
 export const decideChatProposal = (sessionId, messageId, action = 'approve', overrides = null) => apiRequest(`/api/assistant/proposals/${messageId}/decision`, {

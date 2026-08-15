@@ -65,6 +65,21 @@ test('updating one alternative clears its peers without submitting the draft', (
     }), { createSpreadsheet: 'create' });
 });
 
+test('text clarification drafts preserve trailing spaces until submission', () => {
+    const draft = updateClarificationDraft({
+        inputs: [{ id: 'jobTitle', type: 'text', label: 'Specific job title' }],
+        state: {},
+        inputId: 'jobTitle',
+        value: 'Software Engineer '
+    });
+
+    assert.equal(draft.jobTitle, 'Software Engineer ');
+    assert.deepEqual(resolveClarificationSubmission({
+        inputs: [{ id: 'jobTitle', type: 'text', label: 'Specific job title' }],
+        state: draft
+    }).state, { jobTitle: 'Software Engineer' });
+});
+
 test('resource pickers accept a saved default while still requiring an explicit submit', () => {
     const result = resolveClarificationSubmission({
         inputs: [{

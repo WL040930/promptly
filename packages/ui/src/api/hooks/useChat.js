@@ -26,7 +26,7 @@ export function useSendAssistantTurnStream() {
         mutationFn: ({ sessionId, message, context, event, requestId, onEvent }) => submitAssistantTurnStream({ sessionId, message, context, event, requestId, onEvent }),
         onSuccess: response => {
             if (response?.sessionId) {
-                queryClient.invalidateQueries({ queryKey: CHAT_SESSIONS_KEY });
+                queryClient.refetchQueries({ queryKey: CHAT_SESSIONS_KEY, type: 'active' });
                 queryClient.invalidateQueries({ queryKey: ['chatSessions', response.sessionId] });
             }
         }
@@ -47,7 +47,7 @@ export function useDeleteChatSession() {
 export function useApproveAgentRun() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: ({ runId, idempotencyKey }) => approveAgentRun(runId, idempotencyKey),
+        mutationFn: ({ runId, idempotencyKey, formOverrides }) => approveAgentRun(runId, idempotencyKey, formOverrides),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CHAT_SESSIONS_KEY });
             queryClient.invalidateQueries({ queryKey: ['forms'] });

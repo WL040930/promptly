@@ -10,7 +10,8 @@ import {
     finishChatTurn,
     progressForChatEvent,
     reconcileStaleChatTurn,
-    startChatTurn
+    startChatTurn,
+    workStatusForAssistantReply
 } from '../../services/chat/chatTurnLifecycle.js';
 import crypto from 'node:crypto';
 import { outcomeForAssistantMessage } from '../../../shared/assistantTurnNotification.js';
@@ -78,14 +79,32 @@ export const createSendMessageHandler = ({
         title: message || (event ? 'Continuing your request' : 'Preparing your request')
     });
     emit({ type: 'turn.started', sessionId: session.id, requestId: turnRequestId, turn });
-    if (event) {
+    let attached = null;
+    const eventNeedsWork = event && (
+        ['agent_plan_approved', 'decide_for_me', 'submit_clarification'].includes(event.type)
+        || (event.type === 'form_saved' && event.runId)
+    );
+    if (eventNeedsWork) {
+        // Event-driven turns (clarification answers, plan decisions, and
+        // delegated defaults) enter the same long-running AI path as a new
+        // message. Attach the durable work message before the event handler
+        // emits progress so the browser has a message to update.
+        attached = await attachChatTurnMessages({
+            session,
+            requestId: turnRequestId,
+            messageModel: assistantMessageModel
+        });
+        if (attached) emit({ type: 'run.progress', requestId: turnRequestId, ...attached });
         const eventResult = await applyEventService(session, userId, event, reportEvent);
         if (eventResult?.reply) {
             await progressChain;
             await finishChatTurn({
                 session,
                 requestId: turnRequestId,
-                status: eventResult.reply.kind === 'error' ? 'failed' : 'completed',
+                status: workStatusForAssistantReply({
+                    kind: eventResult.reply.kind,
+                    isError: eventResult.reply.isError
+                }),
                 detail: eventResult.reply.text || 'Completed the requested action.',
                 outcome: outcomeForAssistantMessage({
                     kind: eventResult.reply.kind,
@@ -123,13 +142,15 @@ export const createSendMessageHandler = ({
         await session.update({ context: nextAgentContext });
     }
 
-    const started = await attachChatTurnMessages({
-        session,
-        requestId: turnRequestId,
-        userMessageId: userMessage?.id || null,
-        messageModel: assistantMessageModel
-    });
-    if (started) emit({ type: 'run.progress', requestId: turnRequestId, ...started });
+    if (!attached) {
+        attached = await attachChatTurnMessages({
+            session,
+            requestId: turnRequestId,
+            userMessageId: userMessage?.id || null,
+            messageModel: assistantMessageModel
+        });
+        if (attached) emit({ type: 'run.progress', requestId: turnRequestId, ...attached });
+    }
 
     let { replyObj, totalTokenUsage } = await processChatMessageService({ session, userId, context, onEvent: reportEvent });
     await progressChain;
@@ -155,7 +176,10 @@ export const createSendMessageHandler = ({
         await finishChatTurn({
             session,
             requestId: turnRequestId,
-            status: 'completed',
+            status: workStatusForAssistantReply({
+                kind: replyObj?.kind,
+                isError: replyObj?.isError
+            }),
             detail: replyObj?.text || 'Completed the requested request.',
             outcome: outcomeForAssistantMessage({ kind: replyObj?.kind, isError: replyObj?.isError }),
             messageId: replyObj?.id,

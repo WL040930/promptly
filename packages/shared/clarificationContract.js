@@ -118,8 +118,15 @@ export const updateClarificationDraft = ({ inputs = [], state = {}, inputId, val
             if (peer?.id !== inputId && peer?.alternativeGroup === input.alternativeGroup) delete next[peer.id];
         }
     }
-    const normalized = normalizedValue(input || {}, value);
-    if (hasValue(normalized)) next[inputId] = normalized;
+    const isTextInput = ['text', 'textarea'].includes(input?.type);
+    // Keep the browser's raw draft while the user is typing. Submission
+    // still uses normalizedValue(), so leading/trailing whitespace is not
+    // persisted as an answer, but it must remain editable in the field.
+    const draftValue = isTextInput
+        ? (typeof value === 'string' ? value : String(value ?? ''))
+        : normalizedValue(input || {}, value);
+    const hasDraftValue = isTextInput ? draftValue.length > 0 : hasValue(draftValue);
+    if (hasDraftValue) next[inputId] = draftValue;
     else delete next[inputId];
     return next;
 };
