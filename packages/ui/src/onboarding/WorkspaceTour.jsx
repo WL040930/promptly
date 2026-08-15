@@ -47,6 +47,8 @@ const steps = [
     }
 ];
 
+const mobileNavigationTargets = new Set(['create-automation', 'automations', 'forms', 'monitoring', 'assistant']);
+
 const tourStorageKey = userId => `promptly.workspace-tour.${userId || 'guest'}`;
 
 function getSavedStep(userId) {
@@ -66,9 +68,15 @@ export default function WorkspaceTour({ user, onOnboardingComplete }) {
         let observedTarget = null;
         const resizeObserver = new ResizeObserver(() => measure());
         const measure = () => {
-            const target = document.querySelector(`[data-tour="${step.target}"]`);
+            const target = [...document.querySelectorAll(`[data-tour="${step.target}"]`)].find(candidate => {
+                const candidateRect = candidate.getBoundingClientRect();
+                return candidateRect.width > 0 && candidateRect.height > 0;
+            });
             if (!target) {
                 setRect(null);
+                if (window.matchMedia?.('(max-width: 767px)').matches && mobileNavigationTargets.has(step.target)) {
+                    window.dispatchEvent(new Event('promptly:open-mobile-nav'));
+                }
                 return;
             }
             if (target !== observedTarget) {

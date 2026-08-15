@@ -660,12 +660,15 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
 
             {/* 1. LEFT SIDEBAR: Node Library (visible in canvas mode) */}
             {viewMode === 'canvas' && (
-                <NodeLibrarySidebar
-                    isOpen={isLeftSidebarOpen}
-                    onClose={() => setIsLeftSidebarOpen(false)}
-                    onDragStart={(node) => setDraggedNode(node)}
-                    onDragEnd={() => setDraggedNode(null)}
-                />
+                <>
+                    {isLeftSidebarOpen && <button type="button" className="builder-mobile-sidebar-backdrop" onClick={() => setIsLeftSidebarOpen(false)} aria-label="Close node library" />}
+                    <NodeLibrarySidebar
+                        isOpen={isLeftSidebarOpen}
+                        onClose={() => setIsLeftSidebarOpen(false)}
+                        onDragStart={(node) => setDraggedNode(node)}
+                        onDragEnd={() => setDraggedNode(null)}
+                    />
+                </>
             )}
 
             {/* 2. CENTER: Main View + Toolbar */}

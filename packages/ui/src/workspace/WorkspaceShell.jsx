@@ -16,6 +16,28 @@ const PanelLeftIcon = () => (
     </svg>
 );
 
+const MenuIcon = () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <line x1="4" y1="6" x2="20" y2="6" />
+        <line x1="4" y1="12" x2="20" y2="12" />
+        <line x1="4" y1="18" x2="20" y2="18" />
+    </svg>
+);
+
+const CloseIcon = () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18" />
+        <line x1="18" y1="6" x2="6" y2="18" />
+    </svg>
+);
+
+const PlusIcon = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <line x1="12" y1="5" x2="12" y2="19" />
+        <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+);
+
 const icons = {
     home: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M9 22V12h6v10" /></svg>,
     automations: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /><path d="M10 6.5h2a2 2 0 0 1 2 2v5" /><path d="M14 17.5h-2a2 2 0 0 1-2-2v-5" /></svg>,
@@ -42,8 +64,90 @@ const pageForRoute = route => {
     return route.page;
 };
 
+function WorkspaceNavItem({ item, activePage, pendingApprovalCount, onNavigate, collapsed = false }) {
+    const isActive = activePage === item.page;
+    const tourTarget = item.page === 'automations'
+        ? 'automations'
+        : item.page === 'forms'
+            ? 'forms'
+            : item.page === 'runs'
+                ? 'monitoring'
+                : undefined;
+
+    return (
+        <button
+            key={item.page}
+            data-tour={tourTarget}
+            type="button"
+            onClick={() => onNavigate(item.page)}
+            title={item.label}
+            aria-label={item.page === 'approvals' && pendingApprovalCount > 0 ? `${item.label}, ${pendingApprovalCount} pending` : item.label}
+            aria-current={isActive ? 'page' : undefined}
+            className={`workspace-nav-item group relative flex items-center gap-3 rounded-xl border p-2.5 text-left font-semibold transition-colors ${isActive ? 'is-active border-white/10 bg-white text-[#5143cc] shadow-sm' : 'border-transparent text-slate-400 hover:bg-white/10 hover:text-white'} ${collapsed ? 'justify-center' : ''}`}
+        >
+            {isActive && <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-[#c8f17b]" />}
+            <span className="shrink-0">{item.icon}</span>
+            {!collapsed && <span className="truncate">{item.label}</span>}
+            {item.page === 'approvals' && pendingApprovalCount > 0 && (
+                <span className={`${collapsed ? 'absolute right-1.5 top-1.5 h-2.5 w-2.5' : 'ml-auto min-w-5 px-1.5'} flex items-center justify-center rounded-full bg-amber-400 text-[10px] font-bold leading-5 text-[#171827]`}>
+                    {!collapsed ? (pendingApprovalCount > 99 ? '99+' : pendingApprovalCount) : null}
+                </span>
+            )}
+        </button>
+    );
+}
+
+function WorkspaceSidebarMenu({
+    user,
+    activePage,
+    pendingApprovalCount,
+    onNavigate,
+    onCreateAutomation,
+    onOpenSettings,
+    onLogout,
+    collapsed = false,
+    mobile = false
+}) {
+    const isCollapsed = !mobile && collapsed;
+    const bodyClassName = `workspace-sidebar-body flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4${mobile ? ' workspace-mobile-sidebar-body' : ''}`;
+
+    return (
+        <>
+            <div className={bodyClassName}>
+                <Button data-tour="create-automation" variant="primary" onClick={onCreateAutomation} className={`workspace-new-button mb-5 rounded-xl shadow-none ${isCollapsed ? 'mx-auto h-10 w-10 p-0' : 'w-full'}`} title="Create automation">
+                    <span className="text-xl leading-none">+</span>{!isCollapsed && <span className="ml-2">New automation</span>}
+                </Button>
+
+                <div className="mb-1 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{!isCollapsed && 'Workspace'}</div>
+                <nav className="flex flex-col gap-1" aria-label="Workspace sections">
+                    {navigation.map(item => <WorkspaceNavItem key={item.page} item={item} activePage={activePage} pendingApprovalCount={pendingApprovalCount} onNavigate={onNavigate} collapsed={isCollapsed} />)}
+                </nav>
+
+                <button data-tour="assistant" type="button" onClick={() => onNavigate('assistant')} title="Ask Promptly" className={`workspace-assistant-link mt-2 flex items-center gap-3 rounded-xl border border-transparent p-2.5 text-left font-semibold transition-colors hover:bg-[#2a2840] hover:text-white ${isCollapsed ? 'justify-center' : ''}`}>
+                    <span className="shrink-0">{icons.assistant}</span>{!isCollapsed && <span>Ask Promptly</span>}
+                </button>
+
+                <div className="mt-auto pt-6">
+                    <button data-tour="settings" type="button" onClick={() => onOpenSettings()} title="Settings" className={`workspace-settings-link flex w-full items-center gap-3 rounded-xl border border-transparent p-2.5 text-left font-medium transition-colors hover:bg-white/10 hover:text-white ${isCollapsed ? 'justify-center' : ''}`}>
+                        <span className="shrink-0">{icons.settings}</span>{!isCollapsed && <span>Settings</span>}
+                    </button>
+                </div>
+            </div>
+
+            <div className={mobile ? 'workspace-mobile-user-footer' : undefined}>
+                <div className={`workspace-user flex items-center gap-3 p-3 ${isCollapsed ? 'justify-center' : ''}`}>
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#c8f17b] text-xs font-bold text-[#171827]">{user?.email?.substring(0, 2).toUpperCase() || 'U'}</div>
+                    {!isCollapsed && <div className="min-w-0"><p className="truncate text-sm font-bold text-white">{user?.email || 'User'}</p><p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Promptly account</p></div>}
+                </div>
+                {mobile && onLogout && <button type="button" onClick={onLogout} className="workspace-mobile-logout-link">Sign out</button>}
+            </div>
+        </>
+    );
+}
+
 export default function WorkspaceShell({ user, route, onLogout, children }) {
     const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem('promptly.sidebar.collapsed') === 'true');
+    const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [settingsTab, setSettingsTab] = useState('general');
     const [dismissedGoogleHealthKey, setDismissedGoogleHealthKey] = useState(null);
@@ -84,12 +188,50 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
         setSettingsOpen(true);
     }), []);
 
+    useEffect(() => {
+        const openMobileNavigation = () => setMobileNavOpen(true);
+        window.addEventListener('promptly:open-mobile-nav', openMobileNavigation);
+        return () => window.removeEventListener('promptly:open-mobile-nav', openMobileNavigation);
+    }, []);
+
+    useEffect(() => {
+        setMobileNavOpen(false);
+    }, [route?.page, route?.automationId, route?.formId, route?.conversationId, route?.section]);
+
+    useEffect(() => {
+        if (!mobileNavOpen) return undefined;
+
+        const previousOverflow = document.body.style.overflow;
+        const handleKeyDown = event => {
+            if (event.key === 'Escape') setMobileNavOpen(false);
+        };
+
+        document.body.style.overflow = 'hidden';
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [mobileNavOpen]);
+
     const closeSettings = () => {
         setSettingsOpen(false);
         if (route?.settingsTab) clearSettingsModalQuery();
     };
 
+    const openSettings = (tab = 'general') => {
+        setMobileNavOpen(false);
+        setSettingsTab(tab);
+        setSettingsOpen(true);
+    };
+
+    const createAutomation = () => {
+        setMobileNavOpen(false);
+        navigateTo({ page: 'automation-new', method: 'ai' });
+    };
+
     const go = (page) => {
+        setMobileNavOpen(false);
         if (page === 'home') navigateTo({ page: 'home' });
         else if (page === 'automations') navigateTo({ page: 'automations' });
         else if (page === 'forms') navigateTo({ page: 'forms' });
@@ -113,6 +255,10 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
         })
         : children;
 
+    const activeLabel = activePage === 'assistant'
+        ? 'Ask Promptly'
+        : navigation.find(item => item.page === activePage)?.label || 'Workspace';
+
     return (
         <div className="workspace-shell flex h-screen overflow-hidden bg-[#f5f6fb] font-sans text-[#171827]">
             <aside className={`workspace-sidebar relative z-50 flex shrink-0 flex-col text-white transition-all duration-300 ${collapsed ? 'is-collapsed w-[70px]' : 'w-[252px]'}`}>
@@ -120,39 +266,35 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
                     {!collapsed && <div className="workspace-brand flex items-center gap-2.5"><img src="/logo.png" alt="Promptly" className="h-8 w-8 rounded-[10px] ring-1 ring-white/15" /><span className="font-display text-lg font-bold tracking-tight text-white">Promptly<span>.</span></span></div>}
                     <Button variant="ghost" size="icon-md" onClick={toggleCollapsed} className="p-1.5 text-slate-400 hover:bg-white/10 hover:text-white"><PanelLeftIcon /></Button>
                 </div>
-
-                <div className="workspace-sidebar-body flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
-                    <Button data-tour="create-automation" variant="primary" onClick={() => navigateTo({ page: 'automation-new', method: 'ai' })} className={`workspace-new-button mb-5 rounded-xl shadow-none ${collapsed ? 'mx-auto h-10 w-10 p-0' : 'w-full'}`} title="Create automation">
-                        <span className="text-xl leading-none">+</span>{!collapsed && <span className="ml-2">New automation</span>}
-                    </Button>
-
-                    <div className="mb-1 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{!collapsed && 'Workspace'}</div>
-                    {navigation.map(item => (
-                        <button key={item.page} data-tour={item.page === 'automations' ? 'automations' : item.page === 'forms' ? 'forms' : item.page === 'runs' ? 'monitoring' : undefined} type="button" onClick={() => go(item.page)} title={item.label} aria-label={item.page === 'approvals' && pendingApprovalCount > 0 ? `${item.label}, ${pendingApprovalCount} pending` : item.label} className={`workspace-nav-item group relative flex items-center gap-3 rounded-xl border p-2.5 text-left font-semibold transition-colors ${activePage === item.page ? 'is-active border-white/10 bg-white text-[#5143cc] shadow-sm' : 'border-transparent text-slate-400 hover:bg-white/10 hover:text-white'} ${collapsed ? 'justify-center' : ''}`}>
-                            {activePage === item.page && <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-[#c8f17b]" />}
-                            <span className="shrink-0">{item.icon}</span>{!collapsed && <span className="truncate">{item.label}</span>}
-                            {item.page === 'approvals' && pendingApprovalCount > 0 && <span className={`${collapsed ? 'absolute right-1.5 top-1.5 h-2.5 w-2.5' : 'ml-auto min-w-5 px-1.5'} flex items-center justify-center rounded-full bg-amber-400 text-[10px] font-bold leading-5 text-[#171827]`}>{!collapsed && pendingApprovalCount > 99 ? '99+' : !collapsed ? pendingApprovalCount : null}</span>}
-                        </button>
-                    ))}
-
-                    <button data-tour="assistant" type="button" onClick={() => go('assistant')} title="Ask Promptly" className={`workspace-assistant-link mt-2 flex items-center gap-3 rounded-xl border border-transparent p-2.5 text-left font-semibold transition-colors hover:bg-[#2a2840] hover:text-white ${collapsed ? 'justify-center' : ''}`}>
-                        <span className="shrink-0">{icons.assistant}</span>{!collapsed && <span>Ask Promptly</span>}
-                    </button>
-
-                    <div className="mt-auto pt-6">
-                        <button data-tour="settings" type="button" onClick={() => { setSettingsTab('general'); setSettingsOpen(true); }} title="Settings" className={`workspace-settings-link flex w-full items-center gap-3 rounded-xl border border-transparent p-2.5 text-left font-medium transition-colors hover:bg-white/10 hover:text-white ${collapsed ? 'justify-center' : ''}`}>
-                            <span className="shrink-0">{icons.settings}</span>{!collapsed && <span>Settings</span>}
-                        </button>
-                    </div>
-                </div>
-
-                <div className={`workspace-user flex items-center gap-3 p-3 ${collapsed ? 'justify-center' : ''}`}>
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#c8f17b] text-xs font-bold text-[#171827]">{user?.email?.substring(0, 2).toUpperCase() || 'U'}</div>
-                    {!collapsed && <div className="min-w-0"><p className="truncate text-sm font-bold text-white">{user?.email || 'User'}</p><p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Promptly account</p></div>}
-                </div>
+                <WorkspaceSidebarMenu user={user} activePage={activePage} pendingApprovalCount={pendingApprovalCount} onNavigate={go} onCreateAutomation={createAutomation} onOpenSettings={openSettings} collapsed={collapsed} />
             </aside>
 
-            <main className="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#f5f6fb]">{content}</main>
+            {mobileNavOpen && (
+                <div className="workspace-mobile-nav-layer">
+                    <button type="button" className="workspace-mobile-nav-backdrop" onClick={() => setMobileNavOpen(false)} aria-label="Close workspace menu" />
+                    <aside id="workspace-mobile-nav" className="workspace-mobile-drawer" role="dialog" aria-modal="true" aria-label="Workspace navigation">
+                        <div className="workspace-sidebar-head flex h-16 items-center justify-between px-4">
+                            <div className="workspace-brand flex items-center gap-2.5"><img src="/logo.png" alt="Promptly" className="h-8 w-8 rounded-[10px] ring-1 ring-white/15" /><span className="font-display text-lg font-bold tracking-tight text-white">Promptly<span>.</span></span></div>
+                            <Button variant="ghost" size="icon-md" onClick={() => setMobileNavOpen(false)} className="workspace-mobile-close-button p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" aria-label="Close workspace menu"><CloseIcon /></Button>
+                        </div>
+                        <WorkspaceSidebarMenu user={user} activePage={activePage} pendingApprovalCount={pendingApprovalCount} onNavigate={go} onCreateAutomation={createAutomation} onOpenSettings={openSettings} onLogout={onLogout} mobile />
+                    </aside>
+                </div>
+            )}
+
+            <main className="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#f5f6fb]">
+                <div className="workspace-mobile-header">
+                    <button type="button" onClick={() => setMobileNavOpen(true)} className="workspace-mobile-menu-trigger" aria-label="Open workspace menu" aria-controls="workspace-mobile-nav" aria-expanded={mobileNavOpen}>
+                        <span className="workspace-mobile-menu-trigger-icon"><MenuIcon /></span>
+                        <span className="workspace-mobile-header-copy"><span>Workspace</span><strong>{activeLabel}</strong></span>
+                    </button>
+                    <div className="workspace-mobile-header-actions">
+                        {pendingApprovalCount > 0 && <button type="button" onClick={() => go('approvals')} className="workspace-mobile-approval-button" aria-label={`${pendingApprovalCount} pending approvals`}><span className="workspace-mobile-approval-dot" />{pendingApprovalCount > 99 ? '99+' : pendingApprovalCount}</button>}
+                        <button type="button" data-tour="create-automation" onClick={createAutomation} className="workspace-mobile-new-button" aria-label="Create automation"><PlusIcon /><span>New</span></button>
+                    </div>
+                </div>
+                <div className="workspace-content-stage flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{content}</div>
+            </main>
 
             {settingsOpen && <Suspense fallback={null}><SettingsModal user={user} onClose={closeSettings} onLogout={onLogout} initialTab={settingsTab} /></Suspense>}
             {googleHealthKey && !settingsOpen && dismissedGoogleHealthKey !== googleHealthKey && <GoogleConnectionHealthModal status={googleHealth} onClose={() => setDismissedGoogleHealthKey(googleHealthKey)} />}

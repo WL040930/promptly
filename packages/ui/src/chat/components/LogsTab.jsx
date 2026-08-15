@@ -130,7 +130,7 @@ const LogsTab = ({ workflowId: initialWorkflowId = '' } = {}) => {
     }
 
     return (
-        <div ref={container} className="tab-content surface-grid flex h-full min-h-0 flex-1 overflow-hidden font-sans">
+        <div ref={container} className="logs-workspace tab-content surface-grid relative flex h-full min-h-0 flex-1 overflow-hidden font-sans">
             <div className="flex-1 min-w-0 overflow-y-auto p-5 md:p-8">
                 <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
                     <div>

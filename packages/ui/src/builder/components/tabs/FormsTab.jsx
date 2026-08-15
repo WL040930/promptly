@@ -283,7 +283,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
     ];
 
     return (
-        <div ref={container} className="tab-content surface-grid relative flex h-full flex-1 overflow-hidden font-sans">
+        <div ref={container} className="tab-content forms-workspace surface-grid relative flex h-full flex-1 overflow-hidden font-sans">
 
             {/* Mobile Overlay */}
             {isSidebarOpen && (
@@ -417,7 +417,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
             </aside>
 
             {/* ═══ MAIN CONTENT ═══ */}
-            <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-transparent">
+            <main className="forms-main flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-transparent">
                 {!activeForm ? (
                     <div className="flex-1 flex items-center justify-center p-8">
                         <div className="mx-auto flex w-full max-w-lg flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white p-12 text-center">
@@ -458,9 +458,9 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                 ) : (
                     <>
                         {/* Top Bar */}
-                        <div className="h-14 xl:h-16 bg-white/90 backdrop-blur-md border-b border-gray-200/60 px-3 sm:px-4 xl:px-6 flex items-center justify-between shrink-0 z-10 shadow-sm transition-all">
+                        <div className="workspace-forms-toolbar h-14 xl:h-16 bg-white/90 backdrop-blur-md border-b border-gray-200/60 px-3 sm:px-4 xl:px-6 flex items-center justify-between shrink-0 z-10 shadow-sm transition-all">
                             {/* Left: Form name */}
-                            <div className="flex min-w-0 flex-1 items-center gap-2 pr-2 xl:gap-4 xl:pr-4">
+                            <div className="workspace-forms-title flex min-w-0 flex-1 items-center gap-2 pr-2 xl:gap-4 xl:pr-4">
                                 <button onClick={() => setIsSidebarOpen(true)} aria-label="Open forms sidebar" className="md:hidden text-slate-500 hover:text-slate-800 p-1 shrink-0 rounded-lg hover:bg-slate-100 transition-colors">
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
                                 </button>
@@ -475,7 +475,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                             </div>
 
                             {/* Center: compact section navigation */}
-                            <div className="flex flex-none items-center justify-center">
+                            <div className="workspace-forms-tabs flex flex-none items-center justify-center">
                                 <div role="tablist" aria-label="Form workspace sections" className="flex items-center gap-1 p-1 bg-gray-100/80 rounded-xl border border-gray-200/50">
                                     {subTabs.map(tab => {
                                         const isActive = activeSubTab === tab.id && !isPreviewMode;
@@ -504,7 +504,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                             </div>
 
                             {/* Right: Actions */}
-                            <div className="flex shrink-0 items-center justify-end gap-1.5 pl-2 sm:gap-2 xl:pl-4">
+                            <div className="workspace-forms-actions flex shrink-0 items-center justify-end gap-1.5 pl-2 sm:gap-2 xl:pl-4">
                                 <div className="flex items-center gap-0.5 rounded-xl border border-slate-200/80 bg-white p-0.5 shadow-2xs">
                                     <Button
                                         variant={isPreviewMode ? 'secondary' : 'outline'}
@@ -531,17 +531,17 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                         </div>
 
                 {/* Body Container */}
-                <div className="flex-1 overflow-hidden relative">
+                <div className="workspace-forms-body flex-1 overflow-hidden relative">
                     <div className="w-full h-full animate-slide-up-fade">
                         {isPreviewMode ? (
                             <div className="h-full overflow-y-auto">
-                                <div className="p-6 md:p-10 max-w-3xl mx-auto">
+                                <div className="workspace-forms-content p-6 md:p-10 max-w-3xl mx-auto">
                                     <FormPreview form={activeForm} accentColor={accentColor} embedded />
                                 </div>
                             </div>
                         ) : activeSubTab === 'questions' ? (
                             <div className="h-full overflow-y-auto">
-                                <div className="p-6 md:p-10 max-w-3xl mx-auto">
+                                <div className="workspace-forms-content p-6 md:p-10 max-w-3xl mx-auto">
                                     <FormEditor
                                         form={activeForm}
                                         onUpdateForm={updateForm}
@@ -568,13 +568,13 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                             </div>
                         ) : activeSubTab === 'responses' ? (
                             <div className="h-full overflow-y-auto">
-                                <div className="p-6 md:p-10 max-w-3xl mx-auto">
+                                <div className="workspace-forms-content p-6 md:p-10 max-w-3xl mx-auto">
                                     <FormResponses form={activeForm} />
                                 </div>
                             </div>
                         ) : activeSubTab === 'settings' ? (
                             <div className="h-full overflow-y-auto">
-                                <div className="p-6 md:p-10 max-w-3xl mx-auto">
+                                <div className="workspace-forms-content p-6 md:p-10 max-w-3xl mx-auto">
                                     <FormSettings form={activeForm} onUpdateForm={updateForm} />
                                 </div>
                             </div>

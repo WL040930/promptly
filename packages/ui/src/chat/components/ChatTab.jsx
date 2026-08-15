@@ -533,7 +533,7 @@ export default function ChatTab({ conversationId = null }) {
 
             {/* Main Chat Area */}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col h-full bg-transparent overflow-hidden">
-                <div className="h-16 border-b border-gray-200/60 px-6 flex items-center bg-white/80 backdrop-blur-md z-10 shrink-0 shadow-sm">
+                <div className="chat-workspace-header h-16 border-b border-gray-200/60 px-6 flex items-center bg-white/80 backdrop-blur-md z-10 shrink-0 shadow-sm">
                     <div className="flex items-center gap-3">
                         <button className="md:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" onClick={() => setIsSidebarOpen(true)}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>

@@ -10,7 +10,7 @@
     {
       "src": "/logo.png",
       "sizes": "any",
-      "type": "image/jpeg"
+      "type": "image/png"
     }
   ]
 }

@@ -163,7 +163,7 @@ function ApprovalRow({ item, selectedId, tab, onSelect }) {
       type="button"
       onClick={() => onSelect(item.id)}
       aria-pressed={selectedId === item.id}
-      className={`w-full border-t border-slate-100 border-l-4 p-4 text-left transition first:border-t-0 hover:bg-slate-50 ${selectedId === item.id ? "border-l-indigo-600 bg-indigo-50/40" : "border-l-transparent"}`}
+      className={`approval-row w-full border-t border-slate-100 border-l-4 p-4 text-left transition first:border-t-0 hover:bg-slate-50 ${selectedId === item.id ? "border-l-indigo-600 bg-indigo-50/40" : "border-l-transparent"}`}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
@@ -531,7 +531,7 @@ export default function ApprovalsPage() {
   return (
     <div
       ref={containerRef}
-      className="tab-content surface-grid flex h-full min-h-0 flex-1 overflow-hidden font-sans"
+      className="approvals-workspace tab-content surface-grid relative flex h-full min-h-0 flex-1 overflow-hidden font-sans"
     >
       <div
         className="min-w-0 flex-1 overflow-y-auto p-5 md:p-8"

@@ -20,7 +20,7 @@ const LogList = ({ logs, selectedLogId, onSelect }) => (
                     key={log.id}
                     onClick={() => onSelect(log.id)}
                     aria-pressed={selectedLogId === log.id}
-                    className={`w-full text-left p-4 flex items-center justify-between gap-4 cursor-pointer hover:bg-slate-50 transition-colors select-none border-t border-slate-100 first:border-t-0 border-l-4 ${
+                    className={`log-list-row w-full text-left p-4 flex items-center justify-between gap-4 cursor-pointer hover:bg-slate-50 transition-colors select-none border-t border-slate-100 first:border-t-0 border-l-4 ${
                         selectedLogId === log.id
                             ? 'bg-indigo-50/40 border-l-indigo-600'
                             : 'border-l-transparent'

@@ -42,9 +42,9 @@ const BuilderToolbar = ({
     const publishLabel = isActive && hasDraftChanges ? 'Publish changes' : isActive ? 'Resume' : 'Publish';
 
     return (
-        <header className="relative z-20 flex h-[4.25rem] w-full shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white/95 px-3 shadow-[0_2px_16px_rgba(15,23,42,0.04)] backdrop-blur-md select-none sm:px-4 lg:gap-5">
+        <header className="builder-toolbar relative z-20 flex h-[4.25rem] w-full shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white/95 px-3 shadow-[0_2px_16px_rgba(15,23,42,0.04)] backdrop-blur-md select-none sm:px-4 lg:gap-5">
             {/* Identity rail: navigation, title, and small workflow context. */}
-            <div className="flex min-w-0 flex-1 items-center gap-2 lg:min-w-[18rem]">
+            <div className="builder-toolbar__identity flex min-w-0 flex-1 items-center gap-2 lg:min-w-[18rem]">
                 <div className="flex shrink-0 items-center gap-0.5 rounded-xl border border-slate-200/80 bg-slate-50/80 p-0.5">
                     <Button
                         variant={isLeftSidebarOpen ? 'secondary' : 'ghost'}
@@ -101,7 +101,7 @@ const BuilderToolbar = ({
 
             {/* The editor mode stays visually centered and independent of the action rail. */}
             {onViewModeChange && (
-                <div className="hidden shrink-0 items-center rounded-2xl border border-slate-200/80 bg-slate-100/80 p-1 shadow-2xs sm:flex">
+                <div className="builder-toolbar__mode hidden shrink-0 items-center rounded-2xl border border-slate-200/80 bg-slate-100/80 p-1 shadow-2xs sm:flex">
                     <button
                         type="button"
                         aria-pressed={viewMode === 'canvas'}
@@ -130,7 +130,7 @@ const BuilderToolbar = ({
             )}
 
             {/* Action rail: a compact Run group, then a compact Release group. */}
-            <div className="flex shrink-0 items-center gap-1.5 lg:gap-2">
+            <div className="builder-toolbar__actions flex shrink-0 items-center gap-1.5 lg:gap-2">
                 <div className="flex items-center gap-0.5 rounded-xl border border-slate-200/80 bg-slate-50/80 p-0.5">
                     <Button
                         variant="outline"
@@ -143,7 +143,7 @@ const BuilderToolbar = ({
                         iconLeft={!isRunning && <Play className="h-3.5 w-3.5 text-indigo-600 fill-indigo-600/20" />}
                         className="h-8 gap-0 rounded-lg border-transparent px-2 shadow-none hover:border-indigo-200 hover:bg-indigo-50/70 hover:text-indigo-700 sm:px-2.5 xl:gap-2"
                     >
-                        <span className="hidden xl:inline">Test</span>
+                        <span className="builder-toolbar__label hidden xl:inline">Test</span>
                     </Button>
                     <Button
                         variant={isProductionReady ? 'dangerSolid' : 'danger'}
@@ -155,7 +155,7 @@ const BuilderToolbar = ({
                         iconLeft={!isRunning && <Rocket className="h-3.5 w-3.5" />}
                         className="h-8 gap-0 rounded-lg px-2 sm:px-2.5 xl:gap-2"
                     >
-                        <span className="hidden xl:inline">Live</span>
+                        <span className="builder-toolbar__label hidden xl:inline">Live</span>
                     </Button>
                 </div>
 
@@ -171,9 +171,9 @@ const BuilderToolbar = ({
                         iconLeft={!isPublishing && <Upload className="h-3.5 w-3.5" />}
                         className="h-8 gap-0 rounded-lg px-2 shadow-none sm:px-2.5 xl:gap-2"
                     >
-                        <span className="hidden xl:inline">{publishLabel}</span>
+                        <span className="builder-toolbar__label hidden xl:inline">{publishLabel}</span>
                     </Button>
-                    {isActive && <Button variant="ghost" size="xs" onClick={onPause} disabled={isPausing} isLoading={isPausing} title="Pause live triggers" iconLeft={!isPausing && <Pause className="h-3.5 w-3.5" />} className="h-8 gap-0 rounded-lg px-2 hover:bg-slate-100 sm:px-2.5 xl:gap-2"><span className="hidden xl:inline">Pause</span></Button>}
+                    {isActive && <Button variant="ghost" size="xs" onClick={onPause} disabled={isPausing} isLoading={isPausing} title="Pause live triggers" iconLeft={!isPausing && <Pause className="h-3.5 w-3.5" />} className="h-8 gap-0 rounded-lg px-2 hover:bg-slate-100 sm:px-2.5 xl:gap-2"><span className="builder-toolbar__label hidden xl:inline">Pause</span></Button>}
                 </div>
                 <span className={`hidden items-center gap-1.5 text-xs font-bold xl:flex ${isActive ? 'text-emerald-700' : hasDraftChanges ? 'text-amber-700' : 'text-slate-500'}`}><span className={`h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : hasDraftChanges ? 'bg-amber-500' : 'bg-slate-400'}`} />{isActive ? (hasDraftChanges ? 'Changes not live' : 'Live') : 'Draft'}</span>
 

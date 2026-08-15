@@ -266,7 +266,7 @@ function LandingHeader({ onLogin }) {
   const go = (id) => { setOpen(false); document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }) }
   return (
     <header className="cinematic-header">
-      <a href="#top" className="landing-brand"><span className="landing-brand-mark"><Sparkles size={14} /></span><span>Promptly<span className="landing-brand-dot">.</span></span></a>
+      <a href="#top" className="landing-brand"><span className="landing-brand-mark"><img src="/logo.png" alt="" /></span><span>Promptly<span className="landing-brand-dot">.</span></span></a>
       <nav className={`landing-nav ${open ? 'is-open' : ''}`}>
         <button type="button" onClick={() => go('journey')}>The journey</button>
         <button type="button" onClick={() => go('capabilities')}>Capabilities</button>
@@ -317,7 +317,7 @@ function LandingPage({ onLogin, onSecurity }) {
         <section id="start" className="landing-cta-cinematic"><div className="cta-glow" /><span className="section-kicker">Your next workflow is closer than it feels</span><h2>Give the busywork<br /><em>a better ending.</em></h2><p>Build a calm, reviewable way to move work forward — one sentence at a time.</p><button type="button" onClick={onLogin} className="hero-primary">Start with Promptly <ArrowUpRight size={17} /></button><div className="cta-footnote"><Clock3 size={14} /> Takes a few minutes to get started</div></section>
       </main>
 
-      <footer className="cinematic-footer"><div className="footer-brand"><span className="landing-brand-mark"><Sparkles size={14} /></span><span>Promptly<span className="landing-brand-dot">.</span></span><small>Make work move forward.</small></div><div className="footer-links"><a href="#journey">The journey</a><a href="#capabilities">Capabilities</a><a href="#demo">Try the agent</a><button type="button" onClick={onSecurity}>Security</button></div><span className="footer-copyright">© {new Date().getFullYear()} Promptly</span></footer>
+      <footer className="cinematic-footer"><div className="footer-brand"><span className="landing-brand-mark"><img src="/logo.png" alt="" /></span><span>Promptly<span className="landing-brand-dot">.</span></span><small>Make work move forward.</small></div><div className="footer-links"><a href="#journey">The journey</a><a href="#capabilities">Capabilities</a><a href="#demo">Try the agent</a><button type="button" onClick={onSecurity}>Security</button></div><span className="footer-copyright">© {new Date().getFullYear()} Promptly</span></footer>
     </div>
   )
 }
