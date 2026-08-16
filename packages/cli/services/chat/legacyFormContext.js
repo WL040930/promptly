@@ -5,11 +5,26 @@ const appliedFormArtifact = run => (run?.artifacts || []).find(artifact =>
     artifact?.type === 'form_proposal' && artifact?.status === 'applied'
 );
 
-const shouldRecoverFormContext = ({ context = {}, decision = null }) => !context.formId
-    && decision?.route === 'agent'
-    && decision?.intent?.goal === 'modify'
-    && decision?.intent?.domains?.includes('form')
-    && decision?.intent?.resourceReferences?.some(reference => reference?.type === 'form');
+const shouldRecoverFormContext = ({ context = {}, decision = null }) => {
+    if (context.formId || decision?.route !== 'agent') return false;
+
+    const intent = decision?.intent || {};
+    const referencesForm = intent.resourceReferences?.some(reference => reference?.type === 'form');
+    if (!referencesForm) return false;
+
+    const createsNewForm = intent.requestedOperations?.some(operation => (
+        operation?.domain === 'form' && operation?.action === 'create'
+    ));
+    const editsForm = intent.goal === 'modify' && intent.domains?.includes('form');
+    const usesFormAsWorkflowInput = intent.domains?.includes('workflow')
+        && !createsNewForm
+        && !editsForm;
+
+    // A form reference can be the input to a new workflow. In that case the
+    // most recently applied form in this Ask Promptly thread is the trusted
+    // active resource, just as it is for a follow-up form edit.
+    return editsForm || usesFormAsWorkflowInput;
+};
 
 export const recoverHistoricalFormContext = async ({
     threadId,

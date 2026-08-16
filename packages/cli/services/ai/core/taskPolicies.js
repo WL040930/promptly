@@ -20,124 +20,126 @@ const WORKFLOW_LIMITS = Object.freeze({
     [AI_TASKS.WORKFLOW_VERIFY_REPAIR]: 1024
 });
 
+export const DEFAULT_AI_PROVIDER_ATTEMPTS = 4;
+
 const TASK_POLICIES = Object.freeze({
     [AI_TASKS.CHAT_RESPOND]: {
         profiles: ['fast', 'quality', 'default'],
         responseFormat: 'text',
         maxCompletionTokens: 700,
-        maxAttempts: 3,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: true
     },
     [AI_TASKS.AGENT_INTENT]: {
         profiles: ['fast', 'quality', 'default'],
         responseFormat: 'json',
         maxCompletionTokens: 700,
-        maxAttempts: 3,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: false
     },
     [AI_TASKS.AGENT_PLAN]: {
         profiles: ['fast', 'quality', 'default'],
         responseFormat: 'json',
         maxCompletionTokens: 1000,
-        maxAttempts: 3,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: false
     },
     [AI_TASKS.FORM_PLAN]: {
         profiles: ['fast', 'quality', 'default'],
         responseFormat: 'json',
         maxCompletionTokens: FORM_LIMITS[AI_TASKS.FORM_PLAN],
-        maxAttempts: 4,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: false
     },
     [AI_TASKS.FORM_PLAN_REPAIR]: {
         profiles: ['fast', 'quality', 'default'],
         responseFormat: 'json',
         maxCompletionTokens: FORM_LIMITS[AI_TASKS.FORM_PLAN_REPAIR],
-        maxAttempts: 4,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: false
     },
     [AI_TASKS.FORM_BUILD]: {
         profiles: ['quality', 'default', 'fast'],
         responseFormat: 'json',
         maxCompletionTokens: FORM_LIMITS[AI_TASKS.FORM_BUILD],
-        maxAttempts: 4,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: false
     },
     [AI_TASKS.FORM_BUILD_REPAIR]: {
         profiles: ['quality', 'default', 'fast'],
         responseFormat: 'json',
         maxCompletionTokens: FORM_LIMITS[AI_TASKS.FORM_BUILD_REPAIR],
-        maxAttempts: 4,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: false
     },
     [AI_TASKS.FORM_VERIFY]: {
         profiles: ['fast', 'quality', 'default'],
         responseFormat: 'json',
         maxCompletionTokens: FORM_LIMITS[AI_TASKS.FORM_VERIFY],
-        maxAttempts: 4,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: false
     },
     [AI_TASKS.FORM_VERIFY_REPAIR]: {
         profiles: ['fast', 'quality', 'default'],
         responseFormat: 'json',
         maxCompletionTokens: FORM_LIMITS[AI_TASKS.FORM_VERIFY_REPAIR],
-        maxAttempts: 4,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: false
     },
     [AI_TASKS.WORKFLOW_PLAN]: {
         profiles: ['fast', 'quality', 'default'],
         responseFormat: 'json',
         maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_PLAN],
-        maxAttempts: 2,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: false
     },
     [AI_TASKS.WORKFLOW_PLAN_REPAIR]: {
         profiles: ['fast', 'quality', 'default'],
         responseFormat: 'json',
         maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_PLAN_REPAIR],
-        maxAttempts: 2,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: false
     },
     [AI_TASKS.WORKFLOW_BUILD]: {
         profiles: ['quality', 'default', 'fast'],
         responseFormat: 'json',
         maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_BUILD],
-        maxAttempts: 2,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: false
     },
     [AI_TASKS.WORKFLOW_BUILD_REPAIR]: {
         profiles: ['quality', 'default', 'fast'],
         responseFormat: 'json',
         maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_BUILD_REPAIR],
-        maxAttempts: 2,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: false
     },
     [AI_TASKS.WORKFLOW_VERIFY]: {
         profiles: ['fast', 'quality', 'default'],
         responseFormat: 'json',
         maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_VERIFY],
-        maxAttempts: 2,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: false
     },
     [AI_TASKS.WORKFLOW_VERIFY_REPAIR]: {
         profiles: ['fast', 'quality', 'default'],
         responseFormat: 'json',
         maxCompletionTokens: WORKFLOW_LIMITS[AI_TASKS.WORKFLOW_VERIFY_REPAIR],
-        maxAttempts: 2,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: false
     },
     [AI_TASKS.NODE_TEXT]: {
         profiles: ['quality', 'default', 'fast'],
         responseFormat: 'text',
         maxCompletionTokens: 1000,
-        maxAttempts: 3,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: false
     },
     [AI_TASKS.NODE_JSON]: {
         profiles: ['quality', 'default', 'fast'],
         responseFormat: 'json',
         maxCompletionTokens: 1000,
-        maxAttempts: 3,
+        maxAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS,
         allowTools: false
     }
 });

@@ -1,5 +1,6 @@
 import { requestAgentJson } from './agentAi.js';
 import { makeIntent } from './agentContracts.js';
+import { clarificationInputsOrFallback } from '../../../shared/clarificationContract.js';
 
 export const MIN_INTENT_CONFIDENCE = 0.70;
 
@@ -80,9 +81,12 @@ const normalizeDecision = (value, message) => {
             ? {
                 clarification: {
                     question: questionFor(value, intent),
-                    options: isPlainObject(value?.clarification) && Array.isArray(value.clarification.options)
-                        ? value.clarification.options.slice(0, 6)
-                        : []
+                    options: clarificationInputsOrFallback({
+                        question: questionFor(value, intent),
+                        inputs: isPlainObject(value?.clarification) && Array.isArray(value.clarification.options)
+                            ? value.clarification.options.slice(0, 6)
+                            : []
+                    })
                 }
             }
             : {})

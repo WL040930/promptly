@@ -23,6 +23,7 @@ import { DEFAULT_CLARIFICATION_MODE, getClarificationModeInstruction, normalizeC
 import { supersedePendingChatFormProposals } from '../proposalLifecycle.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 import { replaceChatSessionState } from '../chat/chatTurnLifecycle.js';
+import { clarificationInputsOrFallback } from '../../../shared/clarificationContract.js';
 import {
     completeStep,
     createArtifact,
@@ -123,6 +124,49 @@ const compactForm = form => form ? ({
     updatedAt: form.updatedAt,
     fieldCount: Array.isArray(form.fields) ? form.fields.length : 0
 }) : null;
+
+const workflowFormSummary = form => {
+    const value = form?.toJSON?.() || form || {};
+    return value.id && (value.title || value.name)
+        ? {
+            id: value.id,
+            title: value.title || value.name,
+            description: value.description || null,
+            updatedAt: value.updatedAt || null
+        }
+        : null;
+};
+
+const ownedWorkflowForms = async ({ userId, selectedForm = null } = {}) => {
+    let forms = [];
+    try {
+        forms = await Form.findAll({
+            where: { userId },
+            attributes: ['id', 'title', 'description', 'updatedAt'],
+            order: [['updatedAt', 'DESC']],
+            limit: 50
+        });
+    } catch {
+        // A form list failure should not hide a form already loaded through a
+        // trusted selection or turn context.
+    }
+
+    const summaries = forms.map(workflowFormSummary).filter(Boolean);
+    const selectedSummary = workflowFormSummary(selectedForm);
+    if (selectedSummary && !summaries.some(form => form.id === selectedSummary.id)) summaries.unshift(selectedSummary);
+    return summaries;
+};
+
+const clarificationContextKeys = ['formId', 'workflowId', 'executionId', 'activeResource', 'respondentEmailFieldId'];
+
+export const contextWithClarificationState = ({ context = {}, state = {} } = {}) => {
+    const nextContext = { ...(context && typeof context === 'object' && !Array.isArray(context) ? context : {}) };
+    if (!state || typeof state !== 'object' || Array.isArray(state)) return nextContext;
+    for (const key of clarificationContextKeys) {
+        if (state[key] !== undefined && state[key] !== null && String(state[key]).trim()) nextContext[key] = state[key];
+    }
+    return nextContext;
+};
 
 const compactWorkflow = workflow => workflow ? ({
     id: workflow.id,
@@ -340,14 +384,16 @@ export const workflowTurnContextForAgent = ({ message, context = {}, intent = nu
     const state = context?.clarificationState;
     const delegated = context?.clarificationDecision === 'decide_for_me';
     const hasState = state && typeof state === 'object' && !Array.isArray(state) && Object.keys(state).length > 0;
+    const clarificationText = String(context.clarificationText || '').trim();
+    const hasAnswer = Boolean(clarificationText);
     const formWasReferenced = Array.isArray(intent?.resourceReferences)
         && intent.resourceReferences.some(reference => reference?.type === 'form');
     const activeFormSource = form?.id && formWasReferenced
         ? { id: form.id, title: form.title || 'Selected form' }
         : null;
-    if (!delegated && !hasState && !activeFormSource) return null;
+    if (!delegated && !hasState && !hasAnswer && !activeFormSource) return null;
     return {
-        ...((delegated || hasState) ? {
+        ...((delegated || hasState || hasAnswer) ? {
             command: {
                 type: delegated ? 'decide_for_me' : 'submit_clarification',
                 ...(delegated
@@ -356,14 +402,14 @@ export const workflowTurnContextForAgent = ({ message, context = {}, intent = nu
                         ...(hasState ? { state } : {})
                     }
                     : {
-                        text: String(context.clarificationText || '').trim(),
+                        text: clarificationText,
                         state
                     })
             }
         } : {}),
         intent: {
             sourceText: String(message || '').trim(),
-            latestText: delegated ? '' : String(context.clarificationText || '').trim(),
+            latestText: delegated ? '' : clarificationText,
             relationToPending: 'none',
             authority: delegated ? 'assistant' : 'user',
             clarificationMode: normalizeClarificationMode(context.clarificationMode),
@@ -402,11 +448,17 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
     const step = await createStep(run, { stepKey: 'design_workflow', type: 'design_workflow' });
     await startStep(step);
     try {
+        const workflowForms = await ownedWorkflowForms({ userId, selectedForm: form });
         const result = await generateWorkflowTurn({
             request: message,
             currentWorkflow: workflow?.toJSON?.() || workflow || { nodes: [], edges: [] },
             userId,
             formSchema: proposedFormSchemaForWorkflow({ form, formSchema, formArtifactId }),
+            userContext: { forms: workflowForms },
+            formLoader: async ({ formId }) => {
+                if (form?.id === formId) return form.toJSON?.() || form;
+                return (await Form.findOne({ where: { id: formId, userId } }))?.toJSON?.() || null;
+            },
             turnContext,
             onProgress: (progress) => {
                 onEvent?.({
@@ -633,19 +685,21 @@ const compilePlanWithRepair = ({ plan, intent, registry }) => {
 const saveClarification = async ({ session, run, type, candidates, text }) => {
     await updateRun(run, { status: 'awaiting_clarification', currentStep: 'research' });
     await replaceChatSessionState(session, { status: 'awaiting_agent_clarification', runId: run.id });
+    const candidateInput = {
+        id: `${type}-target`,
+        type: `${type}_choice`,
+        label: `Choose a ${type}`,
+        options: (Array.isArray(candidates) ? candidates : []).map(candidate => type === 'form'
+            ? { id: candidate.id, title: candidate.name }
+            : { id: candidate.id, name: candidate.name })
+    };
+    const inputs = clarificationInputsOrFallback({ inputs: [candidateInput], question: text });
     return saveReply(session, {
         text,
         kind: 'clarification',
         payload: {
             runId: run.id,
-            options: [{
-                id: `${type}-target`,
-                type: `${type}_choice`,
-                label: `Choose a ${type}`,
-                options: candidates.map(candidate => type === 'form'
-                    ? { id: candidate.id, title: candidate.name }
-                    : { id: candidate.id, name: candidate.name })
-            }]
+            options: inputs
         }
     });
 };
@@ -895,12 +949,16 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
                 throw new Error('The agent requested clarification without a usable question.');
             }
             const formTurn = clarificationResult.result || clarificationResult;
+            const inputs = clarificationInputsOrFallback({
+                inputs: formTurn.inputs || formTurn.options || [],
+                question: formTurn.message
+            });
             await updateRun(run, { status: 'awaiting_clarification', tokenUsage: totalUsage });
             await replaceChatSessionState(session, { status: 'awaiting_agent_clarification', runId: run.id });
             const reply = await saveReply(session, {
                 text: formTurn.message,
                 kind: 'clarification',
-                payload: { runId: run.id, options: formTurn.inputs || formTurn.options || [], allowDecide: true },
+                payload: { runId: run.id, options: inputs, allowDecide: true },
                 tokenUsage: totalUsage
             });
             return { handled: true, replyObj: reply, totalTokenUsage: totalUsage };
@@ -1011,12 +1069,16 @@ export const resumeAgentAfterForm = async ({ run, session, userId, formId, onEve
         onEvent
     });
     if (result.status === 'clarification') {
+        const inputs = clarificationInputsOrFallback({
+            inputs: result.result.inputs || [],
+            question: result.result.message
+        });
         await updateRun(run, { status: 'awaiting_clarification', currentStep: 'design_workflow', tokenUsage: result.tokenUsage || {} });
         await replaceChatSessionState(session, { status: 'awaiting_agent_clarification', runId: run.id });
         const reply = await saveReply(session, {
             text: result.result.message,
             kind: 'clarification',
-            payload: { runId: run.id, options: result.result.inputs || [], allowDecide: true },
+            payload: { runId: run.id, options: inputs, allowDecide: true },
             tokenUsage: result.tokenUsage || {}
         });
         return { reply, tokenUsage: result.tokenUsage || {} };
@@ -1042,7 +1104,11 @@ export const resumeAgentAfterClarification = async ({ run, session, userId, answ
     // The browser context only contains the most recent UI state. Preserve
     // the run's original context as well so a clarification cannot discard
     // the selected form, workflow, or other trusted inputs from the request.
-    const nextContext = { ...(metadata.context || {}), ...(context || {}) };
+    const structuredState = state && typeof state === 'object' && !Array.isArray(state) ? state : {};
+    const nextContext = contextWithClarificationState({
+        context: { ...(metadata.context || {}), ...(context || {}) },
+        state: structuredState
+    });
     // A later user answer must take authority back from an earlier
     // "decide for me" request. Keep delegation scoped to the one resume turn.
     nextContext.clarificationDecision = context?.clarificationDecision === 'decide_for_me'
@@ -1053,10 +1119,10 @@ export const resumeAgentAfterClarification = async ({ run, session, userId, answ
         ...(Array.isArray(nextContext.clarificationAnswers) ? nextContext.clarificationAnswers : []),
         String(answer || '').trim()
     ].filter(Boolean).slice(-8);
-    const structuredState = state && typeof state === 'object' && !Array.isArray(state) ? state : {};
+    const answerText = String(answer || '').trim();
+    if (answerText) nextContext.clarificationText = answerText;
     if (Object.keys(structuredState).length > 0) {
         nextContext.clarificationState = structuredState;
-        nextContext.clarificationText = String(answer || '').trim();
     }
     const workflowClarification = metadata.workflowClarification;
     if (workflowClarification?.kind === 'respondent_email_field') {

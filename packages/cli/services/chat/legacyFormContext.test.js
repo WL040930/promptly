@@ -11,6 +11,15 @@ const modifyingHistoricalForm = {
     }
 };
 
+const workflowUsingHistoricalForm = {
+    route: 'agent',
+    intent: {
+        goal: 'create',
+        domains: ['workflow'],
+        resourceReferences: [{ type: 'form', query: 'mentioned form' }]
+    }
+};
+
 test('recovers the one matching applied form from a legacy Ask Promptly thread', async () => {
     const context = await recoverHistoricalFormContext({
         threadId: 'thread_1',
@@ -57,4 +66,27 @@ test('does not guess when multiple historical forms have the same title', async 
     });
 
     assert.deepEqual(context, { clarificationMode: 'ask_important' });
+});
+
+test('recovers the recently applied form when a new workflow uses it as its trigger', async () => {
+    const context = await recoverHistoricalFormContext({
+        threadId: 'thread_1',
+        userId: 'user_1',
+        context: {},
+        decision: workflowUsingHistoricalForm,
+        models: {
+            AgentRun: {
+                findAll: async () => [{
+                    artifacts: [{
+                        type: 'form_proposal',
+                        status: 'applied',
+                        content: { formId: 'form_job_application', schema: { title: 'Job Application' } }
+                    }]
+                }]
+            },
+            Form: { findAll: async () => [] }
+        }
+    });
+
+    assert.deepEqual(context, { formId: 'form_job_application' });
 });

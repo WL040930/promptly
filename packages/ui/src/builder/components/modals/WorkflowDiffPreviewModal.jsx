@@ -94,9 +94,9 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
     }, [isRestoringSuccess, onClose]);
 
     const diffNodes = useMemo(() => {
-        if (!currentWorkflow || !versionWorkflow) return [];
+        if (!versionWorkflow) return [];
         return buildWorkflowPreviewDiffNodes({
-            currentNodes: currentWorkflow.nodes || [],
+            currentNodes: currentWorkflow?.nodes || [],
             proposedNodes: versionWorkflow.nodes || []
         });
     }, [currentWorkflow, versionWorkflow]);

@@ -2,7 +2,7 @@
 title: "Audio Transcription"
 type: ai
 subType: transcribe
-implementationStatus: beta
+implementationStatus: disabled
 description: "Convert audio to text"
 ui:
   icon: transcribe

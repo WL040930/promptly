@@ -24,6 +24,26 @@ const answerPatterns = [
     /^(yes|yeah|yep|no|nope|ok|okay|proceed|continue|go ahead|cancel|reject|stop)$/i
 ];
 
+const sheetPattern = /\b(?:google\s*)?(?:sheets?|spreadsheets?)\b/i;
+const createSheetAnswerPattern = /^(?:please\s+)?(?:(?:create|make|start)\s+(?:(?:a|an|the)\s+)?(?:(?:brand[- ]?new|new)\s+)?(?:google\s*)?(?:sheets?|spreadsheets?)(?:\s+(?:for|called|named)\s+.+)?|use\s+(?:a\s+)?(?:new|another)\s+(?:google\s*)?(?:sheets?|spreadsheets?))[.!?]?$/i;
+
+const valueText = value => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value;
+    try { return JSON.stringify(value); } catch { return ''; }
+};
+
+const pendingText = pending => [
+    pending?.question?.text,
+    pending?.question?.message,
+    pending?.question?.label,
+    ...(pending?.question?.options || []),
+    ...(pending?.options || [])
+].map(valueText).join(' ');
+
+const isCreateSheetAnswer = ({ message, pending = {} } = {}) =>
+    sheetPattern.test(pendingText(pending)) && createSheetAnswerPattern.test(String(message || '').trim());
+
 const optionValues = pending => (pending?.question?.options || pending?.options || [])
     .flatMap(option => [option?.id, option?.value, option?.label, option])
     .filter(value => value !== null && value !== undefined)
@@ -35,6 +55,10 @@ export const isConversationalMessage = message => conversationalPatterns.some(pa
 export const isClarificationAnswer = ({ message, pending = {} } = {}) => {
     const text = normalize(message);
     if (!text) return false;
+    // “Create a new Google Sheet” is an answer when the open question is
+    // about a Sheet destination. Keep this scoped to the pending question so
+    // an unrelated “create a workflow” request still starts a new action.
+    if (isCreateSheetAnswer({ message: text, pending })) return true;
     if (/\b(create|build|design|update|modify|edit|delete|remove|send|set\s*up|automate)\b/i.test(text)) return false;
     const options = optionValues(pending);
     if (/^\d+$/.test(text) && options.length > 0) return Number(text) >= 1 && Number(text) <= options.length;
@@ -42,6 +66,14 @@ export const isClarificationAnswer = ({ message, pending = {} } = {}) => {
     // A short field/value answer is a useful answer; a sentence that changes
     // the task is more safely treated as a new action.
     return text.split(/\s+/).length <= 6 && Boolean(pending?.question || pending?.kind);
+};
+
+export const clarificationStateForAnswer = ({ message, pending = {} } = {}) => {
+    if (isCreateSheetAnswer({ message, pending })) return { createSpreadsheet: 'create' };
+
+    const textInput = (pending?.question?.options || pending?.options || [])
+        .find(input => ['text', 'textarea'].includes(input?.type) && input?.id);
+    return textInput ? { [textInput.id]: String(message || '').trim() } : {};
 };
 
 export const decidePendingTurn = ({ message, pending = {} } = {}) => {

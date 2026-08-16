@@ -11,7 +11,7 @@ import { recoverHistoricalFormContext } from './legacyFormContext.js';
 import { processAgenticTurn, resumeAgentAfterClarification, resumeAgentAfterForm, resumeAgentAfterPlanReview } from '../agent/agentOrchestrator.js';
 import { decideAgentIntent } from '../agent/agentIntentRouter.js';
 import { createAskPromptlyCoordinator } from '../agent/askPromptlyCoordinator.js';
-import { decidePendingTurn } from '../agent/turnCoordinator.js';
+import { clarificationStateForAnswer, decidePendingTurn } from '../agent/turnCoordinator.js';
 import { createChatCapabilityRegistry } from './chatCapabilityRegistry.js';
 import { hasFallbackToolMarkup, parseFallbackToolCall } from './fallbackToolCall.js';
 import { getClarificationModeInstruction, normalizeClarificationMode } from '../../../shared/agentContract.js';
@@ -22,7 +22,7 @@ import { validateWorkflow } from '../engine/workflowValidator.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 import { resolveAssistantNavigation } from '../../../shared/assistantNavigation.js';
 import { clearChatSessionState, replaceChatSessionState } from './chatTurnLifecycle.js';
-import { resolveClarificationSubmission } from '../../../shared/clarificationContract.js';
+import { clarificationInputsOrFallback, resolveClarificationSubmission } from '../../../shared/clarificationContract.js';
 
 const askPromptlyCoordinator = createAskPromptlyCoordinator({
     processAgenticTurn,
@@ -527,7 +527,10 @@ export const applyEvent = async (session, userId, event, onEvent = null) => {
             error.status = 409;
             throw error;
         }
-        const inputs = clarification?.payload?.inputs || clarification?.payload?.options || [];
+        const inputs = clarificationInputsOrFallback({
+            inputs: clarification?.payload?.inputs || clarification?.payload?.options || [],
+            question: clarification?.text
+        });
         const resolved = resolveClarificationSubmission({ inputs, state: event.state || {} });
         if (!resolved.complete) {
             const error = new Error('Please complete the requested information before continuing.');
@@ -655,21 +658,45 @@ export const processChatMessage = async ({ session, userId, context = {}, onEven
     // unrelated sentence must start a fresh turn instead of being appended to
     // the old request (which previously caused greetings to reach the planner
     // and produced invalid self-dependent plans).
+    let pendingDecision = null;
+    let pendingClarification = null;
+    let pendingClarificationMatchesRun = false;
+    let pendingQuestionContext = null;
     if (pendingAgentState.runId && [
         'awaiting_agent_plan_review',
         'awaiting_agent_clarification'
     ].includes(pendingAgentState.status)) {
         const pendingRun = await AgentRun.findOne({ where: { id: pendingAgentState.runId, threadId: session.id, userId } });
-        const decision = decidePendingTurn({
+        pendingClarification = pendingRun
+            ? await AssistantMessage.findOne({
+                where: { threadId: session.id, sender: 'bot', kind: 'clarification' },
+                order: [['createdAt', 'DESC']]
+            })
+            : null;
+        const pendingPayload = pendingClarification?.payload || {};
+        pendingClarificationMatchesRun = Boolean(pendingClarification)
+            && (!pendingPayload.runId || pendingPayload.runId === pendingRun?.id);
+        const pendingOptions = pendingClarificationMatchesRun
+            ? (Array.isArray(pendingPayload.options) ? pendingPayload.options : pendingPayload.inputs || [])
+            : (pendingAgentState.options || []);
+        const metadataQuestion = pendingRun?.metadata?.workflowClarification;
+        pendingQuestionContext = {
+            kind: pendingRun?.metadata?.workflowClarification?.kind || pendingAgentState.status,
+            question: {
+                text: (pendingClarificationMatchesRun ? pendingClarification?.text : null)
+                    || (typeof pendingAgentState.question === 'string' ? pendingAgentState.question : pendingAgentState.question?.text)
+                    || metadataQuestion?.question
+                    || '',
+                options: pendingOptions
+            },
+            options: pendingOptions
+        };
+        pendingDecision = decidePendingTurn({
             message: latestUserMessage?.text || '',
-            pending: {
-                kind: pendingRun?.metadata?.workflowClarification?.kind || pendingAgentState.status,
-                question: pendingRun?.metadata?.workflowClarification || pendingAgentState.question,
-                options: pendingAgentState.options
-            }
+            pending: pendingQuestionContext
         });
-        onEvent?.({ type: 'agent.turn.routed', route: decision.kind, pendingStatus: pendingAgentState.status });
-        if (pendingRun && (decision.kind === 'conversation' || decision.kind === 'new_action')) {
+        onEvent?.({ type: 'agent.turn.routed', route: pendingDecision.kind, pendingStatus: pendingAgentState.status });
+        if (pendingRun && (pendingDecision.kind === 'conversation' || pendingDecision.kind === 'new_action')) {
             await pendingRun.update({
                 status: 'suspended',
                 currentStep: null,
@@ -719,11 +746,37 @@ export const processChatMessage = async ({ session, userId, context = {}, onEven
             return { replyObj: reply, totalTokenUsage: null };
         }
 
+        const answer = latestUserMessage?.text || '';
+        const clarificationState = pendingDecision?.kind === 'clarification_answer'
+            ? clarificationStateForAnswer({ message: answer, pending: pendingQuestionContext })
+            : {};
+        const clarificationResolution = resolveClarificationSubmission({
+            inputs: clarificationInputsOrFallback({
+                inputs: pendingQuestionContext?.options || [],
+                question: pendingQuestionContext?.question?.text
+            }),
+            state: clarificationState
+        });
+        if (pendingDecision?.kind === 'clarification_answer' && pendingClarificationMatchesRun && pendingClarification) {
+            const currentPayload = pendingClarification.payload || {};
+            await pendingClarification.update({ payload: {
+                ...currentPayload,
+                ...(Object.keys(clarificationState).length > 0
+                    ? { selectedState: { ...(currentPayload.selectedState || {}), ...clarificationState } }
+                    : {}),
+                resolution: {
+                    type: 'answered',
+                    answeredAt: new Date().toISOString(),
+                    answers: clarificationResolution.answers
+                }
+            } });
+        }
         const resumed = await resumeAgentAfterClarification({
             run,
             session,
             userId,
-            answer: latestUserMessage?.text || '',
+            answer,
+            state: Object.keys(clarificationState).length > 0 ? clarificationState : null,
             context: effectiveContext,
             onEvent
         });

@@ -205,6 +205,35 @@ test('AI client retries a lone workflow provider after a transient failure', asy
     assert.deepEqual(result.json, { type: 'reply', message: 'Ready' });
 });
 
+test('AI client exhausts four default provider attempts for retryable failures', async () => {
+    let calls = 0;
+    const ai = createAIClient({
+        registry: createRegistry({
+            gemini: {
+                async generateContent() {
+                    calls += 1;
+                    const error = new Error('Service temporarily unavailable.');
+                    error.status = 503;
+                    throw error;
+                }
+            }
+        }),
+        profiles: {
+            fast: { provider: 'gemini', model: 'workflow-model' },
+            quality: { provider: 'gemini', model: 'workflow-model' },
+            default: { provider: 'gemini', model: 'workflow-model' }
+        },
+        fallbackProviders: [],
+        logger: { info() {}, warn() {}, error() {} }
+    });
+
+    await assert.rejects(
+        () => ai.run({ task: 'workflow.plan', messages: [] }),
+        error => error.category === 'unavailable' && error.attempt === 4
+    );
+    assert.equal(calls, 4);
+});
+
 test('AI client accepts a workflow-specific provider-attempt override', async () => {
     let calls = 0;
     const ai = createAIClient({

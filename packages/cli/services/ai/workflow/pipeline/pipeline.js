@@ -40,6 +40,7 @@ import {
     validateWorkflowWorkerResult
 } from '../domain/workflowOutputValidator.js';
 import { requestWorkflowJson, workflowOutputIssues } from '../provider/request.js';
+import { DEFAULT_AI_PROVIDER_ATTEMPTS } from '../../core/taskPolicies.js';
 import {
     workflowPlannerInstruction,
     workflowVerifierInstruction,
@@ -49,10 +50,19 @@ import { addWorkflowUsage } from '../shared/usage.js';
 
 // A workflow turn should yield a reviewable outcome quickly. Deterministic
 // compiler fixes do not consume this budget; only model calls do.
+// Reserve two planner requests (initial + repair), then one worker and one
+// verifier request for each draft attempt. Every request can use all four
+// provider routes before the turn is considered unavailable.
+const WORKFLOW_PLANNER_REQUESTS = 2;
+const WORKFLOW_DRAFT_REQUESTS = 2;
+const workflowProviderCallBudget = buildAttempts => DEFAULT_AI_PROVIDER_ATTEMPTS * (
+    WORKFLOW_PLANNER_REQUESTS + (WORKFLOW_DRAFT_REQUESTS * buildAttempts)
+);
+
 const WORKFLOW_COMPLEXITY_BUDGETS = Object.freeze({
-    simple: Object.freeze({ id: 'simple', label: 'Simple workflow', providerAttempts: 2, buildAttempts: 2, maxProviderCalls: 8 }),
-    standard: Object.freeze({ id: 'standard', label: 'Standard workflow', providerAttempts: 3, buildAttempts: 3, maxProviderCalls: 12 }),
-    complex: Object.freeze({ id: 'complex', label: 'Complex workflow', providerAttempts: 3, buildAttempts: 4, maxProviderCalls: 16 })
+    simple: Object.freeze({ id: 'simple', label: 'Simple workflow', providerAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS, buildAttempts: 2, maxProviderCalls: workflowProviderCallBudget(2) }),
+    standard: Object.freeze({ id: 'standard', label: 'Standard workflow', providerAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS, buildAttempts: 3, maxProviderCalls: workflowProviderCallBudget(3) }),
+    complex: Object.freeze({ id: 'complex', label: 'Complex workflow', providerAttempts: DEFAULT_AI_PROVIDER_ATTEMPTS, buildAttempts: 4, maxProviderCalls: workflowProviderCallBudget(4) })
 });
 
 const workflowComplexityFor = ({ workflow = {}, plan = {}, formSchema = null }) => {

@@ -3,7 +3,7 @@ import { getIconByName, resolveNodeUi } from '../../utils/iconMap.jsx';
 import { useNodeLibrary } from '../../hooks/useNodeLibrary.js';
 import NodeLibrarySkeleton from './NodeLibrarySkeleton.jsx';
 
-const hiddenFromLibraryStatuses = new Set(['retired', 'coming_soon', 'hidden']);
+const hiddenFromLibraryStatuses = new Set(['disabled', 'retired', 'coming_soon', 'hidden']);
 const unavailableNodeStatuses = new Set(['disabled', 'coming_soon', 'retired', 'hidden']);
 
 /**

@@ -73,7 +73,7 @@ test('planner catalogue keeps every enabled node key in a compact routing contra
     const email = catalogue.find(item => item.nodeKey === 'action:email');
     const approval = catalogue.find(item => item.nodeKey === 'logic:approval');
 
-    assert.equal(catalogue.length, 27);
+    assert.equal(catalogue.length, 26);
     assert.equal(catalogue.length, rawCatalogue.length);
     assert.ok(JSON.stringify(catalogue).length <= 6000);
     assert.deepEqual(Object.keys(email), ['nodeKey', 'title', 'purpose', 'inputs', 'outputs']);

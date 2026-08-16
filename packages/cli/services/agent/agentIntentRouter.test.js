@@ -59,6 +59,34 @@ test('low-confidence intent asks one clarification question without creating a p
     assert.equal(decision.clarification.question, 'Should I prepare a form, a workflow, or both?');
 });
 
+test('empty form-target clarification options become a usable answer field', async () => {
+    const decision = await decideAgentIntent({
+        message: 'Create a workflow when the form receives responses.',
+        requestJson: requestWith({
+            route: 'clarification',
+            confidence: 0.42,
+            intent: {
+                goal: 'create',
+                domains: ['workflow'],
+                resourceReferences: [{ type: 'form', query: 'mentioned form' }]
+            },
+            clarification: {
+                question: 'Which form should trigger the workflow?',
+                options: []
+            }
+        })
+    });
+
+    assert.equal(decision.route, 'clarification');
+    assert.deepEqual(decision.clarification.options, [{
+        id: 'formId',
+        type: 'text',
+        label: 'Form name or ID',
+        placeholder: 'Enter a form name or ID…',
+        required: true
+    }]);
+});
+
 test('intent provider failure returns retry guidance instead of a heuristic route', async () => {
     const decision = await decideAgentIntent({
         message: 'Build an application workflow.',

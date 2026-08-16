@@ -1,6 +1,50 @@
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const text = value => String(value ?? '').trim();
 
+const choiceInputTypes = new Set([
+    'single_choice',
+    'multiple_choice',
+    'resource_choice',
+    'resource_picker',
+    'workflow_choice',
+    'form_choice'
+]);
+
+const isUsableClarificationInput = input => {
+    if (!isRecord(input) || !text(input.id) || !text(input.type)) return false;
+    if (!choiceInputTypes.has(input.type)) return true;
+    if (input.type === 'resource_picker' && input.allowCustom === true) return true;
+    return Array.isArray(input.options) && input.options.length > 0;
+};
+
+const isFormTargetQuestion = question => {
+    const value = text(question).toLocaleLowerCase();
+    return value.includes('form') && (
+        ['trigger', 'start', 'submit', 'response', 'receive'].some(word => value.includes(word))
+        || /(?:which|choose|select|name|id).{0,24}form/.test(value)
+    );
+};
+
+/**
+ * Keep clarification cards actionable even when an upstream model or an old
+ * persisted message omitted its input contract. Resource choices with no
+ * options are not a usable contract either, so they receive the same safe
+ * free-text fallback.
+ */
+export const clarificationInputsOrFallback = ({ inputs = [], question = '', fallback = true } = {}) => {
+    const usableInputs = (Array.isArray(inputs) ? inputs : []).filter(isUsableClarificationInput);
+    if (usableInputs.length > 0 || !fallback) return usableInputs;
+
+    const formTarget = isFormTargetQuestion(question);
+    return [{
+        id: formTarget ? 'formId' : 'clarificationAnswer',
+        type: 'text',
+        label: formTarget ? 'Form name or ID' : 'Your answer',
+        placeholder: formTarget ? 'Enter a form name or ID…' : 'Type your answer…',
+        required: true
+    }];
+};
+
 const optionId = option => isRecord(option)
     ? text(option.id ?? option.value)
     : text(option);

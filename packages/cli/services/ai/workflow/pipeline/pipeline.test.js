@@ -153,7 +153,33 @@ test('workflow complexity budgets reserve deeper recovery for forms, resources, 
         formSchema: { id: 'form_1' },
         plan: { selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'], requirements: [{ id: 'req_1' }], resourceChanges: [{ type: 'create_google_spreadsheet' }] }
     });
-    assert.deepEqual(complex, { id: 'complex', label: 'Complex workflow', providerAttempts: 3, buildAttempts: 4, maxProviderCalls: 16 });
+    assert.deepEqual(complex, { id: 'complex', label: 'Complex workflow', providerAttempts: 4, buildAttempts: 4, maxProviderCalls: 40 });
+});
+
+test('workflow budgets reserve four provider attempts for planner and draft recovery stages', async () => {
+    const { WORKFLOW_COMPLEXITY_BUDGETS } = (await import('./pipeline.js')).workflowPipelineInternals;
+
+    assert.deepEqual(WORKFLOW_COMPLEXITY_BUDGETS.simple, {
+        id: 'simple',
+        label: 'Simple workflow',
+        providerAttempts: 4,
+        buildAttempts: 2,
+        maxProviderCalls: 24
+    });
+    assert.deepEqual(WORKFLOW_COMPLEXITY_BUDGETS.standard, {
+        id: 'standard',
+        label: 'Standard workflow',
+        providerAttempts: 4,
+        buildAttempts: 3,
+        maxProviderCalls: 32
+    });
+    assert.deepEqual(WORKFLOW_COMPLEXITY_BUDGETS.complex, {
+        id: 'complex',
+        label: 'Complex workflow',
+        providerAttempts: 4,
+        buildAttempts: 4,
+        maxProviderCalls: 40
+    });
 });
 
 /**

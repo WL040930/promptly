@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     buildWorkflowProposalContent,
+    contextWithClarificationState,
     ensureRespondentEmailField,
     formTurnContextForAgent,
     applyIntentFormTitleFallback,
@@ -233,6 +234,16 @@ test('Ask Promptly marks an AI-referenced active form as the workflow trigger so
             clarificationMode: 'important_only',
             activeFormSource: { id: 'form_job_application', title: 'Job Application' }
         }
+    });
+});
+
+test('clarification state keeps a selected form available to the next research pass', () => {
+    assert.deepEqual(contextWithClarificationState({
+        context: { clarificationMode: 'ask_important' },
+        state: { formId: 'form_job_application', createSpreadsheet: 'create' }
+    }), {
+        clarificationMode: 'ask_important',
+        formId: 'form_job_application'
     });
 });
 

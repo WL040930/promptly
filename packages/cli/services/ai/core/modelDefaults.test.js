@@ -103,3 +103,9 @@ test('completion policy precedence is global unlimited, global cap, legacy form 
         aiWorkflowUnlimitedCompletionTokens: false
     }), 700);
 });
+
+test('every AI task allows four provider attempts for retryable API failures', () => {
+    for (const task of Object.values(AI_TASKS)) {
+        assert.equal(TASK_POLICIES[task]?.maxAttempts, 4, `${task} should allow four provider attempts`);
+    }
+});

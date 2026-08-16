@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    clarificationInputsOrFallback,
     resolveClarificationSubmission,
     updateClarificationDraft
 } from './clarificationContract.js';
@@ -92,4 +93,17 @@ test('resource pickers accept a saved default while still requiring an explicit 
     });
     assert.equal(result.complete, true);
     assert.deepEqual(result.answers, [{ id: 'range', label: 'Response tab', answer: 'Form Responses 1' }]);
+});
+
+test('empty form-target clarifications become an actionable text question', () => {
+    assert.deepEqual(clarificationInputsOrFallback({
+        inputs: [{ id: 'form-target', type: 'form_choice', label: 'Choose a form', options: [] }],
+        question: 'Which form should trigger the workflow?'
+    }), [{
+        id: 'formId',
+        type: 'text',
+        label: 'Form name or ID',
+        placeholder: 'Enter a form name or ID…',
+        required: true
+    }]);
 });
