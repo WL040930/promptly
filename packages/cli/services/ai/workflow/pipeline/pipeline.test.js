@@ -29,7 +29,7 @@ const emailSpec = {
     description: 'Sends an email',
     implementationStatus: 'experimental',
     schema: {
-        inputs: [{ name: 'event', isConnection: true }, { name: 'to', type: 'text' }, { name: 'subject', type: 'text' }],
+        inputs: [{ name: 'event', isConnection: true }, { name: 'to', type: 'text', valueSyntax: 'workflow-expression' }, { name: 'subject', type: 'text', valueSyntax: 'workflow-expression' }],
         outputs: [{ name: 'done', isConnection: true }]
     },
     ui: {}
@@ -820,6 +820,53 @@ test('pipeline carries an inspected form into the worker that creates its trigge
         nodeId: result.nodes.find(node => node.subType === 'form-submission')?.id,
         path: ['fields', 'email']
     });
+});
+
+test('pipeline repairs a worker legacy handle reference before producing a proposal', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let repairCalls = 0;
+    const workerOperations = toValue => ({
+        operations: [
+            { op: 'create_node', node: { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Promptly Form', config: { formId: 'form_1' } } },
+            { op: 'create_node', node: { ref: 'email', nodeKey: 'action:email', title: 'Send thank-you email', config: { to: toValue, subject: 'Thank you' }, afterNodeRef: 'form_trigger' } },
+            { op: 'connect', from: { nodeRef: 'form_trigger', handle: 'event' }, to: { nodeRef: 'email', handle: 'event' } }
+        ]
+    });
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') return {
+                text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Send a thank-you email after form submission.',
+                    requirements: [{ id: 'req_1', description: 'Send a thank-you email to the respondent.' }],
+                    selectedNodeKeys: ['trigger:form-submission', 'action:email'],
+                    capabilities: ['respondent_confirmation']
+                })
+            };
+            if (options.operation === 'workflow:worker') return {
+                text: JSON.stringify(workerOperations('{{triggerData.fields.email}}'))
+            };
+            if (options.operation === 'workflow:worker repair') {
+                repairCalls++;
+                return { text: JSON.stringify(workerOperations({ $binding: 'form_field_1' })) };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'After my form receives a response, send a thank-you email.',
+        currentWorkflow: { nodes: [], edges: [] },
+        formSchema: { id: 'form_1', title: 'Contact form', fields: [{ id: 'email', label: 'Email address', type: 'email', required: true }] },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, emailSpec]),
+        resourceLoader: async () => ({ forms: { resource: 'forms', options: [{ value: 'form_1', label: 'Contact form' }] } })
+    });
+
+    assert.equal(repairCalls, 1);
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.nodes.find(node => node.subType === 'email')?.config?.to?.$expr, 'reference');
+    assert.equal(result.nodes.find(node => node.subType === 'email')?.config?.to?.nodeId, result.nodes.find(node => node.subType === 'form-submission')?.id);
 });
 
 test('pipeline does not expose a form when the ownership-checked lookup fails', async () => {

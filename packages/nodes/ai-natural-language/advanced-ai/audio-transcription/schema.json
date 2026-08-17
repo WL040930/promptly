@@ -28,7 +28,8 @@
       "name": "prompt",
       "type": "textarea",
       "label": "Context Hint (optional)",
-      "placeholder": "Provide context to improve accuracy, e.g. technical terms, names, abbreviations.",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "Provide context to improve accuracy, or insert data from a previous step with {}.",
       "defaultValue": ""
     },
     {

@@ -17,7 +17,8 @@
       "name": "variableValue",
       "type": "textarea",
       "label": "Variable Value",
-      "placeholder": "Enter a value or use {{nodeId.field}} to reference upstream data",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "Enter a value or insert data from a previous step with {}",
       "defaultValue": ""
     },
     {
@@ -45,7 +46,7 @@
       "name": "value",
       "type": "any",
       "label": "Variable Value",
-      "description": "The stored value, accessible downstream as {{nodeId.value}}"
+      "description": "The stored value, accessible to downstream steps."
     },
     {
       "name": "variableName",

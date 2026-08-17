@@ -1,9 +1,10 @@
 import { applyResourceContextDelta, buildResourceIdentity } from '../../assistant/resourceContext.js';
-import { compileWorkflowBindings, validateWorkflowExpressions } from '../../../../shared/workflowExpressions.js';
+import { compileWorkflowBindings, normalizeWorkflowReferences, validateWorkflowExpressions } from '../../../../shared/workflowExpressions.js';
 import { finishAssistantWork } from '../../../../shared/assistantWork.js';
 import { applyFormResponseSpreadsheetContract } from './formSpreadsheetContract.js';
 import { provisionWorkflowResources } from './workflowResourceProvisioner.js';
 import { validateFormResponseSheetDestination } from './domain/formResponseSheetDestination.js';
+import NodeRegistry from '../../../utils/NodeRegistry.js';
 
 const isProvisionReference = value => value !== null && typeof value === 'object' && !Array.isArray(value)
     && typeof value.$provision === 'string' && Object.keys(value).length === 1;
@@ -91,12 +92,21 @@ export const createWorkflowProposalApplier = ({
         return Form.findOne({ where: { id: formId, userId }, transaction });
     };
 
-    const validateBindings = async ({ workflow, userId, transaction, nodes = [] }) => {
+    const validateBindings = async ({ workflow, userId, transaction, nodes = [], edges = workflow.edges || [] }) => {
         const form = await attachedForm(workflow, userId, transaction, nodes);
-        const normalizedBindings = compileWorkflowBindings({ nodes, formSchema: form?.toJSON?.() || null });
+        const formSchema = form?.toJSON?.() || null;
+        const compiledBindings = compileWorkflowBindings({ nodes, formSchema });
+        const normalizedReferences = normalizeWorkflowReferences({
+            nodes: compiledBindings.nodes,
+            edges,
+            formSchema,
+            schemaForNode: node => NodeRegistry.getDefinition?.(node?.type, node?.subType)?.configSchema || node?.schema || {},
+            rejectLegacy: false
+        });
         const issues = [
-            ...normalizedBindings.issues,
-            ...validateWorkflowExpressions({ nodes: normalizedBindings.nodes, formSchema: form?.toJSON?.() || null })
+            ...compiledBindings.issues,
+            ...normalizedReferences.issues,
+            ...validateWorkflowExpressions({ nodes: normalizedReferences.nodes, edges, formSchema })
         ];
         if (issues.length > 0) {
             throw errorWith(
@@ -106,7 +116,13 @@ export const createWorkflowProposalApplier = ({
                 { issues }
             );
         }
-        return { form, normalizedBindings };
+        return {
+            form,
+            normalizedBindings: {
+                nodes: normalizedReferences.nodes,
+                repairs: [...compiledBindings.repairs, ...normalizedReferences.repairs]
+            }
+        };
     };
 
     const apply = async ({ workflowId, userId, proposalMessageId, expectedStateVersion, workflow, message, payload }) => {
@@ -180,7 +196,7 @@ export const createWorkflowProposalApplier = ({
                     throw errorWith('WORKFLOW_AI_STATE_CONFLICT', 'The workflow assistant changed in another tab. Refresh the conversation and try again.', 409, { currentStateVersion: state.version });
                 }
                 if (Number(payload.baseWorkflowRevision) !== Number(lockedWorkflow.revision)) throw errorWith('WORKFLOW_PROPOSAL_STALE', 'This workflow changed after the proposal was prepared. Generate a new proposal.', 409);
-                await validateBindings({ workflow: lockedWorkflow, userId, transaction, nodes: payload.nodes || [] });
+                await validateBindings({ workflow: lockedWorkflow, userId, transaction, nodes: payload.nodes || [], edges: payload.edges || [] });
                 await lockedMessage.update({
                     proposalStatus: 'applying',
                     payload: {
@@ -255,14 +271,18 @@ export const createWorkflowProposalApplier = ({
                     throw errorWith('WORKFLOW_AI_STATE_CONFLICT', 'The workflow assistant changed in another tab. Refresh the conversation and try again.', 409, { currentStateVersion: state.version });
                 }
                 if (Number(resolvedPayload.baseWorkflowRevision) !== Number(lockedWorkflow.revision)) throw errorWith('WORKFLOW_PROPOSAL_STALE', 'This workflow changed after the proposal was prepared. Generate a new proposal.', 409);
-                const proposalNodes = resolveProvisionReferences(resolvedPayload.nodes || [], provisionedResources, errorWith);
-                const proposalEdges = resolvedPayload.edges || [];
-                const graphChanged = JSON.stringify(proposalNodes) !== JSON.stringify(lockedWorkflow.nodes || [])
+                const proposalNodes = resolvedPayload.nodes === undefined
+                    ? (lockedWorkflow.nodes || [])
+                    : resolveProvisionReferences(resolvedPayload.nodes || [], provisionedResources, errorWith);
+                const proposalEdges = resolvedPayload.edges === undefined ? (lockedWorkflow.edges || []) : resolvedPayload.edges || [];
+                // Validate and normalize on every Apply, including metadata-only
+                // proposals. This also repairs valid legacy references on an
+                // otherwise untouched historical draft before it is saved.
+                const { normalizedBindings } = await validateBindings({ workflow: lockedWorkflow, userId, transaction, nodes: proposalNodes, edges: proposalEdges });
+                const graphChanged = JSON.stringify(normalizedBindings.nodes) !== JSON.stringify(lockedWorkflow.nodes || [])
                     || JSON.stringify(proposalEdges) !== JSON.stringify(lockedWorkflow.edges || []);
-                let normalizedBindings = { nodes: proposalNodes, repairs: [] };
                 let saved = { automation: lockedWorkflow };
                 if (graphChanged) {
-                    ({ normalizedBindings } = await validateBindings({ workflow: lockedWorkflow, userId, transaction, nodes: proposalNodes }));
                     saved = await saveDraft({
                         automationId: lockedWorkflow.id,
                         userId,

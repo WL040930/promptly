@@ -16,6 +16,7 @@
       "name": "valueA",
       "type": "text",
       "label": "Value A",
+      "valueSyntax": "workflow-expression",
       "defaultValue": ""
     },
     {
@@ -45,6 +46,7 @@
       "name": "valueB",
       "type": "text",
       "label": "Value B",
+      "valueSyntax": "workflow-expression",
       "defaultValue": ""
     }
   ],

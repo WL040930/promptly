@@ -1,7 +1,8 @@
-import { NODE_INPUT_TYPES } from '../../shared/nodeConfigContract.js';
+import { NODE_INPUT_TYPES, NODE_INPUT_VALUE_SYNTAXES } from '../../shared/nodeConfigContract.js';
 
 const REQUIRED_ARRAYS = ['inputs', 'outputs'];
 const validInputTypes = new Set(NODE_INPUT_TYPES);
+const validValueSyntaxes = new Set(NODE_INPUT_VALUE_SYNTAXES);
 
 const referencedConditionFields = condition => {
     if (!condition || typeof condition !== 'object') return [];
@@ -48,6 +49,9 @@ export const validateNodeDefinition = (definition) => {
         if (input?.isConnection) continue;
         if (!validInputTypes.has(input?.type)) {
             issues.push({ code: 'INVALID_INPUT_TYPE', path: `inputs[${index}].type`, message: `Unsupported input type "${input?.type}".` });
+        }
+        if (input?.valueSyntax !== undefined && !validValueSyntaxes.has(input.valueSyntax)) {
+            issues.push({ code: 'INVALID_VALUE_SYNTAX', path: `inputs[${index}].valueSyntax`, message: `Unsupported value syntax "${input.valueSyntax}".` });
         }
         if (input?.type === 'resource-select' && (typeof input.resource !== 'string' || !input.resource.trim())) {
             issues.push({ code: 'MISSING_INPUT_RESOURCE', path: `inputs[${index}].resource`, message: 'Resource-select inputs require a resource provider.' });

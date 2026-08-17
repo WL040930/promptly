@@ -160,6 +160,66 @@ test('worker context gives the model server-issued form field bindings', () => {
     assert.doesNotMatch(context, /semanticToken|runtimeToken|formField:/);
 });
 
+test('worker context removes legacy placeholder examples and states the structured reference contract', () => {
+    const context = buildWorkflowWorkerContext({
+        workflow: { nodes: [], edges: [] },
+        specs: [{
+            nodeKey: 'action:email',
+            type: 'action',
+            subType: 'email',
+            schema: {
+                inputs: [{
+                    name: 'to',
+                    type: 'text',
+                    valueSyntax: 'workflow-expression',
+                    placeholder: 'user@example.com or {{nodeId.email}}'
+                }],
+                outputs: []
+            }
+        }],
+        requirements: [],
+        capabilities: [],
+        resourceContext: {}
+    });
+
+    assert.doesNotMatch(context, /nodeId\.email/);
+    assert.match(context, /Workflow Reference Contract/);
+    assert.match(context, /triggerData, inputData, and event are connection handles/);
+});
+
+test('worker context masks invalid interpolation values from the current workflow edit view', () => {
+    const context = buildWorkflowWorkerContext({
+        workflow: {
+            nodes: [{
+                id: 'form_trigger',
+                type: 'trigger',
+                subType: 'form-submission',
+                nodeKey: 'trigger:form-submission',
+                config: { formId: 'form_1' }
+            }, {
+                id: 'email_1',
+                type: 'action',
+                subType: 'email',
+                nodeKey: 'action:email',
+                config: { to: '${steps.form_trigger.triggerData.f_email}' }
+            }],
+            edges: [{ source: 'form_trigger', target: 'email_1' }]
+        },
+        specs: [{
+            nodeKey: 'action:email',
+            type: 'action',
+            subType: 'email',
+            schema: { inputs: [{ name: 'to', valueSyntax: 'workflow-expression' }], outputs: [] }
+        }],
+        requirements: [],
+        capabilities: [],
+        resourceContext: {}
+    });
+
+    assert.doesNotMatch(context, /steps\.form_trigger\.triggerData\.f_email/);
+    assert.match(context, /invalid workflow reference/i);
+});
+
 test('worker context makes empty-workflow refs and repair options explicit', () => {
     const context = buildWorkflowWorkerContext({
         workflow: { nodes: [], edges: [] },

@@ -4,7 +4,8 @@
       "name": "prompt",
       "type": "textarea",
       "label": "Image Prompt",
-      "placeholder": "A photorealistic image of... Use {{nodeId.field}} to include dynamic text.",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "A photorealistic image of... Insert data from a previous step with {}.",
       "defaultValue": ""
     },
     {

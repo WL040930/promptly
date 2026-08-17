@@ -11,3 +11,21 @@ test('BaseNode refuses to execute a config with an unresolved template variable'
             && error.unresolvedVariables[0].path === 'config.to'
     );
 });
+
+test('canonical workflow expressions resolve email recipient and mixed body at runtime', () => {
+    const node = new BaseNode('email_1', 'action', 'email', {
+        to: { $expr: 'reference', v: 1, nodeId: 'form_trigger', path: ['fields', 'f_email'] },
+        body: {
+            $expr: 'template',
+            v: 1,
+            parts: [
+                { text: 'Hi ' },
+                { reference: { $expr: 'reference', v: 1, nodeId: 'form_trigger', path: ['fields', 'f_name'] } }
+            ]
+        }
+    });
+    const resolved = node.getResolvedConfig({ form_trigger: { fields: { f_email: 'person@example.com', f_name: 'Sam' } } });
+
+    assert.equal(resolved.to, 'person@example.com');
+    assert.equal(resolved.body, 'Hi Sam');
+});

@@ -21,6 +21,7 @@
       "type": "textarea",
       "label": "Instructions",
       "group": "Instructions",
+      "valueSyntax": "node-template",
       "placeholder": "Describe what the AI should do. Insert data from a previous step with the {} button.",
       "defaultValue": "",
       "helpText": "If left blank, the connected input data is used directly."
@@ -65,6 +66,7 @@
       "label": "System instructions",
       "group": "Model",
       "advanced": true,
+      "valueSyntax": "node-template",
       "placeholder": "Optional role, tone, or rules for the AI.",
       "defaultValue": ""
     }

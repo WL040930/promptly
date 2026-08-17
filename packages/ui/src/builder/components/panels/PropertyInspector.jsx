@@ -199,10 +199,10 @@ const PropertyInspector = ({ activeNode, onUpdateNode, onTestWorkflow, nodes = [
         }
         if (input.type === 'node-select') return <NodeSelectInput value={value} onChange={onChange} nodes={input.scope === 'all' ? nodes : upstreamNodes} currentNodeId={activeNode.id} placeholder={input.placeholder}/>;
         if (input.type === 'cron') return <CronInput value={value} onChange={onChange}/>;
-        if (input.type === 'key-value') return <KeyValueInput value={value} onChange={onChange} keyPlaceholder={input.keyPlaceholder} valuePlaceholder={input.valuePlaceholder}/>;
-        if (input.type === 'string-list') return <StringListInput value={value} onChange={onChange} placeholder={input.placeholder} suggestions={input.suggestions || []}/>;
-        if (input.type === 'data-grid') return <DataGridInput value={value} onChange={onChange} availableVars={availableVars}/>;
-        if (input.type === 'object' || input.type === 'json') return <JsonInput value={value} onChange={onChange} placeholder={input.placeholder} rows={input.rows}/>;
+        if (input.type === 'key-value') return <KeyValueInput value={value} onChange={onChange} keyPlaceholder={input.keyPlaceholder} valuePlaceholder={input.valuePlaceholder} availableVars={availableVars} valueSyntax={input.valueSyntax}/>;
+        if (input.type === 'string-list') return <StringListInput value={value} onChange={onChange} placeholder={input.placeholder} suggestions={input.suggestions || []} availableVars={availableVars} valueSyntax={input.valueSyntax}/>;
+        if (input.type === 'data-grid') return <DataGridInput value={value} onChange={onChange} availableVars={availableVars} valueSyntax={input.valueSyntax}/>;
+        if (input.type === 'object' || input.type === 'json') return <JsonInput value={value} onChange={onChange} placeholder={input.placeholder} rows={input.rows} availableVars={availableVars} valueSyntax={input.valueSyntax}/>;
         if (input.type === 'secret') return <SecretInput value={value} onChange={onChange} placeholder={input.placeholder}/>;
 
         if (input.type === 'select') {
@@ -234,7 +234,7 @@ const PropertyInspector = ({ activeNode, onUpdateNode, onTestWorkflow, nodes = [
         }
 
         if (input.type === 'textarea' || input.type === 'text') {
-            return <VariableInput value={workflowTextFieldValue(value)} onChange={onChange} placeholder={input.placeholder} multiline={input.type === 'textarea'} rows={input.rows || (input.type === 'textarea' ? 4 : undefined)} availableVars={availableVars}/>;
+            return <VariableInput value={workflowTextFieldValue(value)} onChange={onChange} placeholder={input.placeholder} multiline={input.type === 'textarea'} rows={input.rows || (input.type === 'textarea' ? 4 : undefined)} availableVars={availableVars} valueSyntax={input.valueSyntax}/>;
         }
 
         return <input type={input.type === 'number' ? 'number' : 'text'} value={value} min={input.min} max={input.max} step={input.step} onChange={onChange} placeholder={input.placeholder} className={inputClassName}/>;

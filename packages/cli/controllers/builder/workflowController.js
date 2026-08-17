@@ -9,7 +9,7 @@ import SchedulerService from '../../services/scheduler/schedulerService.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { validateWorkflow } from '../../services/engine/workflowValidator.js';
 import { reconcileWorkflow, removeWorkflow } from '../../services/triggers/triggerRuntime.js';
-import { saveAutomationDraft, publishAutomation, pauseAutomation } from '../../services/automations/automationService.js';
+import { normalizeWorkflowForWrite, saveAutomationDraft, publishAutomation, pauseAutomation } from '../../services/automations/automationService.js';
 import { deactivateWorkflowTriggerBindings } from '../../services/triggers/workflowTriggerBindingService.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 import { invalidateDashboardMetrics } from '../dashboard/dashboardController.js';
@@ -197,10 +197,11 @@ export const getWorkflow = asyncHandler(async (req, res) => {
 
 export const createWorkflow = asyncHandler(async (req, res) => {
     const { name, description, status, lifecycleStatus, icon, iconColor, iconBg, nodes = [], edges = [] } = req.body;
-    const validationResponse = workflowValidationResponse(res, { nodes, edges, isActive: false });
+    const normalized = await normalizeWorkflowForWrite({ nodes, edges, userId: req.user.id });
+    const validationResponse = workflowValidationResponse(res, { nodes: normalized.nodes, edges, isActive: false });
     if (validationResponse) return validationResponse;
     const workflow = await Workflow.create({
-        name: String(name || '').trim() || DEFAULT_AUTOMATION_NAME, description, isActive: false, status: status || lifecycleStatus || 'Draft', icon, iconColor, iconBg, nodes, edges, revision: 1,
+        name: String(name || '').trim() || DEFAULT_AUTOMATION_NAME, description, isActive: false, status: status || lifecycleStatus || 'Draft', icon, iconColor, iconBg, nodes: normalized.nodes, edges, revision: 1,
         userId: req.user.id
     });
     res.status(201).json({ ...workflow.toJSON(), release: await releaseSummary(workflow) });
@@ -231,6 +232,18 @@ export const updateWorkflow = asyncHandler(async (req, res) => {
             summary
         });
         workflow = saved.automation;
+    } else {
+        // Metadata edits still persist the workflow record. Normalize a
+        // historical graph before that write so an old raw reference cannot
+        // survive an otherwise unrelated save.
+        const normalized = await normalizeWorkflowForWrite({
+            nodes: nextNodes,
+            edges: nextEdges,
+            userId: req.user.id
+        });
+        if (JSON.stringify(normalized.nodes) !== JSON.stringify(workflow.nodes || [])) {
+            await workflow.update({ nodes: normalized.nodes });
+        }
     }
 
     await workflow.update({

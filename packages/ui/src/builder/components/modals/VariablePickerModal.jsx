@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { WORKFLOW_MODAL_LAYERS } from '../../modalLayers.js';
+import { descriptorFromVariable } from '../../utils/workflowReferenceInput.js';
 
 gsap.registerPlugin(useGSAP);
 
@@ -152,12 +153,18 @@ export default function VariablePickerModal({ isOpen, onClose, onSelect, availab
     if (!customPathTarget) return;
     const cleanPath = customPath.trim();
     if (!/^[\w-]+(\.[\w-]+)*$/.test(cleanPath)) return;
-    onSelect(`${customPathTarget.runtimePath || customPathTarget.path}.${cleanPath}`);
+    const descriptor = descriptorFromVariable(customPathTarget);
+    if (!descriptor) return;
+    onSelect({
+      ...descriptor,
+      path: [...descriptor.path, ...cleanPath.split('.')],
+      runtimePath: `${descriptor.runtimePath}.${cleanPath}`
+    });
     requestClose();
   };
 
   const handleSelect = (variable) => {
-    onSelect(variable?.runtimePath || variable?.path || variable);
+    onSelect(descriptorFromVariable(variable) || variable);
     requestClose();
   };
 
@@ -468,7 +475,7 @@ export default function VariablePickerModal({ isOpen, onClose, onSelect, availab
                               <span className="flex-1 min-w-0 text-sm font-bold text-slate-700 truncate group-hover:text-indigo-700">
                                 Use whole object
                               </span>
-                              <span className="text-xs text-slate-400 truncate font-mono bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{`{{${v.path}}}`}</span>
+                              <span className="text-xs text-slate-400 truncate font-mono bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">Insert the whole value</span>
                             </button>
 
                             {canUseCustomPath(v) && (

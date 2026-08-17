@@ -46,8 +46,9 @@
       "name": "filters",
       "type": "key-value",
       "label": "Find records where",
+      "valueSyntax": "workflow-expression",
       "keyPlaceholder": "Field",
-      "valuePlaceholder": "Value",
+      "valuePlaceholder": "Value or insert data from a previous step with {}",
       "placeholder": "Add a field to match",
       "defaultValue": {}
     },
@@ -55,8 +56,9 @@
       "name": "data",
       "type": "key-value",
       "label": "Fields to write",
+      "valueSyntax": "workflow-expression",
       "keyPlaceholder": "Field",
-      "valuePlaceholder": "New value",
+      "valuePlaceholder": "New value or insert data from a previous step with {}",
       "placeholder": "Add fields to write",
       "defaultValue": {},
       "showWhen": { "field": "operation", "in": ["insert", "update"] },
@@ -74,6 +76,7 @@
       "name": "orderBy",
       "type": "text",
       "label": "Order Field",
+      "valueSyntax": "workflow-expression",
       "defaultValue": "updatedAt"
     },
     {

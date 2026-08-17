@@ -20,7 +20,8 @@
       "name": "template",
       "type": "textarea",
       "label": "Template (Text mode)",
-      "placeholder": "Hello {{nodeId.name}}, your AI response is:\n\n{{aiNode.response}}",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "Hello [Name], your AI response is:\n\n[Response] — insert data from a previous step with {}",
       "defaultValue": "",
       "showWhen": { "field": "mode", "equals": "template" },
       "requiredWhen": { "field": "mode", "equals": "template" }
@@ -29,7 +30,8 @@
       "name": "jsonTemplate",
       "type": "json",
       "label": "JSON Template (JSON mode)",
-      "placeholder": "{\n  \"userId\": \"{{trigger.userId}}\",\n  \"reply\": \"{{aiNode.response}}\",\n  \"status\": \"success\"\n}",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "{\n  \"userId\": \"insert data from a previous step with {}\",\n  \"reply\": \"insert data from a previous step with {}\",\n  \"status\": \"success\"\n}",
       "defaultValue": {},
       "showWhen": { "field": "mode", "equals": "json" },
       "requiredWhen": { "field": "mode", "equals": "json" }

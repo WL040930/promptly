@@ -5,7 +5,8 @@
       "type": "text",
       "label": "URL",
       "required": true,
-      "placeholder": "https://api.example.com/endpoint or {{nodeId.apiUrl}}",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "https://api.example.com/endpoint or insert data from a previous step with {}",
       "defaultValue": ""
     },
     {
@@ -25,9 +26,10 @@
       "name": "headers",
       "type": "key-value",
       "label": "Request headers",
+      "valueSyntax": "workflow-expression",
       "keyPlaceholder": "Header name",
       "valuePlaceholder": "Header value",
-      "placeholder": "{ \"Content-Type\": \"application/json\", \"Authorization\": \"Bearer {{nodeId.token}}\" }",
+      "placeholder": "{ \"Content-Type\": \"application/json\", \"Authorization\": \"Bearer [Token]\" } or insert data from a previous step with {}",
       "defaultValue": {},
       "group": "Request"
     },
@@ -35,7 +37,8 @@
       "name": "body",
       "type": "json",
       "label": "Request body",
-      "placeholder": "{ \"key\": \"{{nodeId.value}}\" }",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "{ \"key\": \"insert data from a previous step with {}\" }",
       "defaultValue": {},
       "group": "Request",
       "showWhen": { "field": "method", "notIn": ["GET", "HEAD"] }
@@ -57,7 +60,8 @@
       "type": "text",
       "type": "secret",
       "label": "Auth token or API key",
-      "placeholder": "Paste token or use {{nodeId.token}}",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "Paste a token or insert data from a previous step with {}",
       "defaultValue": "",
       "showWhen": { "field": "authentication", "notEquals": "none" },
       "requiredWhen": { "field": "authentication", "notEquals": "none" }

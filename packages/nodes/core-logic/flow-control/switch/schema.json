@@ -10,13 +10,15 @@
       "name": "valueToTest",
       "type": "text",
       "label": "Value to Test",
+      "valueSyntax": "workflow-expression",
       "defaultValue": ""
     },
     {
       "name": "cases",
       "type": "json",
       "label": "Routes",
-      "placeholder": "[{\"value\":\"Online\",\"handle\":\"branchA\"}]",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "[{\"value\":\"Online\",\"handle\":\"branchA\"}] or insert data from a previous step with {}",
       "defaultValue": [],
       "helpText": "Use branchA or branchB for up to two exact-match routes. Unmatched values use Default."
     }

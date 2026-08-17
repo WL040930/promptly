@@ -29,7 +29,8 @@
       "type": "text",
       "label": "To (recipient email)",
       "required": true,
-      "placeholder": "user@example.com or {{nodeId.email}}",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "user@example.com or insert data from a previous step with {}",
       "defaultValue": ""
     },
     {
@@ -37,7 +38,8 @@
       "type": "text",
       "label": "Subject",
       "required": true,
-      "placeholder": "Hello {{nodeId.name}}, your order is ready",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "Hello [Name], your order is ready — insert data from a previous step with {}",
       "defaultValue": ""
     },
     {
@@ -45,31 +47,36 @@
       "type": "textarea",
       "label": "Email Body",
       "required": true,
-      "placeholder": "Hi {{nodeId.name}},\n\nYour order #{{nodeId.orderId}} has shipped.\n\nBest regards",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "Hi [Name],\n\nYour order has shipped.\n\nBest regards — insert data from a previous step with {}",
       "defaultValue": ""
     },
     {
       "name": "htmlBody",
       "type": "textarea",
       "label": "HTML Body (optional)",
+      "valueSyntax": "workflow-expression",
       "defaultValue": ""
     },
     {
       "name": "cc",
       "type": "text",
       "label": "CC (comma-separated)",
+      "valueSyntax": "workflow-expression",
       "defaultValue": ""
     },
     {
       "name": "bcc",
       "type": "text",
       "label": "BCC (comma-separated)",
+      "valueSyntax": "workflow-expression",
       "defaultValue": ""
     },
     {
       "name": "replyTo",
       "type": "text",
       "label": "Reply-To (optional)",
+      "valueSyntax": "workflow-expression",
       "defaultValue": ""
     }
   ],

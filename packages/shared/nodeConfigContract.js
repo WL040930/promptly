@@ -1,3 +1,5 @@
+import { isWorkflowExpression } from './workflowExpressions.js';
+
 export const NODE_INPUT_TYPES = Object.freeze([
     'text',
     'textarea',
@@ -16,7 +18,38 @@ export const NODE_INPUT_TYPES = Object.freeze([
     'data-grid'
 ]);
 
+export const NODE_INPUT_VALUE_SYNTAXES = Object.freeze([
+    'workflow-expression',
+    'node-template',
+    'none'
+]);
+
 const isPlainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const reservedExpressionObject = value => isPlainObject(value)
+    && ['$expr', '$binding', '$template'].some(key => Object.hasOwn(value, key));
+
+const valueSyntaxIssue = (input, value) => {
+    // Unannotated inputs predate this contract. Keep them compatible until a
+    // node schema explicitly opts into one of the three value syntaxes.
+    if (!input.valueSyntax) return null;
+    const walk = current => {
+        if (reservedExpressionObject(current)) {
+            if (!isWorkflowExpression(current) || input.valueSyntax !== 'workflow-expression') return true;
+            return false;
+        }
+        if (Array.isArray(current)) return current.some(walk);
+        if (isPlainObject(current)) return Object.values(current).some(walk);
+        return false;
+    };
+    if (!walk(value)) return null;
+    const syntax = input.valueSyntax;
+    return issue(
+        'INVALID_VALUE_SYNTAX',
+        input.name,
+        `${input.label || input.name} contains a workflow expression that is not allowed for value syntax '${syntax}'.`
+    );
+};
 
 export const isEmptyConfigValue = value => (
     value === undefined
@@ -130,7 +163,10 @@ const validateStructuredInput = (input, value) => {
     if (['object', 'key-value'].includes(input.type) && !isPlainObject(structured)) {
         return issue('INVALID_OBJECT', input.name, `${input.label || input.name} must be an object.`);
     }
-    if (input.type === 'string-list' && (!Array.isArray(structured) || structured.some(item => typeof item !== 'string'))) {
+    if (input.type === 'string-list' && (!Array.isArray(structured) || structured.some(item => (
+        typeof item !== 'string'
+        && !(input.valueSyntax === 'workflow-expression' && isWorkflowExpression(item))
+    )))) {
         return issue('INVALID_STRING_LIST', input.name, `${input.label || input.name} must be a list of text values.`);
     }
     if (input.type === 'data-grid' && (!Array.isArray(structured) || structured.some(row => !Array.isArray(row)))) {
@@ -155,6 +191,9 @@ export const validateNodeConfig = ({ schema = {}, config = {}, mode = 'draft' } 
             continue;
         }
         if (isEmptyConfigValue(value)) continue;
+
+        const syntaxIssue = valueSyntaxIssue(input, value);
+        if (syntaxIssue) issues.push(syntaxIssue);
 
         if (input.type === 'number') {
             const numeric = Number(value);

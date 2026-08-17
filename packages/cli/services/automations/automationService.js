@@ -1,8 +1,9 @@
 import sequelize from '../../db/index.js';
-import { Workflow, WorkflowVersion } from '../../models/index.js';
+import { Form, Workflow, WorkflowVersion } from '../../models/index.js';
 import { validateWorkflow } from '../engine/workflowValidator.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { deactivateWorkflowTriggerBindings, syncLiveTriggerBindings } from '../triggers/workflowTriggerBindingService.js';
+import { compileWorkflowBindings, normalizeWorkflowReferences, validateWorkflowExpressions } from '../../../shared/workflowExpressions.js';
 
 const revisionConflict = (expected, current) => {
     const error = new Error('This automation changed while you were editing it. Refresh and try again.');
@@ -29,6 +30,48 @@ const graphMatches = (leftNodes = [], leftEdges = [], rightNodes = [], rightEdge
     && JSON.stringify(leftEdges || []) === JSON.stringify(rightEdges || [])
 );
 
+const schemaForNode = node => NodeRegistry.getDefinition?.(node?.type, node?.subType)?.configSchema || node?.schema || {};
+
+const formForNodes = async ({ nodes = [], userId, transaction }) => {
+    const formId = (nodes || []).find(node => node?.subType === 'form-submission')?.config?.formId;
+    if (!formId) return null;
+    return Form.findOne({ where: { id: formId, userId }, transaction });
+};
+
+/**
+ * Normalize every user/API workflow write at the persistence boundary. This
+ * keeps old workflows readable while guaranteeing that the next successful
+ * save cannot retain a raw workflow reference in a workflow-expression field.
+ */
+export const normalizeWorkflowForWrite = async ({ nodes = [], edges = [], userId, transaction = null } = {}) => {
+    const form = await formForNodes({ nodes, userId, transaction });
+    const formSchema = form?.toJSON?.() || null;
+    const compiled = compileWorkflowBindings({ nodes, formSchema });
+    const normalized = normalizeWorkflowReferences({
+        nodes: compiled.nodes,
+        edges,
+        formSchema,
+        schemaForNode,
+        rejectLegacy: false
+    });
+    const issues = [
+        ...compiled.issues,
+        ...normalized.issues,
+        ...validateWorkflowExpressions({ nodes: normalized.nodes, edges, formSchema })
+    ];
+    if (issues.length > 0) {
+        const error = new Error([...new Set(issues.map(item => item.message).filter(Boolean))].join(' '));
+        error.code = 'AUTOMATION_WORKFLOW_REFERENCE_INVALID';
+        error.status = 409;
+        error.issues = issues;
+        throw error;
+    }
+    return {
+        nodes: normalized.nodes,
+        repairs: [...compiled.repairs, ...normalized.repairs]
+    };
+};
+
 export const saveAutomationDraft = async ({ automationId, userId, nodes, edges, expectedRevision, source = 'visual', summary = null, transaction: externalTransaction = null }) => {
     const save = async transaction => {
         const automation = await Workflow.findOne({
@@ -46,11 +89,12 @@ export const saveAutomationDraft = async ({ automationId, userId, nodes, edges, 
             throw revisionConflict(expectedRevision, automation.revision);
         }
 
-        validateGraph({ nodes, edges, isActive: false });
+        const normalized = await normalizeWorkflowForWrite({ nodes, edges, userId, transaction });
+        validateGraph({ nodes: normalized.nodes, edges, isActive: false });
         // Graph edits update only the working draft. Publishing is the sole
         // operation that creates a release in version history.
         const nextRevision = Number(automation.revision || 0) + 1;
-        await automation.update({ nodes, edges, revision: nextRevision }, { transaction });
+        await automation.update({ nodes: normalized.nodes, edges, revision: nextRevision }, { transaction });
         return { automation, version: null };
     };
     return externalTransaction ? save(externalTransaction) : sequelize.transaction(save);
@@ -64,22 +108,37 @@ export const publishAutomation = async ({ automationId, userId }) => sequelize.t
         throw error;
     }
 
+    // Publishing is also a workflow write. Normalize a historical draft before
+    // it can become a new immutable release, and fail closed if its references
+    // cannot be repaired from the current graph/form snapshot.
+    const normalized = await normalizeWorkflowForWrite({
+        nodes: automation.nodes || [],
+        edges: automation.edges || [],
+        userId,
+        transaction
+    });
+    if (JSON.stringify(normalized.nodes) !== JSON.stringify(automation.nodes || [])) {
+        await automation.update({ nodes: normalized.nodes }, { transaction });
+    }
+    const releaseNodes = normalized.nodes;
+    const releaseEdges = automation.edges || [];
+
     // A release is the only immutable snapshot created by the normal product
     // flow. Draft edits are autosaved, tested independently, and never need a
     // separate "save version" ceremony before they can be released.
-    validateGraph({ nodes: automation.nodes || [], edges: automation.edges || [], isActive: true });
+    validateGraph({ nodes: releaseNodes, edges: releaseEdges, isActive: true });
     const published = automation.publishedRevisionId
         ? await WorkflowVersion.findOne({ where: { id: automation.publishedRevisionId, workflowId: automation.id }, transaction })
         : null;
     let release = published;
-    if (!published || !graphMatches(automation.nodes, automation.edges, published.nodes, published.edges)) {
+    if (!published || !graphMatches(releaseNodes, releaseEdges, published.nodes, published.edges)) {
         const latest = await WorkflowVersion.findOne({ where: { workflowId: automation.id }, order: [['versionNumber', 'DESC']], transaction });
         release = await WorkflowVersion.create({
             workflowId: automation.id,
             versionNumber: Number(latest?.versionNumber || 0) + 1,
             baseRevisionId: automation.publishedRevisionId || null,
-            nodes: automation.nodes || [],
-            edges: automation.edges || [],
+            nodes: releaseNodes,
+            edges: releaseEdges,
             source: 'release',
             summary: 'Published release'
         }, { transaction });

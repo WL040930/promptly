@@ -18,7 +18,8 @@
       "name": "fallbackValue",
       "type": "textarea",
       "label": "Fallback Value (optional)",
-      "placeholder": "Value to output if an error is caught — use {{variables}} or literal text",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "Value to output if an error is caught — insert data from a previous step with {} or use literal text",
       "defaultValue": ""
     }
   ],

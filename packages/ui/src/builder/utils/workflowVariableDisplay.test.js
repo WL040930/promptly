@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { describeWorkflowVariable, splitWorkflowVariableTokens } from './workflowVariableDisplay.js';
 import { getUpstreamOutputs } from './getUpstreamOutputs.js';
+import { descriptorFromVariable, normalizeEditorWorkflowValue } from './workflowReferenceInput.js';
 
 const formNode = {
     id: 'node_form_1',
@@ -48,4 +49,50 @@ test('variable picker keeps a readable path but inserts an unambiguous runtime p
 
     assert.equal(field.path, 'Promptly Form.fields.f_email');
     assert.equal(field.runtimePath, 'node_form_1.fields.f_email');
+});
+
+test('editor picker descriptors become canonical references instead of raw tokens', () => {
+    const availableVars = [{
+        path: 'Promptly Form.fields.f_email',
+        runtimePath: 'node_form_1.fields.f_email',
+        nodeId: 'node_form_1',
+        label: 'Email address'
+    }];
+    assert.deepEqual(descriptorFromVariable(availableVars[0]), {
+        nodeId: 'node_form_1',
+        path: ['fields', 'f_email'],
+        runtimePath: 'node_form_1.fields.f_email'
+    });
+    const result = normalizeEditorWorkflowValue({
+        value: 'Hi {{node_form_1.fields.f_email}}',
+        availableVars,
+        path: 'config.body'
+    });
+
+    assert.deepEqual(result.issues, []);
+    assert.equal(result.value.$expr, 'template');
+    assert.equal(result.value.parts[1].reference.nodeId, 'node_form_1');
+});
+
+test('editor keeps the last valid value when a manually typed reference is unknown', () => {
+    const result = normalizeEditorWorkflowValue({
+        value: 'Hi {{missing_step.email}}',
+        availableVars: [],
+        path: 'config.body'
+    });
+
+    assert.equal(result.issues[0].code, 'WORKFLOW_REFERENCE_SOURCE_UNKNOWN');
+    assert.equal(result.value, 'Hi {{missing_step.email}}');
+});
+
+test('editor rejects an ambiguous manually typed step title', () => {
+    const result = normalizeEditorWorkflowValue({
+        value: '{{Notify.email}}',
+        availableVars: [
+            { nodeId: 'email_1', nodeTitle: 'Notify', path: 'Notify.email', runtimePath: 'email_1.email' },
+            { nodeId: 'email_2', nodeTitle: 'Notify', path: 'Notify.email', runtimePath: 'email_2.email' }
+        ]
+    });
+
+    assert.equal(result.issues[0].code, 'WORKFLOW_REFERENCE_SOURCE_AMBIGUOUS');
 });

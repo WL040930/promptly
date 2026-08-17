@@ -19,6 +19,7 @@ import { supersedePendingChatFormProposals } from '../proposalLifecycle.js';
 import { applyFormPatches } from '../ai/form/domain/formPatchEngine.js';
 import { validateFormSchema } from '../ai/form/domain/formSchemaValidator.js';
 import { validateWorkflow } from '../engine/workflowValidator.js';
+import { normalizeWorkflowForWrite } from '../automations/automationService.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 import { resolveAssistantNavigation } from '../../../shared/assistantNavigation.js';
 import { clearChatSessionState, replaceChatSessionState } from './chatTurnLifecycle.js';
@@ -285,9 +286,14 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
             if (workflow && proposal.baseWorkflowRevision === undefined && proposal.baseWorkflowUpdatedAt) {
                 ensureFormRevision(workflow, proposal.baseWorkflowUpdatedAt);
             }
-            const nodes = Array.isArray(proposal.nodes) ? proposal.nodes : [];
-            const edges = Array.isArray(proposal.edges) ? proposal.edges : [];
-            const validation = validateWorkflow({ nodes, edges, isActive: false, registry: NodeRegistry });
+            const nodes = proposal.nodes === undefined
+                ? (workflow?.nodes || [])
+                : Array.isArray(proposal.nodes) ? proposal.nodes : [];
+            const edges = proposal.edges === undefined
+                ? (workflow?.edges || [])
+                : Array.isArray(proposal.edges) ? proposal.edges : [];
+            const normalized = await normalizeWorkflowForWrite({ nodes, edges, userId, transaction });
+            const validation = validateWorkflow({ nodes: normalized.nodes, edges, isActive: false, registry: NodeRegistry });
             if (!validation.valid) {
                 const error = new Error('The workflow proposal failed validation.');
                 error.code = 'WORKFLOW_PROPOSAL_INVALID';
@@ -301,7 +307,7 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
                 isActive: false,
                 iconColor: 'text-indigo-600',
                 iconBg: 'bg-indigo-100',
-                nodes,
+                nodes: normalized.nodes,
                 edges,
                 revision: 1,
                 userId
@@ -309,7 +315,7 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
             const nextRevision = Number(saved.revision || 0) + (workflow ? 1 : 0);
             if (workflow) {
                 // Existing workflow edits remain in the working draft until published.
-                await saved.update({ nodes, edges, revision: nextRevision }, { transaction });
+                await saved.update({ nodes: normalized.nodes, edges, revision: nextRevision }, { transaction });
             }
             result = { workflowId: saved.id, action: workflow ? 'edit_workflow' : 'create_workflow' };
         } else {

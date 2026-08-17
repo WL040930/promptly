@@ -47,7 +47,8 @@
       "name": "values",
       "type": "data-grid",
       "label": "Rows to write",
-      "placeholder": "Add values row by row",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "Add values row by row, or insert data from a previous step with {}",
       "defaultValue": [],
       "showWhen": { "field": "operation", "in": ["append", "update"] },
       "requiredWhen": { "field": "operation", "in": ["append", "update"] }

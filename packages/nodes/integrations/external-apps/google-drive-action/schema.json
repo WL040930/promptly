@@ -5,11 +5,11 @@
       { "label": "Download file to Promptly", "value": "download" },
       { "label": "Upload Promptly asset", "value": "upload" }
     ]},
-    { "name": "query", "type": "text", "label": "Search text", "placeholder": "invoice March", "showWhen": { "field": "operation", "equals": "search" }, "requiredWhen": { "field": "operation", "equals": "search" } },
+    { "name": "query", "type": "text", "label": "Search text", "valueSyntax": "workflow-expression", "placeholder": "invoice March or insert data from a previous step with {}", "showWhen": { "field": "operation", "equals": "search" }, "requiredWhen": { "field": "operation", "equals": "search" } },
     { "name": "fileId", "type": "resource-select", "resource": "google-drive-files", "label": "Drive file", "showWhen": { "field": "operation", "in": ["download"] }, "requiredWhen": { "field": "operation", "equals": "download" } },
     { "name": "assetId", "type": "resource-select", "resource": "workflow-assets", "label": "Promptly asset", "showWhen": { "field": "operation", "equals": "upload" }, "requiredWhen": { "field": "operation", "equals": "upload" } },
-    { "name": "fileName", "type": "text", "label": "Uploaded filename", "defaultValue": "promptly-export.txt", "showWhen": { "field": "operation", "equals": "upload" } },
-    { "name": "folderId", "type": "text", "label": "Drive folder ID (optional)", "showWhen": { "field": "operation", "equals": "upload" } }
+    { "name": "fileName", "type": "text", "label": "Uploaded filename", "valueSyntax": "workflow-expression", "defaultValue": "promptly-export.txt", "showWhen": { "field": "operation", "equals": "upload" } },
+    { "name": "folderId", "type": "text", "label": "Drive folder ID (optional)", "valueSyntax": "workflow-expression", "showWhen": { "field": "operation", "equals": "upload" } }
   ],
   "outputs": [
     { "name": "outputData", "type": "object", "label": "Drive result", "isConnection": true },

@@ -85,6 +85,63 @@ const compactPlannerInput = input => {
     };
 };
 
+const sanitizeWorkerSchema = value => {
+    if (Array.isArray(value)) return value.map(item => sanitizeWorkerSchema(item));
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value)
+            .filter(([key]) => !['placeholder', 'keyPlaceholder', 'valuePlaceholder'].includes(key))
+            .map(([key, item]) => [key, sanitizeWorkerSchema(item)]));
+    }
+    if (typeof value === 'string') return value.replace(/\{\{[^{}]+\}\}|\$\{[^{}]+\}/g, 'workflow data');
+    return value;
+};
+
+const sanitizeWorkerWorkflowValue = value => {
+    if (typeof value === 'string') return value
+        .replace(/\{\{[^{}]+\}\}|\$\{[^{}]+\}/g, '[invalid workflow reference omitted]');
+    if (Array.isArray(value)) return value.map(item => sanitizeWorkerWorkflowValue(item));
+    if (value && typeof value === 'object') return Object.fromEntries(
+        Object.entries(value).map(([key, item]) => [key, sanitizeWorkerWorkflowValue(item)])
+    );
+    return value;
+};
+
+const sanitizeWorkerWorkflowView = (workflow, specs = []) => {
+    const editView = buildWorkflowEditView(workflow);
+    const schemas = new Map((specs || []).map(spec => [
+        spec?.nodeKey || `${spec?.type || ''}:${spec?.subType || ''}`,
+        spec?.schema || {}
+    ]));
+    return {
+        ...editView,
+        nodes: editView.nodes.map(node => {
+            const schema = schemas.get(node.nodeKey) || {};
+            const workflowInputs = new Set((schema.inputs || [])
+                .filter(input => input?.valueSyntax === 'workflow-expression')
+                .map(input => input.name));
+            return {
+                ...node,
+                config: Object.fromEntries(Object.entries(node.config || {}).map(([name, value]) => [
+                    name,
+                    workflowInputs.has(name) ? sanitizeWorkerWorkflowValue(value) : value
+                ]))
+            };
+        })
+    };
+};
+
+const sanitizeWorkerResponse = value => {
+    if (typeof value === 'string') {
+        const sanitized = value.replace(/\{\{[^{}]+\}\}|\$\{[^{}]+\}/g, '[invalid workflow reference omitted]');
+        return sanitized;
+    }
+    if (Array.isArray(value)) return value.map(item => sanitizeWorkerResponse(item));
+    if (value && typeof value === 'object') return Object.fromEntries(
+        Object.entries(value).map(([key, item]) => [key, sanitizeWorkerResponse(item)])
+    );
+    return value;
+};
+
 // The planner needs the full set of possible node keys, but only the inputs
 // that constrain safe routing or resource selection. The worker receives the
 // complete authoritative schema after node selection.
@@ -229,7 +286,7 @@ export const buildWorkflowWorkerContext = ({
     priorResponse = null,
     repairIssues = []
 }) => {
-    const editView = buildWorkflowEditView(workflow);
+    const editView = sanitizeWorkerWorkflowView(workflow, specs);
     return [
     'Current Workflow Edit View:',
     JSON.stringify(editView),
@@ -246,10 +303,14 @@ export const buildWorkflowWorkerContext = ({
         nodeKey: spec.nodeKey,
         type: spec.type,
         subType: spec.subType,
-        title: spec.title,
-        description: spec.description,
-        schema: spec.schema
+        title: sanitizeWorkerSchema(spec.title),
+        description: sanitizeWorkerSchema(spec.description),
+        schema: sanitizeWorkerSchema(spec.schema)
     }))),
+    '',
+    'Workflow Reference Contract:',
+    'Use only structured workflow data values: $binding with a server-issued form binding key, or $template containing literal text and $binding parts. Do not write legacy double-brace references or ${...}/steps.* interpolation syntax.',
+    'triggerData, inputData, and event are connection handles, not workflow step IDs. Form values must use the attached fieldBindings through $binding or $template; never guess, copy, or remap a handle to a form step.',
     '',
     'Planner Requirements:',
     JSON.stringify(requirements || []),
@@ -277,7 +338,9 @@ export const buildWorkflowWorkerContext = ({
     ...(priorResponse ? [
         '',
         'Previous Invalid Operations:',
-        clamp(typeof priorResponse === 'string' ? priorResponse : JSON.stringify(priorResponse)),
+        clamp(typeof priorResponse === 'string'
+            ? sanitizeWorkerResponse(priorResponse)
+            : JSON.stringify(sanitizeWorkerResponse(priorResponse))),
         'Repair Issues:',
         clamp(repairIssues.map(describeRepairIssue).join('\n'), 6000)
     ] : [])

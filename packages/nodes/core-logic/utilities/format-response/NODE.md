@@ -17,11 +17,14 @@ ui:
 Place this at the end of a workflow to cleanly define what the workflow returns — a formatted message, a structured JSON, or an HTML email body. It prevents callers from receiving raw internal execution state.
 
 ## Modes
-- **Template** — Write a text template using `{{variables}}` from upstream nodes. Output is a string.
-- **JSON Builder** — Define a JSON object with keys and values referencing upstream data. Output is an object.
+- **Template** — Compose literal text with canonical `$expr: "reference"` parts from upstream nodes. Output is a string.
+- **JSON Builder** — Define a JSON object with literal values and canonical expressions referencing upstream data. Output is an object.
 
 ## Example
 Combine an AI response and a user ID into a final JSON:
 ```json
-{ "userId": "{{trigger.userId}}", "reply": "{{ai-task-node.response}}" }
+{
+  "userId": { "$expr": "reference", "v": 1, "nodeId": "form-node-id", "path": ["fields", "user_id"] },
+  "reply": { "$expr": "reference", "v": 1, "nodeId": "ai-task-node-id", "path": ["response"] }
+}
 ```

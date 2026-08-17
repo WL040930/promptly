@@ -28,6 +28,7 @@ import {
     resolveFormResponseSheetDestination,
     validateFormResponseSheetDestination
 } from '../domain/formResponseSheetDestination.js';
+import { normalizeWorkflowReferences, validateWorkflowExpressions } from '../../../../../shared/workflowExpressions.js';
 import {
     buildWorkflowOutputRepairContext,
     buildWorkflowPlannerContext,
@@ -787,11 +788,29 @@ const applyAndValidate = async ({
             normalizedResources.issues
         );
     }
+    const canonicalReferences = normalizeWorkflowReferences({
+        nodes: normalizedResources.nodes,
+        edges: applied.edges,
+        formSchema: resolvedFormSchema,
+        schemasByNodeKey: specs,
+        rejectLegacy: true
+    });
+    const referenceIssues = [
+        ...canonicalReferences.issues,
+        ...validateWorkflowExpressions({ nodes: canonicalReferences.nodes, edges: applied.edges, formSchema: resolvedFormSchema })
+    ];
+    if (referenceIssues.length > 0) {
+        throw createPipelineError(
+            [...new Set(referenceIssues.map(item => item.message).filter(Boolean))].join('; '),
+            'WORKFLOW_AI_PROPOSAL_INVALID',
+            referenceIssues
+        );
+    }
     const compiled = compileWorkflowDraft({
         requiredCapabilities: capabilities,
         formSchema: resolvedFormSchema,
         respondentEmailFieldId: resolvedFormSchema?.respondentEmailFieldId || resolvedFormSchema?.settings?.respondentEmailFieldId || null,
-        nodes: normalizedResources.nodes,
+        nodes: canonicalReferences.nodes,
         edges: applied.edges
     });
     const destinationIssues = validateFormResponseSheetDestination({
@@ -1657,7 +1676,10 @@ export const generateWorkflowTurn = async ({
         }));
         const workerIssues = [
             ...operationNormalization.issues,
-            ...workflowOutputIssues({ call: workerCall, validate: validateWorkflowWorkerResult }),
+            ...workflowOutputIssues({
+                call: workerCall,
+                validate: result => validateWorkflowWorkerResult(result, { specs, workflow: currentWorkflow })
+            }),
             ...destinationIssues
         ];
         if (workerIssues.length > 0) {

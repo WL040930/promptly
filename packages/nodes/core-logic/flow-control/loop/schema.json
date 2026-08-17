@@ -10,6 +10,7 @@
       "name": "inputArray",
       "type": "text",
       "label": "Input Array (Variable)",
+      "valueSyntax": "workflow-expression",
       "defaultValue": ""
     }
   ],

@@ -11,7 +11,8 @@
       "type": "text",
       "label": "Log Message",
       "defaultValue": "Hello from the logger!",
-      "placeholder": "Enter text or {{variables}} to log"
+      "valueSyntax": "workflow-expression",
+      "placeholder": "Enter text or insert data from a previous step with {} to log"
     },
     {
       "name": "logLevel",

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { isWorkflowExpression } from '../../../../../shared/workflowExpressions.js';
 import { workflowPreviewDisplayText } from '../../utils/workflowPreviewValue.js';
+import { normalizeEditorWorkflowValue } from '../../utils/workflowReferenceInput.js';
 import VariableInput from './VariableInput.jsx';
 
 const fieldClassName = 'w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#776bf2] focus:ring-2 focus:ring-[#5b4ee8]/10';
@@ -19,7 +20,7 @@ const parseCell = value => {
     try { return JSON.parse(trimmed); } catch { return value; }
 };
 
-export function JsonInput({ value, onChange, placeholder, rows = 6 }) {
+export function JsonInput({ value, onChange, placeholder, rows = 6, availableVars = [], valueSyntax }) {
     const [text, setText] = useState(() => stringify(value));
     const [error, setError] = useState('');
     const [focused, setFocused] = useState(false);
@@ -36,7 +37,17 @@ export function JsonInput({ value, onChange, placeholder, rows = 6 }) {
             return;
         }
         try {
-            onChange?.(JSON.parse(next));
+            const parsed = JSON.parse(next);
+            if (valueSyntax === 'workflow-expression') {
+                const normalized = normalizeEditorWorkflowValue({ value: parsed, availableVars, path: 'value' });
+                if (normalized.issues.length > 0) {
+                    setError(normalized.issues[0].message);
+                    return;
+                }
+                onChange?.(normalized.value);
+            } else {
+                onChange?.(parsed);
+            }
             setError('');
         } catch {
             setError('Fix the JSON before this value can be saved.');
@@ -68,10 +79,13 @@ const objectRows = value => {
         try { current = JSON.parse(current); } catch { current = {}; }
     }
     const entries = current && typeof current === 'object' && !Array.isArray(current) ? Object.entries(current) : [];
-    return entries.map(([key, item]) => ({ key, value: typeof item === 'string' ? item : JSON.stringify(item) }));
+    return entries.map(([key, item]) => ({
+        key,
+        value: isWorkflowExpression(item) || typeof item === 'string' ? item : JSON.stringify(item ?? '')
+    }));
 };
 
-export function KeyValueInput({ value, onChange, keyPlaceholder = 'Field', valuePlaceholder = 'Value' }) {
+export function KeyValueInput({ value, onChange, keyPlaceholder = 'Field', valuePlaceholder = 'Value', availableVars = [], valueSyntax }) {
     const serialized = useMemo(() => JSON.stringify(value ?? {}), [value]);
     const [rows, setRows] = useState(() => objectRows(value));
 
@@ -92,7 +106,22 @@ export function KeyValueInput({ value, onChange, keyPlaceholder = 'Field', value
                 {rows.map((row, index) => (
                     <div key={index} className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)_36px] gap-2">
                         <input value={row.key} onChange={event => commit(rows.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} placeholder={keyPlaceholder} className={fieldClassName}/>
-                        <input value={row.value} onChange={event => commit(rows.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} placeholder={valuePlaceholder} className={fieldClassName}/>
+                        {['workflow-expression', 'node-template'].includes(valueSyntax) ? (
+                            <VariableInput
+                                value={row.value}
+                                onChange={nextValue => commit(rows.map((item, itemIndex) => itemIndex === index ? { ...item, value: nextValue } : item))}
+                                placeholder={valuePlaceholder}
+                                availableVars={availableVars}
+                                valueSyntax={valueSyntax}
+                            />
+                        ) : (
+                            <input
+                                value={typeof row.value === 'string' ? row.value : JSON.stringify(row.value ?? '')}
+                                onChange={event => commit(rows.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))}
+                                placeholder={valuePlaceholder}
+                                className={fieldClassName}
+                            />
+                        )}
                         <button type="button" aria-label={`Remove ${keyPlaceholder.toLowerCase()}`} onClick={() => commit(rows.filter((_, itemIndex) => itemIndex !== index))} className={iconButtonClassName}>×</button>
                     </div>
                 ))}
@@ -105,7 +134,7 @@ export function KeyValueInput({ value, onChange, keyPlaceholder = 'Field', value
 }
 
 const listValue = value => {
-    if (Array.isArray(value)) return value.map(String);
+    if (Array.isArray(value)) return value;
     if (typeof value === 'string') {
         try {
             const parsed = JSON.parse(value);
@@ -115,23 +144,35 @@ const listValue = value => {
     return [];
 };
 
-export function StringListInput({ value, onChange, placeholder = 'Type a value and press Enter', suggestions = [] }) {
+export function StringListInput({ value, onChange, placeholder = 'Type a value and press Enter', suggestions = [], availableVars = [], valueSyntax }) {
     const items = listValue(value);
     const [draft, setDraft] = useState('');
+    const [error, setError] = useState('');
     const add = raw => {
         const nextItem = String(raw || '').trim();
         if (!nextItem || items.includes(nextItem)) return;
-        onChange?.([...items, nextItem]);
+        let item = nextItem;
+        if (valueSyntax === 'workflow-expression') {
+            const normalized = normalizeEditorWorkflowValue({ value: nextItem, availableVars, path: 'value' });
+            if (normalized.issues.length > 0) {
+                setError(normalized.issues[0].message);
+                return;
+            }
+            item = normalized.value;
+        }
+        if (items.some(existing => JSON.stringify(existing) === JSON.stringify(item))) return;
+        onChange?.([...items, item]);
         setDraft('');
+        setError('');
     };
 
     return (
         <div className="rounded-xl border border-slate-200 bg-white p-2.5 focus-within:border-[#776bf2] focus-within:ring-2 focus-within:ring-[#5b4ee8]/10">
             <div className="mb-2 flex flex-wrap gap-1.5">
-                {items.map(item => (
-                    <span key={item} className="inline-flex items-center gap-1 rounded-full border border-[#dedbff] bg-[#f1efff] px-2 py-1 text-xs font-bold text-[#5143cc]">
-                        {item}
-                        <button type="button" onClick={() => onChange?.(items.filter(valueItem => valueItem !== item))} className="text-[#8178d8] hover:text-rose-600" aria-label={`Remove ${item}`}>×</button>
+                {items.map((item, index) => (
+                    <span key={`item-${index}`} className="inline-flex items-center gap-1 rounded-full border border-[#dedbff] bg-[#f1efff] px-2 py-1 text-xs font-bold text-[#5143cc]">
+                        {workflowPreviewDisplayText(item, { availableVars, compact: true })}
+                        <button type="button" onClick={() => onChange?.(items.filter((_, valueIndex) => valueIndex !== index))} className="text-[#8178d8] hover:text-rose-600" aria-label={`Remove ${workflowPreviewDisplayText(item, { availableVars, compact: true })}`}>×</button>
                     </span>
                 ))}
             </div>
@@ -146,8 +187,9 @@ export function StringListInput({ value, onChange, placeholder = 'Type a value a
                 }}
                 onBlur={() => add(draft)}
                 placeholder={placeholder}
-                className="w-full bg-transparent px-1 py-1 text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400"
+                className={`w-full bg-transparent px-1 py-1 text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400 ${error ? 'text-amber-800' : ''}`}
             />
+            {error && <p className="px-1 text-[11px] font-semibold leading-4 text-amber-700">{error}</p>}
             {suggestions.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1 border-t border-slate-100 pt-2">
                     {suggestions.filter(item => !items.includes(item)).map(item => (
@@ -170,15 +212,15 @@ const gridValue = value => {
     return current.map(row => [...row, ...Array(width - row.length).fill('')]);
 };
 
-const GridCellInput = ({ cell, rowIndex, columnIndex, grid, commit, availableVars }) => {
+const GridCellInput = ({ cell, rowIndex, columnIndex, grid, commit, availableVars, valueSyntax }) => {
     const update = nextValue => commit(grid.map((currentRow, currentRowIndex) => currentRowIndex === rowIndex
         ? currentRow.map((currentCell, currentColumnIndex) => currentColumnIndex === columnIndex ? nextValue : currentCell)
         : currentRow));
 
-    if (isWorkflowExpression(cell)) {
+    if (isWorkflowExpression(cell) || (valueSyntax === 'workflow-expression' && (typeof cell === 'string' || typeof cell === 'number' || cell === null || cell === undefined))) {
         return (
             <div className="min-w-0">
-                <VariableInput value={cell} onChange={update} availableVars={availableVars}/>
+                <VariableInput value={cell} onChange={update} availableVars={availableVars} valueSyntax={valueSyntax || 'workflow-expression'}/>
             </div>
         );
     }
@@ -194,7 +236,7 @@ const GridCellInput = ({ cell, rowIndex, columnIndex, grid, commit, availableVar
     );
 };
 
-export function DataGridInput({ value, onChange, availableVars = [] }) {
+export function DataGridInput({ value, onChange, availableVars = [], valueSyntax }) {
     const serialized = useMemo(() => JSON.stringify(value ?? []), [value]);
     const [grid, setGrid] = useState(() => gridValue(value));
     useEffect(() => setGrid(gridValue(value)), [serialized]);
@@ -227,6 +269,7 @@ export function DataGridInput({ value, onChange, availableVars = [] }) {
                                 grid={grid}
                                 commit={commit}
                                 availableVars={availableVars}
+                                valueSyntax={valueSyntax}
                             />
                         )),
                         <button key={`remove-${rowIndex}`} type="button" title="Remove row" onClick={() => commit(grid.length === 1 ? [Array(width).fill('')] : grid.filter((_, index) => index !== rowIndex))} className={iconButtonClassName}>×</button>

@@ -1,9 +1,11 @@
 import {
+    CONTROL_FLOW_NODE_KEYS,
     SEMANTIC_CONTROL_FLOW_NODE_KEYS,
     SWITCH_BRANCH_HANDLES,
     isLegacyControlFlowOperation,
     legacyOperationIssueForNodeKey
 } from './editCompiler/contracts.js';
+import { findUnsupportedWorkflowReferenceTokens } from '../../../../../shared/workflowExpressions.js';
 
 const MAX_TEXT = 4000;
 const MAX_REQUIREMENTS = 30;
@@ -16,6 +18,104 @@ const RESOURCE_CHANGE_TYPES = new Set(['create_google_spreadsheet']);
 
 const issue = (code, path, message) => ({ code, path, message });
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const RAW_WORKFLOW_REFERENCE_RE = /\{\{[^{}]+\}\}/g;
+
+const schemaByNodeKey = specs => new Map((specs || []).map(spec => [
+    spec?.nodeKey || `${spec?.type || ''}:${spec?.subType || ''}`,
+    spec?.schema || {}
+]));
+
+const nodeForRef = (workflow, nodeRef) => {
+    const index = Number(String(nodeRef || '').replace(/^n/, ''));
+    return Number.isInteger(index) && index > 0 ? workflow?.nodes?.[index - 1] || null : null;
+};
+
+const rawReferenceIssues = (value, path, issues) => {
+    if (typeof value === 'string') {
+        for (const match of value.matchAll(RAW_WORKFLOW_REFERENCE_RE)) {
+            issues.push(issue(
+                'WORKFLOW_REFERENCE_RAW_TOKEN',
+                path,
+                'Use a structured $binding or $template for workflow data instead of a legacy double-brace workflow reference.'
+            ));
+        }
+        for (const token of findUnsupportedWorkflowReferenceTokens(value)) {
+            issues.push(issue(
+                'WORKFLOW_REFERENCE_RAW_TOKEN',
+                path,
+                'Use a structured $binding or $template for workflow data instead of unsupported interpolation syntax.'
+            ));
+        }
+        return;
+    }
+    if (Array.isArray(value)) {
+        value.forEach((item, index) => rawReferenceIssues(item, `${path}[${index}]`, issues));
+        return;
+    }
+    if (isObject(value)) {
+        Object.entries(value).forEach(([key, item]) => rawReferenceIssues(item, `${path}.${key}`, issues));
+    }
+};
+
+const workflowReferenceIssuesInConfig = ({ config, path, schema, issues }) => {
+    const workflowInputs = new Set((schema?.inputs || [])
+        .filter(input => input?.valueSyntax === 'workflow-expression')
+        .map(input => input.name));
+    for (const [name, value] of Object.entries(config || {})) {
+        if (workflowInputs.has(name)) rawReferenceIssues(value, `${path}.${name}`, issues);
+    }
+};
+
+const rawWorkflowReferenceIssues = ({ operations = [], specs = [], workflow = null } = {}) => {
+    const schemas = schemaByNodeKey(specs);
+    const issues = [];
+    const inspectNode = (node, path, fallbackSchema = {}) => {
+        if (!isObject(node) || !isObject(node.config)) return;
+        const key = node.nodeKey || `${node.type || ''}:${node.subType || ''}`;
+        workflowReferenceIssuesInConfig({ config: node.config, path: `${path}.config`, schema: schemas.get(key) || fallbackSchema, issues });
+    };
+    const inspect = (value, path) => {
+        if (!isObject(value)) return;
+        if (isObject(value.config) && (value.nodeKey || value.ref)) inspectNode(value, path);
+        if (isObject(value.node) && (value.node.nodeKey || value.node.config)) inspectNode(value.node, `${path}.node`);
+        if (value.op === 'update_node' && isObject(value.updates?.config)) {
+            const existing = nodeForRef(workflow, value.nodeRef);
+            const key = existing?.nodeKey || `${existing?.type || ''}:${existing?.subType || ''}`;
+            workflowReferenceIssuesInConfig({ config: value.updates.config, path: `${path}.updates.config`, schema: schemas.get(key) || existing?.schema || {}, issues });
+        }
+        for (const [key, child] of Object.entries(value)) {
+            if (key === 'config' || key === 'updates' || key === 'node') continue;
+            if (isObject(child) || Array.isArray(child)) inspect(child, `${path}.${key}`);
+        }
+    };
+    const inspectSemanticConfig = (operation, path) => {
+        const definitions = [
+            ['condition', CONTROL_FLOW_NODE_KEYS.condition],
+            ['handler', CONTROL_FLOW_NODE_KEYS.catchError],
+            ['approval', CONTROL_FLOW_NODE_KEYS.approval],
+            ['merge', CONTROL_FLOW_NODE_KEYS.merge]
+        ];
+        definitions.forEach(([name, nodeKey]) => {
+            const definition = operation?.[name];
+            if (isObject(definition?.config)) {
+                inspectNode({ nodeKey, config: definition.config }, `${path}.${name}`, schemas.get(nodeKey) || {});
+            }
+        });
+        if (operation?.op === 'add_switch_routes') {
+            const config = {
+                valueToTest: operation.switch?.config?.valueToTest,
+                cases: (operation.cases || []).map(routeCase => routeCase?.value)
+            };
+            inspectNode({ nodeKey: CONTROL_FLOW_NODE_KEYS.switch, config }, `${path}.switch`, schemas.get(CONTROL_FLOW_NODE_KEYS.switch) || {});
+        }
+    };
+    operations.forEach((operation, index) => {
+        const path = `operations[${index}]`;
+        inspectSemanticConfig(operation, path);
+        inspect(operation, path);
+    });
+    return issues;
+};
 
 const textIssues = (value, path, { required = false, max = MAX_TEXT } = {}) => {
     if (value === undefined || value === null) return required ? [issue('REQUIRED', path, 'A value is required.')] : [];
@@ -490,12 +590,14 @@ export const validateWorkflowPlannerResult = result => {
     return issues;
 };
 
-export const validateWorkflowWorkerResult = result => {
+export const validateWorkflowWorkerResult = (result, { specs = [], workflow = null } = {}) => {
     if (!isObject(result)) return [issue('INVALID_WORKER_RESPONSE', '', 'Worker response must be an object.')];
     if (!Array.isArray(result.operations)) return [issue('INVALID_OPERATIONS', 'operations', 'Worker operations must be an array.')];
     if (result.operations.length === 0) return [issue('EMPTY_OPERATIONS', 'operations', 'An edit proposal must contain at least one operation.')];
     if (result.operations.length > MAX_OPERATIONS) return [issue('TOO_MANY_OPERATIONS', 'operations', `At most ${MAX_OPERATIONS} operations are allowed.`)];
-    return result.operations.flatMap((operation, index) => {
+    return [
+        ...rawWorkflowReferenceIssues({ operations: result.operations, specs, workflow }),
+        ...result.operations.flatMap((operation, index) => {
         const path = `operations[${index}]`;
         if (!isObject(operation) || typeof operation.op !== 'string' || !operation.op) {
             return [issue('INVALID_OPERATION', path, 'Every operation requires an op value.')];
@@ -522,7 +624,8 @@ export const validateWorkflowWorkerResult = result => {
         default:
             return [];
         }
-    });
+        })
+    ];
 };
 
 export const validateWorkflowVerifierResult = result => {

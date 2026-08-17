@@ -4,6 +4,7 @@ import { applyFormPatches } from '../ai/form/domain/formPatchEngine.js';
 import { validateQuestionCardinality } from '../ai/form/context/formContext.js';
 import { validateFormSchema } from '../ai/form/domain/formSchemaValidator.js';
 import { validateWorkflow } from '../engine/workflowValidator.js';
+import { normalizeWorkflowForWrite } from '../automations/automationService.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { reconcileWorkflow } from '../triggers/triggerRuntime.js';
 import { createApproval, getRunArtifacts, getRunForUser, serializeRun, updateArtifact } from './agentRunStore.js';
@@ -198,7 +199,8 @@ const applyWorkflowArtifact = async ({ artifact, userId, form, transaction }) =>
         if (node.subType === 'form-submission' && form && !node.config.formId) node.config.formId = form.id;
     });
     const edges = content.edges || [];
-    const validation = validateWorkflow({ nodes, edges, isActive: false, registry: NodeRegistry });
+    const normalized = await normalizeWorkflowForWrite({ nodes, edges, userId, transaction });
+    const validation = validateWorkflow({ nodes: normalized.nodes, edges, isActive: false, registry: NodeRegistry });
     if (!validation.valid) throw Object.assign(new Error('The workflow proposal failed validation.'), { code: 'AGENT_INVALID_PROPOSAL', issues: validation.issues });
 
     const workflow = source || await Workflow.create({
@@ -207,7 +209,7 @@ const applyWorkflowArtifact = async ({ artifact, userId, form, transaction }) =>
         isActive: false,
         iconColor: 'text-indigo-600',
         iconBg: 'bg-indigo-100',
-        nodes,
+        nodes: normalized.nodes,
         edges,
         revision: 1,
         userId
@@ -215,7 +217,7 @@ const applyWorkflowArtifact = async ({ artifact, userId, form, transaction }) =>
     const nextRevision = Number(workflow.revision || 0) + (source ? 1 : 0);
     if (source) {
         // Applying an AI proposal changes only the working draft.
-        await workflow.update({ nodes, edges, revision: nextRevision }, { transaction });
+        await workflow.update({ nodes: normalized.nodes, edges, revision: nextRevision }, { transaction });
     }
     return workflow;
 };

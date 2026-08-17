@@ -13,6 +13,7 @@ const compactInput = input => {
         label: input.label || input.name,
         type: input.type,
         required: input.required === true,
+        ...(input.valueSyntax ? { valueSyntax: input.valueSyntax } : {}),
         ...(input.defaultValue !== undefined ? { defaultValue: input.defaultValue } : {}),
         ...(input.resource ? { resource: input.resource } : {}),
         ...(input.resourceParams ? { resourceParams: input.resourceParams } : {}),

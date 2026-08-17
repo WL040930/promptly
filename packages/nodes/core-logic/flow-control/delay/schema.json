@@ -29,7 +29,8 @@
       "name": "resumeAt",
       "type": "text",
       "label": "Resume at",
-      "placeholder": "2026-12-31T09:00:00+08:00",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "2026-12-31T09:00:00+08:00 or insert data from a previous step with {}",
       "showWhen": { "field": "waitMode", "equals": "until" },
       "requiredWhen": { "field": "waitMode", "equals": "until" }
     },

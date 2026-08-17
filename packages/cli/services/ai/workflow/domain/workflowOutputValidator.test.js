@@ -205,6 +205,106 @@ test('worker validator accepts a valid operations array', () => {
     assert.deepEqual(issues, []);
 });
 
+test('worker validator rejects raw workflow tokens in workflow-expression inputs', () => {
+    const issues = validateWorkflowWorkerResult({
+        operations: [{
+            op: 'create_node',
+            node: {
+                ref: 'thank_you_email',
+                nodeKey: 'action:email',
+                config: { to: '{{triggerData.fields.f_email}}', body: 'Thanks' }
+            }
+        }]
+    }, {
+        specs: [{
+            nodeKey: 'action:email',
+            schema: {
+                inputs: [
+                    { name: 'to', valueSyntax: 'workflow-expression' },
+                    { name: 'body', valueSyntax: 'workflow-expression' }
+                ]
+            }
+        }]
+    });
+
+    assert.ok(issues.some(item => item.code === 'WORKFLOW_REFERENCE_RAW_TOKEN'));
+    assert.ok(issues.some(item => item.path.endsWith('.config.to')));
+});
+
+test('worker validator rejects unsupported ${steps...} interpolation in workflow-expression inputs', () => {
+    const issues = validateWorkflowWorkerResult({
+        operations: [{
+            op: 'create_node',
+            node: {
+                ref: 'thank_you_email',
+                nodeKey: 'action:email',
+                config: { to: '${steps.form_trigger.triggerData.f_email}', body: 'Thanks' }
+            }
+        }]
+    }, {
+        specs: [{
+            nodeKey: 'action:email',
+            schema: {
+                inputs: [
+                    { name: 'to', valueSyntax: 'workflow-expression' },
+                    { name: 'body', valueSyntax: 'workflow-expression' }
+                ]
+            }
+        }]
+    });
+
+    assert.ok(issues.some(item => item.code === 'WORKFLOW_REFERENCE_RAW_TOKEN'));
+    assert.ok(issues.some(item => item.path.endsWith('.config.to')));
+});
+
+test('worker validator accepts structured workflow bindings', () => {
+    const issues = validateWorkflowWorkerResult({
+        operations: [{
+            op: 'create_node',
+            node: {
+                ref: 'thank_you_email',
+                nodeKey: 'action:email',
+                config: { to: { $binding: 'form_field_1' }, body: { $template: ['Hi ', { $binding: 'form_field_2' }] } }
+            }
+        }]
+    }, {
+        specs: [{
+            nodeKey: 'action:email',
+            schema: {
+                inputs: [
+                    { name: 'to', valueSyntax: 'workflow-expression' },
+                    { name: 'body', valueSyntax: 'workflow-expression' }
+                ]
+            }
+        }]
+    });
+
+    assert.deepEqual(issues, []);
+});
+
+test('worker validator rejects raw workflow tokens in semantic node configs', () => {
+    const issues = validateWorkflowWorkerResult({
+        operations: [{
+            op: 'add_condition_branch',
+            from: { nodeRef: 'n1', handle: 'event' },
+            condition: {
+                ref: 'condition',
+                config: { valueA: '{{triggerData.fields.f_email}}', operator: 'exists' }
+            },
+            whenTrue: { ref: 'true_action', nodeKey: 'action:email', config: { to: 'owner@example.com' } },
+            whenFalse: { ref: 'false_action', nodeKey: 'action:email', config: { to: 'owner@example.com' } }
+        }]
+    }, {
+        specs: [{
+            nodeKey: 'logic:condition',
+            schema: { inputs: [{ name: 'valueA', valueSyntax: 'workflow-expression' }, { name: 'valueB', valueSyntax: 'workflow-expression' }] }
+        }]
+    });
+
+    assert.ok(issues.some(item => item.code === 'WORKFLOW_REFERENCE_RAW_TOKEN'));
+    assert.ok(issues.some(item => item.path.endsWith('.condition.config.valueA')));
+});
+
 test('worker validator rejects missing operations array', () => {
     const issues = validateWorkflowWorkerResult({ something: 'else' });
     assert.ok(issues.some(i => i.code === 'INVALID_OPERATIONS'));

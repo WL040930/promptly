@@ -2,7 +2,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import VariablePickerModal from '../modals/VariablePickerModal';
 import VariableTokenPreview from './VariableTokenPreview.jsx';
-import { isWorkflowExpression } from '../../../../../shared/workflowExpressions.js';
+import { isWorkflowExpression, workflowExpressionToLegacyText } from '../../../../../shared/workflowExpressions.js';
+import { descriptorRuntimePath, normalizeEditorWorkflowValue } from '../../utils/workflowReferenceInput.js';
 
 const TokenPreview = ({ value, availableVars = [], className, onClick }) => (
   <div
@@ -13,18 +14,16 @@ const TokenPreview = ({ value, availableVars = [], className, onClick }) => (
   </div>
 );
 
+const hasUnfinishedLegacyToken = value => {
+  const text = String(value || '');
+  return text.lastIndexOf('{{') > text.lastIndexOf('}}');
+};
+
 /* ─── VariableInput ──────────────────────────────────────────────────────── */
 /**
- * A smart text/textarea input that lets users insert {{nodeId.field}} tokens
- * from a dropdown picker.
- *
- * Props:
- *   value         — controlled string value
- *   onChange      — (newValue: string) => void
- *   placeholder   — optional placeholder text
- *   multiline     — if true, renders a <textarea> instead of <input>
- *   availableVars — array from getUpstreamOutputs()
- *   rows          — textarea rows (default 4)
+ * A smart text/textarea input that lets users insert upstream values from a
+ * dropdown picker. Workflow-expression fields persist structured expressions;
+ * node-template fields retain their node-owned text-template behavior.
  */
 const VariableInput = ({
   value = '',
@@ -33,49 +32,73 @@ const VariableInput = ({
   multiline = false,
   availableVars = [],
   rows = 4,
+  valueSyntax,
 }) => {
-  // AI expressions are read-only rich tokens until the user deliberately
-  // replaces them with manual text; native inputs cannot receive an object.
-  const textValue = typeof value === 'string' ? value : '';
-  const isExpression = isWorkflowExpression(value);
+  const valueKey = typeof value === 'string' ? value : JSON.stringify(value || null);
+  const canonicalField = valueSyntax === 'workflow-expression';
+  const editableValue = canonicalField && isWorkflowExpression(value)
+    ? workflowExpressionToLegacyText(value)
+    : value === undefined || value === null ? '' : String(value);
+  const [draftValue, setDraftValue] = useState(editableValue);
+  const [inputError, setInputError] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
 
+  const textValue = draftValue;
+  const isExpression = isWorkflowExpression(value);
   const containerRef = useRef(null);
   const inputRef = useRef(null);
-  const cursorRef = useRef(null); // tracks cursor position in the input
+  const cursorRef = useRef(null);
 
-  /* ── Close picker on outside click ───────────────────────────────────── */
   useEffect(() => {
-    const handler = (e) => {
-      // If clicking outside the input and not inside a portal modal
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
-        setIsFocused(false);
-      }
+    setDraftValue(editableValue);
+    setInputError(null);
+  }, [valueKey, editableValue]);
+
+  useEffect(() => {
+    const handler = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) setIsFocused(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  /* ── Track cursor position before picker opens ────────────────────────── */
   const saveCursor = useCallback(() => {
-    if (inputRef.current) {
-      cursorRef.current = inputRef.current.selectionStart ?? textValue.length;
-    }
+    if (inputRef.current) cursorRef.current = inputRef.current.selectionStart ?? textValue.length;
   }, [textValue]);
 
-  /* ── Insert token at last cursor position ─────────────────────────────── */
-  const insertToken = useCallback((varPath) => {
-    const token = `{{${varPath}}}`;
+  const commitDraft = useCallback((nextValue) => {
+    setDraftValue(nextValue);
+    if (!canonicalField) {
+      setInputError(null);
+      onChange?.(nextValue);
+      return;
+    }
+    // Keep an incomplete token local while the user is typing. Autosave must
+    // never receive the temporary legacy text; completed tokens are
+    // normalized below before the parent is notified.
+    if (hasUnfinishedLegacyToken(nextValue)) {
+      setInputError(null);
+      return;
+    }
+    const normalized = normalizeEditorWorkflowValue({ value: nextValue, availableVars, path: 'config.value' });
+    if (normalized.issues.length > 0) {
+      setInputError(normalized.issues[0].message);
+      return;
+    }
+    setInputError(null);
+    onChange?.(normalized.value);
+  }, [availableVars, canonicalField, onChange]);
+
+  const insertToken = useCallback((selection) => {
+    const runtimePath = descriptorRuntimePath(selection);
+    if (!runtimePath) return;
+    const token = `{{${runtimePath}}}`;
     const pos = cursorRef.current ?? textValue.length;
-    const before = textValue.substring(0, pos);
-    const after = textValue.substring(pos);
-    const newValue = before + token + after;
+    const newValue = textValue.substring(0, pos) + token + textValue.substring(pos);
 
-    onChange?.(newValue);
+    commitDraft(newValue);
     cursorRef.current = pos + token.length;
-
-    // Re-focus the input
     setIsFocused(true);
     setTimeout(() => {
       if (inputRef.current) {
@@ -83,24 +106,33 @@ const VariableInput = ({
         inputRef.current.setSelectionRange(cursorRef.current, cursorRef.current);
       }
     }, 0);
-  }, [textValue, onChange]);
+  }, [commitDraft, textValue]);
 
-  const inputClass =
-    'w-full bg-slate-50 border border-slate-200 rounded-lg text-slate-800 px-3 py-2 outline-none text-sm font-medium focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 transition-all shadow-inner resize-none pr-9';
-
-  const hasVars = availableVars.length > 0;
-  const hasTokens = isExpression || /{{[^}]+}}/.test(textValue);
-
-  // Show the real input if focused, or if there are no tokens (so empty state looks normal)
+  const inputClass = 'w-full bg-slate-50 border border-slate-200 rounded-lg text-slate-800 px-3 py-2 outline-none text-sm font-medium focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 transition-all shadow-inner resize-none pr-9';
+  const hasVars = availableVars.length > 0 && ['workflow-expression', 'node-template'].includes(valueSyntax);
+  const hasTokens = isExpression || /\{\{[^}]+\}\}/.test(textValue);
   const showRealInput = isFocused || !hasTokens;
-
-
+  const inputProps = {
+    ref: inputRef,
+    value: textValue,
+    placeholder,
+    className: inputClass,
+    'aria-invalid': Boolean(inputError),
+    onChange: event => commitDraft(event.target.value),
+    onSelect: saveCursor,
+    onKeyUp: saveCursor,
+    onClick: saveCursor,
+    onFocus: () => setIsFocused(true),
+    onBlur: () => {
+      if (canonicalField && hasUnfinishedLegacyToken(textValue)) {
+        setInputError('Finish or remove the workflow reference before leaving this field.');
+      }
+    }
+  };
 
   return (
     <div ref={containerRef} className="relative flex flex-col gap-1.5">
-
       <div className="relative">
-        {/* Fake Input (Preview Mode) */}
         {!showRealInput && (
           <TokenPreview
             value={value}
@@ -113,64 +145,33 @@ const VariableInput = ({
           />
         )}
 
-        {/* Real Input (Edit Mode) */}
         <div className={showRealInput ? 'block' : 'hidden'}>
-          {multiline ? (
-            <textarea
-              ref={inputRef}
-              value={textValue}
-              rows={rows}
-              placeholder={placeholder}
-              className={inputClass}
-              onChange={e => onChange?.(e.target.value)}
-              onSelect={saveCursor}
-              onKeyUp={saveCursor}
-              onClick={saveCursor}
-              onFocus={() => setIsFocused(true)}
-            />
-          ) : (
-            <input
-              ref={inputRef}
-              type="text"
-              value={textValue}
-              placeholder={placeholder}
-              className={inputClass}
-              onChange={e => onChange?.(e.target.value)}
-              onSelect={saveCursor}
-              onKeyUp={saveCursor}
-              onClick={saveCursor}
-              onFocus={() => setIsFocused(true)}
-            />
-          )}
+          {multiline ? <textarea {...inputProps} rows={rows} /> : <input {...inputProps} type="text" />}
         </div>
 
-        {/* { } trigger button */}
         {hasVars && (
           <button
             type="button"
-            onMouseDown={(e) => {
-              e.preventDefault(); // don't blur the input
+            onMouseDown={(event) => {
+              event.preventDefault();
               saveCursor();
-              setPickerOpen(o => !o);
+              setPickerOpen(open => !open);
             }}
             title="Insert variable"
-            className={`absolute right-2 top-2 flex items-center justify-center w-5 h-5 rounded text-[11px] font-black transition-all select-none
-              ${pickerOpen
-                ? 'bg-indigo-600 text-white shadow'
-                : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50'
-              }`}
+            className={`absolute right-2 top-2 flex items-center justify-center w-5 h-5 rounded text-[11px] font-black transition-all select-none ${pickerOpen ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50'}`}
           >
             {'{}'}
           </button>
         )}
       </div>
 
-      {/* ── Picker Modal ──────────────────────────────────────────────── */}
+      {inputError && <p className="px-1 text-[11px] font-semibold leading-4 text-amber-700">{inputError}</p>}
+
       {pickerOpen && createPortal(
         <VariablePickerModal
           isOpen={pickerOpen}
           onClose={() => setPickerOpen(false)}
-          onSelect={(path) => insertToken(path)}
+          onSelect={selection => insertToken(selection)}
           availableVars={availableVars}
         />,
         document.body

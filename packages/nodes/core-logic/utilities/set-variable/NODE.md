@@ -14,11 +14,11 @@ ui:
 # Set Variable Node
 
 ## When to use this node
-Use this node to explicitly store a value under a named key in the workflow context, making it available to all downstream nodes via `{{setVariable-nodeId.value}}`.
+Use this node to explicitly store a value under a named key in the workflow context, making it available to all downstream nodes as a structured workflow expression.
 
 ## Common use cases
-- Counter: store `{{loop-nodeId.count}}` as `totalItems`
-- Derived value: compute a label like `"Order #" + {{trigger.orderId}}`
+- Counter: store `{ "$expr": "reference", "v": 1, "nodeId": "loop-node-id", "path": ["count"] }` as `totalItems`
+- Derived value: use a `$expr: "template"` value combining literal text with a reference to an upstream output
 - Flag: set `isEligible = true` after a condition check
 
 ## Notes

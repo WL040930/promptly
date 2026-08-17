@@ -1,8 +1,8 @@
 {
   "inputs": [
     { "name": "inputData", "type": "object", "label": "Input Data", "isConnection": true },
-    { "name": "title", "type": "text", "label": "Approval title", "required": true, "defaultValue": "Review required" },
-    { "name": "instructions", "type": "textarea", "label": "Instructions", "defaultValue": "Please review the information and choose an outcome.", "rows": 4 }
+    { "name": "title", "type": "text", "label": "Approval title", "required": true, "valueSyntax": "workflow-expression", "defaultValue": "Review required" },
+    { "name": "instructions", "type": "textarea", "label": "Instructions", "valueSyntax": "workflow-expression", "defaultValue": "Please review the information and choose an outcome.", "rows": 4 }
   ],
   "outputs": [
     { "name": "approved", "type": "object", "label": "Approved", "isConnection": true },

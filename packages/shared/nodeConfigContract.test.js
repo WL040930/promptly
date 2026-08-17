@@ -95,3 +95,30 @@ test('Google Sheets Create headers are a flat text list while append values rema
     assert.equal(appendResult.valid, false);
     assert.equal(appendResult.issues.some(issue => issue.code === 'INVALID_DATA_GRID'), true);
 });
+
+test('workflow-expression string lists accept canonical references for runtime resolution', () => {
+    const schema = {
+        inputs: [{ name: 'headers', type: 'string-list', valueSyntax: 'workflow-expression' }],
+        outputs: []
+    };
+    const expression = { $expr: 'reference', v: 1, nodeId: 'form_1', path: ['fields', 'f_name'] };
+
+    assert.equal(validateNodeConfig({ schema, config: { headers: [expression] }, mode: 'active' }).issues.length, 0);
+});
+
+test('value syntax keeps canonical expressions out of literal and node-template inputs', () => {
+    const expression = { $expr: 'reference', v: 1, nodeId: 'form_1', path: ['fields', 'f_name'] };
+    const literal = validateNodeConfig({
+        schema: { inputs: [{ name: 'value', type: 'text', valueSyntax: 'none' }] },
+        config: { value: expression },
+        mode: 'active'
+    });
+    const template = validateNodeConfig({
+        schema: { inputs: [{ name: 'prompt', type: 'textarea', valueSyntax: 'node-template' }] },
+        config: { prompt: expression },
+        mode: 'active'
+    });
+
+    assert.equal(literal.issues[0].code, 'INVALID_VALUE_SYNTAX');
+    assert.equal(template.issues[0].code, 'INVALID_VALUE_SYNTAX');
+});

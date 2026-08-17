@@ -367,7 +367,7 @@ export const compileWorkflowDraft = ({
         }
     }
 
-    bindingIssues.push(...validateWorkflowExpressions({ nodes: nextNodes, formSchema }));
+    bindingIssues.push(...validateWorkflowExpressions({ nodes: nextNodes, edges: nextEdges, formSchema }));
     return { nodes: nextNodes, edges: nextEdges, repairs, bindingIssues, bindingCatalogue: compiledBindings.catalogue };
 };
 
