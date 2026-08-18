@@ -62,10 +62,20 @@ export const assertConnectionHandle = (node, handle, direction, operation) => {
 // Many nodes expose one generic payload input but use different names
 // (`triggerData`, `inputData`, or `event`). The generated graph only needs the
 // one available port, so normalize an alias instead of failing the proposal.
-const normalizeSingleInputHandle = (node, handle) => {
+export const normalizeSingleInputHandle = (node, handle) => {
     if (handle === null || handle === undefined) return handle;
     const inputs = connectionHandlesFor(node, 'inputs');
     return inputs.length === 1 && !inputs.includes(handle) ? inputs[0] : handle;
+};
+
+// Older worker routes sometimes call a single output `done` or `event` even
+// when the node contract names it `outputData` or `triggerData`. A sole
+// connection output is unambiguous, so normalize that alias at the compiler
+// boundary. Multi-output nodes still reject unknown handles.
+export const normalizeSingleOutputHandle = (node, handle) => {
+    if (handle === null || handle === undefined) return handle;
+    const outputs = connectionHandlesFor(node, 'outputs');
+    return outputs.length === 1 && !outputs.includes(handle) ? outputs[0] : handle;
 };
 
 // Persisted workflow nodes from older revisions do not always include their
@@ -186,16 +196,21 @@ export const findConnection = (edges, from, to) => edges.find(edge => connection
 }));
 
 export const connectNodes = ({ operation, edges, from, to, sourceNode, targetNode }) => {
+    const resolvedFrom = { ...from, handle: normalizeSingleOutputHandle(sourceNode, from.handle) };
     const resolvedTo = { ...to, handle: normalizeSingleInputHandle(targetNode, to.handle) };
-    assertConnectionHandle(sourceNode, from.handle, 'outputs', operation);
+    assertConnectionHandle(sourceNode, resolvedFrom.handle, 'outputs', operation);
     assertConnectionHandle(targetNode, resolvedTo.handle, 'inputs', operation);
-    if (findConnection(edges, from, resolvedTo)) return;
-    edges.push(connectionFor({ source: from.nodeId, sourceHandle: from.handle, target: resolvedTo.nodeId, targetHandle: resolvedTo.handle }));
+    if (findConnection(edges, resolvedFrom, resolvedTo)) return;
+    edges.push(connectionFor({ source: resolvedFrom.nodeId, sourceHandle: resolvedFrom.handle, target: resolvedTo.nodeId, targetHandle: resolvedTo.handle }));
 };
 
 export const insertBetween = ({ operation, nodes, edges, refs, specsByNodeKey }) => {
-    const from = normalizeEndpoint(operation.connection?.from, refs, operation.op, 'connection.from');
-    const to = normalizeEndpoint(operation.connection?.to, refs, operation.op, 'connection.to');
+    const requestedFrom = normalizeEndpoint(operation.connection?.from, refs, operation.op, 'connection.from');
+    const requestedTo = normalizeEndpoint(operation.connection?.to, refs, operation.op, 'connection.to');
+    const sourceNode = withKnownSchema(nodes.find(node => node.id === requestedFrom.nodeId), specsByNodeKey);
+    const targetNode = withKnownSchema(nodes.find(node => node.id === requestedTo.nodeId), specsByNodeKey);
+    const from = { ...requestedFrom, handle: normalizeSingleOutputHandle(sourceNode, requestedFrom.handle) };
+    const to = { ...requestedTo, handle: normalizeSingleInputHandle(targetNode, requestedTo.handle) };
     const match = findConnection(edges, from, to);
     if (!match) throwEditError(operation.op, 'The requested connection does not exist.', { code: 'WORKFLOW_CONNECTION_NOT_FOUND' });
     const inserted = addNodeFromEdit({ operation: operation.op, nodeDefinition: operation.node, nodes, refs, specsByNodeKey });
@@ -211,8 +226,8 @@ export const insertBetween = ({ operation, nodes, edges, refs, specsByNodeKey })
     }
     edges.splice(0, edges.length, ...edges.filter(edge => edge !== match));
     const insertedEndpoint = { nodeId: refs.get(operation.node.ref), handle: inputHandle };
-    connectNodes({ operation: operation.op, edges, from, to: insertedEndpoint, sourceNode: nodes.find(node => node.id === from.nodeId), targetNode: inserted });
-    connectNodes({ operation: operation.op, edges, from: { nodeId: refs.get(operation.node.ref), handle: outputHandle }, to, sourceNode: inserted, targetNode: nodes.find(node => node.id === to.nodeId) });
+    connectNodes({ operation: operation.op, edges, from, to: insertedEndpoint, sourceNode, targetNode: inserted });
+    connectNodes({ operation: operation.op, edges, from: { nodeId: refs.get(operation.node.ref), handle: outputHandle }, to, sourceNode: inserted, targetNode });
 };
 
 /**
@@ -221,9 +236,10 @@ export const insertBetween = ({ operation, nodes, edges, refs, specsByNodeKey })
  * work, which makes a proposal resilient to generated edge IDs and ordering.
  */
 export const insertAfterRoute = ({ operation, nodes, edges, refs, specsByNodeKey }) => {
-    const from = normalizeEndpoint(operation.from, refs, operation.op, 'from');
-    const sourceNode = nodes.find(node => node.id === from.nodeId);
+    const requestedFrom = normalizeEndpoint(operation.from, refs, operation.op, 'from');
+    const sourceNode = withKnownSchema(nodes.find(node => node.id === requestedFrom.nodeId), specsByNodeKey);
     if (!sourceNode) throwEditError(operation.op, 'Route source references a missing node.', { code: 'WORKFLOW_NODE_REF_INVALID' });
+    const from = { ...requestedFrom, handle: normalizeSingleOutputHandle(sourceNode, requestedFrom.handle) };
     assertConnectionHandle(sourceNode, from.handle, 'outputs', operation.op);
 
     let matches = edges.filter(edge => edge.source === from.nodeId && (edge.sourceHandle || null) === from.handle);
@@ -241,7 +257,7 @@ export const insertAfterRoute = ({ operation, nodes, edges, refs, specsByNodeKey
 
     const match = matches[0];
     const to = { nodeId: match.target, handle: match.targetHandle || null };
-    const targetNode = nodes.find(node => node.id === to.nodeId);
+    const targetNode = withKnownSchema(nodes.find(node => node.id === to.nodeId), specsByNodeKey);
     if (!targetNode) throwEditError(operation.op, 'Route destination references a missing node.', { code: 'WORKFLOW_NODE_REF_INVALID' });
     const inserted = addNodeFromEdit({
         operation: operation.op,

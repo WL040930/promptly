@@ -22,6 +22,16 @@ test('assistant recovery makes temporary provider failures retryable', () => {
     assert.equal(result.action.type, 'retry');
 });
 
+test('workflow recovery can mark retry as a resumable active-work action', () => {
+    const result = buildAssistantRecovery({
+        surface: 'workflow',
+        code: 'WORKFLOW_AI_PROVIDER_TIMEOUT',
+        context: { retryText: 'Build the feedback workflow.', resumeActiveWork: true }
+    });
+
+    assert.deepEqual(result.action, { type: 'retry', label: 'Try again', mode: 'resume_active_work' });
+});
+
 test('assistant-state conflicts do not claim that the form changed', () => {
     const result = buildAssistantRecovery({
         surface: 'form',
@@ -88,6 +98,47 @@ test('assistant recovery gives conditional branch failures a specific retry path
     assert.equal(result.action.type, 'retry');
     assert.equal(result.retryable, true);
     assert.equal(result.details[0].message, 'Promptly needs to rebuild this conditional branch using its supported branch operation.');
+});
+
+test('assistant recovery does not make an explicitly rejected workflow draft applicable', () => {
+    const result = buildAssistantRecovery({
+        surface: 'workflow',
+        code: 'WORKFLOW_AI_VERIFICATION_FAILED',
+        issues: [{ code: 'REQUIREMENT_NOT_SATISFIED', path: 'req_notify', message: 'The low-rating notification is missing.' }],
+        context: { retryText: 'Build the feedback workflow.', resumeActiveWork: true }
+    });
+
+    assert.equal(result.type, 'workflow_verification_failed');
+    assert.match(result.summary, /no changes were made/i);
+    assert.deepEqual(result.action, { type: 'retry', label: 'Try again', mode: 'resume_active_work' });
+    assert.equal(result.retryable, true);
+    assert.equal(result.details[0].message, 'Promptly could not confirm that one requested workflow detail was satisfied.');
+});
+
+test('assistant recovery explains a missing approved route as a conditional workflow repair', () => {
+    const result = buildAssistantRecovery({
+        surface: 'workflow',
+        code: 'WORKFLOW_AI_UNSAFE_PROPOSAL',
+        issues: [{ code: 'WORKFLOW_APPROVAL_APPROVED_ACTION_INVALID', message: 'An approved action is required.' }],
+        context: { retryText: 'Ask for approval before sending the compensation offer.' }
+    });
+
+    assert.equal(result.type, 'conditional_branch_invalid');
+    assert.equal(result.title, 'Promptly could not add the conditional branch');
+    assert.equal(result.action.type, 'retry');
+});
+
+test('assistant recovery sends a missing rating field back to the selected form', () => {
+    const result = buildAssistantRecovery({
+        surface: 'workflow',
+        code: 'RATING_FIELD_MISSING',
+        issues: [{ code: 'RATING_FIELD_MISSING', message: 'The selected form needs a rating field.' }],
+        context: { formId: 'form_feedback' }
+    });
+
+    assert.equal(result.type, 'workflow_setup_needed');
+    assert.equal(result.action.type, 'open_form');
+    assert.equal(result.action.formId, 'form_feedback');
 });
 
 test('assistant recovery keeps an ambiguous generated branch reference actionable', () => {

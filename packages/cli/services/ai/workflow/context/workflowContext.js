@@ -282,6 +282,7 @@ export const buildWorkflowWorkerContext = ({
     resourceContext,
     resourceSelections = {},
     formSchema = null,
+    formPrerequisites = null,
     linearSteps = [],
     priorResponse = null,
     repairIssues = []
@@ -330,6 +331,9 @@ export const buildWorkflowWorkerContext = ({
         ...projectFormResourceContext(formSchema),
         fieldBindings: buildFormBindingCatalogue(formSchema).bindings
     }) : '(none)',
+    '',
+    'Resolved Form Workflow Contracts:',
+    JSON.stringify(formPrerequisites || '(none)'),
     '',
     'Account Resources:',
     JSON.stringify(compactResources(resourceContext)),

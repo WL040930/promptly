@@ -10,7 +10,7 @@ export default function AssistantFailureCard({ message, onAction, isWorking }) {
         surface: message.surface || 'assistant',
         code: metadata.code,
         issues: metadata.issues,
-        context: { retryText: metadata.retryText }
+        context: { ...metadata.context, retryText: metadata.retryText }
     });
     const action = recovery.action;
     const isConnectionRequired = recovery.type === 'connection_required';

@@ -3,7 +3,7 @@ const DEFAULT_THINKING_LEVEL = 'minimal';
 const DEFAULT_TIMEOUT_MS = 50_000;
 
 export const DEFAULT_AI_MODELS = Object.freeze({
-    gemini: 'gemini-3.5-flash',
+    gemini: 'gemini-3.5-flash-lite',
     nvidia: 'nvidia/nemotron-3-super-120b-a12b',
     openrouter: 'nvidia/nemotron-3-super-120b-a12b:free',
     groq: 'openai/gpt-oss-120b',

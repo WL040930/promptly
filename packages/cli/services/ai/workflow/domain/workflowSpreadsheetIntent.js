@@ -2,6 +2,20 @@ const spreadsheetWords = /\b(?:google\s*sheets?|spreadsheets?|sheets?)\b/i;
 const spreadsheetSavePattern = /\b(?:save|store|record|write|append|add)\b[\s\S]{0,120}\b(?:excel|spreadsheets?|google\s*sheets?|sheets?)\b|\b(?:excel|spreadsheets?|google\s*sheets?|sheets?)\b[\s\S]{0,120}\b(?:save|store|record|write|append|add)\b/i;
 const explicitCreatePattern = /\b(?:create|new)\b[\s\S]{0,40}\b(?:google\s*)?(?:spreadsheets?|sheets?)\b/i;
 const rejectCreatePattern = /\b(?:do\s+not|don't|dont|no\s+need|without|why\s+need)\b[\s\S]{0,80}\b(?:create|new)\b[\s\S]{0,40}\b(?:google\s*)?(?:spreadsheets?|sheets?)\b/i;
+const perSubmissionPhrase = String.raw`(?:for\s+(?:each|every)|per(?:\s+(?:each|every))?)\s+(?:(?:[\w-]+\s+){0,2})(?:submission|response)s?`;
+// “Save every submission to a new Sheet” means one Sheet provisioned for the
+// workflow. Runtime Sheet creation is only intended when the user explicitly
+// describes a Sheet for each/per submission (usually with a create/make/
+// provision verb). Keeping this grammar here gives every workflow entry point
+// the same destination strategy instead of relying on a broad pipeline-only
+// regex.
+const perSubmissionSpreadsheetPattern = new RegExp([
+    String.raw`\b(?:new|separate|individual)\s+(?:google\s*)?(?:sheets?|spreadsheets?)\b[\s\S]{0,80}\b${perSubmissionPhrase}\b`,
+    String.raw`\b${perSubmissionPhrase}\b[\s\S]{0,80}\b(?:new|separate|individual)\s+(?:google\s*)?(?:sheets?|spreadsheets?)\b`,
+    String.raw`\b(?:create|make|provision|generate)\b[\s\S]{0,100}\b(?:google\s*)?(?:sheets?|spreadsheets?)\b[\s\S]{0,80}\b${perSubmissionPhrase}\b`,
+    String.raw`\b(?:create|make|provision|generate)\b[\s\S]{0,100}\b${perSubmissionPhrase}\b[\s\S]{0,80}\b(?:google\s*)?(?:sheets?|spreadsheets?)\b`,
+    String.raw`\b${perSubmissionPhrase}\b[\s\S]{0,100}\b(?:create|make|provision|generate)\b[\s\S]{0,80}\b(?:google\s*)?(?:sheets?|spreadsheets?)\b`
+].join('|'), 'i');
 const genericDestinationNames = new Set(['sheet', 'sheets', 'spreadsheet', 'spreadsheets', 'google', 'google sheet', 'google sheets', 'new']);
 
 const text = value => String(value || '').trim();
@@ -40,6 +54,8 @@ export const spreadsheetIdFromValue = value => {
     if (urlMatch?.[1]) return urlMatch[1];
     return /\s/.test(source) ? null : source;
 };
+
+export const isExplicitPerSubmissionSpreadsheetRequest = value => perSubmissionSpreadsheetPattern.test(text(value));
 
 const pendingIntent = pendingProposal => {
     const payload = pendingProposal?.payload || pendingProposal?.proposal || pendingProposal || {};
@@ -98,17 +114,17 @@ export const resolveSpreadsheetIntent = ({ request = '', sourceText = '', clarif
     const original = text(sourceText);
     const selectedValue = clarificationState?.spreadsheetId;
     const selectedId = spreadsheetIdFromValue(selectedValue);
+    const selectedCreateChoice = text(selectedValue).toLocaleLowerCase() === 'create'
+        || explicitCreatePattern.test(text(selectedValue));
     const createChoice = clarificationState?.createSpreadsheet === 'create'
         || explicitCreatePattern.test(text(clarificationState?.createSpreadsheet))
-        || explicitCreatePattern.test(text(selectedValue));
+        || selectedCreateChoice;
 
-    if (selectedId && !explicitCreatePattern.test(selectedId)) {
-        return selectedIntent({ source: 'clarification', spreadsheetId: selectedId });
-    }
     if (createChoice) return createIntent({
         source: 'clarification',
         name: namedSpreadsheetFromText(original)
     });
+    if (selectedId) return selectedIntent({ source: 'clarification', spreadsheetId: selectedId });
 
     const rejectsCreation = rejectCreatePattern.test(current);
     if (!rejectsCreation && explicitCreatePattern.test(current)) {
@@ -136,7 +152,10 @@ export const resolveSpreadsheetIntent = ({ request = '', sourceText = '', clarif
     if (historyName) return namedIntent({ source: 'history', name: historyName, replacesProvisioning: rejectsCreation });
 
     if (rejectsCreation) return { mode: 'requires_existing', source: 'request', replacesProvisioning: true };
-    if (spreadsheetSavePattern.test(current)) return { mode: 'unnamed', source: 'request' };
+    // A generic destination must be selected from the user's connected Sheets.
+    // Creation is opt-in so the planner cannot invent a resource or silently
+    // create a new Sheet for an underspecified request.
+    if (spreadsheetSavePattern.test(current)) return { mode: 'requires_existing', source: 'request' };
     return { mode: 'none', source: 'none' };
 };
 
@@ -144,5 +163,6 @@ export const spreadsheetIntentInternals = Object.freeze({
     spreadsheetSavePattern,
     explicitCreatePattern,
     rejectCreatePattern,
+    perSubmissionSpreadsheetPattern,
     pendingIntent
 });

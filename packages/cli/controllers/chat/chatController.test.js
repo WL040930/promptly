@@ -163,3 +163,80 @@ test('assistant clarification events return the resolved card so the browser clo
     assert.equal(response.body.reply.kind, 'workflow_proposal');
     assert.equal(persistedMessages.filter(message => message.kind === 'assistant_work').length, 1);
 });
+
+test('form target selections resume the request and return the resolved clarification card', async () => {
+    const response = responseRecorder();
+    let applyEventCalls = 0;
+    let processCalls = 0;
+    const session = {
+        id: 'session_1',
+        state: {},
+        context: {},
+        async update(updates) {
+            Object.assign(this, updates);
+            return this;
+        }
+    };
+    const resolvedClarification = {
+        id: 'clarification_1',
+        sender: 'bot',
+        kind: 'clarification',
+        payload: {
+            inputs: [{ id: 'form-target', type: 'form_choice', options: [{ id: 'form_1', title: 'Contact Us' }] }],
+            selectedState: { 'form-target': 'form_1' },
+            resolution: {
+                type: 'answered',
+                answers: [{ id: 'form-target', label: 'Choose a form', answer: 'Contact Us' }]
+            }
+        }
+    };
+    const handler = createSendMessageHandler({
+        chatSessionModel: {
+            findOne: async () => session,
+            create: async () => session
+        },
+        applyEventService: async (_session, _userId, event) => {
+            applyEventCalls += 1;
+            assert.equal(event.type, 'form_target_selected');
+            return {
+                resume: {
+                    message: 'Create a contact form and save every submission.',
+                    context: { formId: 'form_1' }
+                },
+                clarification: resolvedClarification
+            };
+        },
+        saveUserMessageService: async (_session, message) => ({ id: 'user_1', sender: 'user', text: message }),
+        processChatMessageService: async ({ context }) => {
+            processCalls += 1;
+            assert.equal(context.formId, 'form_1');
+            return {
+                replyObj: { id: 'proposal_1', sender: 'bot', kind: 'solution_proposal', text: 'Ready.' },
+                totalTokenUsage: {}
+            };
+        },
+        assistantMessageModel: {
+            async create(value) {
+                return { ...value, id: 'work_1', async update() {} };
+            },
+            async findOne() {
+                return null;
+            }
+        }
+    });
+
+    await handler({
+        body: {
+            sessionId: 'session_1',
+            event: { type: 'form_target_selected', formId: 'form_1' },
+            requestId: 'request_1'
+        },
+        headers: { accept: 'application/json' },
+        user: { id: 'user_1' }
+    }, response, error => { throw error; });
+
+    assert.equal(applyEventCalls, 1);
+    assert.equal(processCalls, 1);
+    assert.equal(response.body.clarification.payload.resolution.type, 'answered');
+    assert.equal(response.body.reply.kind, 'solution_proposal');
+});

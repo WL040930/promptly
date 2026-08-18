@@ -1,4 +1,5 @@
 import { validateFormResponseSheetDestination } from './domain/formResponseSheetDestination.js';
+import { safeSpreadsheetTitle } from './domain/spreadsheetTitle.js';
 
 const isProvisionReference = value => value !== null && typeof value === 'object' && !Array.isArray(value)
     && typeof value.$provision === 'string' && Object.keys(value).length === 1;
@@ -77,13 +78,14 @@ export const provisionWorkflowResources = async ({
         }
         if (!change.ref) throw provisionError('A proposed Google Sheet is missing its provisioning reference.');
         if (resources.has(change.ref)) throw provisionError('A proposed Google Sheet uses a duplicate provisioning reference.', { ref: change.ref });
+        const spreadsheetTitle = safeSpreadsheetTitle(change.title);
 
         let resource = change.status === 'ready' && change.spreadsheetId && change.range
             ? {
                 id: change.spreadsheetId,
                 range: change.range,
                 webViewLink: change.webViewLink || null,
-                name: change.title,
+                name: spreadsheetTitle,
                 sheetTitle: change.sheetTitle || 'Responses'
             }
             : null;
@@ -91,7 +93,7 @@ export const provisionWorkflowResources = async ({
             if (!spreadsheetService?.createAndInitialize) throw provisionError('Google Sheet provisioning is unavailable.');
             resource = await spreadsheetService.createAndInitialize({
                 userId,
-                title: change.title,
+                title: spreadsheetTitle,
                 sheetTitle: change.sheetTitle || 'Responses',
                 headers: change.headers || [],
                 folderId: change.folderId || null,
@@ -104,6 +106,7 @@ export const provisionWorkflowResources = async ({
         resources.set(change.ref, resource);
         resolvedChanges.push({
             ...change,
+            title: spreadsheetTitle,
             status: 'ready',
             spreadsheetId: resource.id,
             webViewLink: resource.webViewLink || change.webViewLink || null,

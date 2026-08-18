@@ -7,6 +7,7 @@ const CORRECTION_PATTERN = /\b(?:actually|instead|i\s+mean|correction|not\s+that
 const textOf = value => normalizeAssistantText(value);
 
 export const normalizeWorkflowCommand = (command = {}) => {
+    if (command?.type === 'retry_active_work') return { type: 'retry_active_work' };
     if (command?.type === 'decide_for_me') {
         return { type: 'decide_for_me', clarificationId: command.clarificationId || null };
     }
@@ -30,6 +31,7 @@ export const resolveWorkflowTurnContext = ({
 } = {}) => {
     const delegated = command?.type === 'decide_for_me' || DECIDE_PATTERN.test(textOf(command?.text));
     const clarified = command?.type === 'submit_clarification';
+    const retrying = command?.type === 'retry_active_work';
     const rawText = delegated ? '' : textOf(command?.text);
     const priorClarificationState = activeWork?.clarificationState && typeof activeWork.clarificationState === 'object'
         ? activeWork.clarificationState
@@ -38,13 +40,16 @@ export const resolveWorkflowTurnContext = ({
         ? command.state
         : {};
     const clarificationState = { ...priorClarificationState, ...submittedClarificationState };
-    const sourceText = activeWork?.sourceText || rawText;
-    const correction = CORRECTION_PATTERN.test(rawText);
+    const continuesActiveWork = clarified || delegated || retrying;
+    const sourceText = continuesActiveWork ? (activeWork?.sourceText || rawText) : rawText;
+    const correction = !clarified && !retrying && CORRECTION_PATTERN.test(rawText);
     return {
         command: delegated
-            ? { type: 'decide_for_me', clarificationId: command.clarificationId || clarification?.id || null }
+            ? { type: 'decide_for_me', clarificationId: command.clarificationId || clarification?.id || null, state: clarificationState }
             : clarified
                 ? { type: 'submit_clarification', text: rawText, state: clarificationState }
+                : retrying
+                    ? { type: 'retry_active_work', state: clarificationState }
                 : { type: 'submit_text', text: rawText },
         intent: {
             sourceText: correction ? rawText : sourceText,

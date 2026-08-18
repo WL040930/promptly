@@ -9,7 +9,10 @@ import {
     insertAfterRoute,
     insertBetween,
     normalizeEndpoint,
-    throwEditError
+    normalizeSingleInputHandle,
+    normalizeSingleOutputHandle,
+    throwEditError,
+    withKnownSchema
 } from './graph.js';
 import { compileControlFlowOperation } from './controlFlow.js';
 import { isLegacyControlFlowOperation, legacyOperationIssueForNodeKey } from './contracts.js';
@@ -86,10 +89,14 @@ export const compileWorkflowEdits = ({ currentWorkflow = {}, operations = [], sp
             const sourceNode = nodes.find(node => node.id === from.nodeId);
             const targetNode = nodes.find(node => node.id === to.nodeId);
             if (!sourceNode || !targetNode) throwEditError(operation.op, 'Connection references a missing node.', { code: 'WORKFLOW_NODE_REF_INVALID' });
+            const sourceForValidation = withKnownSchema(sourceNode, specsByNodeKey);
+            const targetForValidation = withKnownSchema(targetNode, specsByNodeKey);
             if (operation.op === 'connect') {
-                connectNodes({ operation: operation.op, edges, from, to, sourceNode, targetNode });
+                connectNodes({ operation: operation.op, edges, from, to, sourceNode: sourceForValidation, targetNode: targetForValidation });
             } else {
-                const match = findConnection(edges, from, to);
+                const resolvedFrom = { ...from, handle: normalizeSingleOutputHandle(sourceForValidation, from.handle) };
+                const resolvedTo = { ...to, handle: normalizeSingleInputHandle(targetForValidation, to.handle) };
+                const match = findConnection(edges, resolvedFrom, resolvedTo);
                 if (!match) throwEditError(operation.op, 'The requested connection does not exist.', { code: 'WORKFLOW_CONNECTION_NOT_FOUND' });
                 edges.splice(0, edges.length, ...edges.filter(edge => edge !== match));
             }

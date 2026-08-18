@@ -98,9 +98,13 @@ const normalizeOperation = ({ operation, index, aliases, ambiguous, knownNodeKey
         return {
             ...operation,
             approval: definitionRef(operation.approval, `${prefix}_approval`, aliases, ambiguous),
+            ...(operation.whenApproved === undefined ? {} : {
+                whenApproved: actionDefinition({ definition: operation.whenApproved, generatedRef: `${prefix}_approved`, aliases, ambiguous, knownNodeKeys })
+            }),
             ...(operation.whenRejected === undefined || isEmptyOptionalAction(operation.whenRejected) ? {} : {
                 whenRejected: actionDefinition({ definition: operation.whenRejected, generatedRef: `${prefix}_rejected`, aliases, ambiguous, knownNodeKeys })
-            })
+            }),
+            ...(operation.whenRejected === null ? { whenRejected: null } : {})
         };
     case 'add_terminal_approval':
         return {

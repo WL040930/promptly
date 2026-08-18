@@ -80,8 +80,9 @@ export const createSendMessageHandler = ({
     });
     emit({ type: 'turn.started', sessionId: session.id, requestId: turnRequestId, turn });
     let attached = null;
+    let eventClarification = null;
     const eventNeedsWork = event && (
-        ['agent_plan_approved', 'decide_for_me', 'submit_clarification'].includes(event.type)
+        ['agent_plan_approved', 'decide_for_me', 'submit_clarification', 'form_target_selected', 'workflow_target_selected'].includes(event.type)
         || (event.type === 'form_saved' && event.runId)
     );
     if (eventNeedsWork) {
@@ -96,6 +97,7 @@ export const createSendMessageHandler = ({
         });
         if (attached) emit({ type: 'run.progress', requestId: turnRequestId, ...attached });
         const eventResult = await applyEventService(session, userId, event, reportEvent);
+        eventClarification = eventResult?.clarification || null;
         if (eventResult?.reply) {
             await progressChain;
             await finishChatTurn({
@@ -189,7 +191,13 @@ export const createSendMessageHandler = ({
         });
     }
 
-    const payload = { sessionId: session.id, userMessage, reply: replyObj, tokenUsage: totalTokenUsage };
+    const payload = {
+        sessionId: session.id,
+        userMessage,
+        reply: replyObj,
+        tokenUsage: totalTokenUsage,
+        ...(eventClarification ? { clarification: eventClarification } : {})
+    };
     if (useSSE) {
         emit({ type: 'turn.completed', result: payload });
         return res.end();

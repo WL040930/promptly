@@ -154,6 +154,20 @@ test('workflow complexity budgets reserve deeper recovery for forms, resources, 
         plan: { selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'], requirements: [{ id: 'req_1' }], resourceChanges: [{ type: 'create_google_spreadsheet' }] }
     });
     assert.deepEqual(complex, { id: 'complex', label: 'Complex workflow', providerAttempts: 4, buildAttempts: 4, maxProviderCalls: 40 });
+    assert.equal(workflowComplexityFor({
+        workflow: { nodes: [] },
+        formSchema: { id: 'form_1' },
+        plan: {
+            type: 'plan_complete',
+            selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
+            linearSteps: [
+                { nodeKey: 'trigger:form-submission' },
+                { nodeKey: 'action:googleSheets' }
+            ],
+            requirements: [{ id: 'req_1' }],
+            resourceChanges: [{ type: 'create_google_spreadsheet' }]
+        }
+    }).id, 'simple');
 });
 
 test('workflow budgets reserve four provider attempts for planner and draft recovery stages', async () => {
@@ -346,6 +360,7 @@ test('pipeline does not replace an active Promptly form trigger with a Google Sh
         currentWorkflow: { nodes: [], edges: [] },
         formSchema: { id: 'form_job_application', title: 'Job Application', fields: [{ id: 'email', label: 'Email', type: 'email' }] },
         turnContext: {
+            command: { type: 'submit_clarification', state: { spreadsheetId: 'sheet_job_applications' } },
             intent: {
                 sourceText: 'When this form receives responses, ask for my approval and append approved applications to Google Sheets.',
                 activeFormSource: { id: 'form_job_application', title: 'Job Application' }
@@ -357,7 +372,9 @@ test('pipeline does not replace an active Promptly form trigger with a Google Sh
         ]),
         registry: makeRegistry([formSubmissionSpec, approvalSpec, googleSheetsSpec]),
         resourceLoader,
-        resourceLookup: async () => { throw new Error('An active Promptly form must not open the Google Sheet trigger picker.'); }
+        resourceLookup: async ({ resource }) => resource === 'google-spreadsheets'
+            ? { options: [{ value: 'sheet_job_applications', label: 'Job Applications' }] }
+            : {}
     });
 
     assert.equal(result.type, 'reply');
@@ -408,6 +425,11 @@ test('pipeline opens a searchable Sheet picker when a named Google Sheet cannot 
     assert.deepEqual(result.inputs.map(input => input.id), ['spreadsheetId']);
     assert.equal(result.inputs[0].type, 'resource_picker');
     assert.equal(result.inputs[0].allowCustom, true);
+    assert.deepEqual(result.inputs[0].options[0], {
+        id: 'create',
+        name: 'Create a new Sheet',
+        description: 'Create a new Google Sheet for this workflow.'
+    });
 });
 
 test('pipeline resumes the Create Sheet clarification using structured state and the original destination name', async () => {
@@ -460,6 +482,124 @@ test('pipeline resumes the Create Sheet clarification using structured state and
     assert.deepEqual(append.config.spreadsheetId, { $provision: result.resourceChanges[0].ref });
     assert.equal(Array.isArray(append.config.values[0]), true);
     assert.equal(append.config.values[0].length, 3);
+});
+
+test('pipeline provisions one response Sheet for every submission instead of a runtime Sheet per submission', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let workerCalls = 0;
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') return {
+                text: JSON.stringify({
+                    type: 'plan_complete',
+                    // Simulate the bad model interpretation from the bug
+                    // report. The server must still canonicalize this into a
+                    // one-time provision because the user did not request a
+                    // Sheet per submission.
+                    summary: 'Create a new Google Sheet for every contact form submission.',
+                    requirements: [{ id: 'req_response_sheet', description: 'Create a new Google Sheet for each contact form submission and append the response.' }],
+                    selectedNodeKeys: ['trigger:form-submission', 'action:googleSheetsCreate', 'action:googleSheets'],
+                    linearSteps: [
+                        { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Contact form submitted', requirementIds: ['req_response_sheet'], config: { formId: 'form_contact' } },
+                        { ref: 'create_sheet', nodeKey: 'action:googleSheetsCreate', title: 'Create response Sheet', requirementIds: ['req_response_sheet'], config: {} },
+                        { ref: 'save_response', nodeKey: 'action:googleSheets', title: 'Save contact response', requirementIds: ['req_response_sheet'], config: {} }
+                    ],
+                    capabilities: ['per_submission_spreadsheet']
+                })
+            };
+            if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
+                workerCalls += 1;
+                throw new Error('The deterministic linear blueprint should not fall back to the worker.');
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const progress = [];
+    const result = await generateWorkflowTurn({
+        request: 'Create a contact form and save every submission to a new Google Sheet',
+        currentWorkflow: { nodes: [], edges: [] },
+        formSchema: {
+            id: 'form_contact',
+            // Reproduce the bad title that leaked a workflow instruction into
+            // the form schema and then into the proposed Sheet name.
+            title: 'contact form and save every submission to a new',
+            fields: [
+                { id: 'name', label: 'Name', type: 'text' },
+                { id: 'email', label: 'Email', type: 'email' },
+                { id: 'message', label: 'Message', type: 'paragraph' }
+            ]
+        },
+        onProgress: update => progress.push(update),
+        provider,
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec, googleSheetsCreateSpec]),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(workerCalls, 0);
+    assert.deepEqual(result.resourceChanges.map(change => change.type), ['create_google_spreadsheet']);
+    assert.equal(result.resourceChanges[0].title, 'Contact Form Responses');
+    assert.equal(result.nodes.some(node => node.subType === 'googleSheetsCreate'), false);
+    assert.deepEqual(result.nodes.map(node => node.subType), ['form-submission', 'googleSheets']);
+    assert.doesNotMatch(result.message, /for every contact form submission/i);
+    assert.equal(result.requirements.some(requirement => /for each contact form submission/i.test(requirement.description)), false);
+    assert.equal(progress.some(update => update.label === 'Simple workflow budget selected'), true);
+});
+
+test('pipeline canonicalizes a model Sheet resource alias after a create-new-sheet clarification', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const plannerResult = {
+        type: 'plan_complete',
+        summary: 'Save each Event Registration response.',
+        requirements: [{ id: 'req_1', description: 'Append each response to the new Event Registration Sheet.' }],
+        selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
+        linearSteps: [
+            { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Form submitted', requirementIds: ['req_1'], config: {} },
+            { ref: 'save_response', nodeKey: 'action:googleSheets', title: 'Save response', requirementIds: ['req_1'], config: {} }
+        ],
+        capabilities: [],
+        // Some model routes use this near-equivalent name after a user says
+        // “create new sheet”. The persisted contract is canonicalized by the
+        // server before the planner result is accepted.
+        resourceChanges: [{ ref: 'response_spreadsheet', type: 'create_google_sheet', title: 'Event Registration', sheetTitle: 'Responses' }]
+    };
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner' || options.operation === 'workflow:planner repair') {
+                return { text: JSON.stringify(plannerResult) };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'Create a new Sheet: Create a new Event Registration Sheet',
+        currentWorkflow: { nodes: [], edges: [] },
+        formSchema: {
+            id: 'form_event', title: 'Event Registration',
+            fields: [{ id: 'name', label: 'Name', type: 'text', required: true }]
+        },
+        turnContext: {
+            command: { type: 'submit_clarification', state: { spreadsheetId: 'create new sheet' } },
+            intent: {
+                sourceText: 'When the Event Registration form is submitted, save the response to the Event Registration Google Sheet.',
+                latestText: 'create new sheet',
+                authority: 'user'
+            }
+        },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec]),
+        resourceLookup: async () => { throw new Error('Create intent must not browse existing Sheets.'); },
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.resourceChanges[0]?.type, 'create_google_spreadsheet');
+    assert.equal(result.resourceChanges[0]?.title, 'Event Registration');
+    assert.deepEqual(result.nodes.find(node => node.nodeKey === 'action:googleSheets')?.config?.spreadsheetId, {
+        $provision: result.resourceChanges[0].ref
+    });
 });
 
 test('pipeline reuses an applied Sheet for an approval follow-up instead of searching a legacy clarification receipt', async () => {
@@ -623,7 +763,7 @@ test('pipeline asks the user to choose between ambiguous named Google Sheets', a
 
     assert.equal(result.type, 'message');
     assert.equal(result.inputs[0].type, 'resource_picker');
-    assert.deepEqual(result.inputs[0].options.map(option => option.id), ['sheet_current', 'sheet_archive']);
+    assert.deepEqual(result.inputs[0].options.map(option => option.id), ['create', 'sheet_current', 'sheet_archive']);
 });
 
 test('pipeline surfaces Google connection errors for a named Sheet instead of proposing a new one', async () => {
@@ -655,15 +795,13 @@ test('pipeline unwraps an exact form resource ID accidentally wrapped as provisi
             if (options.operation === 'workflow:planner') {
                 plannerCalls++;
                 return {
-                    text: JSON.stringify(plannerCalls === 1
-                        ? { type: 'inspect_form', formId: 'form_1' }
-                        : {
-                            type: 'plan_complete',
-                            summary: 'Send a thank-you email after owner approval.',
-                            requirements: [{ id: 'req_1', description: 'Send a thank-you email to the respondent after approval.' }],
-                            selectedNodeKeys: ['trigger:form-submission', 'logic:approval', 'action:email'],
-                            capabilities: ['owner_approval', 'respondent_confirmation']
-                        })
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Send a thank-you email after owner approval.',
+                        requirements: [{ id: 'req_1', description: 'Send a thank-you email to the respondent after approval.' }],
+                        selectedNodeKeys: ['trigger:form-submission', 'logic:approval', 'action:email'],
+                        capabilities: ['owner_approval', 'respondent_confirmation']
+                    })
                 };
             }
             if (options.operation === 'workflow:worker') {
@@ -686,6 +824,7 @@ test('pipeline unwraps an exact form resource ID accidentally wrapped as provisi
         request: 'When form submitted, send a thank you email to the user after I approve.',
         currentWorkflow: { nodes: [], edges: [] },
         userContext: { forms: [{ id: 'form_1', title: 'Contact form' }] },
+        turnContext: { command: { type: 'submit_clarification', state: { formId: 'form_1' } } },
         formLoader: async () => ({ id: 'form_1', title: 'Contact form', fields: [{ id: 'email', label: 'Email address', type: 'email', required: true }] }),
         provider,
         registry: makeRegistry([formSubmissionSpec, approvalSpec, emailSpec]),
@@ -806,6 +945,7 @@ test('pipeline carries an inspected form into the worker that creates its trigge
         request: 'After my form receives a response, send a thank-you email.',
         currentWorkflow: { nodes: [], edges: [] },
         userContext: { forms: [{ id: 'form_1', title: 'Contact form', updatedAt: '2026-07-28' }] },
+        turnContext: { command: { type: 'submit_clarification', state: { formId: 'form_1' } } },
         formLoader: async () => ({ id: 'form_1', title: 'Contact form', fields: [{ id: 'email', label: 'Email address', type: 'email', required: true }] }),
         provider,
         registry: makeRegistry([formSubmissionSpec, emailSpec]),
@@ -1098,10 +1238,10 @@ test('pipeline proposes a new Google Sheet without browsing an unavailable Googl
         }
     };
     const result = await generateWorkflowTurn({
-        request: 'Save each response in Excel in Drive before sending the email.',
+        request: 'Save the response in a new Google Sheet before sending the email.',
         currentWorkflow: existingWorkflow,
         provider,
-        registry: makeRegistry([triggerSpec, emailSpec, googleSheetsSpec]),
+        registry: makeRegistry([triggerSpec, emailSpec, googleSheetsCreateSpec, googleSheetsSpec]),
         resourceLoader: async () => ({
             'google-spreadsheets': {
                 resource: 'google-spreadsheets',
@@ -1207,6 +1347,47 @@ test('pipeline repairs a malformed worker response and produces a valid proposal
     assert.ok(workerAttempt >= 2, `Expected worker repair attempt, got ${workerAttempt}`);
 });
 
+test('pipeline stops repeating the same malformed worker draft', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let workerAttempt = 0;
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Branch the webhook workflow.',
+                        requirements: [{ id: 'req_branch', description: 'Add a conditional branch.' }],
+                        selectedNodeKeys: ['trigger:webhook', 'action:email', 'logic:condition'],
+                        capabilities: []
+                    })
+                };
+            }
+            if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
+                workerAttempt++;
+                return { text: JSON.stringify({ operations: [] }) };
+            }
+            throw new Error(`Unexpected provider call: ${options.operation}`);
+        }
+    };
+
+    await assert.rejects(
+        generateWorkflowTurn({
+            request: 'If the webhook is invalid, notify support; otherwise continue.',
+            currentWorkflow: existingWorkflow,
+            provider,
+            registry: makeRegistry([triggerSpec, emailSpec, conditionSpec]),
+            resourceLoader
+        }),
+        error => {
+            assert.equal(error.code, 'WORKFLOW_AI_UNSAFE_PROPOSAL');
+            assert.ok(error.issues.some(issue => issue.code === 'EMPTY_OPERATIONS'));
+            return true;
+        }
+    );
+    assert.equal(workerAttempt, 2, 'The identical invalid draft should receive one repair attempt, not repeat for the full complexity budget.');
+});
+
 // ---------------------------------------------------------------------------
 // Verifier repair — verifier requests a repair, second build passes
 // ---------------------------------------------------------------------------
@@ -1258,6 +1439,53 @@ test('pipeline retries the worker when the verifier requests repair, then passes
 
     assert.equal(result.type, 'proposal');
     assert.ok(buildAttempt >= 2, `Expected ≥2 build attempts for verifier repair, got ${buildAttempt}`);
+});
+
+test('pipeline refuses a proposal when the verifier keeps an explicit requirement mismatch', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Set the email recipient.',
+                        requirements: [{ id: 'req_1', description: 'Set the email recipient.' }],
+                        selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                        capabilities: []
+                    })
+                };
+            }
+            if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
+                return {
+                    text: JSON.stringify({
+                        operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { to: 'team@example.com' } } }]
+                    })
+                };
+            }
+            if (options.operation === 'workflow:verifier' || options.operation === 'workflow:verifier repair') {
+                return {
+                    text: JSON.stringify({
+                        status: 'repair',
+                        issues: [{ requirementId: 'req_1', message: 'The recipient is not confirmed.' }]
+                    })
+                };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    await assert.rejects(
+        () => generateWorkflowTurn({
+            request: 'Set the email recipient to team@example.com',
+            currentWorkflow: existingWorkflow,
+            provider,
+            registry: makeRegistry(),
+            resourceLoader
+        }),
+        error => error.code === 'WORKFLOW_AI_VERIFICATION_FAILED'
+            && error.issues.some(issue => issue.code === 'REQUIREMENT_NOT_SATISFIED')
+    );
 });
 
 test('pipeline returns a locally valid proposal as unverified when verifier output remains invalid', async () => {
@@ -1481,7 +1709,7 @@ test('pipeline assembles a validated linear form-to-Sheets workflow without work
     };
 
     const result = await generateWorkflowTurn({
-        request: 'When a form is submitted, save the response to Google Sheets.',
+        request: 'When a form is submitted, save the response to a new Google Sheet.',
         currentWorkflow: { nodes: [], edges: [] },
         formSchema: {
             id: 'form_1',
@@ -1500,6 +1728,67 @@ test('pipeline assembles a validated linear form-to-Sheets workflow without work
     assert.deepEqual(result.nodes.map(node => node.nodeKey), ['trigger:form-submission', 'action:googleSheets']);
     assert.equal(result.edges.length, 1);
     assert.equal(result.nodes.find(node => node.nodeKey === 'action:googleSheets')?.config?.operation, 'append');
+});
+
+test('pipeline assembles Form → Approval → Google Sheets as one semantic gate', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let workerCalls = 0;
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Require approval before saving each submitted response.',
+                        requirements: [{ id: 'req_1', description: 'Ask for approval, then append each submitted form response to Google Sheets.' }],
+                        selectedNodeKeys: ['trigger:form-submission', 'logic:approval', 'action:googleSheets'],
+                        linearSteps: [
+                            { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Form submitted', requirementIds: ['req_1'], config: {} },
+                            { ref: 'review_response', nodeKey: 'logic:approval', title: 'Review response', requirementIds: ['req_1'], config: {} },
+                            { ref: 'save_response', nodeKey: 'action:googleSheets', title: 'Save response', requirementIds: ['req_1'], config: { operation: 'append', spreadsheetId: { $provision: 'response_spreadsheet' }, range: "'Responses'!A1" } }
+                        ],
+                        resourceChanges: [{ ref: 'response_spreadsheet', type: 'create_google_spreadsheet', title: 'Customer Feedback Responses', sheetTitle: 'Responses' }],
+                        capabilities: ['owner_approval']
+                    })
+                };
+            }
+            if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
+                workerCalls += 1;
+                throw new Error('The worker must not be needed for a validated linear blueprint.');
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'When a form receives a response, request my approval, then append it to a new Google Sheet.',
+        currentWorkflow: { nodes: [], edges: [] },
+        formSchema: {
+            id: 'form_1',
+            title: 'Customer Feedback',
+            fields: [{ id: 'rating', label: 'Rating', type: 'number', required: true }]
+        },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, approvalSpec, googleSheetsSpec]),
+        resourceLoader: async () => ({
+            forms: { error: { message: 'Form list is temporarily unavailable.' }, options: [] }
+        })
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(workerCalls, 0);
+    assert.equal(result.verification.status, 'pass');
+    assert.deepEqual(result.nodes.map(node => node.nodeKey), [
+        'trigger:form-submission',
+        'logic:approval',
+        'action:googleSheets'
+    ]);
+    assert.equal(result.edges.length, 2);
+    const approvalNode = result.nodes.find(node => node.nodeKey === 'logic:approval');
+    const sheetNode = result.nodes.find(node => node.nodeKey === 'action:googleSheets');
+    assert.ok(result.edges.some(edge => edge.source === result.nodes[0].id && edge.target === approvalNode.id));
+    assert.ok(result.edges.some(edge => edge.source === approvalNode.id && edge.sourceHandle === 'approved' && edge.target === sheetNode.id));
+    assert.equal(result.edges.some(edge => edge.source === approvalNode.id && edge.sourceHandle === 'rejected'), false);
 });
 
 test('pipeline supports Ask Promptly compound wording with a proposed form schema and a new response Sheet', async () => {
@@ -1524,7 +1813,7 @@ test('pipeline supports Ask Promptly compound wording with a proposed form schem
     };
 
     const result = await generateWorkflowTurn({
-        request: 'Can u design the conference registration form, then when the form receive the responses, save the responses inside the sheet',
+        request: 'Can u design the conference registration form, then when the form receive the responses, save the responses inside a new Google Sheet',
         currentWorkflow: { nodes: [], edges: [] },
         formSchema: {
             id: 'pending_form_artifact',
@@ -1590,6 +1879,7 @@ test('pipeline resolves a named owned form and assembles a connected form-to-She
                 { id: 'form_contact', title: 'Contact Us', updatedAt: '2026-08-11T00:00:00.000Z' }
             ]
         },
+        turnContext: { command: { type: 'submit_clarification', state: { formId: 'form_event' } } },
         formLoader: async ({ formId }) => formId === 'form_event'
             ? { id: formId, title: 'Event Registration', fields: [{ id: 'name', label: 'Name', type: 'text', required: true }] }
             : null,
@@ -1775,9 +2065,11 @@ test('pipeline repairs a runtime Sheet creator when the user chose one Sheet to 
 
 test('pipeline returns a form choice when named-form matching is ambiguous', async () => {
     const { generateWorkflowTurn } = await import('./pipeline.js');
+    let plannerCalls = 0;
     const provider = {
         async generateContent(_contents, options) {
             if (options.operation === 'workflow:planner') {
+                plannerCalls += 1;
                 return {
                     text: JSON.stringify({
                         type: 'plan_complete',
@@ -1811,7 +2103,8 @@ test('pipeline returns a form choice when named-form matching is ambiguous', asy
     });
 
     assert.equal(result.type, 'message');
-    assert.match(result.message, /more than one form/i);
+    assert.match(result.message, /which form/i);
+    assert.equal(plannerCalls, 0);
     assert.deepEqual(result.inputs, [{
         id: 'formId',
         type: 'resource_choice',
@@ -1821,6 +2114,212 @@ test('pipeline returns a form choice when named-form matching is ambiguous', asy
             { id: 'form_member', name: 'Member Registration', description: null }
         ]
     }]);
+});
+
+test('pipeline resolves a generic Google Sheet before calling the planner', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let providerCalls = 0;
+    const provider = { async generateContent() { providerCalls += 1; throw new Error('planner should not run'); } };
+    const result = await generateWorkflowTurn({
+        request: 'When a customer submits feedback, save the response to Google Sheets.',
+        currentWorkflow: { nodes: [], edges: [] },
+        userContext: { forms: [{ id: 'form_feedback', title: 'Customer Feedback' }] },
+        resourceLookup: async ({ resource }) => resource === 'google-spreadsheets'
+            ? { options: [{ value: 'sheet_feedback', label: 'Feedback Responses' }] }
+            : {},
+        provider,
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec]),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'message');
+    assert.equal(result.inputs[0].id, 'spreadsheetId');
+    assert.equal(providerCalls, 0);
+});
+
+test('pipeline resolves form workflow contracts before calling the planner', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let providerCalls = 0;
+    const provider = { async generateContent() { providerCalls += 1; throw new Error('planner should not run'); } };
+    const sourceText = 'When a customer submits feedback, save the response to Google Sheets, notify support when the rating is 3 or below, and send a compensation offer.';
+    const result = await generateWorkflowTurn({
+        request: 'Customer Feedback Form',
+        currentWorkflow: { nodes: [], edges: [] },
+        formSchema: {
+            id: 'form_feedback',
+            title: 'Customer Feedback',
+            fields: [
+                { id: 'email', label: 'Email', type: 'email', required: true },
+                { id: 'rating', label: 'Rating', type: 'rating', required: true }
+            ]
+        },
+        turnContext: {
+            command: { type: 'submit_clarification', state: { spreadsheetId: 'sheet_feedback', formId: 'form_feedback' } },
+            intent: { sourceText, latestText: 'Customer Feedback Form' }
+        },
+        userContext: { forms: [{ id: 'form_feedback', title: 'Customer Feedback' }] },
+        resourceLookup: async ({ resource }) => resource === 'google-spreadsheets'
+            ? { options: [{ value: 'sheet_feedback', label: 'Feedback Responses' }] }
+            : {},
+        provider,
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec, emailSpec, conditionSpec, approvalSpec]),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'message');
+    assert.deepEqual(result.inputs.map(input => input.id), ['supportRecipient']);
+    assert.equal(providerCalls, 0);
+});
+
+test('pipeline builds the feedback routing request after prerequisite clarification', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const workflow = {
+        revision: 1,
+        nodes: [{
+            id: 'form_1',
+            type: 'trigger',
+            subType: 'form-submission',
+            nodeKey: 'trigger:form-submission',
+            title: 'Customer Feedback submitted',
+            config: { formId: 'form_feedback' },
+            position: { x: 100, y: 150 }
+        }],
+        edges: []
+    };
+    const formSchema = {
+        id: 'form_feedback',
+        title: 'Customer Feedback',
+        fields: [
+            { id: 'email', label: 'Email', type: 'email', required: true },
+            { id: 'rating', label: 'Rating', type: 'rating', required: true },
+            { id: 'comment', label: 'Feedback', type: 'paragraph', required: false }
+        ]
+    };
+    const plannerPrompts = [];
+    const workerPrompts = [];
+    const sourceText = 'When a customer submits feedback, save the response to Google Sheets, notify support when any rating is 3 or below, and create an approval step before sending a compensation offer';
+    const provider = {
+        async generateContent(contents, options) {
+            if (options.operation === 'workflow:planner') {
+                plannerPrompts.push(contents[0].parts[0].text);
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Save feedback, notify support for low ratings, and gate compensation.',
+                        requirements: [
+                            { id: 'req_save', description: 'Save the submitted feedback to Google Sheets.' },
+                            { id: 'req_notify', description: 'Notify support when the rating is 3 or below.' },
+                            { id: 'req_approval', description: 'Require approval before sending the compensation offer.' }
+                        ],
+                        selectedNodeKeys: ['action:googleSheets', 'action:email', 'logic:condition', 'logic:approval'],
+                        capabilities: ['owner_approval']
+                    })
+                };
+            }
+            if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
+                workerPrompts.push(contents[0].parts[0].text);
+                return {
+                    text: JSON.stringify({
+                        operations: [
+                            {
+                                op: 'create_node',
+                                node: {
+                                    ref: 'save_response',
+                                    nodeKey: 'action:googleSheets',
+                                    title: 'Save feedback response',
+                                    config: { operation: 'append', range: "'Responses'!A1", values: [] },
+                                    afterNodeRef: 'n1'
+                                }
+                            },
+                            {
+                                op: 'connect',
+                                from: { nodeRef: 'n1', handle: 'event' },
+                                to: { nodeRef: 'save_response', handle: 'event' }
+                            },
+                            {
+                                op: 'add_condition_branch',
+                                from: { nodeRef: 'save_response', handle: 'done' },
+                                condition: {
+                                    title: 'Rating is 3 or below',
+                                    config: { valueA: { $binding: 'form_field_2' }, operator: 'less_than_or_equal', valueB: 3 }
+                                },
+                                whenTrue: {
+                                    ref: 'notify_support',
+                                    nodeKey: 'action:email',
+                                    title: 'Notify support',
+                                    config: { to: 'support@example.com', subject: 'Low customer feedback rating' }
+                                },
+                                whenFalse: null
+                            },
+                            {
+                                op: 'add_approval_gate',
+                                from: { nodeRef: 'notify_support', handle: 'done' },
+                                approval: { title: 'Review compensation offer', config: { title: 'Review compensation offer' } },
+                                whenApproved: {
+                                    ref: 'send_compensation',
+                                    nodeKey: 'action:email',
+                                    title: 'Send compensation offer',
+                                    config: { to: { $binding: 'form_field_1' }, subject: 'Your compensation offer' }
+                                },
+                                whenRejected: null
+                            }
+                        ]
+                    })
+                };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'Customer Feedback Form',
+        currentWorkflow: workflow,
+        formSchema,
+        turnContext: {
+            command: {
+                type: 'submit_clarification',
+                state: {
+                    spreadsheetId: 'sheet_feedback',
+                    supportRecipient: 'support@example.com',
+                    compensationRecipient: 'offers@example.com'
+                }
+            },
+            intent: { sourceText, latestText: 'Customer Feedback Form' }
+        },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec, emailSpec, conditionSpec, approvalSpec]),
+        resourceLookup: async ({ resource }) => resource === 'google-spreadsheets'
+            ? { options: [{ value: 'sheet_feedback', label: 'Feedback Responses' }] }
+            : {},
+        resourceLoader: async ({ selections = {} }) => ({
+            'google-spreadsheets': { options: [{ value: 'sheet_feedback', label: 'Feedback Responses' }] },
+            'google-sheet-ranges': {
+                variants: {
+                    [JSON.stringify({ spreadsheetId: selections['google-spreadsheets'] })]: {
+                        options: [{ value: "'Responses'!A1", label: 'Responses' }]
+                    }
+                }
+            }
+        })
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.verification.status, 'pass');
+    assert.equal(result.nodes.filter(node => node.subType === 'condition').length, 1);
+    assert.equal(result.nodes.filter(node => node.subType === 'approval').length, 1);
+    assert.equal(result.nodes.find(node => node.title === 'Notify support')?.config?.to, 'support@example.com');
+    assert.ok(plannerPrompts.length > 0);
+    assert.match(plannerPrompts[0], new RegExp(sourceText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.ok(workerPrompts.length > 0);
+    assert.match(workerPrompts[0], /offers@example\.com/);
+    assert.deepEqual(result.nodes.find(node => node.title === 'Send compensation offer')?.config?.to, {
+        $expr: 'reference',
+        v: 1,
+        nodeId: 'form_1',
+        path: ['fields', 'email']
+    });
+    const condition = result.nodes.find(node => node.subType === 'condition');
+    assert.equal(result.edges.filter(edge => edge.source === condition.id && edge.sourceHandle === 'false').length, 0);
 });
 
 test('pipeline resumes a form choice clarification with the selected owned form', async () => {

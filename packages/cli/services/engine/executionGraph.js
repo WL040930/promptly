@@ -31,8 +31,7 @@ export const selectOutgoingEdges = (node, result = {}, edges = [], nodeMap = nul
     // to (for example) a response Sheet and a follow-up Condition.
     if (result.targetEdgeId) return edges.filter(edge => edge.id === result.targetEdgeId);
     if (result.targetHandle !== undefined && result.targetHandle !== null) {
-        const selected = edges.filter(edge => edge.sourceHandle === result.targetHandle);
-        return selected.length > 0 ? selected : edges;
+        return edges.filter(edge => edge.sourceHandle === result.targetHandle);
     }
     return edges;
 };

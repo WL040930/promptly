@@ -22,6 +22,41 @@ test('assigns compiler-owned unique references to every conditional branch node'
     assert.equal(operations[0].whenFalse.nodeKey, 'action:email');
 });
 
+test('keeps an explicit terminal conditional route null while normalizing the true action', () => {
+    const { operations, issues } = normalizeSemanticWorkflowOperations({
+        operations: [{
+            op: 'add_condition_branch',
+            from: { nodeRef: 'n2', handle: 'done' },
+            condition: { ref: 'low_rating', config: { valueA: { $binding: 'form_field_rating' }, operator: 'less_than_or_equal', valueB: 3 } },
+            whenTrue: { ref: 'notify_support', nodeKey: 'action:email', config: {} },
+            whenFalse: null
+        }],
+        knownNodeKeys: ['logic:condition', 'action:email']
+    });
+
+    assert.deepEqual(issues, []);
+    assert.equal(operations[0].whenTrue.ref, 'cf_1_true');
+    assert.equal(operations[0].whenFalse, null);
+});
+
+test('normalizes the compiler-owned approved action for a route-created approval gate', () => {
+    const { operations, issues } = normalizeSemanticWorkflowOperations({
+        operations: [{
+            op: 'add_approval_gate',
+            from: { nodeRef: 'notify_support', handle: 'outputData' },
+            approval: { ref: 'review_compensation', config: {} },
+            whenApproved: { ref: 'send_compensation', nodeKey: 'action:email', config: {} },
+            whenRejected: null
+        }],
+        knownNodeKeys: ['logic:approval', 'action:email']
+    });
+
+    assert.deepEqual(issues, []);
+    assert.equal(operations[0].approval.ref, 'cf_1_approval');
+    assert.equal(operations[0].whenApproved.ref, 'cf_1_approved');
+    assert.equal(operations[0].whenRejected, null);
+});
+
 test('rewrites a later semantic operation to a uniquely created earlier route', () => {
     const { operations, issues } = normalizeSemanticWorkflowOperations({
         operations: [

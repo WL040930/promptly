@@ -26,7 +26,7 @@ const CustomCodeInput = ({ value, sampleInput, onChange, onSampleInputChange }) 
             </div>
             <button type="button" onClick={test} disabled={isTesting || !value?.trim()} className="rounded-xl bg-[#5b4ee8] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#4e42d0] disabled:cursor-not-allowed disabled:opacity-50">{isTesting ? 'Running sandbox…' : 'Test with sample input'}</button>
             {result && <pre className={`max-h-48 overflow-auto rounded-xl border p-2.5 text-[11px] leading-4 ${result.success ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{JSON.stringify(result.success ? { output: result.output, logs: result.logs } : { error: result.message }, null, 2)}</pre>}
-            <p className="text-[10px] leading-4 text-slate-400">Sandboxed APIs: input, variables, metadata, JSON, Math, Date, and console. Network, files, imports, secrets, and child processes are blocked.</p>
+            <p className="text-[10px] leading-4 text-slate-400">The code receives the previous step&apos;s output as <code>input</code>. Available APIs: input, variables, metadata, JSON, Math, Date, and console. Network, files, imports, secrets, and child processes are blocked.</p>
         </div>
     );
 };

@@ -8,6 +8,8 @@ const safeIssueMessage = issue => {
         WORKFLOW_CONNECTION_NOT_FOUND: 'Promptly could not match a generated step to the current workflow route.',
         WORKFLOW_ROUTE_NOT_FOUND: 'Promptly could not find the selected workflow route.',
         WORKFLOW_ROUTE_AMBIGUOUS: 'Promptly found more than one destination on this route.',
+        WORKFLOW_AI_VERIFICATION_FAILED: 'Promptly could not confirm that every requested workflow detail was satisfied.',
+        REQUIREMENT_NOT_SATISFIED: 'Promptly could not confirm that one requested workflow detail was satisfied.',
         WORKFLOW_HANDLE_REQUIRED: 'An AI-generated connection did not specify the route it needs.',
         WORKFLOW_HANDLE_INVALID: 'An AI-generated connection used an unavailable route.',
         WORKFLOW_CONDITION_BRANCH_INVALID: 'The conditional branch proposal was incomplete.',
@@ -17,6 +19,11 @@ const safeIssueMessage = issue => {
         WORKFLOW_CONDITION_BRANCH_ACTION_INVALID: 'One of the conditional outcomes was not a valid workflow step.',
         WORKFLOW_CONDITION_SCHEMA_INVALID: 'Promptly could not find the required true and false routes for this condition.',
         WORKFLOW_SEMANTIC_REF_AMBIGUOUS: 'Promptly could not identify a later route that refers to a newly generated branch step.',
+        WORKFLOW_APPROVAL_SOURCE_HANDLE_REQUIRED: 'Promptly could not identify the route that should enter the approval step.',
+        WORKFLOW_APPROVAL_APPROVED_ACTION_INVALID: 'Promptly could not identify the action after approval.',
+        WORKFLOW_APPROVAL_REJECTED_ACTION_INVALID: 'Promptly could not identify the action after rejection.',
+        RATING_FIELD_MISSING: 'The selected form does not contain a rating or score field.',
+        RESPONDENT_CONTACT_FIELD_MISSING: 'The selected form does not contain a usable respondent email field.',
         WORKFLOW_AI_NODE_SELECTION_REQUIRED: 'Promptly could not select the workflow steps needed for this request.',
         UNREACHABLE_NODE: 'Promptly could not connect all workflow steps to the trigger.',
         INVALID_WORKER_RESPONSE: 'The AI response was incomplete before any workflow steps were generated.',
@@ -70,7 +77,10 @@ const conditionalBranchIssueCodes = [
     'WORKFLOW_CONDITION_CONFIG_INVALID',
     'WORKFLOW_CONDITION_BRANCH_ACTION_INVALID',
     'WORKFLOW_CONDITION_SCHEMA_INVALID',
-    'WORKFLOW_SEMANTIC_REF_AMBIGUOUS'
+    'WORKFLOW_SEMANTIC_REF_AMBIGUOUS',
+    'WORKFLOW_APPROVAL_SOURCE_HANDLE_REQUIRED',
+    'WORKFLOW_APPROVAL_APPROVED_ACTION_INVALID',
+    'WORKFLOW_APPROVAL_REJECTED_ACTION_INVALID'
 ];
 
 const workflowResponseIssueCodes = [
@@ -109,7 +119,7 @@ export const buildAssistantRecovery = ({ surface = 'assistant', code, issues = [
     const safeIssues = (Array.isArray(issues) ? issues : []).slice(0, 3).map(cleanIssue);
     const primaryIssue = safeIssues[0] || null;
     const retryAction = context.retryText
-        ? { type: 'retry', label: 'Try again' }
+        ? { type: 'retry', label: 'Try again', ...(context.resumeActiveWork ? { mode: 'resume_active_work' } : {}) }
         : { type: 'focus_composer', label: 'Try again' };
 
     if (has(safeIssues, 'RESPONDENT_CONTACT_FIELD_MISSING')) {
@@ -130,6 +140,17 @@ export const buildAssistantRecovery = ({ surface = 'assistant', code, issues = [
             summary: 'The linked form has more than one possible email field, so Promptly cannot safely choose who should receive the message.',
             steps: ['Choose the respondent email field in the form settings.', 'Then try this request again.'],
             action: context.formId ? { type: 'open_form', label: 'Open form settings', formId: context.formId, section: 'settings' } : { type: 'focus_composer', label: 'Clarify the recipient' },
+            details: safeIssues
+        });
+    }
+
+    if (has(safeIssues, 'RATING_FIELD_MISSING')) {
+        return recovery({
+            type: 'workflow_setup_needed',
+            title: 'A rating field is needed',
+            summary: 'Promptly cannot create the rating-based branch until the selected form collects a rating or score.',
+            steps: ['Add a rating or score field to the selected form.', 'Then try this workflow request again.'],
+            action: context.formId ? { type: 'open_form', label: 'Open form', formId: context.formId, section: 'build' } : { type: 'focus_composer', label: 'Describe a different change' },
             details: safeIssues
         });
     }
@@ -163,6 +184,19 @@ export const buildAssistantRecovery = ({ surface = 'assistant', code, issues = [
             steps: ['Choose an available resource in the workflow.', 'Then generate a new proposal.'],
             action: { type: 'focus_composer', label: 'Generate a new proposal' },
             details: safeIssues
+        });
+    }
+
+    if (has(safeIssues, 'WORKFLOW_AI_VERIFICATION_FAILED', 'REQUIREMENT_NOT_SATISFIED')) {
+        return recovery({
+            type: 'workflow_verification_failed',
+            title: 'The workflow did not pass its final check',
+            summary: 'Promptly could not confirm that every requested detail was represented, so no changes were made.',
+            steps: ['Try again so Promptly can rebuild and verify the workflow.', 'If it keeps happening, split the request into smaller workflow changes.'],
+            action: retryAction,
+            location: 'Final workflow verification — no workflow node was changed.',
+            details: safeIssues,
+            retryable: true
         });
     }
 

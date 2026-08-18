@@ -27,7 +27,7 @@ export const nodeDefinitionsForOperations = (operations = []) => (operations || 
         operation.otherwise
     ];
     if (operation.op === 'add_error_handler') return [operation.whenError];
-    if (operation.op === 'add_approval_gate') return [operation.whenRejected];
+    if (operation.op === 'add_approval_gate') return [operation.whenApproved, operation.whenRejected];
     if (operation.op === 'join_branches') return [operation.continueWith];
     return [];
 }).filter(Boolean);

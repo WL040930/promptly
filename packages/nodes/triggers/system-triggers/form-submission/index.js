@@ -7,6 +7,7 @@ export default class PromptlyFormNode extends BaseNode {
         return {
             ...context,
             success: true,
+            outputData:   payload.fields      || {},
             triggerData:  payload,
             fields:       payload.fields      || {},
             responseId:   payload.responseId  || null,

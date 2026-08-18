@@ -45,6 +45,9 @@ const normalizeInput = value => {
     if (value?.type === 'decide_for_me') {
         return { command: { type: 'decide_for_me', clarificationId: value.clarificationId || null }, text: 'Use sensible defaults.' };
     }
+    if (value?.type === 'retry_active_work') {
+        return { command: { type: 'retry_active_work' }, text: 'Try again' };
+    }
     if (value?.type === 'submit_clarification') {
         const text = String(value.text || '').trim();
         return { command: { type: 'submit_clarification', text, state: value.state || {} }, text: text || 'Submitted clarification' };
@@ -377,6 +380,10 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
             return;
         }
         if (action?.type === 'retry') {
+            if (action.mode === 'resume_active_work') {
+                void handleSend({ type: 'retry_active_work' });
+                return;
+            }
             const retryText = recovery.retryText || previousRequest;
             if (retryText) void handleSend(retryText);
             return;

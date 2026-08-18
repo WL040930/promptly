@@ -160,6 +160,28 @@ test('worker context gives the model server-issued form field bindings', () => {
     assert.doesNotMatch(context, /semanticToken|runtimeToken|formField:/);
 });
 
+test('worker context gives separate support and respondent recipient contracts', () => {
+    const context = buildWorkflowWorkerContext({
+        workflow: { nodes: [], edges: [] },
+        specs: [],
+        requirements: [],
+        capabilities: [],
+        resourceContext: {},
+        formPrerequisites: {
+            rating: { $binding: 'form_field_2' },
+            respondentEmail: { $binding: 'form_field_1' },
+            compensationRecipient: 'offers@example.com',
+            supportRecipient: 'support@example.com'
+        }
+    });
+
+    assert.match(context, /Resolved Form Workflow Contracts/);
+    assert.match(context, /support@example\.com/);
+    assert.match(context, /form_field_2/);
+    assert.match(context, /form_field_1/);
+    assert.match(context, /offers@example\.com/);
+});
+
 test('worker context removes legacy placeholder examples and states the structured reference contract', () => {
     const context = buildWorkflowWorkerContext({
         workflow: { nodes: [], edges: [] },

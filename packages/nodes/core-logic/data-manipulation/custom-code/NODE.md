@@ -15,7 +15,7 @@ ui:
 # Custom JavaScript Node
 
 ## When to use this node
-Transform JSON data with a sandboxed JavaScript function. The code can read `input`, `variables`, and `metadata`, and must return a JSON-serializable value.
+Transform JSON data with a sandboxed JavaScript function. `input` is the previous connected step's `outputData` (a Promptly Form supplies its submitted fields), while `variables` and `metadata` provide workflow context. The function must return a JSON-serializable value.
 
 ## Configuration Schema
 The code runs in a separate restricted worker. Filesystem, network, imports, secrets, and child processes are unavailable.

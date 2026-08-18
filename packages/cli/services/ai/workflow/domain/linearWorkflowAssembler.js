@@ -1,3 +1,5 @@
+import { SEMANTIC_CONTROL_FLOW_NODE_KEYS } from './editCompiler/contracts.js';
+
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const cloneValue = value => isObject(value) || Array.isArray(value) ? JSON.parse(JSON.stringify(value)) : value;
 
@@ -55,7 +57,16 @@ export const assembleLinearWorkflow = ({ workflow = {}, plan = {}, specs = [], f
         if (inputs.length > 1) {
             return unavailable('The requested workflow needs branching or multiple inputs, so it cannot use the linear assembler.');
         }
-        if (index < resolvedSteps.length - 1 && outputs.length !== 1) {
+        if (item.spec.nodeKey === 'logic:approval' && inputs.length !== 1) {
+            return unavailable('An Approval step must expose exactly one connection input.');
+        }
+        if (index < resolvedSteps.length - 1 && item.spec.nodeKey === 'logic:approval') {
+            const next = resolvedSteps[index + 1];
+            const nextInputs = connectionPorts(next.spec, 'inputs');
+            if (SEMANTIC_CONTROL_FLOW_NODE_KEYS.has(next.spec.nodeKey) || nextInputs.length !== 1) {
+                return unavailable('A middle Approval step must be followed by one ordinary action with one connection input.');
+            }
+        } else if (index < resolvedSteps.length - 1 && outputs.length !== 1) {
             return unavailable('A non-terminal linear step must expose exactly one output route.');
         }
     }
@@ -66,8 +77,7 @@ export const assembleLinearWorkflow = ({ workflow = {}, plan = {}, specs = [], f
         return unavailable('The response spreadsheet destination is ambiguous for the linear assembler.');
     }
     const responseSheet = responseSheetChanges[0] || null;
-    const operations = [];
-
+    const preparedSteps = [];
     for (const { step, spec, index } of resolvedSteps) {
         const config = { ...defaultConfigFor(spec), ...(isObject(step.config) ? cloneValue(step.config) : {}) };
         if (spec.nodeKey === 'trigger:form-submission') {
@@ -84,9 +94,17 @@ export const assembleLinearWorkflow = ({ workflow = {}, plan = {}, specs = [], f
         if (missing.length > 0) {
             return unavailable(`The ${spec.nodeKey} step is missing required configuration: ${missing.join(', ')}.`);
         }
+        preparedSteps.push({ step, spec, index, config });
+    }
+
+    const operations = [];
+    const approvedRouteSteps = new Set();
+
+    for (const { step, spec, index, config } of preparedSteps) {
+        if (approvedRouteSteps.has(step.ref)) continue;
         const isTerminalApproval = index === resolvedSteps.length - 1 && spec.nodeKey === 'logic:approval';
         if (isTerminalApproval) {
-            const source = resolvedSteps[index - 1];
+            const source = preparedSteps[index - 1];
             operations.push({
                 op: 'add_terminal_approval',
                 from: { nodeRef: source.step.ref, handle: connectionPorts(source.spec, 'outputs')[0] || null },
@@ -98,22 +116,46 @@ export const assembleLinearWorkflow = ({ workflow = {}, plan = {}, specs = [], f
             });
             continue;
         }
+        if (spec.nodeKey === 'logic:approval') {
+            const source = preparedSteps[index - 1];
+            const approved = preparedSteps[index + 1];
+            if (!source || !approved) {
+                return unavailable('A middle Approval step needs a source and an approved action.');
+            }
+            approvedRouteSteps.add(approved.step.ref);
+            operations.push({
+                op: 'add_approval_gate',
+                from: { nodeRef: source.step.ref, handle: connectionPorts(source.spec, 'outputs')[0] || null },
+                approval: {
+                    ref: step.ref,
+                    title: step.title || spec.title,
+                    config
+                },
+                whenApproved: {
+                    ref: approved.step.ref,
+                    nodeKey: approved.spec.nodeKey,
+                    title: approved.step.title || approved.spec.title,
+                    config: approved.config
+                }
+            });
+            continue;
+        }
         operations.push({
             op: 'create_node',
             node: {
                 ref: step.ref,
                 nodeKey: spec.nodeKey,
                 title: step.title || spec.title,
-                ...(index > 0 ? { afterNodeRef: resolvedSteps[index - 1].step.ref } : {}),
+                ...(index > 0 ? { afterNodeRef: preparedSteps[index - 1].step.ref } : {}),
                 config
             }
         });
     }
 
     for (let index = 0; index < resolvedSteps.length - 1; index += 1) {
-        const from = resolvedSteps[index];
-        const to = resolvedSteps[index + 1];
-        if (to.spec.nodeKey === 'logic:approval' && index + 1 === resolvedSteps.length - 1) continue;
+        const from = preparedSteps[index];
+        const to = preparedSteps[index + 1];
+        if (to.spec.nodeKey === 'logic:approval' || from.spec.nodeKey === 'logic:approval' || approvedRouteSteps.has(to.step.ref)) continue;
         operations.push({
             op: 'connect',
             from: { nodeRef: from.step.ref, handle: connectionPorts(from.spec, 'outputs')[0] || null },

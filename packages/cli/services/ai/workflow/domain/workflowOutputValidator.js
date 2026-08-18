@@ -15,10 +15,43 @@ const INPUT_TYPES = new Set(['single_choice', 'multiple_choice', 'text', 'textar
 const PLANNER_TYPES = new Set(['reply', 'message', 'inspect_form', 'inspect_resource', 'resolve_resource', 'diagnose_run', 'direct_plan', 'plan_complete']);
 const CAPABILITIES = new Set(['respondent_confirmation', 'owner_approval', 'per_submission_spreadsheet']);
 const RESOURCE_CHANGE_TYPES = new Set(['create_google_spreadsheet']);
+const RESOURCE_CHANGE_TYPE_ALIASES = Object.freeze({
+    create_google_sheet: 'create_google_spreadsheet',
+    create_google_sheets: 'create_google_spreadsheet',
+    create_sheet: 'create_google_spreadsheet',
+    create_spreadsheet: 'create_google_spreadsheet',
+    google_sheet: 'create_google_spreadsheet',
+    google_spreadsheet: 'create_google_spreadsheet',
+    creategooglesheet: 'create_google_spreadsheet',
+    creategooglespreadsheet: 'create_google_spreadsheet'
+});
 
 const issue = (code, path, message) => ({ code, path, message });
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const RAW_WORKFLOW_REFERENCE_RE = /\{\{[^{}]+\}\}/g;
+
+const normalizedResourceChangeType = value => String(value || '')
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[\s-]+/g, '_');
+
+/**
+ * Keep the planner contract strict while tolerating common model spellings at
+ * the AI boundary. The persisted/apply contract remains exactly
+ * create_google_spreadsheet; unknown resource types are left untouched so the
+ * validator can reject them instead of silently dropping a requested change.
+ */
+export const normalizeWorkflowPlannerResult = result => {
+    if (!isObject(result) || !Array.isArray(result.resourceChanges)) return result;
+    return {
+        ...result,
+        resourceChanges: result.resourceChanges.map(change => {
+            if (!isObject(change)) return change;
+            const alias = RESOURCE_CHANGE_TYPE_ALIASES[normalizedResourceChangeType(change.type)];
+            return alias ? { ...change, type: alias } : change;
+        })
+    };
+};
 
 const schemaByNodeKey = specs => new Map((specs || []).map(spec => [
     spec?.nodeKey || `${spec?.type || ''}:${spec?.subType || ''}`,
@@ -222,7 +255,12 @@ const validateResourceChanges = changes => {
             return;
         }
         issues.push(...textIssues(change.ref, `${path}.ref`, { required: true, max: 100 }));
-        if (!RESOURCE_CHANGE_TYPES.has(change.type)) issues.push(issue('INVALID_RESOURCE_CHANGE_TYPE', `${path}.type`, 'Unsupported resource change.'));
+        if (!RESOURCE_CHANGE_TYPES.has(change.type)) {
+            issues.push({
+                ...issue('INVALID_RESOURCE_CHANGE_TYPE', `${path}.type`, 'Unsupported resource change type. Use create_google_spreadsheet for a proposed Google Sheet.'),
+                allowed: [...RESOURCE_CHANGE_TYPES]
+            });
+        }
         issues.push(...textIssues(change.title, `${path}.title`, { required: true, max: 180 }));
         if (change.sheetTitle !== undefined) issues.push(...textIssues(change.sheetTitle, `${path}.sheetTitle`, { max: 100 }));
         if (change.ref && refs.has(change.ref)) issues.push(issue('DUPLICATE_RESOURCE_CHANGE_REF', `${path}.ref`, 'Resource change refs must be unique.'));
@@ -238,6 +276,7 @@ const MERGE_MODES = new Set(['object', 'array', 'last']);
 const missingConditionValue = value => value === undefined || value === null || (typeof value === 'string' && !value.trim());
 
 const validateConditionBranchAction = (action, path) => {
+    if (action === null || action === undefined) return [];
     if (!isObject(action)) return [issue('WORKFLOW_CONDITION_BRANCH_ACTION_INVALID', path, 'Each conditional outcome must be a node definition.')];
     const issues = [
         ...textIssues(action.nodeKey, `${path}.nodeKey`, { required: true, max: 150 })
@@ -285,6 +324,11 @@ const validateConditionBranchOperation = (operation, path) => {
         }
     }
 
+    if (operation.whenTrue === null || operation.whenTrue === undefined) {
+        if (operation.whenFalse === null || operation.whenFalse === undefined) {
+            issues.push(issue('WORKFLOW_CONDITION_BRANCH_ACTION_INVALID', path, 'A conditional branch needs at least one outcome; set the unused route to null to end that path.'));
+        }
+    }
     issues.push(...validateConditionBranchAction(operation.whenTrue, `${path}.whenTrue`));
     issues.push(...validateConditionBranchAction(operation.whenFalse, `${path}.whenFalse`));
     return issues;
@@ -395,21 +439,34 @@ const validateErrorHandlerOperation = (operation, path) => {
 };
 
 const validateApprovalGateOperation = (operation, path) => {
-    const issues = [
-        ...validateEndpoint(operation.connection?.from, `${path}.connection.from`, {
-            code: 'WORKFLOW_APPROVAL_GATE_CONNECTION_INVALID',
-            message: 'An approval gate needs the existing source connection.'
-        }),
-        ...validateEndpoint(operation.connection?.to, `${path}.connection.to`, {
-            code: 'WORKFLOW_APPROVAL_GATE_CONNECTION_INVALID',
-            message: 'An approval gate needs the existing destination connection.'
-        }),
-        ...validateControlDefinition(operation.approval, `${path}.approval`, {
-            code: 'WORKFLOW_APPROVAL_GATE_INVALID',
-            message: 'An approval gate needs an Approval definition.'
-        })
-    ];
-    if (operation.whenRejected !== undefined) {
+    const isNewRoute = !isObject(operation.connection);
+    const issues = isNewRoute
+        ? [
+            ...validateEndpoint(operation.from, `${path}.from`, {
+                code: 'WORKFLOW_APPROVAL_SOURCE_HANDLE_REQUIRED',
+                message: 'A new approval route needs the source route to review.',
+                requireHandle: true
+            }),
+            ...validateSemanticAction(operation.whenApproved, `${path}.whenApproved`, {
+                code: 'WORKFLOW_APPROVAL_APPROVED_ACTION_INVALID',
+                message: 'A new approval route needs an approved action.'
+            })
+        ]
+        : [
+            ...validateEndpoint(operation.connection?.from, `${path}.connection.from`, {
+                code: 'WORKFLOW_APPROVAL_GATE_CONNECTION_INVALID',
+                message: 'An approval gate needs the existing source connection.'
+            }),
+            ...validateEndpoint(operation.connection?.to, `${path}.connection.to`, {
+                code: 'WORKFLOW_APPROVAL_GATE_CONNECTION_INVALID',
+                message: 'An approval gate needs the existing destination connection.'
+            })
+        ];
+    issues.push(...validateControlDefinition(operation.approval, `${path}.approval`, {
+        code: 'WORKFLOW_APPROVAL_GATE_INVALID',
+        message: 'An approval gate needs an Approval definition.'
+    }));
+    if (operation.whenRejected !== undefined && operation.whenRejected !== null) {
         issues.push(...validateSemanticAction(operation.whenRejected, `${path}.whenRejected`, {
             code: 'WORKFLOW_APPROVAL_REJECTED_ACTION_INVALID',
             message: 'The rejected route needs an action.'

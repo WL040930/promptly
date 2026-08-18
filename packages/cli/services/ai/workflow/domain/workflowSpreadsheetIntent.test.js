@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { namedSpreadsheetFromText, resolveSpreadsheetIntent, spreadsheetIdFromValue } from './workflowSpreadsheetIntent.js';
+import {
+    isExplicitPerSubmissionSpreadsheetRequest,
+    namedSpreadsheetFromText,
+    resolveSpreadsheetIntent,
+    spreadsheetIdFromValue
+} from './workflowSpreadsheetIntent.js';
 
 test('extracts a named Google Sheet destination from a save request', () => {
     assert.equal(
@@ -28,9 +33,9 @@ test('removing a pending Sheet creation recovers the original named destination'
     });
 });
 
-test('keeps unnamed spreadsheet requests eligible for a proposed creation', () => {
+test('requires an existing Sheet for unnamed spreadsheet requests', () => {
     assert.deepEqual(resolveSpreadsheetIntent({ request: 'Save each response to Google Sheets.' }), {
-        mode: 'unnamed', source: 'request'
+        mode: 'requires_existing', source: 'request'
     });
     assert.equal(spreadsheetIdFromValue('sheet_123'), 'sheet_123');
 });
@@ -41,11 +46,42 @@ test('an explicit create request overrides a named destination', () => {
     });
 });
 
+test('does not treat saving every submission to a new Sheet as one Sheet per submission', () => {
+    assert.equal(
+        isExplicitPerSubmissionSpreadsheetRequest('Create a contact form and save every submission to a new Google Sheet'),
+        false
+    );
+    assert.equal(
+        isExplicitPerSubmissionSpreadsheetRequest('Save all responses to a new Google Sheet.'),
+        false
+    );
+});
+
+test('recognizes explicit per-submission Sheet creation', () => {
+    for (const request of [
+        'Create a separate Google Sheet for each form submission.',
+        'For every response, create a new Sheet.',
+        'Create one Sheet per submission.'
+    ]) {
+        assert.equal(isExplicitPerSubmissionSpreadsheetRequest(request), true, request);
+    }
+});
+
 test('a structured Create answer keeps the original destination name instead of parsing the button label', () => {
     assert.deepEqual(resolveSpreadsheetIntent({
         request: 'Or create a new Sheet: Create a new Event Registration Sheet',
         sourceText: 'When the Event Registration form is submitted, save the response to the Event Registration Google Sheet.',
         clarificationState: { createSpreadsheet: 'create' }
+    }), {
+        mode: 'create', source: 'clarification', name: 'Event Registration'
+    });
+});
+
+test('a resource picker Create choice is treated as a structured create decision', () => {
+    assert.deepEqual(resolveSpreadsheetIntent({
+        request: 'create',
+        sourceText: 'When the Event Registration form is submitted, save the response to the Event Registration Google Sheet.',
+        clarificationState: { spreadsheetId: 'create' }
     }), {
         mode: 'create', source: 'clarification', name: 'Event Registration'
     });

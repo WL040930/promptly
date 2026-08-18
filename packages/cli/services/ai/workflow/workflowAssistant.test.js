@@ -605,12 +605,14 @@ test('workflow AI rejects a turn from an out-of-date browser state without invok
 test('workflow AI records a structured clarification answer before continuing the original request', async () => {
     const memory = createMemoryModels();
     const turnContexts = [];
+    const turnRequests = [];
     let call = 0;
     const assistant = createWorkflowAssistant({
         models: memory.models,
         db: { transaction: async callback => callback({}) },
         runTurn: async args => {
             turnContexts.push(args.turnContext);
+            turnRequests.push(args.request);
             call += 1;
             return call === 1
                 ? { kind: 'clarification', message: 'Which provider?', inputs: [{ id: 'provider', type: 'single_choice', label: 'Provider', options: ['Gmail', 'Outlook'] }] }
@@ -630,6 +632,7 @@ test('workflow AI records a structured clarification answer before continuing th
 
     assert.deepEqual(clarification.payload.selectedState, { provider: ['Gmail'] });
     assert.equal(clarification.payload.resolution.type, 'answered');
+    assert.equal(turnRequests[1], 'Add an email notification.');
     assert.equal(turnContexts[1].intent.sourceText, 'Add an email notification.');
     assert.deepEqual(turnContexts[1].intent.latestText, 'Gmail');
     assert.deepEqual(turnContexts[1].command.state, { provider: ['Gmail'] });
@@ -674,6 +677,121 @@ test('workflow AI carries earlier answers into a follow-up clarification', async
         deliveryChannel: ['Email'],
         deliveryTone: ['Formal']
     });
+});
+
+test('workflow AI resumes a retryable failure with the original request and accumulated answers', async () => {
+    const memory = createMemoryModels();
+    const calls = [];
+    let call = 0;
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async args => {
+            calls.push(args);
+            call += 1;
+            if (call === 1) return {
+                kind: 'clarification',
+                message: 'Which form should start this workflow?',
+                inputs: [{ id: 'formId', type: 'resource_choice', label: 'Form', options: [{ id: 'form_1', name: 'Feedback' }] }]
+            };
+            if (call === 2) return {
+                kind: 'error',
+                errorMetadata: {
+                    code: 'WORKFLOW_EDIT_GRAPH_INVALID',
+                    issues: [{ code: 'WORKFLOW_EDIT_GRAPH_INVALID', message: 'invalid graph' }]
+                }
+            };
+            return { kind: 'reply', message: 'Workflow draft is ready.' };
+        },
+        idFactory: (() => { let count = 0; return prefix => `${prefix}_${++count}`; })()
+    });
+
+    const sourceText = 'When a customer submits feedback, save it to Google Sheets and notify support for low ratings.';
+    await assistant.submitTurn({
+        userId: 'user_1', workflowId: 'workflow_1',
+        command: { type: 'submit_text', text: sourceText }
+    });
+    const failed = await assistant.submitTurn({
+        userId: 'user_1', workflowId: 'workflow_1',
+        command: { type: 'submit_clarification', text: 'Feedback', state: { formId: 'form_1' } }
+    });
+
+    assert.equal(failed.botMsg.kind, 'error');
+    assert.equal(failed.botMsg.payload.recovery.action.mode, 'resume_active_work');
+    assert.equal(failed.state.activeWork.retryable, true);
+    assert.equal(failed.state.activeWork.sourceText, sourceText);
+    assert.deepEqual(failed.state.activeWork.clarificationState, { formId: 'form_1' });
+
+    const resumed = await assistant.submitTurn({
+        userId: 'user_1', workflowId: 'workflow_1',
+        command: { type: 'retry_active_work' }
+    });
+
+    assert.equal(calls[2].request, sourceText);
+    assert.equal(calls[2].turnContext.command.type, 'retry_active_work');
+    assert.deepEqual(calls[2].turnContext.command.state, { formId: 'form_1' });
+    assert.equal(resumed.state.activeWork, null);
+});
+
+test('workflow AI rejects retry when no resumable workflow context exists', async () => {
+    const memory = createMemoryModels();
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async () => ({ kind: 'reply', message: 'unexpected' })
+    });
+
+    await assert.rejects(
+        () => assistant.submitTurn({
+            userId: 'user_1', workflowId: 'workflow_1',
+            command: { type: 'retry_active_work' }
+        }),
+        error => error.code === 'WORKFLOW_AI_RETRY_UNAVAILABLE'
+    );
+});
+
+test('workflow AI treats new text after a retryable failure as a fresh request', async () => {
+    const memory = createMemoryModels();
+    const requests = [];
+    let call = 0;
+    const assistant = createWorkflowAssistant({
+        models: memory.models,
+        db: { transaction: async callback => callback({}) },
+        runTurn: async args => {
+            requests.push(args);
+            call += 1;
+            if (call === 1) return {
+                kind: 'clarification',
+                message: 'Choose the form.',
+                inputs: [{ id: 'formId', type: 'resource_choice', label: 'Form', options: [{ id: 'form_1', name: 'Feedback' }] }]
+            };
+            if (call === 2) return {
+                kind: 'error',
+                errorMetadata: {
+                    code: 'WORKFLOW_EDIT_GRAPH_INVALID',
+                    issues: [{ code: 'WORKFLOW_EDIT_GRAPH_INVALID', message: 'invalid graph' }]
+                }
+            };
+            return { kind: 'reply', message: 'Fresh request recorded.' };
+        }
+    });
+
+    await assistant.submitTurn({
+        userId: 'user_1', workflowId: 'workflow_1',
+        command: { type: 'submit_text', text: 'Create a feedback automation using form_1.' }
+    });
+    await assistant.submitTurn({
+        userId: 'user_1', workflowId: 'workflow_1',
+        command: { type: 'submit_clarification', text: 'Feedback', state: { formId: 'form_1' } }
+    });
+    await assistant.submitTurn({
+        userId: 'user_1', workflowId: 'workflow_1',
+        command: { type: 'submit_text', text: 'Rename the workflow to Support Intake.' }
+    });
+
+    assert.equal(requests[2].request, 'Rename the workflow to Support Intake.');
+    assert.equal(requests[2].turnContext.intent.sourceText, 'Rename the workflow to Support Intake.');
+    assert.equal(requests[2].turnContext.command.state?.formId, undefined);
 });
 
 test('workflow AI rejects a partial clarification without closing it or starting a turn', async () => {
@@ -788,6 +906,10 @@ test('normalizeWorkflowCommand passes through a decide_for_me command object', (
     const result = normalizeWorkflowCommand({ type: 'decide_for_me', clarificationId: 'clar_1' });
     assert.equal(result.type, 'decide_for_me');
     assert.equal(result.clarificationId, 'clar_1');
+});
+
+test('normalizeWorkflowCommand accepts an explicit active-work retry command', () => {
+    assert.deepEqual(normalizeWorkflowCommand({ type: 'retry_active_work' }), { type: 'retry_active_work' });
 });
 
 test('normalizeWorkflowCommand preserves text commands for the turn context to interpret', () => {

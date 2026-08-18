@@ -46,7 +46,19 @@ test('assistant work keeps safe artifacts with the current activity', () => {
     });
     assert.equal(work.currentArtifact.title, 'What Promptly understood');
     assert.deepEqual(work.currentArtifact.items, ['Start on form submission', 'Ask the owner for approval']);
+    assert.equal(work.currentArtifact.itemCount, 2);
     assert.equal(work.artifacts.length, 1);
+});
+
+test('assistant work keeps the full artifact count when display items are capped', () => {
+    const items = Array.from({ length: 8 }, (_, index) => `Workflow step ${index + 1}`);
+    const work = advanceAssistantWork(createAssistantWork({ requestId: 'request_1', surface: 'workflow' }), {
+        status: 'checking', phase: 'check', label: 'Checking the workflow draft',
+        artifact: { id: 'workflow-draft', kind: 'draft', items }
+    });
+
+    assert.equal(work.currentArtifact.itemCount, 8);
+    assert.equal(work.currentArtifact.items.length, 6);
 });
 
 test('assistant work records the planner outcome without losing it during later progress', () => {

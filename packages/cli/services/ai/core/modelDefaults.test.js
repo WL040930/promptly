@@ -8,6 +8,7 @@ import { resolveMaxCompletionTokens, TASK_POLICIES } from './taskPolicies.js';
 import { AI_TASKS } from './aiTasks.js';
 
 test('uses the OpenRouter Nemotron free model as its default', () => {
+    assert.equal(DEFAULT_AI_MODELS.gemini, 'gemini-3.5-flash-lite');
     assert.equal(DEFAULT_AI_MODELS.nvidia, 'nvidia/nemotron-3-super-120b-a12b');
     assert.equal(DEFAULT_AI_MODELS.openrouter, 'nvidia/nemotron-3-super-120b-a12b:free');
     assert.equal(DEFAULT_AI_MODELS.groq, 'openai/gpt-oss-120b');

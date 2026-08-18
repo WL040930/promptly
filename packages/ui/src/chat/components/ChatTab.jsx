@@ -23,6 +23,7 @@ import { isDurableStreamDetachError } from '../../api/aiStream.js';
 import { useDurableTurnMonitor } from '../../api/hooks/useDurableTurnMonitor.js';
 import { emitAITurnLifecycle } from '../../utils/browserNotifications.js';
 import { outcomeForAssistantMessage } from '../../../../shared/assistantTurnNotification.js';
+import { reconcileAskPromptlyTurnMessages } from '../../utils/askPromptlyMessageReconciliation.js';
 
 const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I can build automations and forms from a description. What would you like to automate?' };
 const WorkflowDiffPreviewModal = lazy(() => import('../../builder/components/modals/WorkflowDiffPreviewModal.jsx'));
@@ -126,17 +127,7 @@ export default function ChatTab({ conversationId = null }) {
             if (nextPath) navigate(nextPath);
         }
         if (response?.reply || response?.clarification) {
-            const supersededMessageIds = new Set(response.reply?.payload?.supersededMessageIds || []);
-            setMessages(previous => [
-                ...(supersededMessageIds.size > 0
-                    ? previous.map(message => supersededMessageIds.has(message.id)
-                        ? { ...message, proposalStatus: 'superseded' }
-                        : message)
-                    : previous).map(message => response.clarification?.id === message.id
-                        ? response.clarification
-                        : message),
-                ...(response.reply ? [response.reply] : [])
-            ]);
+            setMessages(previous => reconcileAskPromptlyTurnMessages(previous, response));
         }
     };
 

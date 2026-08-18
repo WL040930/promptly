@@ -5,6 +5,7 @@ import { formatFormSettingValue, getFormSettingLabel } from '../../forms/setting
 import { isAcceptedProposalStatus, isRejectedProposalStatus, isStaleProposalStatus, normalizeProposalStatus } from './proposalStatus.js';
 import { selectedFormPatchIds, visibleFormPatches } from './formProposalSelection.js';
 import { AssistantWorkDetails } from './AssistantWorkCard.jsx';
+import { displayWorkflowActionLabel } from '../../utils/workflowLabels.js';
 
 const titleFor = patch => patch.op === 'add' ? patch.field?.label || 'New question'
     : patch.op === 'remove' ? patch.label || patch.originalField?.label || 'Question'
@@ -70,7 +71,7 @@ const ProposalPlanDetails = ({ proposal, isRejected }) => {
                     {steps.map((step, index) => <li key={step.id || `${step.title || step.type}-${index}`} className="flex items-start gap-2.5 rounded-lg border border-white/80 bg-white/75 px-2.5 py-2">
                         <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-extrabold ${tone.number}`}>{index + 1}</span>
                         <span className="min-w-0">
-                            <span className="block text-xs font-bold text-slate-800">{step.title || step.description || step.type || `Step ${index + 1}`}</span>
+                            <span className="block text-xs font-bold text-slate-800">{displayWorkflowActionLabel(step.title || step.description || step.type || `Step ${index + 1}`)}</span>
                             {step.description && step.description !== step.title && <span className="mt-0.5 block text-[11px] leading-4 text-slate-500">{step.description}</span>}
                         </span>
                     </li>)}

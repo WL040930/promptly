@@ -34,6 +34,30 @@ test('workflow resource provisioning resolves one Sheet reference and reuses a r
     assert.equal(second.nodes[0].config.spreadsheetId, 'sheet_123');
 });
 
+test('workflow resource provisioning replaces an instruction fragment with a safe Sheet title', async () => {
+    let createdTitle = null;
+    const result = await provisionWorkflowResources({
+        userId: 'user_1',
+        provisioningKeyPrefix: 'workflow-proposal:workflow_1:proposal_1',
+        spreadsheetService: {
+            async createAndInitialize(input) {
+                createdTitle = input.title;
+                return { id: 'sheet_456', range: "'Responses'!A1" };
+            }
+        },
+        changes: [{
+            type: 'create_google_spreadsheet',
+            ref: 'responses',
+            title: 'contact form and save every submission to a new',
+            sheetTitle: 'Responses'
+        }],
+        nodes: []
+    });
+
+    assert.equal(createdTitle, 'Google Sheet Responses');
+    assert.equal(result.changes[0].title, 'Google Sheet Responses');
+});
+
 test('workflow resource provisioning rejects an undeclared provision reference', async () => {
     await assert.rejects(
         () => provisionWorkflowResources({

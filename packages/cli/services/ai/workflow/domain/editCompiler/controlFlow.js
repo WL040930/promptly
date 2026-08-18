@@ -5,6 +5,8 @@ import {
     connectionHandlesFor,
     findConnection,
     normalizeEndpoint,
+    normalizeSingleOutputHandle,
+    normalizeSingleInputHandle,
     throwEditError,
     withKnownSchema
 } from './graph.js';
@@ -27,24 +29,27 @@ const requireNamedSourceRoute = ({ operation, endpoint, label, code, nodes, refs
             path: `${label === 'source' ? 'from' : label}.handle`
         });
     }
-    const from = normalizeEndpoint(endpoint, refs, operation.op, label === 'source' ? 'from' : label);
-    const sourceNode = nodes.find(node => node.id === from.nodeId);
+    const requestedFrom = normalizeEndpoint(endpoint, refs, operation.op, label === 'source' ? 'from' : label);
+    const sourceNode = nodes.find(node => node.id === requestedFrom.nodeId);
     if (!sourceNode) throwEditError(operation.op, `${label} route references a missing node.`, { code: 'WORKFLOW_NODE_REF_INVALID' });
     const sourceForValidation = withKnownSchema(sourceNode, specsByNodeKey);
+    const from = { ...requestedFrom, handle: normalizeSingleOutputHandle(sourceForValidation, requestedFrom.handle) };
     assertConnectionHandle(sourceForValidation, from.handle, 'outputs', operation.op);
     return { from, sourceNode: sourceForValidation };
 };
 
 const requireExistingConnection = ({ operation, connection, nodes, edges, refs, specsByNodeKey }) => {
-    const from = normalizeEndpoint(connection?.from, refs, operation.op, 'connection.from');
-    const to = normalizeEndpoint(connection?.to, refs, operation.op, 'connection.to');
-    const match = findConnection(edges, from, to);
-    if (!match) throwEditError(operation.op, 'The selected connection does not exist.', { code: 'WORKFLOW_CONNECTION_NOT_FOUND' });
-    const sourceNode = nodes.find(node => node.id === from.nodeId);
-    const targetNode = nodes.find(node => node.id === to.nodeId);
+    const requestedFrom = normalizeEndpoint(connection?.from, refs, operation.op, 'connection.from');
+    const requestedTo = normalizeEndpoint(connection?.to, refs, operation.op, 'connection.to');
+    const sourceNode = nodes.find(node => node.id === requestedFrom.nodeId);
+    const targetNode = nodes.find(node => node.id === requestedTo.nodeId);
     if (!sourceNode || !targetNode) throwEditError(operation.op, 'Connection references a missing node.', { code: 'WORKFLOW_NODE_REF_INVALID' });
     const sourceForValidation = withKnownSchema(sourceNode, specsByNodeKey);
     const targetForValidation = withKnownSchema(targetNode, specsByNodeKey);
+    const from = { ...requestedFrom, handle: normalizeSingleOutputHandle(sourceForValidation, requestedFrom.handle) };
+    const to = { ...requestedTo, handle: normalizeSingleInputHandle(targetForValidation, requestedTo.handle) };
+    const match = findConnection(edges, from, to);
+    if (!match) throwEditError(operation.op, 'The selected connection does not exist.', { code: 'WORKFLOW_CONNECTION_NOT_FOUND' });
     assertConnectionHandle(sourceForValidation, from.handle, 'outputs', operation.op);
     assertConnectionHandle(targetForValidation, to.handle, 'inputs', operation.op);
     return { from, to, match, sourceNode: sourceForValidation, targetNode: targetForValidation };
@@ -177,28 +182,37 @@ export const addConditionBranch = ({ operation, nodes, edges, refs, specsByNodeK
         code: 'WORKFLOW_CONDITION_SCHEMA_INVALID',
         message: 'The Condition node schema does not expose input1, true, and false routes.'
     });
-    const whenTrue = addSingleInputAction({
-        operation,
-        definition: operation.whenTrue,
-        path: 'whenTrue',
-        name: 'true outcome',
-        afterNodeRef: condition.ref,
-        nodes,
-        refs,
-        specsByNodeKey,
-        code: 'WORKFLOW_CONDITION_BRANCH_ACTION_INVALID'
-    });
-    const whenFalse = addSingleInputAction({
-        operation,
-        definition: operation.whenFalse,
-        path: 'whenFalse',
-        name: 'false outcome',
-        afterNodeRef: condition.ref,
-        nodes,
-        refs,
-        specsByNodeKey,
-        code: 'WORKFLOW_CONDITION_BRANCH_ACTION_INVALID'
-    });
+    const whenTrue = operation.whenTrue
+        ? addSingleInputAction({
+            operation,
+            definition: operation.whenTrue,
+            path: 'whenTrue',
+            name: 'true outcome',
+            afterNodeRef: condition.ref,
+            nodes,
+            refs,
+            specsByNodeKey,
+            code: 'WORKFLOW_CONDITION_BRANCH_ACTION_INVALID'
+        })
+        : null;
+    const whenFalse = operation.whenFalse
+        ? addSingleInputAction({
+            operation,
+            definition: operation.whenFalse,
+            path: 'whenFalse',
+            name: 'false outcome',
+            afterNodeRef: condition.ref,
+            nodes,
+            refs,
+            specsByNodeKey,
+            code: 'WORKFLOW_CONDITION_BRANCH_ACTION_INVALID'
+        })
+        : null;
+    if (!whenTrue && !whenFalse) {
+        throwEditError(operation.op, 'add_condition_branch requires at least one outcome action.', {
+            code: 'WORKFLOW_CONDITION_BRANCH_ACTION_INVALID'
+        });
+    }
 
     connectNodes({
         operation: operation.op,
@@ -208,22 +222,26 @@ export const addConditionBranch = ({ operation, nodes, edges, refs, specsByNodeK
         sourceNode,
         targetNode: conditionNode
     });
-    connectNodes({
-        operation: operation.op,
-        edges,
-        from: { nodeId: conditionNode.id, handle: 'true' },
-        to: { nodeId: whenTrue.action.id, handle: whenTrue.inputHandle },
-        sourceNode: conditionNode,
-        targetNode: whenTrue.action
-    });
-    connectNodes({
-        operation: operation.op,
-        edges,
-        from: { nodeId: conditionNode.id, handle: 'false' },
-        to: { nodeId: whenFalse.action.id, handle: whenFalse.inputHandle },
-        sourceNode: conditionNode,
-        targetNode: whenFalse.action
-    });
+    if (whenTrue) {
+        connectNodes({
+            operation: operation.op,
+            edges,
+            from: { nodeId: conditionNode.id, handle: 'true' },
+            to: { nodeId: whenTrue.action.id, handle: whenTrue.inputHandle },
+            sourceNode: conditionNode,
+            targetNode: whenTrue.action
+        });
+    }
+    if (whenFalse) {
+        connectNodes({
+            operation: operation.op,
+            edges,
+            from: { nodeId: conditionNode.id, handle: 'false' },
+            to: { nodeId: whenFalse.action.id, handle: whenFalse.inputHandle },
+            sourceNode: conditionNode,
+            targetNode: whenFalse.action
+        });
+    }
 };
 
 const assertSwitchCaseValue = ({ operation, value, path }) => {
@@ -459,14 +477,29 @@ export const addErrorHandler = ({ operation, nodes, edges, refs, specsByNodeKey 
  * route without requiring model-authored ports or rewiring.
  */
 export const addApprovalGate = ({ operation, nodes, edges, refs, specsByNodeKey }) => {
-    const { from, to, match, sourceNode, targetNode } = requireExistingConnection({
-        operation,
-        connection: operation.connection,
-        nodes,
-        edges,
-        refs,
-        specsByNodeKey
-    });
+    const isNewRoute = !operation.connection;
+    const route = isNewRoute
+        ? requireNamedSourceRoute({
+            operation,
+            endpoint: operation.from,
+            label: 'source',
+            code: 'WORKFLOW_APPROVAL_SOURCE_HANDLE_REQUIRED',
+            nodes,
+            refs,
+            specsByNodeKey
+        })
+        : requireExistingConnection({
+            operation,
+            connection: operation.connection,
+            nodes,
+            edges,
+            refs,
+            specsByNodeKey
+        });
+    const { from, sourceNode } = route;
+    const to = route.to || null;
+    const match = route.match || null;
+    const targetNode = route.targetNode || null;
     const approval = operation.approval;
     assertNodeDefinition({
         operation,
@@ -483,7 +516,7 @@ export const addApprovalGate = ({ operation, nodes, edges, refs, specsByNodeKey 
             title: approval.title,
             description: approval.description,
             config: approval.config,
-            afterNodeRef: approval.afterNodeRef || operation.connection.from.nodeRef
+            afterNodeRef: approval.afterNodeRef || (operation.connection?.from?.nodeRef || operation.from?.nodeRef)
         },
         nodes,
         refs,
@@ -502,6 +535,19 @@ export const addApprovalGate = ({ operation, nodes, edges, refs, specsByNodeKey 
         code: 'WORKFLOW_APPROVAL_GATE_SCHEMA_INVALID',
         message: 'The Approval node schema must expose exactly one connection input.'
     });
+    const whenApproved = isNewRoute
+        ? addSingleInputAction({
+            operation,
+            definition: operation.whenApproved,
+            path: 'whenApproved',
+            name: 'approved outcome',
+            afterNodeRef: approval.ref,
+            nodes,
+            refs,
+            specsByNodeKey,
+            code: 'WORKFLOW_APPROVAL_APPROVED_ACTION_INVALID'
+        })
+        : null;
     const whenRejected = operation.whenRejected
         ? addSingleInputAction({
             operation,
@@ -516,7 +562,7 @@ export const addApprovalGate = ({ operation, nodes, edges, refs, specsByNodeKey 
         })
         : null;
 
-    edges.splice(0, edges.length, ...edges.filter(edge => edge !== match));
+    if (match) edges.splice(0, edges.length, ...edges.filter(edge => edge !== match));
     connectNodes({
         operation: operation.op,
         edges,
@@ -529,9 +575,11 @@ export const addApprovalGate = ({ operation, nodes, edges, refs, specsByNodeKey 
         operation: operation.op,
         edges,
         from: { nodeId: approvalNode.id, handle: 'approved' },
-        to,
+        to: whenApproved
+            ? { nodeId: whenApproved.action.id, handle: whenApproved.inputHandle }
+            : to,
         sourceNode: approvalNode,
-        targetNode
+        targetNode: whenApproved?.action || targetNode
     });
     if (whenRejected) {
         connectNodes({
@@ -722,19 +770,20 @@ export const moveApprovalGate = ({ operation, nodes, edges, refs, specsByNodeKey
 };
 
 const resolveBranchSource = ({ operation, endpoint, path, nodes, refs, specsByNodeKey }) => {
-    const from = normalizeEndpoint(endpoint, refs, operation.op, path);
-    const sourceNode = nodes.find(node => node.id === from.nodeId);
+    const requestedFrom = normalizeEndpoint(endpoint, refs, operation.op, path);
+    const sourceNode = nodes.find(node => node.id === requestedFrom.nodeId);
     if (!sourceNode) throwEditError(operation.op, 'A merge branch references a missing node.', { code: 'WORKFLOW_MERGE_BRANCH_INVALID', path });
     const sourceForValidation = withKnownSchema(sourceNode, specsByNodeKey);
     const outputs = connectionHandlesFor(sourceForValidation, 'outputs');
-    const handle = from.handle || (outputs.length === 1 ? outputs[0] : null);
+    const handle = normalizeSingleOutputHandle(sourceForValidation, requestedFrom.handle)
+        || (outputs.length === 1 ? outputs[0] : null);
     if (!handle) {
         throwEditError(operation.op, 'Each merge branch needs an explicit source handle when its source has multiple outputs.', {
             code: 'WORKFLOW_MERGE_BRANCH_HANDLE_REQUIRED', path: `${path}.handle`
         });
     }
     assertConnectionHandle(sourceForValidation, handle, 'outputs', operation.op);
-    return { from: { ...from, handle }, sourceNode: sourceForValidation };
+    return { from: { ...requestedFrom, handle }, sourceNode: sourceForValidation };
 };
 
 /**

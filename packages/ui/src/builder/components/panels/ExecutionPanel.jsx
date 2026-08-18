@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { displayWorkflowActionLabel } from '../../../utils/workflowLabels.js';
 
 /* ─── Status icons ─────────────────────────────────────────────────────────── */
 const SuccessIcon = () => (
@@ -68,7 +69,7 @@ function StepRow({ step, index }) {
 
                 {/* Type badge */}
                 <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-500">
-                    {step.type}
+                    {displayWorkflowActionLabel(step.type)}
                 </span>
 
                 {/* Duration */}

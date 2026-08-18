@@ -343,6 +343,42 @@ const formForRequest = async (userId, formId) => {
     return Form.findOne({ where: { id: formId, userId } });
 };
 
+const pendingAgentRunForEvent = async ({ session, userId, event } = {}) => {
+    const state = session?.state || {};
+    if (!state.runId) return null;
+    const run = await AgentRun.findOne({ where: { id: state.runId, threadId: session.id, userId } });
+    if (event?.runId && event.runId !== run?.id) return null;
+    return run;
+};
+
+const resolveTargetClarification = async ({ session, run, targetId, targetTitle, targetLabel } = {}) => {
+    const clarification = await AssistantMessage.findOne({
+        where: { threadId: session.id, sender: 'bot', kind: 'clarification' },
+        order: [['createdAt', 'DESC']]
+    });
+    if (!clarification || (run?.id && clarification.payload?.runId && clarification.payload.runId !== run.id)) return null;
+
+    const payload = clarification.payload || {};
+    const declaredInputs = Array.isArray(payload.inputs) && payload.inputs.length > 0
+        ? payload.inputs
+        : (Array.isArray(payload.options) ? payload.options : []);
+    const input = declaredInputs.find(item => item?.id) || {};
+    const inputId = input.id || 'resource-target';
+    const answerLabel = targetLabel || input.label || 'Selected resource';
+    await clarification.update({
+        payload: {
+            ...payload,
+            selectedState: { ...(payload.selectedState || {}), [inputId]: targetId },
+            resolution: {
+                type: 'answered',
+                answeredAt: new Date().toISOString(),
+                answers: [{ id: inputId, label: answerLabel, answer: targetTitle }]
+            }
+        }
+    });
+    return messagePayload(clarification);
+};
+
 const formHistory = async (sessionId) => {
     const rows = await AssistantMessage.findAll({
         where: { threadId: sessionId },
@@ -581,36 +617,54 @@ export const applyEvent = async (session, userId, event, onEvent = null) => {
     }
     if (event.type === 'workflow_target_selected') {
         const workflow = await workflowForRequest(userId, event.workflowId);
-        const request = state.continuation?.request;
+        const run = await pendingAgentRunForEvent({ session, userId, event });
+        const request = run?.metadata?.request || state.continuation?.request;
         if (!workflow || !request) {
             return { reply: await saveReply(session, { text: 'I could not resume that workflow request. Please send it again.', kind: 'error' }) };
         }
 
         await session.update({ context: { ...(session.context || {}), workflowId: workflow.id } });
+        const clarification = await resolveTargetClarification({
+            session,
+            run,
+            targetId: workflow.id,
+            targetTitle: workflow.name,
+            targetLabel: 'Choose a workflow'
+        });
         await clearChatSessionState(session);
 
         return {
             resume: {
                 message: request,
                 context: { workflowId: workflow.id }
-            }
+            },
+            ...(clarification ? { clarification } : {})
         };
     }
     if (event.type === 'form_target_selected') {
         const form = await formForRequest(userId, event.formId);
-        const request = state.continuation?.request;
+        const run = await pendingAgentRunForEvent({ session, userId, event });
+        const request = run?.metadata?.request || state.continuation?.request;
         if (!form || !request) {
             return { reply: await saveReply(session, { text: 'I could not resume that form request. Please send it again.', kind: 'error' }) };
         }
 
         await session.update({ context: mergeAgentContext(session.context || {}, { formId: form.id }) });
+        const clarification = await resolveTargetClarification({
+            session,
+            run,
+            targetId: form.id,
+            targetTitle: form.title,
+            targetLabel: 'Choose a form'
+        });
         await clearChatSessionState(session);
 
         return {
             resume: {
                 message: request,
                 context: { formId: form.id }
-            }
+            },
+            ...(clarification ? { clarification } : {})
         };
     }
     if (event.type === 'proposal_ignored') {

@@ -65,7 +65,7 @@ export class GeminiProvider extends BaseAIProvider {
         const {
             systemInstruction,
             responseMimeType,
-            model = 'gemini-3.5-flash',
+            model = 'gemini-3.5-flash-lite',
             maxCompletionTokens
         } = options;
         const maxOutputTokens = Number.isInteger(maxCompletionTokens) && maxCompletionTokens > 0

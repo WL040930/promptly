@@ -38,6 +38,7 @@ import PagePagination from '../../components/ui/PagePagination.jsx';
 import TestRunModal from '../../builder/components/modals/TestRunModal.jsx';
 import { navigate, navigateTo } from '../../utils/router.js';
 import { getIconByName } from '../../builder/utils/iconMap.jsx';
+import { displayWorkflowActionLabel } from '../../utils/workflowLabels.js';
 
 const STATUS_FILTERS = ['All', 'Active', 'Draft', 'Paused'];
 const HEALTH_FILTERS = ['All', 'Healthy', 'Needs attention', 'No runs'];
@@ -65,7 +66,7 @@ const getTriggerLabel = (workflow) => {
     if (subtype.includes('form')) return 'Form submission';
     if (subtype.includes('webhook')) return 'Webhook';
     if (subtype.includes('schedule') || subtype.includes('cron')) return 'Schedule';
-    if (subtype) return subtype.replaceAll('-', ' ').replace(/\b\w/g, character => character.toUpperCase());
+    if (subtype) return displayWorkflowActionLabel(subtype);
     return 'No trigger';
 };
 

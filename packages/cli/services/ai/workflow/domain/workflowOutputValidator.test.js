@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    normalizeWorkflowPlannerResult,
     validateWorkflowPlannerResult,
     validateWorkflowWorkerResult,
     validateWorkflowVerifierResult,
@@ -116,12 +117,43 @@ test('planner validator accepts a proposed Google Sheet creation', () => {
     assert.deepEqual(issues, []);
 });
 
+test('planner normalization canonicalizes common Google Sheet resource aliases', () => {
+    const result = normalizeWorkflowPlannerResult({
+        type: 'plan_complete',
+        resourceChanges: [
+            { ref: 'responses', type: 'create_google_sheet', title: 'Responses' },
+            { ref: 'other', type: 'create-sheet', title: 'Other' }
+        ]
+    });
+
+    assert.deepEqual(result.resourceChanges.map(change => change.type), [
+        'create_google_spreadsheet',
+        'create_google_spreadsheet'
+    ]);
+    assert.deepEqual(normalizeWorkflowPlannerResult({ type: 'plan_complete', resourceChanges: [{ ref: 'future', type: 'create_airtable_base', title: 'Future' }] }).resourceChanges, [
+        { ref: 'future', type: 'create_airtable_base', title: 'Future' }
+    ]);
+});
+
 test('planner validator rejects a spreadsheet change without a title', () => {
     const issues = validateWorkflowPlannerResult({
         type: 'plan_complete', summary: 'Save responses.', requirements: [{ id: 'req_1', description: 'Create a sheet.' }], selectedNodeKeys: [],
         resourceChanges: [{ ref: 'responses_sheet', type: 'create_google_spreadsheet' }]
     });
     assert.ok(issues.some(item => item.path === 'resourceChanges[0].title'));
+});
+
+test('planner validator explains the canonical type for an unknown resource change', () => {
+    const issues = validateWorkflowPlannerResult({
+        type: 'plan_complete',
+        summary: 'Save responses.',
+        requirements: [{ id: 'req_1', description: 'Save responses.' }],
+        selectedNodeKeys: [],
+        resourceChanges: [{ ref: 'responses', type: 'create_airtable_base', title: 'Responses' }]
+    });
+    const typeIssue = issues.find(item => item.code === 'INVALID_RESOURCE_CHANGE_TYPE');
+    assert.match(typeIssue.message, /create_google_spreadsheet/);
+    assert.deepEqual(typeIssue.allowed, ['create_google_spreadsheet']);
 });
 
 test('planner validator rejects an unknown type', () => {
@@ -347,6 +379,24 @@ test('worker validator accepts the semantic conditional branch operation', () =>
     assert.deepEqual(issues, []);
 });
 
+test('worker validator accepts a terminal false conditional route', () => {
+    const issues = validateWorkflowWorkerResult({
+        operations: [{
+            op: 'add_condition_branch',
+            from: { nodeRef: 'n2', handle: 'done' },
+            condition: {
+                ref: 'low_rating',
+                title: 'Rating is 3 or below',
+                config: { valueA: { $binding: 'form_field_rating' }, operator: 'less_than_or_equal', valueB: 3 }
+            },
+            whenTrue: { ref: 'notify_support', nodeKey: 'action:email', config: { to: 'support@example.com' } },
+            whenFalse: null
+        }]
+    });
+
+    assert.deepEqual(issues, []);
+});
+
 test('worker validator accepts every semantic control-flow operation', () => {
     const issues = validateWorkflowWorkerResult({
         operations: [
@@ -381,6 +431,20 @@ test('worker validator accepts every semantic control-flow operation', () => {
                 continueWith: { ref: 'log_join', nodeKey: 'action:logger', config: {} }
             }
         ]
+    });
+
+    assert.deepEqual(issues, []);
+});
+
+test('worker validator accepts an approval gate that creates its approved route', () => {
+    const issues = validateWorkflowWorkerResult({
+        operations: [{
+            op: 'add_approval_gate',
+            from: { nodeRef: 'notify_support', handle: 'outputData' },
+            approval: { ref: 'review_compensation', config: { title: 'Review compensation' } },
+            whenApproved: { ref: 'send_compensation', nodeKey: 'action:email', config: { to: 'customer@example.com' } },
+            whenRejected: null
+        }]
     });
 
     assert.deepEqual(issues, []);

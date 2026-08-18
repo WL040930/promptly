@@ -4,6 +4,7 @@ import Button from '../ui/Button.jsx';
 import ProposalCard from './ProposalCard.jsx';
 import { isAcceptedProposalStatus, isRejectedProposalStatus, isStaleProposalStatus, normalizeProposalStatus } from './proposalStatus.js';
 import { AssistantWorkDetails } from './AssistantWorkCard.jsx';
+import { displayWorkflowActionLabel } from '../../utils/workflowLabels.js';
 
 const toneFor = type => ({
     add: 'text-emerald-700 bg-emerald-50 border-emerald-100',
@@ -54,7 +55,7 @@ export default function WorkflowProposalWidget({ proposal, status, summary, toke
                     <div>
                         <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.13em] text-slate-400">Flow</p>
                         <div className="flex overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-700">
-                            <div className="flex min-w-max items-center gap-2">{flow.map((step, index) => <span key={`${step}-${index}`} className="flex items-center gap-2"><span>{step}</span>{index < flow.length - 1 && <span className="text-indigo-500">→</span>}</span>)}</div>
+                            <div className="flex min-w-max items-center gap-2">{flow.map((step, index) => <span key={`${step}-${index}`} className="flex items-center gap-2"><span>{displayWorkflowActionLabel(step)}</span>{index < flow.length - 1 && <span className="text-indigo-500">→</span>}</span>)}</div>
                         </div>
                     </div>
                 )}

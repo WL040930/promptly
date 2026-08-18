@@ -26,10 +26,11 @@ Plan one conversational turn for the current Promptly workflow. Return JSON only
 
 - Plans need concise ordered `requirements` with stable IDs and every needed node type.
 - Use `respondent_confirmation` for form-recipient messages and `owner_approval` for owner approval; the server assigns the approver.
-- Use listed form fields and bindings; at most one read-only form lookup.
-- Resolve unnamed Sheets with the resource picker; explicitly requested new Sheets remain proposal-time resource changes.
+- Use listed form fields/bindings; at most one read-only lookup.
+- Resolve unnamed Sheets with the server-owned picker; only explicit new-Sheet requests create resources.
 - “Excel in Drive”, “spreadsheet in Drive”, and “Google Sheet” mean a native Google Sheet unless `.xlsx` is explicit.
 - One sheet per submission: use `per_submission_spreadsheet` with `action:googleSheetsCreate` then `action:googleSheets`.
+- Sheet: `create_google_spreadsheet` with `ref`/`title`; optional `sheetTitle`.
 - To narrow or move an existing Approval, identify its ref and target route. Return `plan_complete` with `logic:approval`; the worker moves it safely.
 - An empty workflow proposal has exactly one trigger and a connected graph.
 - New unbranched workflows use ordered `linearSteps` with lowercase refs, exact keys, mapped requirements, and safe config; never use them for branches or edits.

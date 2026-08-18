@@ -23,16 +23,25 @@ const phaseState = (phase, current, isTerminal) => {
     return 'waiting';
 };
 
+const progressFor = (current, isComplete) => {
+    if (isComplete) return 100;
+    const activeIndex = phases.findIndex(item => item.id === current);
+    return activeIndex < 0 ? 0 : Math.round(((activeIndex + 0.5) / phases.length) * 100);
+};
+
 export function AssistantWorkDetails({ work, tokenUsage, defaultExpanded = false, label = 'Preparation details' }) {
     const [expanded, setExpanded] = useState(defaultExpanded);
     const activities = work?.activities || [];
-    const repairCount = activities.filter(activity => /repair|correct|recover|retry/i.test(`${activity.label} ${activity.detail}`)).length;
     const artifact = work?.currentArtifact || work?.artifacts?.at(-1);
+    const repairCount = activities.filter(activity => /repair|correct|recover|retry/i.test(`${activity.label} ${activity.detail}`)).length;
+    const workflowStepCount = work?.surface === 'workflow' && artifact?.kind === 'draft'
+        ? (Number.isInteger(artifact.itemCount) ? artifact.itemCount : artifact.items?.length || 0)
+        : null;
     const summary = useMemo(() => [
-        `${activities.length} ${activities.length === 1 ? 'step' : 'steps'}`,
-        repairCount ? `${repairCount} ${repairCount === 1 ? 'correction' : 'corrections'}` : null,
+        workflowStepCount ? `${workflowStepCount} workflow ${workflowStepCount === 1 ? 'step' : 'steps'}` : null,
+        repairCount ? `${repairCount} repair ${repairCount === 1 ? 'update' : 'updates'}` : null,
         duration(work?.startedAt, work?.completedAt)
-    ].filter(Boolean).join(' · '), [activities.length, repairCount, work?.startedAt, work?.completedAt]);
+    ].filter(Boolean).join(' · '), [workflowStepCount, repairCount, work?.startedAt, work?.completedAt]);
 
     if (!work) return null;
 
@@ -64,6 +73,8 @@ export default function AssistantWorkCard({ work, tokenUsage, messageKind = null
     const isCoordinator = work?.surface === 'ask_promptly';
     const statusLabel = assistantWorkStatusLabel(status) || (isCoordinator ? 'Working' : 'Drafting');
     const statusNeedsAttention = status === 'needs_input';
+    const isComplete = ['awaiting_review', 'completed', 'applied', 'ignored'].includes(status);
+    const progressPercent = progressFor(work?.currentPhase, isComplete);
 
     return (
         <section className="w-full min-w-0 overflow-hidden rounded-[22px] border border-violet-200/80 bg-white shadow-[0_12px_35px_rgba(58,34,118,0.08)]">
@@ -86,15 +97,19 @@ export default function AssistantWorkCard({ work, tokenUsage, messageKind = null
                         <p className="mt-1 text-xs leading-5 text-slate-600">{active?.detail || 'Preparing the proposed changes…'}</p>
                     </div>
                 </div>
-                {!isCoordinator && <div className="mt-4 grid grid-cols-4 gap-0" aria-label="Proposal progress">
-                    {phases.map((phase, index) => {
-                        const state = phaseState(phase, work?.currentPhase || 'understand', isTerminal);
-                        return <div key={phase.id} className="relative min-w-0 text-center">
-                            {index > 0 && <span className={`absolute right-1/2 top-[7px] h-px w-full ${state === 'waiting' ? 'bg-violet-200' : 'bg-violet-500'}`} />}
-                            <span className={`relative z-10 mx-auto flex h-[15px] w-[15px] items-center justify-center rounded-full border-2 ${state === 'done' ? 'border-violet-600 bg-violet-600' : state === 'active' ? 'border-violet-600 bg-white shadow-[0_0_0_4px_rgba(109,74,255,0.13)]' : 'border-violet-200 bg-white'}`}>{state === 'done' && <Check size={9} className="text-white" strokeWidth={3} />}</span>
-                            <span className={`mt-1.5 block truncate text-[9px] font-bold ${state === 'waiting' ? 'text-slate-400' : 'text-violet-800'}`}>{phase.label}</span>
-                        </div>;
-                    })}
+                {!isCoordinator && <div className="mt-4">
+                    <div className="relative h-2 overflow-hidden rounded-full bg-violet-100/90" role="progressbar" aria-label="Proposal progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressPercent}>
+                        <span className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-violet-600 transition-[width] duration-500 ease-out motion-reduce:transition-none" style={{ width: `${progressPercent}%` }} />
+                    </div>
+                    <div className="mt-2 grid grid-cols-4 gap-0">
+                        {phases.map(phase => {
+                            const state = phaseState(phase, work?.currentPhase || 'understand', isComplete);
+                            return <div key={phase.id} className="relative min-w-0 text-center" aria-current={state === 'active' ? 'step' : undefined}>
+                                <span className={`relative z-10 mx-auto flex h-[15px] w-[15px] items-center justify-center rounded-full border-2 ${state === 'done' ? 'border-violet-600 bg-violet-600' : state === 'active' ? 'border-violet-600 bg-white shadow-[0_0_0_4px_rgba(109,74,255,0.13)]' : 'border-violet-200 bg-white'}`}>{state === 'done' && <Check size={9} className="text-white" strokeWidth={3} />}</span>
+                                <span className={`mt-1.5 block truncate text-[9px] font-bold ${state === 'waiting' ? 'text-slate-400' : 'text-violet-800'}`}>{phase.label}</span>
+                            </div>;
+                        })}
+                    </div>
                 </div>}
             </header>
             <div className="bg-slate-50/45 p-3.5">

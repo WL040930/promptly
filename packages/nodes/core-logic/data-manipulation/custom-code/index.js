@@ -5,7 +5,10 @@ export default class CustomNodeJSNode extends BaseNode {
     async execute(context) {
         const config = this.getResolvedConfig(context);
         const upstreamNodeId = context.__runtime?.incomingNodeIds?.at(-1);
-        const input = (upstreamNodeId && context[upstreamNodeId]) || context?.initialPayload || {};
+        const upstreamResult = upstreamNodeId ? context[upstreamNodeId] : null;
+        const input = upstreamResult && typeof upstreamResult === 'object' && Object.hasOwn(upstreamResult, 'outputData')
+            ? upstreamResult.outputData
+            : upstreamResult || context?.initialPayload || {};
         const result = await runCustomCode({
             code: config.code,
             input,

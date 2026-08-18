@@ -88,14 +88,16 @@ export const advanceAssistantWork = (work, progress = {}, now = new Date()) => {
         });
     }
 
+    const artifactItems = progress.artifact && typeof progress.artifact === 'object' && Array.isArray(progress.artifact.items)
+        ? progress.artifact.items.map(item => clean(item)).filter(Boolean)
+        : [];
     const artifact = progress.artifact && typeof progress.artifact === 'object'
         ? {
             id: clean(progress.artifact.id, baseId),
             title: clean(progress.artifact.title, label),
             kind: clean(progress.artifact.kind, 'summary'),
-            items: Array.isArray(progress.artifact.items)
-                ? progress.artifact.items.map(item => clean(item)).filter(Boolean).slice(0, 6)
-                : []
+            itemCount: artifactItems.length,
+            items: artifactItems.slice(0, 6)
         }
         : null;
     const artifacts = artifact

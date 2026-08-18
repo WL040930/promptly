@@ -39,6 +39,7 @@ test('condition evaluates strict, numeric, collection, and empty operators', () 
     assert.equal(evaluateCondition({ valueA: 5, operator: 'equals', valueB: '5' }), false);
     assert.equal(evaluateCondition({ valueA: 5, operator: '==', valueB: '5' }), true);
     assert.equal(evaluateCondition({ valueA: 12, operator: 'greater_than', valueB: 10 }), true);
+    assert.equal(evaluateCondition({ valueA: 5, operator: 'less_than_or_equal', valueB: 3 }), false);
     assert.equal(evaluateCondition({ valueA: ['paid', 'new'], operator: 'contains', valueB: 'paid' }), true);
     assert.equal(evaluateCondition({ valueA: '', operator: 'empty', valueB: null }), true);
 });

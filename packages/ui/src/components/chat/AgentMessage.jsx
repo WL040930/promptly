@@ -1,6 +1,7 @@
 import Button from '../ui/Button.jsx';
 import FormProposalWidget from './FormProposalWidget.jsx';
 import WorkflowProposalWidget from './WorkflowProposalWidget.jsx';
+import SolutionProposalWidget from './SolutionProposalWidget.jsx';
 import MarkdownRenderer from '../ui/MarkdownRenderer.jsx';
 import MessageOptionsWidget from './MessageOptionsWidget.jsx';
 import AssistantFailureCard from './AssistantFailureCard.jsx';
@@ -8,6 +9,7 @@ import AssistantWorkCard, { AssistantWorkDetails } from './AssistantWorkCard.jsx
 import { clarificationMessageData } from './clarificationMessage.js';
 import { proposalStatusLabel, shouldShowProposalActions } from './proposalStatus.js';
 import { messagePresentation } from './messagePresentation.js';
+import { displayWorkflowActionLabel } from '../../utils/workflowLabels.js';
 import { AlertTriangle, CheckCircle2, Copy, GitBranch, LoaderCircle, ShieldAlert, Trash2, Zap } from 'lucide-react';
 
 const formatTokens = (value) => (value || 0).toLocaleString();
@@ -66,6 +68,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
     const work = message.sender === 'bot' ? payload.work : null;
     const isFormProposal = message.sender !== 'user' && kind === 'form_proposal';
     const isWorkflowProposal = message.sender !== 'user' && (kind === 'workflow_proposal' || kind === 'workflow_diff');
+    const isSolutionProposal = message.sender !== 'user' && kind === 'solution_proposal';
     const presentation = messagePresentation(message);
     const isCompactWork = presentation === 'work';
     const isProposalWork = presentation === 'proposal_work';
@@ -138,7 +141,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                     </div>
                 ) : message.sender !== 'user' && (message.isError || kind === 'error') ? (
                     <AssistantFailureCard message={message} onAction={onRecoveryAction} isWorking={isTyping} />
-                ) : kind === 'assistant_work' || isFormProposal || isWorkflowProposal || isClarification ? null : (
+                ) : kind === 'assistant_work' || isFormProposal || isWorkflowProposal || isSolutionProposal || isClarification ? null : (
                     <div className={`relative w-full min-w-0 rounded-2xl ${message.sender === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'}`}>
                         <div className="w-full min-w-0 overflow-x-auto p-3.5 text-sm leading-relaxed">
                             {message.sender === 'user' ? (
@@ -160,7 +163,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                                 {planSteps.map((step, index) => (
                                     <div key={step.id || `${step.title || step.type}-${index}`} className="flex gap-2">
                                         <span className="font-semibold text-indigo-600">{index + 1}.</span>
-                                        <span>{step.title || step.reason || step.type}</span>
+                                        <span>{displayWorkflowActionLabel(step.title || step.reason || step.type)}</span>
                                     </div>
                                 ))}
                             </div>
@@ -220,7 +223,6 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                         onIgnore={() => onIgnore?.(message)}
                         onPreview={(filteredProposal) => onOption?.({ type: 'preview_form', proposal: { ...(filteredProposal || payload), messageId: message.id }, formId: payload.formId })}
                         onPreviewUpdate={(filteredProposal) => onOption?.({ type: 'preview_update', proposal: { ...(filteredProposal || payload), messageId: message.id }, formId: payload.formId })}
-                        onRegenerate={() => onOption?.({ type: 'regenerate_proposal', text: payload.work?.title || message.text || '' })}
                         accepting={isAccepting}
                         rejecting={isRejecting}
                     />
@@ -242,7 +244,23 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                     />
                 )}
 
-                {isProposal && !['form_proposal', 'workflow_proposal', 'workflow_diff'].includes(kind) && (
+                {isProposal && isSolutionProposal && (
+                    <SolutionProposalWidget
+                        proposal={payload}
+                        status={status}
+                        summary={message.text}
+                        tokenUsage={message.tokenUsage}
+                        onAccept={() => onApply?.(message)}
+                        onIgnore={() => onIgnore?.(message)}
+                        onPreviewForm={formProposal => onOption?.({ type: 'preview_form', proposal: { ...(formProposal || {}), messageId: message.id }, formId: formProposal?.formId || null })}
+                        onPreviewWorkflow={workflowProposal => onOption?.({ type: 'preview_workflow', proposal: { ...(workflowProposal || {}), messageId: message.id }, workflowId: workflowProposal?.workflowId || null })}
+                        onRegenerate={() => onOption?.({ type: 'regenerate_proposal', text: payload.work?.title || message.text || '' })}
+                        accepting={isAccepting}
+                        rejecting={isRejecting}
+                    />
+                )}
+
+                {isProposal && !['form_proposal', 'workflow_proposal', 'workflow_diff', 'solution_proposal'].includes(kind) && (
                     <div className={`mt-2 w-full overflow-hidden rounded-2xl border flex flex-col ${proposalTone.card}`}>
                         <div className={`flex items-start gap-3 border-b px-4 py-3 ${proposalTone.header}`}>
                             <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${proposalTone.icon}`}>
@@ -263,7 +281,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                         <div className="flex flex-col gap-3 p-4">
                             {message.kind === 'solution_proposal' && (
                                 <div className="flex flex-col gap-1">
-                                    {planSteps.map((item, index) => <div key={`${item.subType || item.id || item.type}-${index}`} className="text-xs text-slate-600"><span className="font-bold text-slate-800">{item.title || item.type}</span>{item.reason || item.description ? ` — ${item.reason || item.description}` : ''}</div>)}
+                                    {planSteps.map((item, index) => <div key={`${item.subType || item.id || item.type}-${index}`} className="text-xs text-slate-600"><span className="font-bold text-slate-800">{displayWorkflowActionLabel(item.title || item.type)}</span>{item.reason || item.description ? ` — ${item.reason || item.description}` : ''}</div>)}
                                     {(payload.solution || []).map(artifact => (
                                         <div key={artifact.id || artifact.type} className="text-xs text-slate-600">
                                             <span className="font-bold text-slate-800">{artifact.type === 'form_proposal' ? 'Form' : artifact.type === 'workflow_proposal' ? 'Workflow' : artifact.type}</span>

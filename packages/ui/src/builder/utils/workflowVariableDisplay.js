@@ -1,3 +1,5 @@
+import { displayWorkflowActionLabel } from '../../utils/workflowLabels.js';
+
 const FIELD_REFERENCE = /^([^{}.]+)\.fields\.([^{}.]+)$/;
 
 const humanize = value => String(value || '')
@@ -5,7 +7,7 @@ const humanize = value => String(value || '')
     .replace(/[._-]+/g, ' ')
     .replace(/\b\w/g, letter => letter.toUpperCase());
 
-const titleForNode = node => node?.title || node?.subType || node?.type || node?.id || 'Unknown step';
+const titleForNode = node => displayWorkflowActionLabel(node?.title || node?.subType || node?.type || node?.id || 'Unknown step');
 
 const nodeForReference = (source, nodes) => {
     const byId = nodes.find(node => node?.id === source);

@@ -111,6 +111,53 @@ test('normalizes a generic payload handle to a node with one input handle', () =
     assert.equal(result.edges[0].targetHandle, 'inputData');
 });
 
+test('normalizes generic output aliases to the production connection handles', () => {
+    const specs = [
+        {
+            nodeKey: 'trigger:form-submission', type: 'trigger', subType: 'form-submission',
+            schema: { inputs: [], outputs: [{ name: 'triggerData', isConnection: true }] }
+        },
+        {
+            nodeKey: 'action:googleSheets', type: 'action', subType: 'googleSheets',
+            schema: { inputs: [{ name: 'triggerData', isConnection: true }], outputs: [{ name: 'outputData', isConnection: true }] }
+        },
+        {
+            nodeKey: 'action:email', type: 'action', subType: 'email',
+            schema: { inputs: [{ name: 'triggerData', isConnection: true }], outputs: [{ name: 'outputData', isConnection: true }] }
+        },
+        {
+            nodeKey: 'logic:condition', type: 'logic', subType: 'condition',
+            schema: {
+                inputs: [{ name: 'input1', isConnection: true }, { name: 'valueA', type: 'number' }, { name: 'operator', type: 'select' }, { name: 'valueB', type: 'number' }],
+                outputs: [{ name: 'true', isConnection: true }, { name: 'false', isConnection: true }]
+            }
+        }
+    ];
+    const result = compileWorkflowEdits({
+        currentWorkflow: {
+            nodes: [
+                { id: 'form', type: 'trigger', subType: 'form-submission', nodeKey: 'trigger:form-submission', config: {} },
+                { id: 'sheet', type: 'action', subType: 'googleSheets', nodeKey: 'action:googleSheets', config: {} }
+            ],
+            edges: [{ id: 'form_to_sheet', source: 'form', sourceHandle: 'triggerData', target: 'sheet', targetHandle: 'triggerData' }]
+        },
+        specs,
+        registry: registryFor(specs),
+        operations: [{
+            op: 'add_condition_branch',
+            from: { nodeRef: 'n2', handle: 'done' },
+            condition: { ref: 'low_rating', config: { valueA: 3, operator: 'less_than_or_equal', valueB: 3 } },
+            whenTrue: { ref: 'notify_support', nodeKey: 'action:email', config: {} },
+            whenFalse: null
+        }]
+    });
+
+    const condition = result.nodes.find(node => node.nodeKey === 'logic:condition');
+    const notification = result.nodes.find(node => node.nodeKey === 'action:email');
+    assert.ok(result.edges.some(edge => edge.source === 'sheet' && edge.sourceHandle === 'outputData' && edge.target === condition.id));
+    assert.ok(result.edges.some(edge => edge.source === condition.id && edge.sourceHandle === 'true' && edge.target === notification.id && edge.targetHandle === 'triggerData'));
+});
+
 test('a provisioned Google Sheet always uses its declared tab range in the proposal', () => {
     const specs = [{
         nodeKey: 'action:googleSheets',
@@ -238,6 +285,42 @@ test('add_condition_branch owns Condition ports and preserves an approved Sheet 
     assert.ok(result.edges.some(edge => edge.source === condition.id && edge.sourceHandle === 'false' && edge.target === venueEmail.id && edge.targetHandle === 'event'));
 });
 
+test('add_condition_branch can end the false route without creating a placeholder node', () => {
+    const specs = [
+        { nodeKey: 'trigger:webhook', type: 'trigger', subType: 'webhook', schema: { inputs: [], outputs: [{ name: 'event', isConnection: true }] } },
+        {
+            nodeKey: 'logic:condition', type: 'logic', subType: 'condition', schema: {
+                inputs: [{ name: 'input1', isConnection: true }, { name: 'valueA', type: 'text' }, { name: 'operator', type: 'select' }, { name: 'valueB', type: 'text' }],
+                outputs: [{ name: 'true', isConnection: true }, { name: 'false', isConnection: true }]
+            }
+        },
+        { nodeKey: 'action:email', type: 'action', subType: 'email', schema: { inputs: [{ name: 'event', isConnection: true }], outputs: [] } }
+    ];
+    const result = compileWorkflowEdits({
+        currentWorkflow: {
+            nodes: [{ id: 'trigger', type: 'trigger', subType: 'webhook', nodeKey: 'trigger:webhook', config: {} }],
+            edges: []
+        },
+        specs,
+        registry: registryFor(specs),
+        operations: [{
+            op: 'add_condition_branch',
+            from: { nodeRef: 'n1', handle: 'event' },
+            condition: { ref: 'low_rating', config: { valueA: { $binding: 'form_field_rating' }, operator: 'less_than_or_equal', valueB: 3 } },
+            whenTrue: { ref: 'notify_support', nodeKey: 'action:email', config: { to: 'support@example.com' } },
+            whenFalse: null
+        }]
+    });
+
+    const condition = result.nodes.find(node => node.nodeKey === 'logic:condition');
+    const supportEmail = result.nodes.find(node => node.nodeKey === 'action:email');
+    assert.ok(condition);
+    assert.ok(supportEmail);
+    assert.equal(result.nodes.length, 3);
+    assert.ok(result.edges.some(edge => edge.source === condition.id && edge.sourceHandle === 'true' && edge.target === supportEmail.id));
+    assert.equal(result.edges.some(edge => edge.source === condition.id && edge.sourceHandle === 'false'), false);
+});
+
 test('add_switch_routes owns fixed switch handles and every outcome connection', () => {
     const specs = [
         { nodeKey: 'trigger:webhook', type: 'trigger', subType: 'webhook', schema: { inputs: [], outputs: [{ name: 'event', isConnection: true }] } },
@@ -349,6 +432,40 @@ test('add_approval_gate preserves the approved connection and can add a rejected
     assert.ok(result.edges.some(edge => edge.source === 'form' && edge.target === approval.id && edge.targetHandle === 'inputData'));
     assert.ok(result.edges.some(edge => edge.source === approval.id && edge.sourceHandle === 'approved' && edge.target === 'store'));
     assert.ok(result.edges.some(edge => edge.source === approval.id && edge.sourceHandle === 'rejected' && edge.target === rejected.id));
+});
+
+test('add_approval_gate can create the approved route from a new source connection', () => {
+    const specs = [
+        { nodeKey: 'trigger:webhook', type: 'trigger', subType: 'webhook', schema: { inputs: [], outputs: [{ name: 'event', isConnection: true }] } },
+        { nodeKey: 'action:email', type: 'action', subType: 'email', schema: { inputs: [{ name: 'event', isConnection: true }, { name: 'to', valueSyntax: 'workflow-expression' }], outputs: [{ name: 'outputData', isConnection: true }] } },
+        { nodeKey: 'logic:approval', type: 'logic', subType: 'approval', schema: { inputs: [{ name: 'event', isConnection: true }], outputs: [{ name: 'approved', isConnection: true }, { name: 'rejected', isConnection: true }] } }
+    ];
+    const result = compileWorkflowEdits({
+        currentWorkflow: {
+            nodes: [
+                { id: 'trigger', type: 'trigger', subType: 'webhook', nodeKey: 'trigger:webhook', config: {} },
+                { id: 'support', type: 'action', subType: 'email', nodeKey: 'action:email', config: {} }
+            ],
+            edges: [{ id: 'trigger_support', source: 'trigger', sourceHandle: 'event', target: 'support', targetHandle: 'event' }]
+        },
+        specs,
+        registry: registryFor(specs),
+        operations: [{
+            op: 'add_approval_gate',
+            from: { nodeRef: 'n2', handle: 'outputData' },
+            approval: { ref: 'review_compensation', title: 'Review compensation', config: { title: 'Review compensation' } },
+            whenApproved: { ref: 'send_compensation', nodeKey: 'action:email', config: { to: 'customer@example.com' } },
+            whenRejected: null
+        }]
+    });
+
+    const approval = result.nodes.find(node => node.nodeKey === 'logic:approval');
+    const compensation = result.nodes.find(node => node.config?.to === 'customer@example.com');
+    assert.ok(approval);
+    assert.ok(compensation);
+    assert.ok(result.edges.some(edge => edge.source === 'support' && edge.sourceHandle === 'outputData' && edge.target === approval.id));
+    assert.ok(result.edges.some(edge => edge.source === approval.id && edge.sourceHandle === 'approved' && edge.target === compensation.id));
+    assert.equal(result.edges.some(edge => edge.source === approval.id && edge.sourceHandle === 'rejected'), false);
 });
 
 test('move_approval_gate relocates a shared approval onto the AI-selected venue route', () => {

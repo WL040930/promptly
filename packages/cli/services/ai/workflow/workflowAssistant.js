@@ -63,19 +63,42 @@ const progressSnapshot = (progress, now = () => new Date()) => ({
 const formIdForWorkflowNodes = (nodes = []) => nodes.find(node => node?.subType === 'form-submission')?.config?.formId || null;
 const compactOwnedForms = forms => forms.map(projectFormResourceSummary).filter(Boolean);
 
-const statePatchForResult = ({ resultKind, command, proposalMessageId = null, previousActiveProposalMessageId = null, now = () => new Date() }) => {
+const resumableActiveWork = ({ context, requestId = null, recovery = null, now = () => new Date() } = {}) => {
+    const sourceText = String(context?.intent?.sourceText || '').trim();
+    if (!recovery?.retryable || !sourceText) return null;
+    return {
+        sourceText,
+        ...(requestId ? { requestId } : {}),
+        relationToPending: context?.intent?.relationToPending || 'none',
+        clarificationState: context?.command?.state && typeof context.command.state === 'object' ? context.command.state : {},
+        retryable: true,
+        updatedAt: now().toISOString()
+    };
+};
+
+const markWorkflowRecoveryResumable = (recovery, resumeActiveWork = false) => {
+    if (!resumeActiveWork || !recovery?.retryable || recovery.action?.type !== 'retry') return recovery;
+    return {
+        ...recovery,
+        action: { ...recovery.action, mode: 'resume_active_work' }
+    };
+};
+
+const statePatchForResult = ({ resultKind, command, context = null, recovery = null, requestId = null, proposalMessageId = null, previousActiveProposalMessageId = null, now = () => new Date() }) => {
     const isClarification = resultKind === 'clarification';
     const isProposal = resultKind === 'workflow_proposal';
-    const sourceText = command?.type === 'decide_for_me' ? null : String(command?.text || '').trim();
+    const sourceText = String(context?.intent?.sourceText || (command?.type === 'decide_for_me' ? '' : command?.text) || '').trim();
     return {
         phase: isClarification ? 'awaiting_clarification' : (isProposal || previousActiveProposalMessageId ? 'awaiting_proposal' : 'idle'),
         activeProposalMessageId: isProposal ? proposalMessageId : previousActiveProposalMessageId,
         openClarification: null,
-        activeWork: isClarification ? { sourceText, updatedAt: now().toISOString() } : null
+        activeWork: isClarification
+            ? { sourceText, updatedAt: now().toISOString() }
+            : resumableActiveWork({ context, requestId, recovery, now })
     };
 };
 
-const messageFromResult = ({ result, workflow, idFactory = makeId }) => {
+const messageFromResult = ({ result, workflow, idFactory = makeId, resumeActiveWork = false }) => {
     if (result.kind === 'proposal') {
         const proposal = {
             workflowId: workflow.id,
@@ -112,15 +135,15 @@ const messageFromResult = ({ result, workflow, idFactory = makeId }) => {
         const issues = Array.isArray(result.errorMetadata?.issues) && result.errorMetadata.issues.length > 0
             ? result.errorMetadata.issues
             : [{ code, message }];
-        const recovery = result.errorMetadata?.recovery || buildAssistantRecovery({
+        const recovery = markWorkflowRecoveryResumable(result.errorMetadata?.recovery || buildAssistantRecovery({
             surface: 'workflow',
             code,
             issues,
             context: {
-                formId: formIdForWorkflowNodes(workflow.nodes || []),
+                formId: result.errorMetadata?.context?.formId || formIdForWorkflowNodes(workflow.nodes || []),
                 retryText: result.errorMetadata?.retryText || message
             }
-        });
+        }), resumeActiveWork);
         const errorMetadata = {
             ...(result.errorMetadata || {}),
             code,
@@ -166,7 +189,7 @@ export const createWorkflowAssistant = ({
         const recovery = buildAssistantRecovery({
             surface: 'workflow',
             code: 'WORKFLOW_AI_TURN_STALLED',
-            context: { formId: formIdForWorkflowNodes(workflow.nodes || []), retryText }
+            context: { formId: formIdForWorkflowNodes(workflow.nodes || []), retryText, resumeActiveWork: true }
         });
         const errorMetadata = { code: 'WORKFLOW_AI_TURN_STALLED', retryable: true, recovery };
         if (workMessage) {
@@ -183,7 +206,9 @@ export const createWorkflowAssistant = ({
         }
         await state.update({
             phase: state.activeProposalMessageId ? 'awaiting_proposal' : 'idle',
-            activeWork: null,
+            activeWork: state.activeWork?.sourceText
+                ? { ...state.activeWork, retryable: true, updatedAt: now().toISOString() }
+                : (retryText ? { sourceText: retryText, clarificationState: {}, retryable: true, updatedAt: now().toISOString() } : null),
             openClarification: null,
             inFlightRequestId: null,
             inFlightStartedAt: null,
@@ -265,7 +290,11 @@ export const createWorkflowAssistant = ({
         let normalizedCommand = normalizeWorkflowCommand(command);
         const mode = normalizeClarificationMode(clarificationMode);
         if (normalizedCommand.type === 'submit_text' && !normalizedCommand.text) throw errorWith('WORKFLOW_AI_INPUT_REQUIRED', 'Please describe a workflow change.', 400);
-        let displayText = normalizedCommand.type === 'decide_for_me' ? 'Use sensible defaults.' : normalizedCommand.text;
+        let displayText = normalizedCommand.type === 'decide_for_me'
+            ? 'Use sensible defaults.'
+            : normalizedCommand.type === 'retry_active_work'
+                ? 'Try again'
+                : normalizedCommand.text;
         let reservation;
         let progressChain = Promise.resolve();
         const reportProgress = progress => {
@@ -289,6 +318,9 @@ export const createWorkflowAssistant = ({
                 if (Number.isInteger(expectedStateVersion) && expectedStateVersion !== state.version) throw errorWith('WORKFLOW_AI_STATE_CONFLICT', 'This workflow assistant changed in another tab. Refresh the conversation and try again.', 409, { currentStateVersion: state.version });
                 if (state.inFlightRequestId && state.inFlightRequestId !== requestId) throw errorWith('WORKFLOW_AI_TURN_IN_PROGRESS', 'This workflow assistant is already processing a request.', 409, { currentStateVersion: state.version });
                 if (!state.inFlightRequestId && state.phase === 'processing') throw errorWith('WORKFLOW_AI_TURN_IN_PROGRESS', 'This workflow assistant is already processing a request.', 409, { currentStateVersion: state.version });
+                if (normalizedCommand.type === 'retry_active_work' && (!state.activeWork?.retryable || !String(state.activeWork?.sourceText || '').trim())) {
+                    throw errorWith('WORKFLOW_AI_RETRY_UNAVAILABLE', 'There is no retryable workflow draft to resume. Describe the workflow request again.', 400);
+                }
                 const pending = state.activeProposalMessageId ? await models.AssistantMessage.findOne({ where: { id: state.activeProposalMessageId, threadId: state.threadId }, transaction }) : null;
                 let clarificationResolution = null;
                 if (state.openClarification && normalizedCommand.type === 'submit_clarification') {
@@ -347,7 +379,17 @@ export const createWorkflowAssistant = ({
                 const userMessage = await models.AssistantMessage.create({ id: idFactory('wmsg'), threadId: state.threadId, sender: 'user', text: displayText, kind: 'text' }, { transaction });
                 const workMessage = await models.AssistantMessage.create({ id: idFactory('wmsg'), threadId: state.threadId, sender: 'bot', text: 'Drafting your workflow', kind: 'assistant_work', payload: { work: createAssistantWork({ requestId, surface: 'workflow', title: displayText, now: now() }) } }, { transaction });
                 const startedAt = now();
-                await state.update({ version: state.version + 1, phase: 'processing', mode, inFlightRequestId: requestId, inFlightStartedAt: startedAt, inFlightLastActivityAt: startedAt, progress: progressSnapshot({ status: 'starting', message: 'Preparing workflow changes…' }, now), openClarification: null }, { transaction });
+                await state.update({
+                    version: state.version + 1,
+                    phase: 'processing',
+                    mode,
+                    inFlightRequestId: requestId,
+                    inFlightStartedAt: startedAt,
+                    inFlightLastActivityAt: startedAt,
+                    progress: progressSnapshot({ status: 'starting', message: 'Preparing workflow changes…' }, now),
+                    openClarification: null,
+                    ...(normalizedCommand.type === 'submit_text' ? { activeWork: null } : {})
+                }, { transaction });
                 reservation = { state, pending, context, userMessage, workMessage };
             });
 
@@ -377,7 +419,11 @@ export const createWorkflowAssistant = ({
                     rangeLoader: ({ spreadsheetId }) => nodeResourceService.list({ userId, resource: 'google-sheet-ranges', params: { spreadsheetId } })
                 });
             };
-            const request = reservation.context.command.type === 'decide_for_me' ? `Resolve the active workflow request using sensible defaults. Active request: ${reservation.context.intent.sourceText || 'the current workflow request'}` : reservation.context.command.text;
+            const request = reservation.context.command.type === 'decide_for_me'
+                ? `Resolve the active workflow request using sensible defaults. Active request: ${reservation.context.intent.sourceText || 'the current workflow request'}`
+                : ['submit_clarification', 'retry_active_work'].includes(reservation.context.command.type)
+                    ? reservation.context.intent.sourceText || reservation.context.command.text
+                    : reservation.context.command.text;
             const result = await runTurn({
                 request, currentWorkflow: toWorkflowJson(workflow), history,
                 pendingProposal: reservation.pending && reservation.context.pendingProposal.mode === 'include' ? publicMessage(reservation.pending) : null,
@@ -389,7 +435,7 @@ export const createWorkflowAssistant = ({
                 onProgress: reportProgress
             });
             await progressChain;
-            const reply = messageFromResult({ result, workflow, idFactory });
+            const reply = messageFromResult({ result, workflow, idFactory, resumeActiveWork: true });
             return db.transaction(async transaction => {
                 const state = await ensureState({ workflow, transaction });
                 if (state.inFlightRequestId !== requestId) {
@@ -413,7 +459,16 @@ export const createWorkflowAssistant = ({
                     proposalStatus: reply.kind === 'workflow_proposal' ? 'pending' : null,
                     ...(reply.isError ? { isError: true, errorMetadata: reply.errorMetadata } : {})
                 }, { transaction });
-                const statePatch = statePatchForResult({ resultKind: reply.kind, command: reservation.context.command, proposalMessageId: botMessage.id, previousActiveProposalMessageId: state.activeProposalMessageId, now });
+                const statePatch = statePatchForResult({
+                    resultKind: reply.kind,
+                    command: reservation.context.command,
+                    context: reservation.context,
+                    recovery: reply.errorMetadata?.recovery,
+                    requestId,
+                    proposalMessageId: botMessage.id,
+                    previousActiveProposalMessageId: state.activeProposalMessageId,
+                    now
+                });
                 if (reply.kind === 'clarification') {
                     statePatch.openClarification = reply.payload;
                     statePatch.activeWork = {
@@ -448,7 +503,12 @@ export const createWorkflowAssistant = ({
             if (!reservation) throw error;
             await progressChain.catch(() => {});
             const formId = formIdForWorkflowNodes(workflow.nodes || []);
-            const recovery = buildAssistantRecovery({ surface: 'workflow', code: error.code || 'WORKFLOW_AI_FAILED', issues: error.issues || [], context: { formId, retryText: displayText } });
+            const recovery = markWorkflowRecoveryResumable(buildAssistantRecovery({
+                surface: 'workflow',
+                code: error.code || 'WORKFLOW_AI_FAILED',
+                issues: error.issues || [],
+                context: { formId, retryText: displayText }
+            }), true);
             return db.transaction(async transaction => {
                 const state = await ensureState({ workflow, transaction });
                 if (state.inFlightRequestId !== requestId) {
@@ -460,7 +520,7 @@ export const createWorkflowAssistant = ({
                 await state.update({
                     version: state.version + 1,
                     phase: state.activeProposalMessageId ? 'awaiting_proposal' : 'idle',
-                    activeWork: null,
+                    activeWork: resumableActiveWork({ context: reservation.context, requestId, recovery, now }),
                     openClarification: null,
                     inFlightRequestId: null,
                     inFlightStartedAt: null,
