@@ -24,7 +24,7 @@
       "valueSyntax": "workflow-expression",
       "placeholder": "Describe what the AI should do. Insert data from a previous step with the {} button.",
       "defaultValue": "",
-      "helpText": "If left blank, the connected input data is used directly. Otherwise, it is included after these instructions."
+      "helpText": "If left blank, the connected input data is used directly. Otherwise, it is included after these instructions unless the prompt inserts a specific workflow value."
     },
     {
       "name": "extractionSchema",

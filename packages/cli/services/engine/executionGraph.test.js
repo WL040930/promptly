@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildExecutionGraph, mergeExecutionResult, selectOutgoingEdges } from './executionGraph.js';
+import { buildExecutionGraph, mergeExecutionResult, payloadForEdge, selectOutgoingEdges } from './executionGraph.js';
 
 test('buildExecutionGraph preserves incoming and outgoing edge relationships', () => {
     const graph = buildExecutionGraph(
@@ -77,4 +77,9 @@ test('mergeExecutionResult exposes canonical node output and persisted variables
     assert.equal(context.set_1.value, 42);
     assert.equal(context['logic:setVariable'].value, 42);
     assert.equal(context.customerScore, 42);
+});
+
+test('payloadForEdge uses a node output as the next connection input', () => {
+    assert.deepEqual(payloadForEdge({ outputData: { comment: 'Too slow' } }), { comment: 'Too slow' });
+    assert.deepEqual(payloadForEdge({ triggerData: { fields: { comment: 'Too slow' } } }), { fields: { comment: 'Too slow' } });
 });

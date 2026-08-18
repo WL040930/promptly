@@ -23,7 +23,8 @@ import {
 import {
     fieldBindingKey,
     formPrerequisiteDecision,
-    isFormSubmissionRequest
+    isFormSubmissionRequest,
+    validateSummaryWorkflowContract
 } from '../domain/workflowPrerequisites.js';
 import {
     resolveGoogleFormResponseSource,
@@ -823,6 +824,7 @@ const applyAndValidate = async ({
     bindExistingFormResponseValues = false,
     spreadsheetIntent = null,
     perSubmissionRequested = undefined,
+    formWorkflowContracts = null,
     registry
 }) => {
     // Form-response column mappings are server-owned. Compile the graph first,
@@ -910,6 +912,10 @@ const applyAndValidate = async ({
         nodes: compiled.nodes,
         edges: compiled.edges
     });
+    const summaryContractIssues = validateSummaryWorkflowContract({
+        nodes: compiled.nodes,
+        contract: formWorkflowContracts
+    });
     const validation = validateWorkflow({
         nodes: compiled.nodes,
         edges: compiled.edges,
@@ -917,7 +923,7 @@ const applyAndValidate = async ({
         requireConnected: true,
         registry
     });
-    const issues = [...(compiled.bindingIssues || []), ...resourceIssues, ...capabilityIssues, ...(validation.issues || [])];
+    const issues = [...(compiled.bindingIssues || []), ...resourceIssues, ...capabilityIssues, ...summaryContractIssues, ...(validation.issues || [])];
     if (issues.length > 0) {
         throw createPipelineError(
             [...new Set(issues.map(item => item.message).filter(Boolean))].join('; '),
@@ -958,14 +964,15 @@ const requestAndValidate = async ({
     budget,
     usage,
     onActivity = null,
-    maxAttempts = null
+    maxAttempts = null,
+    existingWorkflow = null
 }) => {
     // Planner resource changes have a small compatibility boundary: models
     // sometimes call a proposed Google Sheet `create_google_sheet` or
     // `create_sheet`. Normalize those known spellings before strict contract
     // validation; unknown resource types still fail closed.
     const normalizeCall = call => label.startsWith('planner')
-        ? { ...call, value: normalizeWorkflowPlannerResult(call.value) }
+        ? { ...call, value: normalizeWorkflowPlannerResult(call.value, { existingWorkflow }) }
         : call;
     let call = normalizeCall(await requestWorkflowJson({ label, prompt, systemInstruction: instruction, provider, budget, onActivity, maxAttempts }));
     let nextUsage = addWorkflowUsage(usage, call.response, label);
@@ -974,7 +981,7 @@ const requestAndValidate = async ({
 
     call = normalizeCall(await requestWorkflowJson({
         label: `${label} repair`,
-        prompt: buildWorkflowOutputRepairContext({ stage: label, rawText: call.rawText, issues }),
+        prompt: buildWorkflowOutputRepairContext({ stage: label, prompt, rawText: call.rawText, issues }),
         systemInstruction: instruction,
         provider,
         budget,
@@ -1258,6 +1265,8 @@ export const generateWorkflowTurn = async ({
         if (decision.status === 'blocked') {
             const message = decision.blockedReason === 'RATING_FIELD_MISSING'
                 ? 'The selected form does not contain a rating or score field. Add one before creating this conditional workflow.'
+                : decision.blockedReason === 'SUMMARY_FIELD_MISSING'
+                    ? 'The selected form does not contain a text or comment field to summarize. Add one or ask Promptly to summarize the entire submission.'
                 : 'The selected form needs a usable required email field before Promptly can send a compensation offer.';
             return {
                 type: 'reply',
@@ -1282,6 +1291,14 @@ export const generateWorkflowTurn = async ({
                 tokenUsage: { ...usage, requestCalls: budget.calls }
             };
         }
+        const summaryFieldIds = decision.context.summaryFieldIds?.length > 0
+            ? decision.context.summaryFieldIds
+            : decision.context.summaryFieldId
+                ? [decision.context.summaryFieldId]
+                : [];
+        const summaryBindingKeys = summaryFieldIds
+            .map(fieldId => fieldBindingKey(resolvedFormSchema, fieldId))
+            .filter(Boolean);
         formWorkflowContracts = {
             ...(decision.context.ratingFieldId && fieldBindingKey(resolvedFormSchema, decision.context.ratingFieldId)
                 ? { rating: { $binding: fieldBindingKey(resolvedFormSchema, decision.context.ratingFieldId) } }
@@ -1290,7 +1307,12 @@ export const generateWorkflowTurn = async ({
                 ? { respondentEmail: { $binding: fieldBindingKey(resolvedFormSchema, decision.context.respondentEmailFieldId) } }
                 : {}),
             ...(decision.context.compensationRecipient ? { compensationRecipient: decision.context.compensationRecipient } : {}),
-            ...(decision.context.supportRecipient ? { supportRecipient: decision.context.supportRecipient } : {})
+            ...(decision.context.supportRecipient ? { supportRecipient: decision.context.supportRecipient } : {}),
+            ...(decision.context.summaryMode === 'submission'
+                ? { summaryInput: { mode: 'submission' } }
+                : summaryBindingKeys.length > 0
+                    ? { summaryInput: { mode: 'fields', fieldIds: summaryFieldIds, bindingKeys: summaryBindingKeys } }
+                    : {})
         };
     }
     const requestedRunId = explicitRunIdFromRequest(semanticRequest);
@@ -1306,7 +1328,8 @@ export const generateWorkflowTurn = async ({
         turnContext: turnIntent,
         userContext,
         resourceContext: assistantContext,
-        formSchema,
+        formSchema: resolvedFormSchema || formSchema,
+        formPrerequisites: formWorkflowContracts,
         inspectedFormSchema,
         inspectedRun,
         inspectedResource,
@@ -1326,7 +1349,8 @@ export const generateWorkflowTurn = async ({
         provider,
         budget,
         usage,
-        onActivity: reportProviderActivity
+        onActivity: reportProviderActivity,
+        existingWorkflow: currentWorkflow
     });
     usage = plannerResult.usage;
     let plan = plannerResult.call.value;
@@ -1348,7 +1372,8 @@ export const generateWorkflowTurn = async ({
             provider,
             budget,
             usage,
-            onActivity: reportProviderActivity
+            onActivity: reportProviderActivity,
+            existingWorkflow: currentWorkflow
         });
         usage = plannerResult.usage;
         plan = plannerResult.call.value;
@@ -1369,7 +1394,8 @@ export const generateWorkflowTurn = async ({
             provider,
             budget,
             usage,
-            onActivity: reportProviderActivity
+            onActivity: reportProviderActivity,
+            existingWorkflow: currentWorkflow
         });
         usage = plannerResult.usage;
         plan = plannerResult.call.value;
@@ -1402,7 +1428,8 @@ export const generateWorkflowTurn = async ({
             provider,
             budget,
             usage,
-            onActivity: reportProviderActivity
+            onActivity: reportProviderActivity,
+            existingWorkflow: currentWorkflow
         });
         usage = plannerResult.usage;
         plan = plannerResult.call.value;
@@ -1460,7 +1487,8 @@ export const generateWorkflowTurn = async ({
             provider,
             budget,
             usage,
-            onActivity: reportProviderActivity
+            onActivity: reportProviderActivity,
+            existingWorkflow: currentWorkflow
         });
         usage = plannerResult.usage;
         plan = plannerResult.call.value;
@@ -1484,7 +1512,8 @@ export const generateWorkflowTurn = async ({
                 provider,
                 budget,
                 usage,
-                onActivity: reportProviderActivity
+                onActivity: reportProviderActivity,
+                existingWorkflow: currentWorkflow
             });
             usage = plannerResult.usage;
             plan = plannerResult.call.value;
@@ -1524,7 +1553,8 @@ export const generateWorkflowTurn = async ({
         plannerContext = buildPlannerContext({ inspectedFormSchema, formLookupUsed });
         plannerResult = await requestAndValidate({
             label: 'planner', prompt: plannerContext.prompt, instruction: workflowPlannerInstruction,
-            validate: validatePlannerForCatalogue, provider, budget, usage, onActivity: reportProviderActivity
+            validate: validatePlannerForCatalogue, provider, budget, usage, onActivity: reportProviderActivity,
+            existingWorkflow: currentWorkflow
         });
         usage = plannerResult.usage;
         plan = plannerResult.call.value;
@@ -1565,7 +1595,8 @@ export const generateWorkflowTurn = async ({
             provider,
             budget,
             usage,
-            onActivity: reportProviderActivity
+            onActivity: reportProviderActivity,
+            existingWorkflow: currentWorkflow
         });
         usage = plannerResult.usage;
         plan = plannerResult.call.value;
@@ -1860,6 +1891,7 @@ export const generateWorkflowTurn = async ({
                 bindExistingFormResponseValues: isExistingSpreadsheetIntent(spreadsheetIntent),
                 spreadsheetIntent,
                 perSubmissionRequested,
+                formWorkflowContracts,
                 registry
             });
         } catch (error) {
@@ -1898,7 +1930,8 @@ export const generateWorkflowTurn = async ({
                     diff: compiled.diff,
                     workflow: compiled.finalWorkflow,
                     specs,
-                    resourceChanges: plan.resourceChanges || []
+                    resourceChanges: plan.resourceChanges || [],
+                    formPrerequisites: formWorkflowContracts
                 }),
                 instruction: workflowVerifierInstruction,
                 validate: validateWorkflowVerifierResult,
@@ -2002,6 +2035,7 @@ export const generateWorkflowTurn = async ({
                     resourceContext,
                     resourceChanges: plan.resourceChanges || [],
                     bindExistingFormResponseValues: isExistingSpreadsheetIntent(spreadsheetIntent),
+                    formWorkflowContracts,
                     registry
                 });
             } catch (error) {
@@ -2039,7 +2073,8 @@ export const generateWorkflowTurn = async ({
                             diff: fallbackCompiled.diff,
                             workflow: fallbackCompiled.finalWorkflow,
                             specs,
-                            resourceChanges: plan.resourceChanges || []
+                            resourceChanges: plan.resourceChanges || [],
+                            formPrerequisites: formWorkflowContracts
                         }),
                         instruction: workflowVerifierInstruction,
                         validate: validateWorkflowVerifierResult,

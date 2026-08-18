@@ -29,3 +29,17 @@ test('canonical workflow expressions resolve email recipient and mixed body at r
     assert.equal(resolved.to, 'person@example.com');
     assert.equal(resolved.body, 'Hi Sam');
 });
+
+test('BaseNode exposes the selected connection payload without leaking runtime internals', () => {
+    const node = new BaseNode('ai_1', 'ai', 'aiTask', {});
+    const context = {
+        __runtime: {
+            inputs: {
+                ai_1: { inputData: { fields: { comment: 'Too slow' } } }
+            }
+        }
+    };
+
+    assert.deepEqual(node.getRuntimeInput(context, 'inputData'), { fields: { comment: 'Too slow' } });
+    assert.equal(Object.keys(context).includes('__runtime'), true);
+});

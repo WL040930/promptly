@@ -123,7 +123,7 @@ const aiTaskSpec = {
         inputs: [
             { name: 'inputData', isConnection: true },
             { name: 'taskType', type: 'select', options: ['custom', 'summarize'] },
-            { name: 'prompt', type: 'textarea', valueSyntax: 'node-template' }
+            { name: 'prompt', type: 'textarea', valueSyntax: 'workflow-expression' }
         ],
         outputs: [
             { name: 'outputData', isConnection: true },
@@ -2418,7 +2418,15 @@ test('pipeline verifies a low-rating AI summary before sending the support alert
                                 ref: 'summarize_feedback',
                                 nodeKey: 'ai:aiTask',
                                 title: 'Summarize feedback',
-                                config: { taskType: 'summarize', prompt: 'Summarize the customer feedback.' }
+                                config: {
+                                    taskType: 'summarize',
+                                    prompt: {
+                                        $template: [
+                                            'Summarize the customer feedback: ',
+                                            { $binding: 'form_field_3' }
+                                        ]
+                                    }
+                                }
                             },
                             whenFalse: null
                         },

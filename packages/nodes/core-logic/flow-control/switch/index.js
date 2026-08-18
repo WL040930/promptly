@@ -38,10 +38,12 @@ const evaluateSwitch = config => {
 export default class RouterSwitchNode extends BaseNode {
     async execute(context) {
         try {
-            const result = evaluateSwitch(this.getResolvedConfig(context));
+            const config = this.getResolvedConfig(context);
+            const input1 = this.getRuntimeInput(context, 'input1');
+            const result = evaluateSwitch({ ...config, ...(input1 !== undefined ? { input1 } : {}) });
             return {
                 success: true,
-                outputData: result,
+                outputData: input1 !== undefined ? input1 : context.initialPayload,
                 ...result
             };
         } catch (error) {

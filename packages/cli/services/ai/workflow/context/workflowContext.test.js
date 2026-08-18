@@ -5,7 +5,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import NodeRegistry from '../../../../utils/NodeRegistry.js';
 import {
+    buildWorkflowOutputRepairContext,
     buildWorkflowPlannerContext,
+    buildWorkflowVerifierContext,
     buildWorkflowWorkerContext,
     workflowContextInternals
 } from './workflowContext.js';
@@ -277,4 +279,33 @@ test('worker context makes empty-workflow refs and repair options explicit', () 
     assert.match(context, /"trigger:webhook"/);
     assert.match(context, /Provided value: "action:emails"/);
     assert.match(context, /Allowed values: action:email/);
+});
+
+test('output repair context retains the original workflow request and bindings', () => {
+    const context = buildWorkflowOutputRepairContext({
+        stage: 'planner',
+        prompt: 'Current Request:\nSummarize the Additional Comments field.\nAttached Form Context:\nform_field_3',
+        rawText: '{"type":"plan_complete","linearSteps":[{}]}',
+        issues: [{ code: 'INVALID_LINEAR_STEP_REQUIREMENTS', path: 'linearSteps[0].requirementIds', message: 'Each linear step must map at least one requirement.' }]
+    });
+
+    assert.match(context, /Original planner context/);
+    assert.match(context, /Summarize the Additional Comments field/);
+    assert.match(context, /form_field_3/);
+    assert.match(context, /INVALID_LINEAR_STEP_REQUIREMENTS/);
+});
+
+test('verifier context carries the resolved summary input contract', () => {
+    const context = buildWorkflowVerifierContext({
+        requirements: [{ id: 'req_summary', description: 'Summarize the comment and email it.' }],
+        operations: [],
+        diff: {},
+        workflow: { nodes: [], edges: [] },
+        formPrerequisites: {
+            summaryInput: { mode: 'fields', fieldIds: ['comment'], bindingKeys: ['form_field_3'] }
+        }
+    });
+
+    assert.match(context, /Resolved Form Workflow Contracts/);
+    assert.match(context, /form_field_3/);
 });

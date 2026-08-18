@@ -33,14 +33,17 @@ const evaluateCondition = ({ valueA, operator, valueB }) => {
 export default class ConditionIfElseNode extends BaseNode {
     async execute(context) {
         const config = this.getResolvedConfig(context);
-        const valueA = config.valueA !== '' && config.valueA !== undefined ? config.valueA : config.input1;
-        const valueB = config.valueB !== '' && config.valueB !== undefined ? config.valueB : config.input2;
+        const input1 = this.getRuntimeInput(context, 'input1');
+        const input2 = this.getRuntimeInput(context, 'input2');
+        const valueA = config.valueA !== '' && config.valueA !== undefined ? config.valueA : input1 ?? config.input1;
+        const valueB = config.valueB !== '' && config.valueB !== undefined ? config.valueB : input2 ?? config.input2;
+        const routePayload = input1 !== undefined ? input1 : context.initialPayload;
 
         try {
             const result = evaluateCondition({ valueA, valueB, operator: config.operator || 'equals' });
             return {
                 success: true,
-                outputData: result,
+                outputData: routePayload,
                 result,
                 targetHandle: result ? 'true' : 'false'
             };

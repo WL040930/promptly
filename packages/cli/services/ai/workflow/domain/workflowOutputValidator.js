@@ -71,13 +71,16 @@ const normalizeLinearStepRefs = steps => {
  * create_google_spreadsheet; unknown resource types are left untouched so the
  * validator can reject them instead of silently dropping a requested change.
  */
-export const normalizeWorkflowPlannerResult = result => {
+export const normalizeWorkflowPlannerResult = (result, { existingWorkflow = null } = {}) => {
     if (!isObject(result)) return result;
+    const hasExistingGraph = (existingWorkflow?.nodes || []).length > 0
+        || (existingWorkflow?.edges || []).length > 0;
+    const { linearSteps, ...withoutLinearBlueprint } = result;
     return {
-        ...result,
-        ...(Array.isArray(result.linearSteps) ? { linearSteps: normalizeLinearStepRefs(result.linearSteps) } : {}),
-        ...(Array.isArray(result.resourceChanges) ? {
-            resourceChanges: result.resourceChanges.map(change => {
+        ...withoutLinearBlueprint,
+        ...(!hasExistingGraph && Array.isArray(linearSteps) ? { linearSteps: normalizeLinearStepRefs(linearSteps) } : {}),
+        ...(Array.isArray(withoutLinearBlueprint.resourceChanges) ? {
+            resourceChanges: withoutLinearBlueprint.resourceChanges.map(change => {
                 if (!isObject(change)) return change;
                 const alias = RESOURCE_CHANGE_TYPE_ALIASES[normalizedResourceChangeType(change.type)];
                 return alias ? { ...change, type: alias } : change;

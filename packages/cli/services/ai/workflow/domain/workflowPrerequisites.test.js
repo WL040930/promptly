@@ -4,7 +4,9 @@ import {
     fieldBindingKey,
     formPrerequisiteDecision,
     isFormSubmissionRequest,
-    ratingFieldCandidates
+    needsAiSummary,
+    ratingFieldCandidates,
+    validateSummaryWorkflowContract
 } from './workflowPrerequisites.js';
 
 const feedbackForm = {
@@ -20,12 +22,113 @@ const feedbackForm = {
 test('detects a form-submission request without requiring a model plan', () => {
     assert.equal(isFormSubmissionRequest({ request: 'When a customer submits feedback, save the response.' }), true);
     assert.equal(isFormSubmissionRequest({ request: 'Send a weekly summary email to support.' }), false);
+    assert.equal(isFormSubmissionRequest({
+        request: 'Add an AI node to summarize the comment.',
+        workflow: { nodes: [{ subType: 'form-submission' }] }
+    }), true);
+    assert.equal(needsAiSummary('Summarize the customer comment.'), true);
 });
 
 test('finds rating fields and exposes canonical binding keys', () => {
     const candidates = ratingFieldCandidates(feedbackForm);
     assert.deepEqual(candidates.map(field => field.id), ['rating']);
     assert.equal(fieldBindingKey(feedbackForm, 'rating'), 'form_field_2');
+});
+
+test('resolves a named comment field for an AI summary', () => {
+    const decision = formPrerequisiteDecision({
+        request: 'When feedback is submitted, summarize the comment and email the summary.',
+        formSchema: feedbackForm,
+        state: {}
+    });
+
+    assert.equal(decision.status, 'ready');
+    assert.deepEqual(decision.context, {
+        ratingFieldId: null,
+        respondentEmailFieldId: null,
+        supportRecipient: null,
+        summaryFieldId: 'comment',
+        summaryFieldIds: ['comment'],
+        summaryMode: 'fields'
+    });
+    assert.deepEqual(decision.inputs, []);
+});
+
+test('asks for a summary field when several long-form fields are possible', () => {
+    const form = {
+        ...feedbackForm,
+        fields: [
+            ...feedbackForm.fields,
+            { id: 'details', label: 'Additional Details', type: 'textarea' }
+        ]
+    };
+    const decision = formPrerequisiteDecision({
+        request: 'When feedback is submitted, summarize the feedback.',
+        formSchema: form,
+        state: {}
+    });
+
+    assert.equal(decision.status, 'clarification');
+    assert.deepEqual(decision.inputs.map(input => input.id), ['summaryFieldId']);
+    assert.deepEqual(decision.inputs[0].options.map(option => option.id), ['comment', 'details']);
+});
+
+test('uses the full submission when explicitly requested', () => {
+    const decision = formPrerequisiteDecision({
+        request: 'When feedback is submitted, summarize the entire submission.',
+        formSchema: feedbackForm,
+        state: {}
+    });
+
+    assert.equal(decision.status, 'ready');
+    assert.equal(decision.context.summaryMode, 'submission');
+    assert.equal(decision.context.summaryFieldId, null);
+});
+
+test('validates the selected summary input and downstream AI response reference', () => {
+    const nodes = [
+        { id: 'form_1', subType: 'form-submission' },
+        {
+            id: 'summary_1',
+            subType: 'aiTask',
+            config: {
+                taskType: 'summarize',
+                prompt: {
+                    $expr: 'template',
+                    v: 1,
+                    parts: [
+                        { text: 'Summarize this comment: ' },
+                        { reference: { $expr: 'reference', v: 1, nodeId: 'form_1', path: ['fields', 'comment'] } }
+                    ]
+                }
+            }
+        },
+        {
+            id: 'email_1',
+            subType: 'email',
+            config: {
+                body: { $expr: 'reference', v: 1, nodeId: 'summary_1', path: ['response'] }
+            }
+        }
+    ];
+
+    assert.deepEqual(validateSummaryWorkflowContract({
+        nodes,
+        contract: { summaryInput: { mode: 'fields', fieldIds: ['comment'], bindingKeys: ['form_field_3'] } }
+    }), []);
+});
+
+test('rejects a summary prompt that falls back to the whole submission', () => {
+    const issues = validateSummaryWorkflowContract({
+        nodes: [
+            { id: 'form_1', subType: 'form-submission' },
+            { id: 'summary_1', subType: 'aiTask', config: { taskType: 'summarize', prompt: 'Summarize the feedback.' } },
+            { id: 'email_1', subType: 'email', config: { body: { $expr: 'reference', v: 1, nodeId: 'summary_1', path: ['response'] } } }
+        ],
+        contract: { summaryInput: { mode: 'fields', fieldIds: ['comment'], bindingKeys: ['form_field_3'] } }
+    });
+
+    assert.deepEqual(issues.map(issue => issue.code), ['AI_SUMMARY_INPUT_MISSING']);
 });
 
 test('requires a support recipient while resolving the single rating and respondent email fields', () => {

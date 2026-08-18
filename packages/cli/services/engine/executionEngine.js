@@ -5,7 +5,7 @@ import { AutomationRun, WorkflowContinuation } from '../../models/index.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { NodeFactory } from '../../../nodes/NodeFactory.js';
 import { validateWorkflow } from './workflowValidator.js';
-import { buildExecutionGraph, mergeExecutionResult, selectOutgoingEdges } from './executionGraph.js';
+import { buildExecutionGraph, mergeExecutionResult, payloadForEdge, selectOutgoingEdges } from './executionGraph.js';
 import { recordTerminalRunMetric } from './dashboardMetricsService.js';
 import { validateWorkflowExpressions } from '../../../shared/workflowExpressions.js';
 import { planDanglingWorkflowReferenceRepair } from '../../../shared/workflowDeletion.js';
@@ -36,11 +36,12 @@ const defineRuntime = (contextData, runtimeState) => {
     return contextData;
 };
 
-const serializeState = ({ contextData, incomingRemaining, activeIncoming, activeIncomingSources, queued, settled, queue, unhandledFailures, stepLogs, workflowOutput, suspendedNodeId = null, suspendedInputNodeIds = [] }) => ({
+const serializeState = ({ contextData, incomingRemaining, activeIncoming, activeIncomingSources, inputValues, queued, settled, queue, unhandledFailures, stepLogs, workflowOutput, suspendedNodeId = null, suspendedInputNodeIds = [] }) => ({
     contextData: clone(contextData),
     incomingRemaining: [...incomingRemaining.entries()],
     activeIncoming: [...activeIncoming.entries()],
     activeIncomingSources: [...activeIncomingSources.entries()],
+    inputValues: clone([...inputValues.entries()]),
     queued: [...queued],
     settled: [...settled],
     queue: clone(queue),
@@ -56,6 +57,7 @@ const restoreState = state => ({
     incomingRemaining: new Map(state.incomingRemaining || []),
     activeIncoming: new Map(state.activeIncoming || []),
     activeIncomingSources: new Map(state.activeIncomingSources || []),
+    inputValues: new Map(state.inputValues || []),
     queued: new Set(state.queued || []),
     settled: new Set(state.settled || []),
     queue: state.queue || [],
@@ -213,6 +215,7 @@ const initializeRun = async ({ workflowId, userId, triggerPayload, executionOpti
             incomingRemaining: new Map([...graph.incoming.entries()].map(([id, incoming]) => [id, incoming.length])),
             activeIncoming: new Map(nodes.map(node => [node.id, 0])),
             activeIncomingSources: new Map(nodes.map(node => [node.id, []])),
+            inputValues: new Map(nodes.map(node => [node.id, {}])),
             queued: new Set(),
             settled: new Set(),
             queue: [],
@@ -281,7 +284,11 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
         await assertRunCanContinue(run);
         const graph = buildExecutionGraph(nodes, edges);
         const nodeMap = new Map(nodes.map(nodeData => [nodeData.id, NodeFactory.createNode(nodeData)]));
-        const runtimeState = { incomingNodeIds: [], currentNodeId: null };
+        const runtimeState = {
+            incomingNodeIds: [],
+            currentNodeId: null,
+            inputs: Object.fromEntries(state.inputValues.entries())
+        };
         defineRuntime(state.contextData, runtimeState);
 
         const schedule = (nodeId, shouldExecute, inputNodeIds = []) => {
@@ -315,11 +322,24 @@ export const executeWorkflow = async (workflowId, userId, triggerPayload = {}, e
             const outgoing = graph.outgoing.get(nodeId) || [];
             const selected = selectOutgoingEdges(node, executionResult, outgoing, nodeMap);
             const selectedIds = new Set(selected.map(edge => edge.id));
+            const outgoingPayload = payloadForEdge(executionResult);
             for (const edge of outgoing) {
                 state.incomingRemaining.set(edge.target, state.incomingRemaining.get(edge.target) - 1);
                 if (selectedIds.has(edge.id)) {
                     state.activeIncoming.set(edge.target, state.activeIncoming.get(edge.target) + 1);
                     state.activeIncomingSources.get(edge.target).push(nodeId);
+                    const targetInputs = state.inputValues.get(edge.target) || {};
+                    const targetHandle = edge.targetHandle || 'inputData';
+                    if (targetInputs[targetHandle] === undefined) {
+                        targetInputs[targetHandle] = outgoingPayload;
+                    } else {
+                        const prior = targetInputs[targetHandle];
+                        targetInputs[targetHandle] = Array.isArray(prior)
+                            ? [...prior, outgoingPayload]
+                            : [prior, outgoingPayload];
+                    }
+                    state.inputValues.set(edge.target, targetInputs);
+                    runtimeState.inputs[edge.target] = targetInputs;
                 }
                 if (state.incomingRemaining.get(edge.target) === 0) {
                     schedule(edge.target, (state.activeIncoming.get(edge.target) || 0) > 0, state.activeIncomingSources.get(edge.target));

@@ -19,3 +19,14 @@ test('AI task prompt includes connected input alongside literal instructions', a
     assert.match(prompt, /Summarize the feedback\./);
     assert.match(prompt, /The comments were negative\./);
 });
+
+test('AI task recognizes an explicit workflow value in the prompt', async () => {
+    const module = await import('./ai-natural-language/text-understanding/ai-task/index.js');
+    assert.equal(module.promptUsesExplicitInput({
+        $expr: 'reference',
+        v: 1,
+        nodeId: 'form_1',
+        path: ['fields', 'comment']
+    }), true);
+    assert.equal(module.promptUsesExplicitInput('Summarize the feedback.'), false);
+});

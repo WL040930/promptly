@@ -33,7 +33,7 @@ Plan one conversational turn for the current Promptly workflow. Return JSON only
 - Sheet: `create_google_spreadsheet` with `ref`/`title`; optional `sheetTitle`.
 - To narrow or move an existing Approval, identify its ref and target route. Return `plan_complete` with `logic:approval`; the worker moves it safely.
 - An empty workflow proposal has exactly one trigger and a connected graph.
-- Linear workflows use ordered `linearSteps`, exact keys, mapped requirements, safe config, and lowercase `snake_case` refs; never use titles or branches.
+- Empty workflows use ordered `linearSteps` with exact keys and mapped requirements; existing edits use graph operations only.
 - When a durable purpose, audience, invariant, or accepted decision is introduced, include `contextDelta`.
 
 ## JSON shapes

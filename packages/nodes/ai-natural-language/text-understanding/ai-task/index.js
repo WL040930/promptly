@@ -1,6 +1,7 @@
 import { BaseNode } from '../../../BaseNode.js';
 import { ai } from '../../../../cli/services/ai/index.js';
 import { AI_TASKS } from '../../../../cli/services/ai/core/aiTasks.js';
+import { isWorkflowBinding, isWorkflowBindingTemplate, isWorkflowExpression } from '../../../../shared/workflowExpressions.js';
 
 const SYSTEM_PROMPTS = {
     summarize: 'You are a summarization assistant. Produce a concise, accurate summary of the provided text. Return only the summary, no preamble.',
@@ -29,11 +30,30 @@ const buildPrompt = (taskType, userPrompt, extractionSchema, categories, inputDa
 
 const structuredTasks = new Set(['extract', 'sentiment', 'categorize']);
 
+const promptUsesExplicitInput = value => {
+    if (isWorkflowExpression(value) || isWorkflowBinding(value) || isWorkflowBindingTemplate(value)) return true;
+    if (Array.isArray(value)) return value.some(promptUsesExplicitInput);
+    if (value && typeof value === 'object') return Object.values(value).some(promptUsesExplicitInput);
+    return false;
+};
+
 export default class AITaskNode extends BaseNode {
     async execute(context) {
         const config = this.getResolvedConfig(context);
         const taskType = config.taskType || 'custom';
-        const prompt = buildPrompt(taskType, config.prompt, config.extractionSchema, config.categories, config.inputData || context.initialPayload);
+        const connectedInput = this.getRuntimeInput(context, 'inputData');
+        const inputData = config.inputData !== undefined
+            ? config.inputData
+            : connectedInput !== undefined
+                ? connectedInput
+                : context.initialPayload;
+        const prompt = buildPrompt(
+            taskType,
+            config.prompt,
+            config.extractionSchema,
+            config.categories,
+            promptUsesExplicitInput(this.config.prompt) ? undefined : inputData
+        );
         const systemPrompt = config.systemPrompt || SYSTEM_PROMPTS[taskType] || '';
         const response = await ai.run({
             task: structuredTasks.has(taskType) ? AI_TASKS.NODE_JSON : AI_TASKS.NODE_TEXT,
@@ -55,4 +75,4 @@ export default class AITaskNode extends BaseNode {
     }
 }
 
-export { buildPrompt };
+export { buildPrompt, promptUsesExplicitInput };

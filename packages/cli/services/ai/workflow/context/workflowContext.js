@@ -198,6 +198,7 @@ export const buildWorkflowPlannerContext = ({
     userContext = null,
     resourceContext = null,
     formSchema = null,
+    formPrerequisites = null,
     inspectedFormSchema = null,
     inspectedRun = null,
     inspectedResource = null,
@@ -231,6 +232,7 @@ export const buildWorkflowPlannerContext = ({
         ...projectFormResourceContext(formSchema),
         fieldBindings: buildFormBindingCatalogue(formSchema).bindings
     });
+    addSection('Resolved Form Workflow Contracts', formPrerequisites && compactValue(formPrerequisites));
     addSection('Inspected Form Context', inspectedFormSchema && projectFormResourceContext(inspectedFormSchema));
     if (formLookupUsed) addSection('Form Lookup Status', 'A form lookup was already used for this request. Do not request another lookup.', { required: true });
     addSection('Inspected Run Diagnostic Context', inspectedRun && compactValue(inspectedRun));
@@ -313,7 +315,7 @@ export const buildWorkflowWorkerContext = ({
     'Use only structured workflow data values: $binding with a server-issued form binding key, $template for mixed text, or a canonical $expr reference to an upstream node output. Do not write legacy double-brace references or ${...}/steps.* interpolation syntax.',
     'triggerData, inputData, and event are connection handles, not workflow step IDs. Form values must use the attached fieldBindings through $binding or $template; never guess, copy, or remap a handle to a form step.',
     'For an upstream node output, use {"$expr":"reference","v":1,"nodeId":"your_step_ref","path":["outputName"]}; use the node ref from this response, not a database ID. A $template may contain literal strings and canonical references.',
-    'Workflow-expression inputs accept $binding, $template, or $expr. Inputs marked node-template must receive plain text. The AI Task prompt may combine literal instructions with an upstream expression, and connected input data is included automatically when instructions are provided.',
+    'Workflow-expression inputs accept $binding, $template, or $expr. Inputs marked node-template must receive plain text. The AI Task prompt may combine literal instructions with an upstream expression or explicit workflow value; an explicit field or upstream reference is authoritative over the connected payload.',
     '',
     'Planner Requirements:',
     JSON.stringify(requirements || []),
@@ -353,7 +355,7 @@ export const buildWorkflowWorkerContext = ({
 ].join('\n');
 };
 
-export const buildWorkflowVerifierContext = ({ requirements, operations, diff, workflow, resourceChanges = [], specs = [] }) => [
+export const buildWorkflowVerifierContext = ({ requirements, operations, diff, workflow, resourceChanges = [], specs = [], formPrerequisites = null }) => [
     'Planner Requirements:',
     JSON.stringify(requirements || []),
     '',
@@ -374,6 +376,9 @@ export const buildWorkflowVerifierContext = ({ requirements, operations, diff, w
     'Proposed Resource Changes:',
     JSON.stringify(resourceChanges || []),
     '',
+    'Resolved Form Workflow Contracts:',
+    JSON.stringify(formPrerequisites || '(none)'),
+    '',
     'Compiled Diff:',
     JSON.stringify(diff || {}),
     '',
@@ -381,8 +386,11 @@ export const buildWorkflowVerifierContext = ({ requirements, operations, diff, w
     JSON.stringify(buildWorkflowEditView(workflow))
 ].join('\n');
 
-export const buildWorkflowOutputRepairContext = ({ stage, rawText, issues }) => [
+export const buildWorkflowOutputRepairContext = ({ stage, prompt = '', rawText, issues }) => [
     `Repair the ${stage} JSON response. Return a complete corrected response only.`,
+    '',
+    `Original ${stage} context:`,
+    clamp(prompt),
     '',
     'Validation Issues:',
     clamp((issues || []).map(describeRepairIssue).join('\n'), 6000),

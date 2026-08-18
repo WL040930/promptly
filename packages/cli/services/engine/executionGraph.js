@@ -36,6 +36,12 @@ export const selectOutgoingEdges = (node, result = {}, edges = [], nodeMap = nul
     return edges;
 };
 
+export const payloadForEdge = (result = {}) => {
+    if (result?.outputData !== undefined) return result.outputData;
+    if (result?.triggerData !== undefined) return result.triggerData;
+    return result;
+};
+
 export const mergeExecutionResult = (context, node, result) => {
     context[node.id] = result;
     if (node.title) context[node.title] = result;

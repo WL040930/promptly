@@ -128,6 +128,30 @@ test('planner normalization canonicalizes display-style linear step refs before 
     assert.deepEqual(validateWorkflowPlannerResult(normalized), []);
 });
 
+test('planner normalization removes a linear blueprint when editing an existing workflow', () => {
+    const raw = {
+        type: 'plan_complete',
+        summary: 'Add an AI summary to the low-rating branch.',
+        requirements: [{ id: 'req_1', description: 'Summarize the customer comment.' }],
+        selectedNodeKeys: ['logic:condition', 'ai:aiTask', 'action:email'],
+        linearSteps: [
+            { ref: 'condition', nodeKey: 'logic:condition', config: {} },
+            { ref: 'summary', nodeKey: 'ai:aiTask', config: {} }
+        ],
+        capabilities: []
+    };
+
+    const normalized = normalizeWorkflowPlannerResult(raw, {
+        existingWorkflow: {
+            nodes: [{ id: 'form_1' }, { id: 'condition_1' }],
+            edges: [{ id: 'form_condition', source: 'form_1', target: 'condition_1' }]
+        }
+    });
+
+    assert.equal(Object.hasOwn(normalized, 'linearSteps'), false);
+    assert.deepEqual(validateWorkflowPlannerResult(normalized), []);
+});
+
 test('planner validator accepts a proposed Google Sheet creation', () => {
     const issues = validateWorkflowPlannerResult({
         type: 'plan_complete',

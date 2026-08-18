@@ -53,6 +53,19 @@ test('condition converts invalid numeric comparisons into node failures', async 
     assert.equal(result.targetHandle, 'false');
 });
 
+test('condition preserves its incoming payload for the selected route', async () => {
+    const payload = { fields: { rating: 2, comment: 'The checkout was confusing' } };
+    const result = await run(ConditionNode, 'condition', {
+        valueA: 2, operator: 'less_than_or_equal', valueB: 3
+    }, {
+        __runtime: { inputs: { condition_test: { input1: payload } } }
+    });
+
+    assert.equal(result.result, true);
+    assert.deepEqual(result.outputData, payload);
+    assert.equal(result.targetHandle, 'true');
+});
+
 test('switch supports JSON cases and deterministic default routing', async () => {
     const result = await run(SwitchNode, 'switch', {
         valueToTest: 'billing',
@@ -81,4 +94,17 @@ test('switch rejects duplicate or invented case handles', async () => {
     });
     assert.equal(inventedHandle.success, false);
     assert.equal(inventedHandle.errorCode, 'SWITCH_FAILED');
+});
+
+test('switch preserves its incoming payload for the selected route', async () => {
+    const payload = { fields: { category: 'billing' } };
+    const result = await run(SwitchNode, 'switch', {
+        valueToTest: 'billing',
+        cases: JSON.stringify([{ value: 'billing', handle: 'branchA' }])
+    }, {
+        __runtime: { inputs: { switch_test: { input1: payload } } }
+    });
+
+    assert.equal(result.targetHandle, 'branchA');
+    assert.deepEqual(result.outputData, payload);
 });

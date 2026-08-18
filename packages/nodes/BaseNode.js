@@ -26,8 +26,11 @@ export class BaseNode {
         return resolved;
     }
 
+    getRuntimeInput(contextData, inputName = 'inputData') {
+        return contextData?.__runtime?.inputs?.[this.id]?.[inputName];
+    }
+
     async execute(context) {
         throw new Error("Execute method not implemented");
     }
 }
-
