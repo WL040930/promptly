@@ -6,6 +6,7 @@ import { projectFormResourceContext } from '../ai/form/context/formResourceConte
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 import { getApprovalSummary } from '../engine/continuationService.js';
 import { replaceChatSessionState } from './chatTurnLifecycle.js';
+import { buildWorkflowPresentation } from '../assistant/proposalPresentation.js';
 
 const completed = output => ({ status: 'completed', output });
 
@@ -53,6 +54,36 @@ const compactWorkflowContext = workflow => {
             sourceHandle: edge.sourceHandle || null,
             targetHandle: edge.targetHandle || null
         }))
+    };
+};
+
+export const buildWorkflowProposalPayload = ({ workflow = null, result = {} } = {}) => {
+    const workflowValue = workflow?.toJSON?.() || workflow || { nodes: [], edges: [] };
+    const action = (workflowValue.nodes || []).length > 0 ? 'edit_workflow' : 'create_workflow';
+    const payload = {
+        action,
+        ...(workflow ? { workflowId: workflowValue.id, baseWorkflowRevision: workflowValue.revision } : {}),
+        name: action === 'create_workflow' ? DEFAULT_AUTOMATION_NAME : workflowValue.name,
+        message: result.message,
+        nodes: result.nodes,
+        edges: result.edges,
+        diff: result.diff,
+        repairs: result.warnings || [],
+        readiness: result.readiness,
+        verification: result.verification || null,
+        plan: result.plan,
+        resourceChanges: result.resourceChanges || [],
+        resourceIntent: result.resourceIntent || null,
+        contextDelta: result.contextDelta || null,
+        diagnosis: result.diagnosis || null
+    };
+
+    return {
+        ...payload,
+        presentation: buildWorkflowPresentation({
+            workflow: { ...workflowValue, name: payload.name },
+            proposal: payload
+        })
     };
 };
 
@@ -527,23 +558,10 @@ export const createChatCapabilityRegistry = ({
                     return completed({ replyId: replyMsg.id });
                 }
 
-                const action = (workflow?.nodes || []).length > 0 ? 'edit_workflow' : 'create_workflow';
-                
                 const reply = await saveReply(session, {
                     text: result.message || 'I prepared the requested workflow changes for your review.',
                     kind: 'workflow_proposal',
-                    payload: {
-                        action,
-                        ...(workflow ? { workflowId: workflow.id, baseWorkflowRevision: workflow.revision } : {}),
-                        name: action === 'create_workflow' ? DEFAULT_AUTOMATION_NAME : workflow?.name,
-                        message: result.message,
-                        nodes: result.nodes,
-                        edges: result.edges,
-                        diff: result.diff,
-                        repairs: result.warnings || [],
-                        readiness: result.readiness,
-                        plan: result.plan
-                    },
+                    payload: buildWorkflowProposalPayload({ workflow, result }),
                     proposalStatus: 'pending'
                 });
                 

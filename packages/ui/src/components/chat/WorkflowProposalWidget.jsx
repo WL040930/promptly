@@ -5,6 +5,7 @@ import ProposalCard from './ProposalCard.jsx';
 import { isAcceptedProposalStatus, isRejectedProposalStatus, isStaleProposalStatus, normalizeProposalStatus } from './proposalStatus.js';
 import { AssistantWorkDetails } from './AssistantWorkCard.jsx';
 import { displayWorkflowActionLabel } from '../../utils/workflowLabels.js';
+import { workflowProposalPresentation } from '../../utils/workflowProposalPresentation.js';
 
 const toneFor = type => ({
     add: 'text-emerald-700 bg-emerald-50 border-emerald-100',
@@ -20,7 +21,7 @@ export default function WorkflowProposalWidget({ proposal, status, summary, toke
     const isAccepted = isAcceptedProposalStatus(status);
     const isRejected = isRejectedProposalStatus(status);
     const isStale = isStaleProposalStatus(status);
-    const presentation = proposal?.presentation || {};
+    const presentation = workflowProposalPresentation(proposal);
     const changes = presentation.changes || [];
     const setupRequirements = presentation.setupRequirements || [];
     const setupActions = presentation.setupActions || [];

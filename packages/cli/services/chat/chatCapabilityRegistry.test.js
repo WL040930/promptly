@@ -1,6 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createChatCapabilityRegistry } from './chatCapabilityRegistry.js';
+import { buildWorkflowProposalPayload, createChatCapabilityRegistry } from './chatCapabilityRegistry.js';
+
+test('workflow proposal payload includes the presentation used by applied summaries', () => {
+    const payload = buildWorkflowProposalPayload({
+        workflow: { name: 'Event Registration', revision: 4, nodes: [{ id: 'existing', title: 'Existing step' }], edges: [] },
+        result: {
+            message: 'Ready',
+            nodes: [
+                { id: 'form', subType: 'form-submission', title: 'Form submitted' },
+                { id: 'email', subType: 'send-email', title: 'Send email' }
+            ],
+            edges: [{ id: 'edge_1', op: 'connect' }],
+            diff: {
+                addedNodes: [{ id: 'form', subType: 'form-submission', title: 'Form submitted' }, { id: 'email', subType: 'send-email', title: 'Send email' }],
+                updatedNodes: [],
+                removedNodes: [],
+                edges: [{ id: 'edge_1', op: 'connect' }]
+            },
+            readiness: { ready: true },
+            resourceChanges: []
+        }
+    });
+
+    assert.deepEqual(payload.presentation.flow, ['Form submitted', 'Send email']);
+    assert.equal(payload.presentation.changes.length, 3);
+    assert.equal(payload.presentation.title, 'Event Registration changes');
+});
 
 test('chat capability registry owns the complete typed tool surface', () => {
     const registry = createChatCapabilityRegistry({
