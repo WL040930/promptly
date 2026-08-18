@@ -14,4 +14,6 @@ test('preparation summary does not use the capped activity list as workflow step
     assert.match(source, /role="progressbar"/);
     assert.match(source, /aria-valuenow=\{progressPercent\}/);
     assert.match(source, /const progressFor =/);
+    assert.match(source, /defaultExpanded=\{!isTerminal\} label="Proposal progress"/);
+    assert.match(source, /setExpanded\(defaultExpanded\);/);
 });

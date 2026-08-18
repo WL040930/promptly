@@ -7,6 +7,8 @@ import {
     markWorkflowProposalStale,
     markSupersededWorkflowProposals,
     proposalStatusLabel,
+    proposalSectionExpansion,
+    proposalStatusTone,
     shouldShowProposalActions
 } from '../components/chat/proposalStatus.js';
 
@@ -28,6 +30,18 @@ test('canonical display labels remain terminal in the proposal widget', () => {
     assert.equal(isRejectedProposalStatus('rejected'), true);
     assert.equal(isStaleProposalStatus('superseded'), true);
     assert.equal(shouldShowProposalActions('applied'), false);
+});
+
+test('applied solution proposals start collapsed while pending proposals stay open', () => {
+    assert.deepEqual(proposalSectionExpansion('applied'), { form: false, workflow: false });
+    assert.deepEqual(proposalSectionExpansion('pending'), { form: true, workflow: true });
+});
+
+test('proposal terminal tones stay consistent across AI surfaces', () => {
+    assert.equal(proposalStatusTone('applied').header, 'border-emerald-100 bg-emerald-50/70');
+    assert.equal(proposalStatusTone('ignored').header, 'border-slate-200 bg-slate-50/80');
+    assert.equal(proposalStatusTone('superseded').header, 'border-amber-100 bg-amber-50/70');
+    assert.equal(proposalStatusTone('pending'), null);
 });
 
 test('legacy ignored proposal status is terminal and renders as ignored', () => {

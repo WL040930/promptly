@@ -106,6 +106,28 @@ test('planner validator accepts a valid linear blueprint and rejects an unmapped
     assert.ok(invalid.some(item => item.code === 'LINEAR_STEP_REQUIREMENT_UNMAPPED'));
 });
 
+test('planner normalization canonicalizes display-style linear step refs before validation', () => {
+    const raw = {
+        type: 'plan_complete',
+        summary: 'Create a contact form and save each submission.',
+        requirements: [{ id: 'req_1', description: 'Collect contact details and save the response.' }],
+        selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
+        linearSteps: [
+            { ref: 'formTrigger', nodeKey: 'trigger:form-submission', requirementIds: ['req_1'], config: {} },
+            { ref: 'Save To Google Sheet', nodeKey: 'action:googleSheets', requirementIds: ['req_1'], config: {} }
+        ],
+        capabilities: []
+    };
+
+    const normalized = normalizeWorkflowPlannerResult(raw);
+
+    assert.deepEqual(normalized.linearSteps.map(step => step.ref), [
+        'form_trigger',
+        'save_to_google_sheet'
+    ]);
+    assert.deepEqual(validateWorkflowPlannerResult(normalized), []);
+});
+
 test('planner validator accepts a proposed Google Sheet creation', () => {
     const issues = validateWorkflowPlannerResult({
         type: 'plan_complete',

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Check, ChevronDown, CircleAlert, FilePenLine, LoaderCircle, Route, Sparkles, Wrench, Zap } from 'lucide-react';
 import { assistantWorkStatus, assistantWorkStatusLabel, isAssistantWorkTerminal } from './assistantWorkPresentation.js';
 
@@ -31,6 +31,9 @@ const progressFor = (current, isComplete) => {
 
 export function AssistantWorkDetails({ work, tokenUsage, defaultExpanded = false, label = 'Preparation details' }) {
     const [expanded, setExpanded] = useState(defaultExpanded);
+    useEffect(() => {
+        setExpanded(defaultExpanded);
+    }, [defaultExpanded]);
     const activities = work?.activities || [];
     const artifact = work?.currentArtifact || work?.artifacts?.at(-1);
     const repairCount = activities.filter(activity => /repair|correct|recover|retry/i.test(`${activity.label} ${activity.detail}`)).length;
@@ -113,7 +116,7 @@ export default function AssistantWorkCard({ work, tokenUsage, messageKind = null
                 </div>}
             </header>
             <div className="bg-slate-50/45 p-3.5">
-                <AssistantWorkDetails work={work} tokenUsage={tokenUsage} defaultExpanded label="Proposal progress" />
+                <AssistantWorkDetails work={work} tokenUsage={tokenUsage} defaultExpanded={!isTerminal} label="Proposal progress" />
             </div>
         </section>
     );

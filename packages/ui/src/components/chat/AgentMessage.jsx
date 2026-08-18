@@ -7,7 +7,7 @@ import MessageOptionsWidget from './MessageOptionsWidget.jsx';
 import AssistantFailureCard from './AssistantFailureCard.jsx';
 import AssistantWorkCard, { AssistantWorkDetails } from './AssistantWorkCard.jsx';
 import { clarificationMessageData } from './clarificationMessage.js';
-import { proposalStatusLabel, shouldShowProposalActions } from './proposalStatus.js';
+import { proposalStatusLabel, proposalStatusTone, shouldShowProposalActions } from './proposalStatus.js';
 import { messagePresentation } from './messagePresentation.js';
 import { displayWorkflowActionLabel } from '../../utils/workflowLabels.js';
 import { AlertTriangle, CheckCircle2, Copy, GitBranch, LoaderCircle, ShieldAlert, Trash2, Zap } from 'lucide-react';
@@ -62,6 +62,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
     const rawStatus = message.proposalStatus || payload.status;
     const status = proposalStatusLabel(rawStatus);
     const showProposalActions = shouldShowProposalActions(rawStatus);
+    const terminalStatusTone = proposalStatusTone(rawStatus);
     const { clarification, options, selectedState } = clarificationMessageData(message);
     const kind = message.kind || (message.proposal ? 'form_proposal' : (options.length > 0 ? 'clarification' : 'text'));
     const isClarification = kind === 'clarification' && options.length > 0;
@@ -103,7 +104,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
             : isDuplicateProposal
                 ? Copy
                 : ShieldAlert;
-    const proposalTone = isDeleteProposal || isBulkDeleteProposal
+    const proposalTone = terminalStatusTone || (isDeleteProposal || isBulkDeleteProposal
         ? {
             card: 'border-red-200/80 bg-white shadow-sm shadow-red-900/5',
             header: 'border-red-100 bg-red-50/70',
@@ -117,7 +118,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
             icon: 'bg-indigo-100 text-indigo-600 border-indigo-200',
             eyebrow: 'text-indigo-700',
             badge: 'border-indigo-200 bg-white text-indigo-700'
-        };
+        });
 
     if (isTerminalWork) return null;
 
@@ -331,7 +332,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                             )}
                             {payload.work && <AssistantWorkDetails work={payload.work} tokenUsage={message.tokenUsage} />}
                             {!showProposalActions ? (
-                                <div className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold ${status === 'Applied' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+                                <div className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold ${terminalStatusTone?.surface || (status === 'Applied' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500')}`}>
                                     {status === 'Applied' ? <CheckCircle2 size={14} /> : null}
                                     {status}
                                 </div>

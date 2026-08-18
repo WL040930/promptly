@@ -436,15 +436,15 @@ test('pipeline resumes the Create Sheet clarification using structured state and
     const { generateWorkflowTurn } = await import('./pipeline.js');
     const provider = {
         async generateContent(_contents, options) {
-            if (options.operation === 'workflow:planner') return {
+            if (options.operation === 'workflow:planner' || options.operation === 'workflow:planner repair') return {
                 text: JSON.stringify({
                     type: 'plan_complete',
                     summary: 'Save each Event Registration response.',
                     requirements: [{ id: 'req_1', description: 'Append each response to the Event Registration Sheet.' }],
                     selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
                     linearSteps: [
-                        { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Form submitted', requirementIds: ['req_1'], config: { formId: 'form_event' } },
-                        { ref: 'save_response', nodeKey: 'action:googleSheets', title: 'Save response', requirementIds: ['req_1'], config: {} }
+                        { ref: 'FormTrigger', nodeKey: 'trigger:form-submission', title: 'Form submitted', requirementIds: ['req_1'], config: { formId: 'form_event' } },
+                        { ref: 'Save To Google Sheet', nodeKey: 'action:googleSheets', title: 'Save response', requirementIds: ['req_1'], config: {} }
                     ],
                     capabilities: []
                 })

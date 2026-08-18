@@ -19,6 +19,40 @@ export const isAcceptedProposalStatus = status => normalizeProposalStatus(status
 export const isRejectedProposalStatus = status => ['rejected', 'ignored'].includes(normalizeProposalStatus(status));
 export const isStaleProposalStatus = status => ['stale', 'superseded'].includes(normalizeProposalStatus(status));
 
+export const proposalStatusTone = status => {
+    const normalized = normalizeProposalStatus(status);
+    if (normalized === 'applied') return {
+        card: 'border-emerald-200',
+        header: 'border-emerald-100 bg-emerald-50/70',
+        icon: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+        eyebrow: 'text-emerald-700',
+        badge: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+        surface: 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    };
+    if (isRejectedProposalStatus(normalized)) return {
+        card: 'border-slate-200',
+        header: 'border-slate-200 bg-slate-50/80',
+        icon: 'border-slate-200 bg-white text-slate-500',
+        eyebrow: 'text-slate-600',
+        badge: 'border-slate-200 bg-slate-100 text-slate-600',
+        surface: 'border-slate-200 bg-slate-50 text-slate-600'
+    };
+    if (isStaleProposalStatus(normalized)) return {
+        card: 'border-amber-200',
+        header: 'border-amber-100 bg-amber-50/70',
+        icon: 'border-amber-200 bg-amber-50 text-amber-700',
+        eyebrow: 'text-amber-700',
+        badge: 'border-amber-200 bg-amber-50 text-amber-700',
+        surface: 'border-amber-200 bg-amber-50 text-amber-700'
+    };
+    return null;
+};
+
+export const proposalSectionExpansion = status => {
+    const terminal = Boolean(proposalStatusLabel(status));
+    return { form: !terminal, workflow: !terminal };
+};
+
 /** Marks one rejected-by-revision workflow proposal terminal without waiting for a history refetch. */
 export const markWorkflowProposalStale = (messages = [], proposalMessageId = null) => messages.map(message => {
     const status = normalizeProposalStatus(message?.proposalStatus || message?.payload?.status);

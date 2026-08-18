@@ -35,6 +35,36 @@ const normalizedResourceChangeType = value => String(value || '')
     .toLocaleLowerCase()
     .replace(/[\s-]+/g, '_');
 
+const normalizedLinearStepRef = (value, index) => {
+    const source = String(value || '').trim();
+    const withWordBoundaries = source.replace(/([a-z0-9])([A-Z])/g, '$1_$2');
+    const slug = withWordBoundaries
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLocaleLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    const prefixed = /^[a-z]/.test(slug) ? slug : slug ? `step_${slug}` : `step_${index + 1}`;
+    return prefixed.slice(0, 64);
+};
+
+const normalizeLinearStepRefs = steps => {
+    const refs = new Set();
+    return steps.map((step, index) => {
+        if (!isObject(step) || typeof step.ref !== 'string' || !step.ref.trim()) return step;
+        const base = normalizedLinearStepRef(step.ref, index);
+        let ref = base;
+        let suffix = 2;
+        while (refs.has(ref)) {
+            const suffixText = `_${suffix}`;
+            ref = `${base.slice(0, 64 - suffixText.length)}${suffixText}`;
+            suffix += 1;
+        }
+        refs.add(ref);
+        return ref === step.ref ? step : { ...step, ref };
+    });
+};
+
 /**
  * Keep the planner contract strict while tolerating common model spellings at
  * the AI boundary. The persisted/apply contract remains exactly
@@ -42,14 +72,17 @@ const normalizedResourceChangeType = value => String(value || '')
  * validator can reject them instead of silently dropping a requested change.
  */
 export const normalizeWorkflowPlannerResult = result => {
-    if (!isObject(result) || !Array.isArray(result.resourceChanges)) return result;
+    if (!isObject(result)) return result;
     return {
         ...result,
-        resourceChanges: result.resourceChanges.map(change => {
-            if (!isObject(change)) return change;
-            const alias = RESOURCE_CHANGE_TYPE_ALIASES[normalizedResourceChangeType(change.type)];
-            return alias ? { ...change, type: alias } : change;
-        })
+        ...(Array.isArray(result.linearSteps) ? { linearSteps: normalizeLinearStepRefs(result.linearSteps) } : {}),
+        ...(Array.isArray(result.resourceChanges) ? {
+            resourceChanges: result.resourceChanges.map(change => {
+                if (!isObject(change)) return change;
+                const alias = RESOURCE_CHANGE_TYPE_ALIASES[normalizedResourceChangeType(change.type)];
+                return alias ? { ...change, type: alias } : change;
+            })
+        } : {})
     };
 };
 

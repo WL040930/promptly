@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Eye, GitBranch, Layers3, Table2 } from 'lucide-react';
 import Button from '../ui/Button.jsx';
 import { AssistantWorkDetails } from './AssistantWorkCard.jsx';
-import { isAcceptedProposalStatus, isRejectedProposalStatus, isStaleProposalStatus, normalizeProposalStatus } from './proposalStatus.js';
+import { isAcceptedProposalStatus, isRejectedProposalStatus, isStaleProposalStatus, normalizeProposalStatus, proposalSectionExpansion, proposalStatusTone } from './proposalStatus.js';
 import { compoundProposalPresentation } from '../../utils/solutionProposalPresentation.js';
 
 const fieldTypeLabel = field => String(field?.type || 'text').replace(/[-_]/g, ' ');
@@ -44,25 +44,30 @@ function FlowPreview({ flow }) {
 
 export default function SolutionProposalWidget({ proposal, status, summary, tokenUsage, onAccept, onIgnore, onPreviewForm, onPreviewWorkflow, accepting, rejecting }) {
     const presentation = compoundProposalPresentation(proposal);
-    const [expanded, setExpanded] = useState({ form: true, workflow: true });
     const terminal = isAcceptedProposalStatus(status) || isRejectedProposalStatus(status) || isStaleProposalStatus(status);
+    const [expanded, setExpanded] = useState(() => proposalSectionExpansion(status));
     const copy = statusCopy(status);
+    const terminalTone = proposalStatusTone(status);
     const verificationUnverified = proposal?.verification?.status === 'unverified';
     const readinessIssues = presentation.workflowReadiness?.issues || [];
     const hasForm = Boolean(presentation.form);
     const hasWorkflow = Boolean(presentation.workflow);
 
-    return <section className={`mt-2 w-full overflow-hidden rounded-[22px] border bg-white shadow-[0_12px_35px_rgba(58,34,118,0.08)] ${terminal ? 'border-slate-200' : 'border-indigo-200/80'}`}>
-        <header className={`border-b px-4 py-4 ${terminal ? 'border-slate-200 bg-slate-50/80' : 'border-indigo-100 bg-[#f8f8ff]'}`}>
+    useEffect(() => {
+        if (terminal) setExpanded(proposalSectionExpansion(status));
+    }, [status, terminal]);
+
+    return <section className={`mt-2 w-full overflow-hidden rounded-[22px] border bg-white shadow-[0_12px_35px_rgba(58,34,118,0.08)] ${terminalTone?.card || 'border-indigo-200/80'}`}>
+        <header className={`border-b px-4 py-4 ${terminalTone?.header || 'border-indigo-100 bg-[#f8f8ff]'}`}>
             <div className="flex items-start gap-3">
-                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border ${terminal ? 'border-slate-200 bg-white text-slate-500' : 'border-indigo-200 bg-indigo-100 text-indigo-700'}`}><Layers3 size={18} strokeWidth={2.2} /></span>
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border ${terminalTone?.icon || 'border-indigo-200 bg-indigo-100 text-indigo-700'}`}><Layers3 size={18} strokeWidth={2.2} /></span>
                 <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                            <p className={`text-[10px] font-extrabold uppercase tracking-[0.16em] ${terminal ? 'text-slate-500' : 'text-indigo-700'}`}>{copy.eyebrow}</p>
+                            <p className={`text-[10px] font-extrabold uppercase tracking-[0.16em] ${terminalTone?.eyebrow || 'text-indigo-700'}`}>{copy.eyebrow}</p>
                             <h3 className="mt-1 text-base font-extrabold tracking-tight text-slate-900">{copy.title}</h3>
                         </div>
-                        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold ${isAcceptedProposalStatus(status) ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : terminal ? 'border-slate-200 bg-white text-slate-500' : 'border-indigo-200 bg-white text-indigo-700'}`}>
+                        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold ${terminalTone?.badge || 'border-indigo-200 bg-white text-indigo-700'}`}>
                             {isAcceptedProposalStatus(status) ? 'Applied' : terminal ? (isRejectedProposalStatus(status) ? 'Discarded' : 'Outdated') : 'Ready to review'}
                         </span>
                     </div>
@@ -115,7 +120,7 @@ export default function SolutionProposalWidget({ proposal, status, summary, toke
                 </div>}
             </section>
 
-            {proposal?.work && <AssistantWorkDetails work={proposal.work} tokenUsage={tokenUsage} defaultExpanded={terminal} label="Preparation details" />}
+            {proposal?.work && <AssistantWorkDetails work={proposal.work} tokenUsage={tokenUsage} defaultExpanded={!terminal} label="Preparation details" />}
         </div>
 
         {!terminal && <footer className="border-t border-indigo-100 bg-slate-50/70 p-3.5"><p className="mb-3 text-[11px] leading-4 text-slate-500">Nothing changes until you apply this solution. You can inspect the form and workflow separately first.</p><div className="flex flex-col gap-2 sm:flex-row"><Button type="button" variant="outline" size="action" className="flex-1 !rounded-xl" onClick={onIgnore} isLoading={rejecting} disabled={accepting} loadingText="Discarding…">Discard proposal</Button><Button type="button" variant="primary" size="action" className="flex-[1.5] !rounded-xl" onClick={onAccept} isLoading={accepting} disabled={rejecting} loadingText="Applying solution…" iconLeft={<Check size={15} />}>Apply solution</Button></div></footer>}
