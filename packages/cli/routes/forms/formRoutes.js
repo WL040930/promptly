@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../../middleware/authMiddleware.js';
 import { 
     getForms, getForm, createForm, updateForm, deleteForm, submitFormResponse, getFormResponses, getPublicForm,
-    getFormChatHistory, submitFormAITurn, decideFormProposal, clearFormAIChat, resetFormAIContext
+    getFormChatHistory, submitFormAITurn, decideFormProposal, clearFormAIChat, resetFormAIContext, previewFormChange
 } from '../../controllers/forms/formController.js';
 
 const router = Router();
@@ -17,6 +17,7 @@ router.use(requireAuth);
 router.get('/', getForms);
 router.post('/', createForm);
 router.get('/:id', getForm);
+router.post('/:id/change-preview', previewFormChange);
 router.post('/:formId/ai-turns', submitFormAITurn);
 router.delete('/:formId/chat', clearFormAIChat);
 router.delete('/:formId/ai-context', resetFormAIContext);

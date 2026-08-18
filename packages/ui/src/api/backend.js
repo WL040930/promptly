@@ -43,6 +43,7 @@ export const getNodeResourceOptions = (resource, params = {}) => {
 export const getForms = () => apiRequest('/api/forms');
 export const getForm = (id) => apiRequest(`/api/forms/${id}`);
 export const createForm = (data) => apiRequest('/api/forms', { method: 'POST', body: JSON.stringify(data) });
+export const previewFormChange = (id, data) => apiRequest(`/api/forms/${id}/change-preview`, { method: 'POST', body: JSON.stringify(data) });
 export const updateForm = (id, data) => apiRequest(`/api/forms/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 export const decideFormProposal = (formId, messageId, data) => apiRequest(`/api/forms/${formId}/ai-proposals/${messageId}/decide`, { method: 'POST', body: JSON.stringify(data) });
 export const deleteForm = (id) => apiRequest(`/api/forms/${id}`, { method: 'DELETE' });

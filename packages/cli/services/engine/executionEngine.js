@@ -1,7 +1,7 @@
 import Workflow from '../../models/workflows/Workflow.js';
 import WorkflowVersion from '../../models/workflows/WorkflowVersion.js';
 import { Op } from 'sequelize';
-import { AutomationRun, WorkflowContinuation } from '../../models/index.js';
+import { AutomationRun, WorkflowContinuation, Form } from '../../models/index.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { NodeFactory } from '../../../nodes/NodeFactory.js';
 import { validateWorkflow } from './workflowValidator.js';
@@ -174,14 +174,20 @@ const initializeRun = async ({ workflowId, userId, triggerPayload, executionOpti
             : null;
         const nodes = revision?.nodes || workflow.nodes || [];
         const edges = revision?.edges || workflow.edges || [];
+        const formId = nodes.find(node => node?.subType === 'form-submission')?.config?.formId;
+        const form = formId
+            ? await Form.findOne({ where: { id: formId, userId }, transaction, lock: transaction.LOCK.SHARE })
+            : null;
+        const formSchema = form?.toJSON?.() || null;
         if (nodes.length === 0) throw new Error('Workflow has no nodes to execute');
         const validation = validateWorkflow({ nodes, edges, isActive: executionOptions.runType === 'production', registry: NodeRegistry });
         if (!validation.valid) throw validationError(validation.issues);
-        const expressionIssues = validateWorkflowExpressions({ nodes, edges });
+        const expressionIssues = validateWorkflowExpressions({ nodes, edges, formSchema });
         if (expressionIssues.length > 0) throw validationError(expressionIssues);
         const danglingPlan = planDanglingWorkflowReferenceRepair({
             nodes,
             edges,
+            formSchema,
             schemaForNode: node => NodeRegistry.getDefinition?.(node?.type, node?.subType)?.configSchema || node?.schema || {}
         });
         if (danglingPlan.requiresReview) {
@@ -190,7 +196,9 @@ const initializeRun = async ({ workflowId, userId, triggerPayload, executionOpti
                 ...(danglingPlan.impact?.clearedReferences || [])
             ].map(item => ({
                 path: item.configPath || `nodes.${item.nodeId}.config`,
-                message: item.message || 'This value refers to a step that no longer exists.'
+                message: item.message || (item.fieldId
+                    ? 'This value refers to a form field that no longer exists.'
+                    : 'This value refers to a step that no longer exists.')
             }));
             throw validationError(issues.length > 0 ? issues : [{ path: 'nodes', message: 'Repair broken workflow references before running this draft.' }]);
         }

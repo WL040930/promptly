@@ -1,5 +1,5 @@
 import sequelize from '../../db/index.js';
-import { AgentRun, AssistantMessage, AssistantThread, Form, Workflow } from '../../models/index.js';
+import { AgentRun, AssistantMessage, AssistantThread, Form, Workflow, WorkflowVersion } from '../../models/index.js';
 import { applyFormPatches } from '../ai/form/domain/formPatchEngine.js';
 import { validateQuestionCardinality } from '../ai/form/context/formContext.js';
 import { validateFormSchema } from '../ai/form/domain/formSchemaValidator.js';
@@ -15,6 +15,7 @@ import { mergeAgentContext } from '../chat/resourceResolver.js';
 import googleSpreadsheetService from '../nodes/googleSpreadsheetService.js';
 import { applyFormResponseSpreadsheetContract } from '../ai/workflow/formSpreadsheetContract.js';
 import { provisionWorkflowResources } from '../ai/workflow/workflowResourceProvisioner.js';
+import { applyFormChange } from '../forms/formWorkflowDependencyService.js';
 
 const revisionMatches = (current, expected) => !expected || new Date(current).getTime() === new Date(expected).getTime();
 const workflowRevisionMatches = (current, expected) => expected === undefined || expected === null || Number(current) === Number(expected);
@@ -109,7 +110,7 @@ export const contextAfterApplyingForm = (context = {}, formId = null) => formId
 const applyFormArtifact = async ({ artifact, userId, transaction, formOverrides = null }) => {
     const content = artifact.content || {};
     const source = content.formId
-        ? await Form.findOne({ where: { id: content.formId, userId }, transaction, lock: transaction.LOCK.UPDATE })
+        ? await Form.findOne({ where: { id: content.formId, userId }, transaction })
         : null;
     if (content.formId && !source) throw Object.assign(new Error('The target form no longer exists.'), { code: 'AGENT_RESOURCE_NOT_FOUND' });
     if (source && !revisionMatches(source.updatedAt, content.baseFormUpdatedAt)) {
@@ -156,14 +157,20 @@ const applyFormArtifact = async ({ artifact, userId, transaction, formOverrides 
         fields: schema.fields || [],
         userId
     }, { transaction });
-    if (source) await form.update({
-        title: schema.title,
-        description: schema.description || '',
-        settings: schema.settings || {},
-        fields: schema.fields || []
-    }, { transaction });
+    const appliedChange = source
+        ? await applyFormChange({
+            formId: source.id,
+            userId,
+            nextSchema: schema,
+            expectedFormUpdatedAt: content.baseFormUpdatedAt,
+            workflowRevisions: formOverrides?.fieldDeletionReview?.workflowRevisions,
+            reviewConfirmed: formOverrides?.fieldDeletionReview?.confirmed === true,
+            transaction,
+            models: { Form, Workflow, WorkflowVersion }
+        })
+        : null;
     return {
-        form,
+        form: appliedChange?.form || form,
         schema,
         patches: appliedPatches,
         selectedPatchIds: hasSelection ? selection.selectedPatchIds : null,
@@ -343,7 +350,8 @@ export const approveAgentRun = async ({ runId, userId, idempotencyKey, formOverr
         return serializeRun(await getRunForUser(runId, userId));
     } catch (error) {
         const failure = makeError(error);
-        if (/^(?:GOOGLE_|WORKFLOW_PROVISION_)/.test(failure.code)) {
+        if (/^(?:GOOGLE_|WORKFLOW_PROVISION_)/.test(failure.code)
+            || ['FORM_FIELD_DELETION_REVIEW_REQUIRED', 'FORM_FIELD_DELETION_LIVE_DEPENDENCY', 'FORM_FIELD_DELETION_BLOCKED'].includes(failure.code)) {
             const retryableApproval = { ...(run.approval || approval), status: 'pending', metadata: { error: failure } };
             await run.update({ status: 'awaiting_approval', currentStep: null, error: failure, approval: retryableApproval });
             throw Object.assign(new Error(failure.message), failure);

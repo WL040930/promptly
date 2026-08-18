@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    normalizeFormSchemaForDeletion,
+    planFormFieldChange,
     planDanglingWorkflowReferenceRepair,
+    planWorkflowFormFieldDeletion,
     planWorkflowNodeDeletion
 } from './workflowDeletion.js';
 
@@ -205,4 +208,189 @@ test('dangling reference repair clears missing sources without changing topology
     assert.equal(result.impact.recovery, true);
     assert.equal(result.nodes[0].config.body, '');
     assert.deepEqual(result.edges, []);
+});
+
+test('form-field deletion clears only references to the deleted field', () => {
+    const formTrigger = {
+        ...trigger,
+        config: { formId: 'form_1' }
+    };
+    const fieldReference = {
+        $expr: 'reference',
+        v: 1,
+        nodeId: 'trigger_1',
+        path: ['fields', 'f_deleted']
+    };
+    const liveReference = {
+        $expr: 'reference',
+        v: 1,
+        nodeId: 'trigger_1',
+        path: ['fields', 'f_keep']
+    };
+    const result = planWorkflowFormFieldDeletion({
+        nodes: [
+            formTrigger,
+            email({
+                to: fieldReference,
+                body: { $expr: 'template', v: 1, parts: [{ text: 'Hi ' }, { reference: fieldReference }] },
+                metadata: liveReference
+            })
+        ],
+        edges: [{ source: 'trigger_1', target: 'email_1' }],
+        formId: 'form_1',
+        fieldIds: ['f_deleted'],
+        formSchema: {
+            id: 'form_1',
+            fields: [
+                { id: 'f_deleted', label: 'Old field', deleted: true },
+                { id: 'f_keep', label: 'Keep field' }
+            ]
+        },
+        schemaForNode
+    });
+
+    assert.equal(result.canApply, true);
+    assert.equal(result.requiresReview, true);
+    assert.equal(Object.hasOwn(result.nodes[1].config, 'to'), false);
+    assert.deepEqual(result.nodes[1].config.body, { $expr: 'template', v: 1, parts: [{ text: 'Hi ' }] });
+    assert.deepEqual(result.nodes[1].config.metadata, liveReference);
+    assert.equal(result.impact.removedFields[0].id, 'f_deleted');
+    assert.equal(result.impact.clearedReferences.length, 2);
+    assert.deepEqual(result.edges, [{ source: 'trigger_1', target: 'email_1' }]);
+});
+
+test('form-field deletion repairs legacy field references and blocks malformed paths', () => {
+    const formTrigger = {
+        ...trigger,
+        title: 'Feedback form',
+        config: { formId: 'form_1' }
+    };
+    const result = planWorkflowFormFieldDeletion({
+        nodes: [
+            formTrigger,
+            email({ body: 'Hello {{Feedback form.fields.f_deleted}}!' })
+        ],
+        edges: [{ source: 'trigger_1', target: 'email_1' }],
+        formId: 'form_1',
+        fieldIds: ['f_deleted'],
+        formSchema: { id: 'form_1', fields: [{ id: 'f_deleted', deleted: true }] },
+        schemaForNode
+    });
+
+    assert.equal(result.canApply, true);
+    assert.equal(result.nodes[1].config.body, 'Hello !');
+
+    const malformed = planWorkflowFormFieldDeletion({
+        nodes: [
+            formTrigger,
+            email({ body: { $expr: 'reference', v: 1, nodeId: 'trigger_1', path: ['fields', 'f_deleted', 'value'] } })
+        ],
+        edges: [{ source: 'trigger_1', target: 'email_1' }],
+        formId: 'form_1',
+        fieldIds: ['f_deleted'],
+        formSchema: { id: 'form_1', fields: [{ id: 'f_deleted', deleted: true }] },
+        schemaForNode
+    });
+
+    assert.equal(malformed.canApply, false);
+    assert.equal(malformed.impact.blockedReferences.length, 1);
+});
+
+test('form-field deletion does not block on a malformed reference to a different field', () => {
+    const formTrigger = {
+        ...trigger,
+        config: { formId: 'form_1' }
+    };
+    const result = planWorkflowFormFieldDeletion({
+        nodes: [
+            formTrigger,
+            email({ body: { $expr: 'reference', v: 1, nodeId: 'trigger_1', path: ['fields', 'f_keep', 'value'] } })
+        ],
+        edges: [],
+        formId: 'form_1',
+        fieldIds: ['f_deleted'],
+        formSchema: {
+            id: 'form_1',
+            fields: [
+                { id: 'f_deleted', label: 'Old field', deleted: true },
+                { id: 'f_keep', label: 'Keep field' }
+            ]
+        },
+        schemaForNode
+    });
+
+    assert.equal(result.canApply, true);
+    assert.equal(result.impact.blockedReferences.length, 0);
+});
+
+test('form-field change preserves omitted field records and blocks active published dependencies', () => {
+    const formTrigger = {
+        ...trigger,
+        config: { formId: 'form_1' }
+    };
+    const fieldReference = {
+        $expr: 'reference',
+        v: 1,
+        nodeId: 'trigger_1',
+        path: ['fields', 'f_deleted']
+    };
+    const currentSchema = {
+        id: 'form_1',
+        fields: [{ id: 'f_deleted', label: 'Old field' }, { id: 'f_keep', label: 'Keep field' }]
+    };
+    const nextSchema = { ...currentSchema, fields: [{ id: 'f_keep', label: 'Keep field' }] };
+    const normalized = normalizeFormSchemaForDeletion({ currentSchema, nextSchema });
+    assert.equal(normalized.fields.find(field => field.id === 'f_deleted')?.deleted, true);
+
+    const result = planFormFieldChange({
+        currentSchema,
+        nextSchema,
+        workflows: [{
+            id: 'workflow_1',
+            name: 'Live workflow',
+            isActive: true,
+            revision: 4,
+            nodes: [formTrigger, email({ body: 'draft' })],
+            edges: [{ source: 'trigger_1', target: 'email_1' }],
+            published: {
+                nodes: [formTrigger, email({ body: fieldReference })],
+                edges: [{ source: 'trigger_1', target: 'email_1' }]
+            }
+        }],
+        schemaForNode
+    });
+
+    assert.deepEqual(result.removedFieldIds, ['f_deleted']);
+    assert.equal(result.requiresReview, true);
+    assert.equal(result.canApply, false);
+    assert.equal(result.liveBlockers.length, 1);
+    assert.equal(result.affectedWorkflows[0].published.impact.clearedReferences.length, 1);
+});
+
+test('dangling recovery clears references to fields deleted in an older draft', () => {
+    const formTrigger = {
+        ...trigger,
+        config: { formId: 'form_1' }
+    };
+    const result = planDanglingWorkflowReferenceRepair({
+        nodes: [
+            formTrigger,
+            email({
+                body: {
+                    $expr: 'reference',
+                    v: 1,
+                    nodeId: 'trigger_1',
+                    path: ['fields', 'f_deleted']
+                }
+            })
+        ],
+        edges: [{ source: 'trigger_1', target: 'email_1' }],
+        formSchema: { id: 'form_1', fields: [{ id: 'f_deleted', label: 'Old field', deleted: true }] },
+        schemaForNode
+    });
+
+    assert.equal(result.canApply, true);
+    assert.equal(result.requiresReview, true);
+    assert.equal(result.nodes[1].config.body, '');
+    assert.equal(result.impact.removedFields[0].id, 'f_deleted');
 });

@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { Op } from 'sequelize';
 import sequelize from '../../../db/index.js';
-import { AssistantMessage, AssistantThread, Form } from '../../../models/index.js';
+import { AssistantMessage, AssistantThread, Form, Workflow, WorkflowVersion } from '../../../models/index.js';
 import { createAssistantStateView, ensureAssistantThread } from '../../assistant/assistantStore.js';
 import { runFormTurn } from '../formAIService.js';
 import { FORM_AI_HISTORY_LIMIT, validateQuestionCardinality } from './context/formContext.js';
@@ -16,6 +16,7 @@ import { advanceAssistantWork, createAssistantWork, finishAssistantWork } from '
 import { isAssistantTurnStale } from '../../assistant/assistantTurnLiveness.js';
 import { resolveClarificationSubmission } from '../../../../shared/clarificationContract.js';
 import { outcomeForAssistantMessage } from '../../../../shared/assistantTurnNotification.js';
+import { applyFormChange } from '../../forms/formWorkflowDependencyService.js';
 
 const MAX_HISTORY = 100;
 
@@ -117,7 +118,7 @@ const statePatchForResult = ({ result, command, proposalMessageId = null, previo
 };
 
 export const createFormAssistant = ({
-    models = { Form, AssistantThread, AssistantMessage },
+    models = { Form, AssistantThread, AssistantMessage, Workflow, WorkflowVersion },
     db = sequelize,
     runTurn = runFormTurn,
     now = () => new Date(),
@@ -611,7 +612,8 @@ export const createFormAssistant = ({
         proposalMessageId,
         action = 'accept',
         selectedPatchIds,
-        expectedStateVersion = null
+        expectedStateVersion = null,
+        fieldDeletionReview = null
     } = {}) => {
         let response;
         let deferredError = null;
@@ -722,16 +724,23 @@ export const createFormAssistant = ({
                 throw error;
             }
 
-            await form.update({
-                title: applied.schema.title,
-                description: applied.schema.description,
-                settings: applied.schema.settings,
-                fields: applied.schema.fields
-            }, { transaction });
+            const appliedChange = await applyFormChange({
+                formId,
+                userId,
+                nextSchema: applied.schema,
+                expectedFormUpdatedAt: expectedRevision,
+                workflowRevisions: fieldDeletionReview?.workflowRevisions,
+                reviewConfirmed: fieldDeletionReview?.confirmed === true,
+                transaction,
+                models: models.Workflow ? models : { Form: models.Form },
+                db,
+                saveDraft: undefined
+            });
+            const appliedForm = appliedChange.form;
             await message.update({
                 payload: {
                     ...proposal,
-                    schema: applied.schema,
+                    schema: appliedForm.toJSON?.() || appliedForm,
                     work: finishAssistantWork(proposal.work, { status: 'applied', detail: 'Changes applied to the form.' }, now()),
                     patches: applied.patches,
                     selectedPatchIds: requestedPatchIds
@@ -742,7 +751,7 @@ export const createFormAssistant = ({
                 await state.updateContext(applyResourceContextDelta({
                     context: state.context,
                     delta: proposal.contextDelta,
-                    identity: buildResourceIdentity({ surface: 'form', resource: asJson(form) })
+                    identity: buildResourceIdentity({ surface: 'form', resource: asJson(appliedForm) })
                 }), { transaction });
                 await state.update({
                     phase: 'idle',
@@ -753,7 +762,7 @@ export const createFormAssistant = ({
                 }, { transaction });
                 nextState = asJson(state);
             }
-            response = { form: asJson(form), message: asJson(message), state: nextState };
+            response = { form: asJson(appliedForm), message: asJson(message), state: nextState };
         });
         if (deferredError) throw deferredError;
         return response;

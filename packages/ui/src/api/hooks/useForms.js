@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getForms, getForm, createForm, updateForm, deleteForm, getFormResponses } from '../backend.js';
+import { getForms, getForm, createForm, previewFormChange, updateForm, deleteForm, getFormResponses } from '../backend.js';
 
 export const useFormResponses = (formId, { page = 1, pageSize = 25 } = {}) => {
     return useQuery({
@@ -57,6 +57,9 @@ export const useUpdateForm = () => {
                 ? old.map(item => item.id === form.id ? form : item)
                 : old);
             queryClient.setQueryData(['forms', form.id], form);
+            if (Array.isArray(form.workflowChanges) && form.workflowChanges.length > 0) {
+                queryClient.invalidateQueries({ queryKey: ['workflows'] });
+            }
         },
         onError: (err, variables, context) => {
             if (context?.previousForms) {
@@ -67,6 +70,10 @@ export const useUpdateForm = () => {
         // refetching the forms list after each debounced autosave.
     });
 };
+
+export const usePreviewFormChange = () => useMutation({
+    mutationFn: ({ id, data }) => previewFormChange(id, data)
+});
 
 export const useDeleteForm = () => {
     const queryClient = useQueryClient();

@@ -358,7 +358,10 @@ export const createWorkflowAssistant = ({
                     displayText = normalizedCommand.text;
                 }
                 if (state.openClarification && ['submit_clarification', 'decide_for_me'].includes(normalizedCommand.type)) {
-                    const clarification = await models.AssistantMessage.findOne({ where: { threadId: state.threadId, sender: 'bot', kind: 'clarification' }, order: [['createdAt', 'DESC']], transaction });
+                    const targetedClarification = normalizedCommand.clarificationMessageId
+                        ? await models.AssistantMessage.findOne({ where: { id: normalizedCommand.clarificationMessageId, threadId: state.threadId, sender: 'bot', kind: 'clarification' }, transaction })
+                        : null;
+                    const clarification = targetedClarification || await models.AssistantMessage.findOne({ where: { threadId: state.threadId, sender: 'bot', kind: 'clarification' }, order: [['createdAt', 'DESC']], transaction });
                     if (clarification) await clarification.update({ payload: {
                         ...(clarification.payload || {}),
                         ...(normalizedCommand.type === 'submit_clarification' ? { selectedState: normalizedCommand.state || {} } : {}),

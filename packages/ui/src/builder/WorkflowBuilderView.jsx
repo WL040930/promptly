@@ -12,6 +12,7 @@ import { MODAL_TYPES, MODAL_CONFIG } from './overview/constants.js';
 import TestRunModal from './components/modals/TestRunModal';
 import VersionHistorySidebar from './components/sidebars/VersionHistorySidebar';
 import { navigate, navigateTo } from '../utils/router.js';
+import { useForm } from '../api/hooks/useForms.js';
 import { useWorkflow, useUpdateWorkflow, usePublishWorkflow, usePauseWorkflow } from '../api/hooks/useWorkflows.js';
 import { useRunWorkflow } from '../api/hooks/useRunWorkflow.js';
 import ExecutionPanel from './components/panels/ExecutionPanel';
@@ -161,6 +162,11 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     // ── Server data ──────────────────────────────────────────────────────────
     const activeWorkflowId = route?.automationId || null;
     const { data: activeWorkflowData, isPending: isActiveWorkflowPending } = useWorkflow(activeWorkflowId);
+    const activeFormId = useMemo(
+        () => (activeWorkflowData?.nodes || []).find(node => node?.subType === 'form-submission')?.config?.formId || null,
+        [activeWorkflowData?.nodes]
+    );
+    const { data: activeFormSchema } = useForm(activeFormId);
 
     const [activeNodeId, setActiveNodeId] = useState(null);
     const updateWorkflowMutation = useUpdateWorkflow();
@@ -204,12 +210,13 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
         const repair = planDanglingWorkflowReferenceRepair({
             nodes: workflowGraphRef.current.nodes,
             edges: workflowGraphRef.current.edges,
+            formSchema: activeFormSchema,
             schemaForNode: node => node?.schema || node?.configSchema || {}
         });
         if (!repair.canApply || !repair.requiresReview) return false;
         setPendingDeletionPlan(previous => previous || { ...repair, mode: 'recovery' });
         return true;
-    }, []);
+    }, [activeFormSchema]);
 
     useEffect(() => {
         if (!activeWorkflowId) {
@@ -241,12 +248,15 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                 const issues = Array.isArray(error?.payload?.issues) ? error.payload.issues : [];
                 const hasDanglingReference = issues.some(issue => (
                     issue?.code === 'WORKFLOW_REFERENCE_SOURCE_UNKNOWN'
+                    || issue?.code === 'WORKFLOW_REFERENCE_FIELD_MISSING'
                     || /step that no longer exists/i.test(issue?.message || '')
+                    || /form field no longer exists/i.test(issue?.message || '')
                 ));
                 if (hasDanglingReference) {
                     const repair = planDanglingWorkflowReferenceRepair({
                         nodes: workflowGraphRef.current.nodes,
                         edges: workflowGraphRef.current.edges,
+                        formSchema: activeFormSchema,
                         schemaForNode: node => node?.schema || node?.configSchema || {}
                     });
                     if (repair.canApply && repair.requiresReview) {
@@ -271,6 +281,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                     const repair = planDanglingWorkflowReferenceRepair({
                         nodes: Array.isArray(data.nodes) ? data.nodes : workflowGraphRef.current.nodes,
                         edges: Array.isArray(data.edges) ? data.edges : workflowGraphRef.current.edges,
+                        formSchema: activeFormSchema,
                         schemaForNode: node => node?.schema || node?.configSchema || {}
                     });
                     if (repair.canApply && repair.requiresReview) {
@@ -286,7 +297,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
             void queue.flush().catch(() => {});
             if (workflowSaveQueueRef.current === queue) workflowSaveQueueRef.current = null;
         };
-    }, [activeWorkflowId, toast]);
+    }, [activeFormSchema, activeWorkflowId, toast]);
 
     // The builder temporarily collapses the global sidebar, then restores the
     // state the user had before entering it.
@@ -883,15 +894,36 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
             <ConfirmModal
                 isOpen={Boolean(pendingDeletionPlan)}
                 onClose={closeDeletionReview}
-                onConfirm={confirmDeletionReview}
-                title={pendingDeletionPlan?.mode === 'recovery' ? 'Repair broken references?' : 'Review step deletion'}
+                onConfirm={pendingDeletionPlan?.canApply ? confirmDeletionReview : closeDeletionReview}
+                title={pendingDeletionPlan?.mode === 'recovery'
+                    ? (pendingDeletionPlan?.impact?.removedFields?.length > 0 ? 'Repair missing form fields?' : 'Repair broken references?')
+                    : 'Review step deletion'}
                 message={pendingDeletionPlan?.mode === 'recovery'
-                    ? 'This draft contains values that still point to a step that no longer exists. Clear those values before saving the draft again.'
+                    ? (pendingDeletionPlan?.impact?.removedFields?.length > 0
+                        ? 'This draft still uses form fields that no longer exist. Clear those values before saving the draft again.'
+                        : 'This draft contains values that still point to a step that no longer exists. Clear those values before saving the draft again.')
                     : `Deleting ${pendingDeletionPlan?.impact?.removedNodes?.[0]?.title || 'this step'} will update the workflow and may clear values used by later steps.`}
-                confirmText={pendingDeletionPlan?.mode === 'recovery' ? 'Clear and repair' : 'Delete and clear'}
-                confirmVariant={pendingDeletionPlan?.mode === 'recovery' ? 'primary' : 'dangerSolid'}
+                confirmText={pendingDeletionPlan?.canApply
+                    ? (pendingDeletionPlan?.mode === 'recovery' ? 'Clear and repair' : 'Delete and clear')
+                    : 'Close'}
+                confirmVariant={pendingDeletionPlan?.canApply
+                    ? (pendingDeletionPlan?.mode === 'recovery' ? 'primary' : 'dangerSolid')
+                    : 'soft'}
             >
                 <div className="space-y-3 text-xs text-slate-600">
+                    {pendingDeletionPlan?.impact?.removedFields?.length > 0 && (
+                        <div>
+                            <p className="font-bold text-slate-800">Missing form fields</p>
+                            <ul className="mt-2 space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-2">
+                                {pendingDeletionPlan.impact.removedFields.map(field => (
+                                    <li key={field.id} className="flex items-center justify-between gap-3">
+                                        <span className="font-semibold text-slate-700">{field.label || field.id}</span>
+                                        <code className="text-[10px] text-amber-800">{field.id}</code>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
                     {pendingDeletionPlan?.impact?.clearedReferences?.length > 0 && (
                         <div>
                             <p className="font-bold text-slate-800">Values that need review</p>

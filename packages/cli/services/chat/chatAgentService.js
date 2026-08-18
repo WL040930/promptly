@@ -24,6 +24,7 @@ import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 import { resolveAssistantNavigation } from '../../../shared/assistantNavigation.js';
 import { clearChatSessionState, replaceChatSessionState } from './chatTurnLifecycle.js';
 import { clarificationInputsOrFallback, resolveClarificationSubmission } from '../../../shared/clarificationContract.js';
+import { applyFormChange } from '../forms/formWorkflowDependencyService.js';
 
 const askPromptlyCoordinator = createAskPromptlyCoordinator({
     processAgenticTurn,
@@ -229,18 +230,23 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
                     error.issues = issues;
                     throw error;
                 }
-                const saved = form || await Form.create({
+                const appliedChange = form
+                    ? await applyFormChange({
+                        formId: form.id,
+                        userId,
+                        nextSchema: schema,
+                        expectedFormUpdatedAt: proposal.baseFormUpdatedAt,
+                        workflowRevisions: proposal.fieldDeletionReview?.workflowRevisions,
+                        reviewConfirmed: proposal.fieldDeletionReview?.confirmed === true,
+                        transaction
+                    })
+                    : null;
+                const saved = appliedChange?.form || await Form.create({
                     title: schema.title,
                     description: schema.description || '',
                     settings: schema.settings || {},
                     fields: schema.fields || [],
                     userId
-                }, { transaction });
-                if (form) await saved.update({
-                    title: schema.title,
-                    description: schema.description || '',
-                    settings: schema.settings || {},
-                    fields: schema.fields || []
                 }, { transaction });
                 result = { formId: saved.id, action: form ? 'edit_form' : 'create_form' };
             } else if (message.kind === 'form_delete_proposal') {

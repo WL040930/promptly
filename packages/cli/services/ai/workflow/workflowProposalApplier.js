@@ -89,7 +89,12 @@ export const createWorkflowProposalApplier = ({
     const attachedForm = async (workflow, userId, transaction, nodes = workflow.nodes || []) => {
         const formId = formIdForWorkflowNodes(nodes);
         if (!formId) return null;
-        return Form.findOne({ where: { id: formId, userId }, transaction });
+        const sharedLock = transaction?.LOCK?.SHARE;
+        return Form.findOne({
+            where: { id: formId, userId },
+            transaction,
+            ...(sharedLock ? { lock: sharedLock } : {})
+        });
     };
 
     const validateBindings = async ({ workflow, userId, transaction, nodes = [], edges = workflow.edges || [] }) => {

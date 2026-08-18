@@ -33,5 +33,6 @@ export const makeIntent = (value = {}) => ({
 export const makeError = (error) => ({
     code: error?.code || 'AGENT_RUN_FAILED',
     message: String(error?.message || 'The agent could not complete this request.').slice(0, 1000),
-    issues: Array.isArray(error?.issues) ? error.issues.slice(0, 20) : []
+    issues: Array.isArray(error?.issues) ? error.issues.slice(0, 20) : [],
+    ...(error?.preview ? { preview: error.preview } : {})
 });

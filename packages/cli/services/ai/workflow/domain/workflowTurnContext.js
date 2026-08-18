@@ -9,13 +9,18 @@ const textOf = value => normalizeAssistantText(value);
 export const normalizeWorkflowCommand = (command = {}) => {
     if (command?.type === 'retry_active_work') return { type: 'retry_active_work' };
     if (command?.type === 'decide_for_me') {
-        return { type: 'decide_for_me', clarificationId: command.clarificationId || null };
+        return {
+            type: 'decide_for_me',
+            clarificationId: command.clarificationId || null,
+            ...(command.clarificationMessageId ? { clarificationMessageId: command.clarificationMessageId } : {})
+        };
     }
     if (command?.type === 'submit_clarification') {
         return {
             type: 'submit_clarification',
             text: textOf(command.text),
-            state: command.state && typeof command.state === 'object' ? command.state : {}
+            state: command.state && typeof command.state === 'object' ? command.state : {},
+            ...(command.clarificationMessageId ? { clarificationMessageId: command.clarificationMessageId } : {})
         };
     }
     if (command?.type === 'submit_text') return { type: 'submit_text', text: textOf(command.text) };
@@ -45,9 +50,19 @@ export const resolveWorkflowTurnContext = ({
     const correction = !clarified && !retrying && CORRECTION_PATTERN.test(rawText);
     return {
         command: delegated
-            ? { type: 'decide_for_me', clarificationId: command.clarificationId || clarification?.id || null, state: clarificationState }
+            ? {
+                type: 'decide_for_me',
+                clarificationId: command.clarificationId || clarification?.id || null,
+                state: clarificationState,
+                ...(command.clarificationMessageId ? { clarificationMessageId: command.clarificationMessageId } : {})
+            }
             : clarified
-                ? { type: 'submit_clarification', text: rawText, state: clarificationState }
+                ? {
+                    type: 'submit_clarification',
+                    text: rawText,
+                    state: clarificationState,
+                    ...(command.clarificationMessageId ? { clarificationMessageId: command.clarificationMessageId } : {})
+                }
                 : retrying
                     ? { type: 'retry_active_work', state: clarificationState }
                 : { type: 'submit_text', text: rawText },

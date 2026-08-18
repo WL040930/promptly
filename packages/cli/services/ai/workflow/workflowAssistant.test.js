@@ -621,12 +621,17 @@ test('workflow AI records a structured clarification answer before continuing th
         idFactory: (() => { let count = 0; return prefix => `${prefix}_${++count}`; })()
     });
 
-    await assistant.submitTurn({
+    const first = await assistant.submitTurn({
         userId: 'user_1', workflowId: 'workflow_1', command: { type: 'submit_text', text: 'Add an email notification.' }
     });
     const result = await assistant.submitTurn({
         userId: 'user_1', workflowId: 'workflow_1',
-        command: { type: 'submit_clarification', text: 'Provider: Gmail', state: { provider: ['Gmail'] } }
+        command: {
+            type: 'submit_clarification',
+            text: 'Provider: Gmail',
+            state: { provider: ['Gmail'] },
+            clarificationMessageId: first.botMsg.id
+        }
     });
     const clarification = memory.messages.find(message => message.kind === 'clarification');
 
@@ -636,6 +641,7 @@ test('workflow AI records a structured clarification answer before continuing th
     assert.equal(turnContexts[1].intent.sourceText, 'Add an email notification.');
     assert.deepEqual(turnContexts[1].intent.latestText, 'Gmail');
     assert.deepEqual(turnContexts[1].command.state, { provider: ['Gmail'] });
+    assert.equal(turnContexts[1].command.clarificationMessageId, first.botMsg.id);
     assert.equal(memory.messages.filter(message => message.sender === 'user').at(-1)?.text, 'Gmail');
     assert.equal(result.state.phase, 'idle');
 });

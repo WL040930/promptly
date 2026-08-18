@@ -14,6 +14,7 @@ import { emitAITurnLifecycle } from '../../utils/browserNotifications.js';
 import { outcomeForAssistantMessage } from '../../../../shared/assistantTurnNotification.js';
 import { normalizeAssistantText } from '../../../../shared/assistantText.js';
 import { resolveAssistantRetryRequest } from '../../utils/recoveryRetryRequest.js';
+import { reconcileWorkflowClarificationAnswer } from '../../utils/workflowClarificationReconciliation.js';
 
 const LIMIT = 50;
 const defaultMessage = {
@@ -44,14 +45,29 @@ const normalizeInput = value => {
         return { command: { type: 'submit_text', text }, text };
     }
     if (value?.type === 'decide_for_me') {
-        return { command: { type: 'decide_for_me', clarificationId: value.clarificationId || null }, text: 'Use sensible defaults.' };
+        return {
+            command: {
+                type: 'decide_for_me',
+                clarificationId: value.clarificationId || null,
+                ...(value.clarificationMessageId ? { clarificationMessageId: value.clarificationMessageId } : {})
+            },
+            text: 'Use sensible defaults.'
+        };
     }
     if (value?.type === 'retry_active_work') {
         return { command: { type: 'retry_active_work' }, text: 'Try again' };
     }
     if (value?.type === 'submit_clarification') {
         const text = String(value.text || '').trim();
-        return { command: { type: 'submit_clarification', text, state: value.state || {} }, text: text || 'Submitted clarification' };
+        return {
+            command: {
+                type: 'submit_clarification',
+                text,
+                state: value.state || {},
+                ...(value.clarificationMessageId ? { clarificationMessageId: value.clarificationMessageId } : {})
+            },
+            text: text || 'Submitted clarification'
+        };
     }
     return { command: { type: 'submit_text', text: '' }, text: '' };
 };
@@ -177,7 +193,7 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
             },
             { expectedStateVersion: stateVersionRef.current ?? assistantState?.version, requestId }
         ),
-        onMutate: async ({ text, requestId, optimisticWorkId }) => {
+        onMutate: async ({ command, text, requestId, optimisticWorkId }) => {
             setIsSubmittingTurn(true);
             setStreamDetached(false);
             setRecoveryMode(false);
@@ -207,11 +223,15 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
             };
             queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({
                 ...page,
-                messages: [...(page.messages || []), { id: optimisticUserId, sender: 'user', kind: 'text', text, isOptimistic: true }, optimisticWork]
+                messages: [
+                    ...reconcileWorkflowClarificationAnswer(page.messages || [], command),
+                    { id: optimisticUserId, sender: 'user', kind: 'text', text, isOptimistic: true },
+                    optimisticWork
+                ]
             })));
             return { previousData, optimisticUserId, optimisticWorkId, text, requestId };
         },
-        onSuccess: (result, variables, context) => {
+        onSuccess: async (result, variables, context) => {
             inFlightTurnRef.current = false;
             setIsSubmittingTurn(false);
             setStreamDetached(false);
@@ -236,6 +256,11 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
                     ].filter(Boolean)
                 };
             }));
+            // The server updates the original clarification message in the
+            // same transaction as this turn. Re-fetch it so the optimistic
+            // receipt is replaced by the persisted message and survives a
+            // later remount or history reload.
+            await queryClient.invalidateQueries({ queryKey });
             emitAITurnLifecycle({
                 type: 'completed',
                 requestId: variables?.requestId || context?.requestId || result?.state?.lastTurn?.requestId,

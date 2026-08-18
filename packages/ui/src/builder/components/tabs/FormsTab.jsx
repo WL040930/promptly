@@ -8,9 +8,9 @@ import FormResponses from '../../../forms/responses/FormResponses';
 import FormSettings from '../../../forms/settings/FormSettings';
 import FormShareModal from '../../../forms/settings/FormShareModal';
 import Button from '../../../components/ui/Button.jsx';
-import { useForms, useForm, useCreateForm, useUpdateForm, useDeleteForm } from '../../../api/hooks/useForms.js';
+import { useForms, useForm, useCreateForm, useUpdateForm, usePreviewFormChange, useDeleteForm } from '../../../api/hooks/useForms.js';
 import { useToast } from '../../../context/ToastContext.jsx';
-import { parsePath, buildPath, replacePath } from '../../../utils/router.js';
+import { navigateTo, parsePath, buildPath, replacePath } from '../../../utils/router.js';
 import { formatCompactRelativeTime } from '../../../utils/time.js';
 import ConfirmModal from '../../../components/modals/ConfirmModal.jsx';
 import FormsLoadingSkeleton from './FormsLoadingSkeleton.jsx';
@@ -28,6 +28,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
     const { data: activeFormData, isLoading: isActiveFormLoading } = useForm(activeFormId);
     const createFormMutation = useCreateForm();
     const updateFormMutation = useUpdateForm();
+    const previewFormChangeMutation = usePreviewFormChange();
     const deleteFormMutation = useDeleteForm();
     const [activeSubTab, setActiveSubTab] = useState(() => {
         const urlSubTab = initialSection !== 'build' ? initialSection : initialRoute.section;
@@ -38,6 +39,8 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
     const [sidebarSearch, setSidebarSearch] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [draftUpdates, setDraftUpdates] = useState({});
+    const [pendingFieldDeletion, setPendingFieldDeletion] = useState(null);
+    const [isApplyingFieldDeletion, setIsApplyingFieldDeletion] = useState(false);
     const saveQueueRef = useRef(null);
     const updateMutationRef = useRef(updateFormMutation.mutateAsync);
 
@@ -241,6 +244,66 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
         fields.splice(toIndex, 0, moved);
         updateForm({ fields }, { immediate: true });
     };
+
+    const applyFieldDeletion = useCallback(async () => {
+        const pending = pendingFieldDeletion;
+        if (!pending || isApplyingFieldDeletion || !pending.preview?.canApply) return;
+        setIsApplyingFieldDeletion(true);
+        try {
+            await saveQueueRef.current?.flush();
+            await updateFormMutation.mutateAsync({
+                id: activeFormId,
+                data: {
+                    fields: pending.nextFields,
+                    baseFormUpdatedAt: pending.preview.formUpdatedAt,
+                    fieldDeletionReview: {
+                        confirmed: true,
+                        workflowRevisions: pending.preview.workflowRevisions
+                    }
+                }
+            });
+            setPendingFieldDeletion(null);
+            setDraftUpdates(current => {
+                const { [activeFormId]: _removed, ...rest } = current;
+                return rest;
+            });
+            toast.success('Field deleted and affected workflow drafts repaired.');
+        } catch (error) {
+            const preview = error?.preview || error?.payload?.preview;
+            if (preview) setPendingFieldDeletion(previous => previous ? { ...previous, preview } : previous);
+            toast.error(error?.message || 'The field could not be deleted.');
+        } finally {
+            setIsApplyingFieldDeletion(false);
+        }
+    }, [activeFormId, isApplyingFieldDeletion, pendingFieldDeletion, toast, updateFormMutation]);
+
+    const handleDeleteField = useCallback(async fieldId => {
+        if (!activeFormId || !activeForm) return;
+        const nextFields = activeForm.fields.map(field => field.id === fieldId ? { ...field, deleted: true } : field);
+        try {
+            await saveQueueRef.current?.flush();
+            const preview = await previewFormChangeMutation.mutateAsync({
+                id: activeFormId,
+                data: { fields: nextFields }
+            });
+            if (!preview.requiresReview && preview.canApply) {
+                await updateFormMutation.mutateAsync({
+                    id: activeFormId,
+                    data: { fields: nextFields, baseFormUpdatedAt: preview.formUpdatedAt }
+                });
+                toast.success('Field deleted.');
+                return;
+            }
+            setPendingFieldDeletion({ fieldId, nextFields, preview });
+        } catch (error) {
+            const preview = error?.preview || error?.payload?.preview;
+            if (preview) {
+                setPendingFieldDeletion(previous => previous || { fieldId, nextFields, preview });
+            } else {
+                toast.error(error?.message || 'The field could not be deleted.');
+            }
+        }
+    }, [activeForm, activeFormId, previewFormChangeMutation, toast, updateFormMutation]);
 
     // ── Sidebar filtering & sorting ────────────────────────────────────────────
 
@@ -548,9 +611,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                                         onUpdateField={(fieldId, updates) => {
                                             updateForm({ fields: activeForm.fields.map(f => f.id === fieldId ? { ...f, ...updates } : f) });
                                         }}
-                                        onDeleteField={(fieldId) => {
-                                            updateForm({ fields: activeForm.fields.map(f => f.id === fieldId ? { ...f, deleted: true } : f) });
-                                        }}
+                                        onDeleteField={handleDeleteField}
                                         onDuplicateField={handleDuplicateField}
                                         onAddField={handleAddField}
                                         onReorderFields={handleReorderFields}
@@ -593,6 +654,56 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                     onClose={() => setIsShareOpen(false)}
                 />
             )}
+
+            <ConfirmModal
+                isOpen={Boolean(pendingFieldDeletion)}
+                onClose={() => setPendingFieldDeletion(null)}
+                onConfirm={pendingFieldDeletion?.preview?.canApply ? applyFieldDeletion : () => setPendingFieldDeletion(null)}
+                title={pendingFieldDeletion?.preview?.canApply
+                    ? 'Review field deletion'
+                    : pendingFieldDeletion?.preview?.liveBlockers?.length > 0 ? 'Field deletion is blocked' : 'Field deletion needs repair'}
+                message={pendingFieldDeletion?.preview?.canApply
+                    ? 'Deleting this field will clear the listed workflow values from editable drafts.'
+                    : pendingFieldDeletion?.preview?.liveBlockers?.length > 0
+                        ? 'A live workflow still depends on this field. Repair and publish that workflow before deleting the field.'
+                        : 'A workflow contains a malformed reference to this field. Repair that draft before deleting the field.'}
+                confirmText={pendingFieldDeletion?.preview?.canApply ? 'Delete and repair' : 'Close'}
+                confirmVariant={pendingFieldDeletion?.preview?.canApply ? 'danger' : 'soft'}
+                isLoading={isApplyingFieldDeletion}
+            >
+                <div className="space-y-3 text-xs text-slate-600">
+                    {pendingFieldDeletion?.preview?.liveBlockers?.length > 0 && (
+                        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-800">
+                            <p className="font-bold">Live workflows to repair first</p>
+                            <div className="mt-2 space-y-1">
+                                {pendingFieldDeletion.preview.liveBlockers.map(item => (
+                                    <button
+                                        key={item.workflowId}
+                                        type="button"
+                                        onClick={() => navigateTo({ page: 'automation-build', automationId: item.workflowId, editor: 'visual' })}
+                                        className="block font-semibold text-red-700 underline decoration-red-300 underline-offset-2"
+                                    >
+                                        {item.workflowName}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {pendingFieldDeletion?.preview?.affectedWorkflows?.length > 0 && (
+                        <div>
+                            <p className="font-bold text-slate-800">Values that will be cleared</p>
+                            <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-amber-200 bg-amber-50 p-2">
+                                {pendingFieldDeletion.preview.affectedWorkflows.flatMap(item => (item.draft?.references || []).map(reference => ({ ...reference, workflowName: item.workflowName }))).map((reference, index) => (
+                                    <li key={`${reference.workflowName}-${reference.configPath}-${index}`} className="flex items-start justify-between gap-3">
+                                        <span className="min-w-0 font-semibold text-slate-700">{reference.workflowName} · {reference.title || reference.nodeId}</span>
+                                        <code className="shrink-0 text-[10px] text-amber-800">{reference.configPath?.replace(/^nodes\.[^.]+\.config\./, '')}</code>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+            </ConfirmModal>
 
             <ConfirmModal
                 isOpen={!!formToDelete}

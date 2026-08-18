@@ -4,6 +4,7 @@ import { validateFormSchema } from '../../services/ai/form/domain/formSchemaVali
 import asyncHandler from '../../utils/asyncHandler.js';
 import { executeWorkflow } from '../../services/engine/executionEngine.js';
 import { formAssistant } from '../../services/ai/form/formAssistant.js';
+import { applyFormChange, previewFormChange as previewFormChangePlan } from '../../services/forms/formWorkflowDependencyService.js';
 
 export const getForms = asyncHandler(async (req, res) => {
     const forms = await Form.findAll({
@@ -96,7 +97,7 @@ export const resetFormAIContext = asyncHandler(async (req, res) => {
 
 export const decideFormProposal = asyncHandler(async (req, res) => {
     const { formId, messageId } = req.params;
-    const { action = 'accept', selectedPatchIds, expectedStateVersion } = req.body || {};
+    const { action = 'accept', selectedPatchIds, expectedStateVersion, fieldDeletionReview } = req.body || {};
     try {
         const result = await formAssistant.decideProposal({
             userId: req.user.id,
@@ -104,7 +105,8 @@ export const decideFormProposal = asyncHandler(async (req, res) => {
             proposalMessageId: messageId,
             action,
             selectedPatchIds,
-            expectedStateVersion
+            expectedStateVersion,
+            fieldDeletionReview
         });
         res.json(result);
     } catch (error) {
@@ -130,15 +132,11 @@ export const decideFormProposal = asyncHandler(async (req, res) => {
 
 export const updateForm = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { title, description, settings, fields, baseFormUpdatedAt } = req.body;
+    const { title, description, settings, fields, baseFormUpdatedAt, fieldDeletionReview } = req.body;
     
     const form = await Form.findOne({ where: { id, userId: req.user.id } });
     if (!form) return res.status(404).json({ message: 'Form not found' });
 
-    if (baseFormUpdatedAt && new Date(form.updatedAt).getTime() !== new Date(baseFormUpdatedAt).getTime()) {
-        return res.status(409).json({ code: 'FORM_PROPOSAL_STALE', message: 'This proposal was created from an older form version. Generate a new suggestion.' });
-    }
-    
     const nextSchema = {
         ...form.toJSON(),
         title: title ?? form.title,
@@ -146,18 +144,30 @@ export const updateForm = asyncHandler(async (req, res) => {
         settings: settings ?? form.settings ?? {},
         fields: fields ?? form.fields ?? []
     };
-    const validationIssues = validateFormSchema(nextSchema);
-    if (validationIssues.length > 0) {
-        return res.status(400).json({ error: 'Invalid form schema.', issues: validationIssues });
-    }
-
-    await form.update({
-        title: nextSchema.title,
-        description: nextSchema.description,
-        settings: nextSchema.settings,
-        fields: nextSchema.fields
+    const result = await applyFormChange({
+        formId: id,
+        userId: req.user.id,
+        nextSchema,
+        expectedFormUpdatedAt: baseFormUpdatedAt,
+        workflowRevisions: fieldDeletionReview?.workflowRevisions,
+        reviewConfirmed: fieldDeletionReview?.confirmed === true
     });
-    res.json(form);
+    res.json({ ...result.form.toJSON(), workflowChanges: result.workflowChanges });
+});
+
+export const previewFormChange = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { title, description, settings, fields } = req.body || {};
+    const form = await Form.findOne({ where: { id, userId: req.user.id } });
+    if (!form) return res.status(404).json({ message: 'Form not found' });
+    const nextSchema = {
+        ...form.toJSON(),
+        title: title ?? form.title,
+        description: description ?? form.description ?? '',
+        settings: settings ?? form.settings ?? {},
+        fields: fields ?? form.fields ?? []
+    };
+    res.json(await previewFormChangePlan({ formId: id, userId: req.user.id, nextSchema }));
 });
 
 export const deleteForm = asyncHandler(async (req, res) => {

@@ -72,6 +72,7 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
     const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
     const [acceptingProposalId, setAcceptingProposalId] = useState(null);
     const [rejectingProposalId, setRejectingProposalId] = useState(null);
+    const [pendingFormDeletionReview, setPendingFormDeletionReview] = useState(null);
     const [isSubmittingTurn, setIsSubmittingTurn] = useState(false);
     const [streamDetached, setStreamDetached] = useState(false);
     const [recoveryMode, setRecoveryMode] = useState(false);
@@ -350,17 +351,20 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
         setInput(recovery.suggestedPrompt || previousRequest || '');
     }, [handleSend, messages, setInput]);
 
-    const handleAcceptProposal = useCallback(async (messageId, selectedPatchIds = null) => {
+    const handleAcceptProposal = useCallback(async (messageId, selectedPatchIds = null, fieldDeletionReview = null) => {
         setAcceptingProposalId(messageId);
+        let requestedPatchIds = selectedPatchIds;
         try {
             const message = messages.find(item => item.id === messageId);
             const patches = message?.payload?.patches || [];
-            const requestedPatchIds = selectedPatchIds || patches.map((patch, index) => patch.patchId || `patch_${index + 1}`);
+            requestedPatchIds = selectedPatchIds || patches.map((patch, index) => patch.patchId || `patch_${index + 1}`);
             const result = await decideFormProposal(formId, messageId, {
                 action: 'accept',
                 selectedPatchIds: requestedPatchIds,
-                expectedStateVersion: stateVersionRef.current ?? assistantState?.version
+                expectedStateVersion: stateVersionRef.current ?? assistantState?.version,
+                ...(fieldDeletionReview ? { fieldDeletionReview } : {})
             });
+            setPendingFormDeletionReview(null);
             syncStateVersion(result.state?.version);
             queryClient.setQueryData(['forms'], old => old ? old.map(item => item.id === formId ? result.form : item) : old);
             queryClient.setQueryData(['forms', formId], result.form);
@@ -375,6 +379,15 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
             toast.success('Form updated successfully!');
         } catch (error) {
             const code = error.code || error.payload?.code;
+            if (['FORM_FIELD_DELETION_REVIEW_REQUIRED', 'FORM_FIELD_DELETION_LIVE_DEPENDENCY', 'FORM_FIELD_DELETION_BLOCKED'].includes(code)) {
+                setPendingFormDeletionReview({
+                    messageId,
+                    selectedPatchIds: requestedPatchIds,
+                    preview: error.preview || error.payload?.preview || null
+                });
+                toast.info('Review the affected workflows before applying this form change.');
+                return;
+            }
             if (code === 'FORM_PROPOSAL_STALE') {
                 queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({
                     ...page,
@@ -387,6 +400,18 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
             setAcceptingProposalId(null);
         }
     }, [assistantState?.version, formId, messages, onFormApplied, queryClient, queryKey, toast, syncStateVersion]);
+
+    const confirmFormDeletionReview = useCallback(async () => {
+        if (!pendingFormDeletionReview?.preview?.canApply) return;
+        await handleAcceptProposal(
+            pendingFormDeletionReview.messageId,
+            pendingFormDeletionReview.selectedPatchIds,
+            {
+                confirmed: true,
+                workflowRevisions: pendingFormDeletionReview.preview.workflowRevisions || {}
+            }
+        );
+    }, [handleAcceptProposal, pendingFormDeletionReview]);
 
     const handleRejectProposal = useCallback(async messageId => {
         setRejectingProposalId(messageId);
@@ -431,6 +456,9 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
         handleAcceptProposal,
         handleRejectProposal,
         handleRecoveryAction,
+        pendingFormDeletionReview,
+        closeFormDeletionReview: () => setPendingFormDeletionReview(null),
+        confirmFormDeletionReview,
         acceptingProposalId,
         rejectingProposalId,
         clearChat,

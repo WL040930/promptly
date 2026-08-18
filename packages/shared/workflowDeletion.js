@@ -188,6 +188,7 @@ const createBypassEdge = ({ edges, removedNodeId, nodesById, schemaForNode }) =>
 const makeImpact = ({ recovery, nodes, removedNodeIds }) => ({
     recovery,
     removedNodes: (nodes || []).filter(node => removedNodeIds.has(node?.id)).map(describeRemovedNode),
+    removedFields: [],
     removedEdges: [],
     bypassedEdges: [],
     clearedReferences: [],
@@ -212,7 +213,9 @@ export const planWorkflowNodeDeletion = ({
     allowLegacyReferences = true,
     additionalSourceKeys = [],
     recovery = false,
-    repairDanglingBindings = false
+    repairDanglingBindings = false,
+    referenceMatcher = null,
+    legacyReferenceMatcher = null
 } = {}) => {
     const originalNodes = Array.isArray(nodes) ? nodes : [];
     const originalEdges = Array.isArray(edges) ? edges : [];
@@ -233,7 +236,7 @@ export const planWorkflowNodeDeletion = ({
     const impact = makeImpact({ recovery, nodes: originalNodes, removedNodeIds: actualRemovedIds });
 
     const blockers = impact.blockedReferences;
-    const recordReference = ({ node, fieldName, path, sourceNodeId, sourceNode, kind = 'reference', required = false, message = null }) => {
+    const recordReference = ({ node, fieldName, path, sourceNodeId, sourceNode, kind = 'reference', required = false, fieldId = null, message = null }) => {
         const item = {
             nodeId: node?.id,
             title: sourceTitle(node),
@@ -244,6 +247,7 @@ export const planWorkflowNodeDeletion = ({
             kind,
             required: Boolean(required)
         };
+        if (fieldId) item.fieldId = fieldId;
         if (message) {
             blockers.push({ ...item, message });
             return;
@@ -266,6 +270,10 @@ export const planWorkflowNodeDeletion = ({
     });
 
     const matchReference = ({ value }) => {
+        if (typeof referenceMatcher === 'function') {
+            const customMatch = referenceMatcher({ value, nodes: originalNodes, nodesById, sourceMatches });
+            if (customMatch) return customMatch;
+        }
         if (!isReferenceLike(value)) return { kind: 'none' };
         return sourceMatches(value.nodeId);
     };
@@ -300,6 +308,7 @@ export const planWorkflowNodeDeletion = ({
                     path,
                     sourceNodeId: match.sourceNodeId,
                     sourceNode: match.sourceNode,
+                    fieldId: match.fieldId,
                     required: isNodeInputRequired(fieldInput, node?.config),
                     kind: 'reference'
                 });
@@ -397,7 +406,10 @@ export const planWorkflowNodeDeletion = ({
                 const token = match[0];
                 const sourcePath = String(match[1] || '').trim();
                 const source = sourcePath.split('.')[0];
-                const resolution = sourceMatches(source);
+                const customResolution = typeof legacyReferenceMatcher === 'function'
+                    ? legacyReferenceMatcher({ sourcePath, source, node, fieldName, path, nodes: originalNodes, nodesById, sourceMatches })
+                    : null;
+                const resolution = customResolution || sourceMatches(source);
                 output += value.slice(cursor, match.index);
                 if (resolution.kind === 'blocked') {
                     blocked = true;
@@ -411,6 +423,7 @@ export const planWorkflowNodeDeletion = ({
                         path,
                         sourceNodeId: resolution.sourceNodeId,
                         sourceNode: resolution.sourceNode,
+                        fieldId: resolution.fieldId,
                         required: isNodeInputRequired(fieldInput, node?.config),
                         kind: 'legacy-reference'
                     });
@@ -558,6 +571,248 @@ export const planWorkflowNodeDeletion = ({
     };
 };
 
+const sourceNodesForForm = ({ nodes = [], formId }) => (nodes || []).filter(node => (
+    node?.subType === 'form-submission'
+    && node?.config?.formId === formId
+));
+
+const fieldIdsForDeletion = fieldIds => new Set(Array.from(fieldIds || []).filter(Boolean).map(String));
+
+const fieldInfoFor = ({ formSchema, fieldIds }) => {
+    const requested = fieldIdsForDeletion(fieldIds);
+    const fields = Array.isArray(formSchema?.fields) ? formSchema.fields : [];
+    return [...requested].map(id => {
+        const field = fields.find(item => item?.id === id);
+        return {
+            id,
+            label: field?.label || field?.name || field?.title || id,
+            type: field?.type || null
+        };
+    });
+};
+
+const sourceNodeForLegacyToken = ({ source, nodes = [] }) => {
+    const matches = (nodes || []).filter(node => node?.id === source || sourceTitle(node) === source);
+    if (matches.length === 1) return { kind: 'match', sourceNode: matches[0], sourceNodeId: matches[0].id };
+    if (matches.length > 1) {
+        return {
+            kind: 'blocked',
+            sourceNodeId: source,
+            message: `The workflow step title '${source}' is ambiguous. Repair the reference before deleting this field.`
+        };
+    }
+    return { kind: 'none' };
+};
+
+/**
+ * Plan removal of form fields from a workflow draft without changing graph
+ * topology. This reuses the same value transformer as node deletion so direct
+ * inputs, templates, nested values, and legacy references have one repair
+ * policy. The form trigger itself remains in the graph.
+ */
+export const planWorkflowFormFieldDeletion = ({
+    nodes = [],
+    edges = [],
+    formId,
+    fieldIds = [],
+    formSchema = null,
+    schemaForNode: schemaResolver,
+    schemasByNodeKey,
+    allowLegacyReferences = true,
+    recovery = false
+} = {}) => {
+    const requestedFieldIds = fieldIdsForDeletion(fieldIds);
+    const formTriggers = sourceNodesForForm({ nodes, formId });
+    const formTriggerIds = new Set(formTriggers.map(node => node.id));
+    const fieldInfo = fieldInfoFor({ formSchema, fieldIds: requestedFieldIds });
+    const fieldById = new Map(fieldInfo.map(field => [field.id, field]));
+
+    const matchCanonicalReference = ({ value, nodes: sourceNodes }) => {
+        if (!isReferenceLike(value) || !formTriggerIds.has(value.nodeId)) return null;
+        if (!Array.isArray(value.path) || value.path[0] !== 'fields') return { kind: 'none' };
+        const fieldId = value.path.length > 1 ? String(value.path[1]) : null;
+        if (value.path.length !== 2) {
+            if (fieldId && !requestedFieldIds.has(fieldId)) return { kind: 'none' };
+            return {
+                kind: 'blocked',
+                sourceNodeId: value.nodeId,
+                message: 'This form-field reference is malformed and needs repair before the field can be deleted.'
+            };
+        }
+        if (!requestedFieldIds.has(fieldId)) return { kind: 'none' };
+        return {
+            kind: 'match',
+            sourceNodeId: value.nodeId,
+            sourceNode: sourceNodes.find(node => node?.id === value.nodeId) || null,
+            fieldId
+        };
+    };
+
+    const matchLegacyReference = ({ sourcePath, source, nodes: sourceNodes }) => {
+        const resolved = sourceNodeForLegacyToken({ source, nodes: sourceNodes });
+        if (resolved.kind !== 'match') return resolved.kind === 'blocked' ? resolved : null;
+        if (!formTriggerIds.has(resolved.sourceNodeId)) return null;
+        const path = String(sourcePath || '').split('.').slice(1);
+        if (path[0] !== 'fields') return { kind: 'none' };
+        const fieldId = path.length > 1 ? String(path[1]) : null;
+        if (path.length !== 2) {
+            if (fieldId && !requestedFieldIds.has(fieldId)) return { kind: 'none' };
+            return {
+                kind: 'blocked',
+                sourceNodeId: resolved.sourceNodeId,
+                message: 'This form-field reference is malformed and needs repair before the field can be deleted.'
+            };
+        }
+        if (!requestedFieldIds.has(fieldId)) return { kind: 'none' };
+        return { ...resolved, fieldId };
+    };
+
+    const result = planWorkflowNodeDeletion({
+        nodes,
+        edges,
+        nodeIds: [],
+        schemaForNode: schemaResolver,
+        schemasByNodeKey,
+        allowLegacyReferences,
+        recovery,
+        referenceMatcher: matchCanonicalReference,
+        legacyReferenceMatcher: matchLegacyReference
+    });
+
+    result.impact.removedFields = fieldInfo;
+    result.impact.clearedReferences = result.impact.clearedReferences.map(item => ({
+        ...item,
+        fieldLabel: fieldById.get(item.fieldId)?.label || item.fieldId || null
+    }));
+    result.impact.blockedReferences = result.impact.blockedReferences.map(item => ({
+        ...item,
+        fieldLabel: fieldById.get(item.fieldId)?.label || item.fieldId || null
+    }));
+    return result;
+};
+
+const activeFormFieldIds = schema => new Set((schema?.fields || [])
+    .filter(field => field?.id && !field.deleted && field.type !== 'heading')
+    .map(field => String(field.id)));
+
+/** Keep persisted field identities for response history and recovery labels. */
+export const normalizeFormSchemaForDeletion = ({ currentSchema = {}, nextSchema = {} } = {}) => {
+    const currentFields = Array.isArray(currentSchema?.fields) ? currentSchema.fields : [];
+    const proposedFields = Array.isArray(nextSchema?.fields) ? nextSchema.fields : currentFields;
+    const emitted = new Set();
+    const fields = proposedFields.map(field => {
+        if (!field?.id) return field;
+        const id = String(field.id);
+        emitted.add(id);
+        return field;
+    });
+
+    for (const field of currentFields) {
+        const id = String(field?.id || '');
+        if (!id || emitted.has(id)) continue;
+        fields.push({ ...field, deleted: true });
+    }
+
+    return {
+        ...currentSchema,
+        ...nextSchema,
+        fields
+    };
+};
+
+export const removedFormFieldIds = ({ currentSchema = {}, nextSchema = {} } = {}) => {
+    const before = activeFormFieldIds(currentSchema);
+    const after = activeFormFieldIds(nextSchema);
+    return [...before].filter(id => !after.has(id));
+};
+
+/**
+ * Plan a form schema change across workflow drafts and published releases.
+ * This remains pure; the persistence module owns locking and committing the
+ * returned plan as one transaction.
+ */
+export const planFormFieldChange = ({
+    currentSchema = {},
+    nextSchema = {},
+    workflows = [],
+    schemaForNode: schemaResolver,
+    schemasByNodeKey
+} = {}) => {
+    const normalizedSchema = normalizeFormSchemaForDeletion({ currentSchema, nextSchema });
+    const formId = currentSchema?.id || nextSchema?.id || null;
+    const fieldIds = removedFormFieldIds({ currentSchema, nextSchema: normalizedSchema });
+    const affectedWorkflows = [];
+    const liveBlockers = [];
+    const draftBlockers = [];
+
+    for (const workflow of workflows || []) {
+        const draftPlan = planWorkflowFormFieldDeletion({
+            nodes: workflow?.nodes || [],
+            edges: workflow?.edges || [],
+            formId,
+            fieldIds,
+            formSchema: normalizedSchema,
+            schemaForNode: schemaResolver,
+            schemasByNodeKey
+        });
+        const publishedPlan = workflow?.published?.nodes
+            ? planWorkflowFormFieldDeletion({
+                nodes: workflow.published.nodes,
+                edges: workflow.published.edges || [],
+                formId,
+                fieldIds,
+                formSchema: normalizedSchema,
+                schemaForNode: schemaResolver,
+                schemasByNodeKey
+            })
+            : null;
+        const draftAffected = draftPlan.impact.clearedReferences.length > 0 || draftPlan.impact.blockedReferences.length > 0;
+        const publishedAffected = publishedPlan && (
+            publishedPlan.impact.clearedReferences.length > 0
+            || publishedPlan.impact.blockedReferences.length > 0
+        );
+        if (!draftAffected && !publishedAffected) continue;
+
+        const item = {
+            workflowId: workflow.id,
+            workflowName: workflow.name || workflow.id,
+            isActive: workflow.isActive === true,
+            revision: workflow.revision ?? null,
+            draft: draftPlan,
+            published: publishedPlan
+        };
+        affectedWorkflows.push(item);
+
+        if (draftPlan.impact.blockedReferences.length > 0) draftBlockers.push(item);
+        if (workflow.isActive === true && publishedAffected) liveBlockers.push(item);
+    }
+
+    return {
+        formId,
+        nextSchema: normalizedSchema,
+        removedFieldIds: fieldIds,
+        affectedWorkflows,
+        liveBlockers,
+        draftBlockers,
+        canApply: liveBlockers.length === 0 && draftBlockers.length === 0,
+        requiresReview: affectedWorkflows.length > 0,
+        blockers: [
+            ...liveBlockers.map(item => ({
+                code: 'FORM_FIELD_LIVE_DEPENDENCY',
+                workflowId: item.workflowId,
+                workflowName: item.workflowName,
+                message: `The live workflow '${item.workflowName}' still uses a field being deleted.`
+            })),
+            ...draftBlockers.map(item => ({
+                code: 'FORM_FIELD_REFERENCE_REPAIR_REQUIRED',
+                workflowId: item.workflowId,
+                workflowName: item.workflowName,
+                message: `The workflow '${item.workflowName}' contains a malformed reference that needs manual repair.`
+            }))
+        ]
+    };
+};
+
 const collectDanglingSources = ({ nodes, schemaForNode, schemasByNodeKey }) => {
     const knownIds = new Set((nodes || []).map(node => node?.id));
     const titleIndex = uniqueTitleIndex(nodes);
@@ -613,16 +868,90 @@ const collectDanglingSources = ({ nodes, schemaForNode, schemasByNodeKey }) => {
     return { missing: [...missing], hasDanglingBinding };
 };
 
+const collectMissingFormFields = ({ nodes = [], formSchema = null, schemaForNode, schemasByNodeKey }) => {
+    const formId = formSchema?.id;
+    if (!formId) return [];
+    const activeIds = activeFormFieldIds(formSchema);
+    const formTriggerIds = new Set(sourceNodesForForm({ nodes, formId }).map(node => node.id));
+    const titleIndex = uniqueTitleIndex(nodes);
+    const sourceFor = token => {
+        if (nodes.some(node => node?.id === token)) return nodes.find(node => node.id === token);
+        const matches = (titleIndex.get(token) || []).map(id => nodes.find(node => node.id === id)).filter(Boolean);
+        return matches.length === 1 ? matches[0] : null;
+    };
+    const missing = new Set();
+    const inspectReference = reference => {
+        if (!isWorkflowExpression(reference) || reference.$expr !== 'reference') return;
+        if (!formTriggerIds.has(reference.nodeId)) return;
+        if (!Array.isArray(reference.path) || reference.path[0] !== 'fields' || reference.path.length < 2) return;
+        if (!activeIds.has(String(reference.path[1]))) missing.add(String(reference.path[1]));
+    };
+    const walk = (value, input) => {
+        if (isWorkflowExpression(value)) {
+            if (value.$expr === 'template') (value.parts || []).forEach(part => inspectReference(part?.reference));
+            else inspectReference(value);
+            return;
+        }
+        if (isWorkflowBinding(value)) return;
+        if (isWorkflowBindingTemplate(value)) {
+            value.$template.forEach(part => walk(part, input));
+            return;
+        }
+        if (typeof value === 'string' && legacySyntax(input)) {
+            for (const match of value.matchAll(LEGACY_REFERENCE_RE)) {
+                const sourcePath = String(match[1] || '').trim();
+                const parts = sourcePath.split('.');
+                const sourceNode = sourceFor(parts.shift());
+                if (!sourceNode || !formTriggerIds.has(sourceNode.id) || parts[0] !== 'fields' || parts.length < 2) continue;
+                if (!activeIds.has(String(parts[1]))) missing.add(String(parts[1]));
+            }
+            return;
+        }
+        if (Array.isArray(value)) value.forEach(item => walk(item, input));
+        else if (isObject(value)) Object.values(value).forEach(item => walk(item, input));
+    };
+
+    for (const node of nodes || []) {
+        const schema = schemaForNodeFrom({ node, schemaForNode, schemasByNodeKey });
+        const inputs = inputByName(schema);
+        for (const [fieldName, value] of Object.entries(node?.config || {})) walk(value, inputs.get(fieldName));
+    }
+    return [...missing];
+};
+
+const mergeRepairPlans = ({ sourcePlan, fieldPlan }) => {
+    const impact = {
+        ...fieldPlan.impact,
+        recovery: true,
+        removedNodes: sourcePlan.impact.removedNodes,
+        removedEdges: sourcePlan.impact.removedEdges,
+        bypassedEdges: sourcePlan.impact.bypassedEdges,
+        clearedReferences: [...sourcePlan.impact.clearedReferences, ...fieldPlan.impact.clearedReferences],
+        clearedNodeSelections: [...sourcePlan.impact.clearedNodeSelections, ...fieldPlan.impact.clearedNodeSelections],
+        blockedReferences: [...sourcePlan.impact.blockedReferences, ...fieldPlan.impact.blockedReferences],
+        affectedNodeIds: [...new Set([...sourcePlan.impact.affectedNodeIds, ...fieldPlan.impact.affectedNodeIds])]
+    };
+    return {
+        canApply: sourcePlan.canApply && fieldPlan.canApply,
+        requiresReview: sourcePlan.requiresReview || fieldPlan.requiresReview,
+        nodes: fieldPlan.nodes,
+        edges: fieldPlan.edges,
+        impact,
+        blockers: [...(sourcePlan.blockers || []), ...(fieldPlan.blockers || [])]
+    };
+};
+
 /** Build a repair-only plan for drafts that already contain dangling refs. */
 export const planDanglingWorkflowReferenceRepair = ({
     nodes = [],
     edges = [],
     schemaForNode,
     schemasByNodeKey,
-    allowLegacyReferences = true
+    allowLegacyReferences = true,
+    formSchema = null
 } = {}) => {
     const { missing, hasDanglingBinding } = collectDanglingSources({ nodes, schemaForNode, schemasByNodeKey });
-    return planWorkflowNodeDeletion({
+    const sourcePlan = planWorkflowNodeDeletion({
         nodes,
         edges,
         nodeIds: missing,
@@ -633,4 +962,18 @@ export const planDanglingWorkflowReferenceRepair = ({
         recovery: true,
         repairDanglingBindings: hasDanglingBinding
     });
+    const missingFieldIds = collectMissingFormFields({ nodes, formSchema, schemaForNode, schemasByNodeKey });
+    if (missingFieldIds.length === 0) return sourcePlan;
+    const fieldPlan = planWorkflowFormFieldDeletion({
+        nodes: sourcePlan.nodes,
+        edges: sourcePlan.edges,
+        formId: formSchema?.id,
+        fieldIds: missingFieldIds,
+        formSchema,
+        schemaForNode,
+        schemasByNodeKey,
+        allowLegacyReferences,
+        recovery: true
+    });
+    return mergeRepairPlans({ sourcePlan, fieldPlan });
 };
