@@ -24,6 +24,7 @@ import { useDurableTurnMonitor } from '../../api/hooks/useDurableTurnMonitor.js'
 import { emitAITurnLifecycle } from '../../utils/browserNotifications.js';
 import { outcomeForAssistantMessage } from '../../../../shared/assistantTurnNotification.js';
 import { reconcileAskPromptlyTurnMessages } from '../../utils/askPromptlyMessageReconciliation.js';
+import { resolveAssistantRetryRequest } from '../../utils/recoveryRetryRequest.js';
 
 const welcome = { id: 'init', sender: 'bot', kind: 'text', text: 'Hi there! I can build automations and forms from a description. What would you like to automate?' };
 const WorkflowDiffPreviewModal = lazy(() => import('../../builder/components/modals/WorkflowDiffPreviewModal.jsx'));
@@ -361,10 +362,19 @@ export default function ChatTab({ conversationId = null }) {
             requestSettingsModal('connections');
             return;
         }
-        if (action?.type === 'retry') {
-            const retryText = recovery.retryText || previousRequest;
-            if (retryText) void send(retryText);
-            return;
+        if (action?.type === 'retry' || action?.type === 'focus_composer') {
+            const retryText = resolveAssistantRetryRequest({
+                action,
+                recovery,
+                previousRequest,
+                messages,
+                failureMessage: message
+            });
+            if (retryText) {
+                void send(retryText);
+                return;
+            }
+            if (action?.type === 'retry') return;
         }
         setInput(recovery.suggestedPrompt || previousRequest || '');
     };

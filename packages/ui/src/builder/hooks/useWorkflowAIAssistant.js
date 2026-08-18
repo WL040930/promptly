@@ -13,6 +13,7 @@ import { markSupersededWorkflowProposals, markWorkflowProposalStale } from '../.
 import { emitAITurnLifecycle } from '../../utils/browserNotifications.js';
 import { outcomeForAssistantMessage } from '../../../../shared/assistantTurnNotification.js';
 import { normalizeAssistantText } from '../../../../shared/assistantText.js';
+import { resolveAssistantRetryRequest } from '../../utils/recoveryRetryRequest.js';
 
 const LIMIT = 50;
 const defaultMessage = {
@@ -379,17 +380,20 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
             requestSettingsModal('connections');
             return;
         }
-        if (action?.type === 'retry') {
-            if (action.mode === 'resume_active_work') {
+        if (action?.type === 'retry' || action?.type === 'focus_composer') {
+            if (action?.type === 'retry' && action.mode === 'resume_active_work') {
                 void handleSend({ type: 'retry_active_work' });
                 return;
             }
-            const retryText = recovery.retryText || previousRequest;
-            if (retryText) void handleSend(retryText);
+            const retryText = resolveAssistantRetryRequest({ action, recovery, previousRequest, messages, failureMessage: message });
+            if (retryText) {
+                void handleSend(retryText);
+                return;
+            }
             return;
         }
         setInput(recovery.suggestedPrompt || previousRequest || '');
-    }, [handleSend, setInput]);
+    }, [handleSend, messages, setInput]);
 
     const handleApply = useCallback(async message => {
         if (message.kind !== 'workflow_proposal') return;

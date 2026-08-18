@@ -24,6 +24,7 @@ import { supersedePendingChatFormProposals } from '../proposalLifecycle.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 import { replaceChatSessionState } from '../chat/chatTurnLifecycle.js';
 import { clarificationInputsOrFallback } from '../../../shared/clarificationContract.js';
+import { buildAssistantRecovery } from '../../../shared/assistantRecovery.js';
 import {
     completeStep,
     createArtifact,
@@ -1046,7 +1047,24 @@ export const processAgenticTurn = async ({ session, userId, message, context = {
     } catch (error) {
         const failure = makeError(error);
         await updateRun(run, { status: 'failed', error: failure, currentStep: null, tokenUsage: totalUsage });
-        const reply = await saveReply(session, { text: failure.message, kind: 'error', payload: { runId: run.id, code: failure.code, issues: failure.issues }, tokenUsage: totalUsage });
+        const recovery = buildAssistantRecovery({
+            surface: 'assistant',
+            code: failure.code,
+            issues: failure.issues,
+            context: { retryText: message }
+        });
+        const reply = await saveReply(session, {
+            text: failure.message,
+            kind: 'error',
+            payload: {
+                runId: run.id,
+                code: failure.code,
+                issues: failure.issues,
+                recovery,
+                retryable: recovery.retryable
+            },
+            tokenUsage: totalUsage
+        });
         return { handled: true, replyObj: reply, totalTokenUsage: totalUsage };
     }
 };

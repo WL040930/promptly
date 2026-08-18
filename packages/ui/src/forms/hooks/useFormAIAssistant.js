@@ -11,6 +11,7 @@ import { navigateTo } from '../../utils/router.js';
 import { requestSettingsModal } from '../../utils/settingsModal.js';
 import { emitAITurnLifecycle } from '../../utils/browserNotifications.js';
 import { outcomeForAssistantMessage } from '../../../../shared/assistantTurnNotification.js';
+import { resolveAssistantRetryRequest } from '../../utils/recoveryRetryRequest.js';
 
 const LIMIT = 50;
 const defaultMessage = {
@@ -338,13 +339,16 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
             requestSettingsModal('connections');
             return;
         }
-        if (action?.type === 'retry') {
-            const retryText = recovery.retryText || previousRequest;
-            if (retryText) void handleSend(retryText);
-            return;
+        if (action?.type === 'retry' || action?.type === 'focus_composer') {
+            const retryText = resolveAssistantRetryRequest({ action, recovery, previousRequest, messages, failureMessage: message });
+            if (retryText) {
+                void handleSend(retryText);
+                return;
+            }
+            if (action?.type === 'retry') return;
         }
         setInput(recovery.suggestedPrompt || previousRequest || '');
-    }, [handleSend, setInput]);
+    }, [handleSend, messages, setInput]);
 
     const handleAcceptProposal = useCallback(async (messageId, selectedPatchIds = null) => {
         setAcceptingProposalId(messageId);
