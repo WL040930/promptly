@@ -753,7 +753,7 @@ const specsForPlan = ({ workflow, planner, registry }) => {
     return { specs: registry.getSchemasFor(keys), catalogue, requested };
 };
 
-const proposalDiff = ({ before, after, operations }) => {
+const proposalDiff = ({ before, after, operations, deletionEffects = [] }) => {
     const beforeIds = new Set((before.nodes || []).map(node => node.id));
     const afterIds = new Set((after.nodes || []).map(node => node.id));
     return {
@@ -763,6 +763,7 @@ const proposalDiff = ({ before, after, operations }) => {
             const next = after.nodes.find(candidate => candidate.id === node.id);
             return next && JSON.stringify(next) !== JSON.stringify(node);
         }).map(node => ({ id: node.id, title: after.nodes.find(candidate => candidate.id === node.id)?.title || node.title })),
+        deletionEffects,
         edges: operations.filter(operation => [
             'connect',
             'disconnect',
@@ -782,6 +783,10 @@ const buildPlanSteps = diff => [
     ...(diff.addedNodes || []).map(node => ({ title: `Add ${node.title || node.subType}` })),
     ...(diff.updatedNodes || []).map(node => ({ title: `Update ${node.title}` })),
     ...(diff.removedNodes || []).map(node => ({ title: `Remove ${node.title}` })),
+    ...((diff.deletionEffects || []).flatMap(effect => [
+        ...((effect.clearedReferences || []).length > 0 ? [{ title: 'Clear references to removed steps' }] : []),
+        ...((effect.bypassedEdges || []).length > 0 ? [{ title: 'Bypass removed step in workflow connections' }] : [])
+    ])),
     ...((diff.edges || []).length ? [{ title: 'Update workflow connections' }] : [])
 ];
 
@@ -940,7 +945,7 @@ const applyAndValidate = async ({
             issues: [...(validation.warnings || []), ...setupIssues],
             setupActions: setupIssues.map(issue => issue.action)
         },
-        diff: proposalDiff({ before: workflow, after: finalWorkflow, operations })
+        diff: proposalDiff({ before: workflow, after: finalWorkflow, operations, deletionEffects: applied.deletionEffects })
     };
 };
 
@@ -1892,6 +1897,7 @@ export const generateWorkflowTurn = async ({
                     operations: workerCall.value.operations,
                     diff: compiled.diff,
                     workflow: compiled.finalWorkflow,
+                    specs,
                     resourceChanges: plan.resourceChanges || []
                 }),
                 instruction: workflowVerifierInstruction,
@@ -2032,6 +2038,7 @@ export const generateWorkflowTurn = async ({
                             operations: fallback.operations,
                             diff: fallbackCompiled.diff,
                             workflow: fallbackCompiled.finalWorkflow,
+                            specs,
                             resourceChanges: plan.resourceChanges || []
                         }),
                         instruction: workflowVerifierInstruction,

@@ -66,6 +66,23 @@ test('removing a workflow node persists its connected edge removal atomically', 
     });
 });
 
+test('removing a node through the mutation adapter also removes dangling canonical references', () => {
+    const nodes = [
+        { id: 'summary_1', config: {} },
+        { id: 'email_1', config: { body: { $expr: 'reference', v: 1, nodeId: 'summary_1', path: ['response'] } } }
+    ];
+    const edges = [{ id: 'edge_1', source: 'summary_1', target: 'email_1' }];
+
+    const update = applyWorkflowNodeChanges({
+        nodes,
+        edges,
+        changes: [{ type: 'remove', id: 'summary_1' }]
+    });
+
+    assert.equal(update.nodes.find(node => node.id === 'email_1').config.body, undefined);
+    assert.deepEqual(update.edges, []);
+});
+
 test('moving a node marks its position as protected from automatic layout', () => {
     const result = applyWorkflowNodeChanges({
         nodes: [{ id: 'node_1', position: { x: 10, y: 20 }, layoutPinned: false }],

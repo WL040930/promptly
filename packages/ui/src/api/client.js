@@ -1,4 +1,5 @@
 import { getAuthToken, clearAuthToken, clearAuthUser } from '../utils/storage.js';
+import { formatApiErrorMessage } from './errorMessage.js';
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -30,7 +31,7 @@ const apiRequest = async (path, options = {}) => {
             window.location.href = '/login';
         }
 
-        const error = new Error(payload?.message || payload?.error || 'Request failed.');
+        const error = new Error(formatApiErrorMessage(payload));
         error.status = response.status;
         error.payload = payload;
         throw error;

@@ -7,6 +7,8 @@ import { NodeFactory } from '../../../nodes/NodeFactory.js';
 import { validateWorkflow } from './workflowValidator.js';
 import { buildExecutionGraph, mergeExecutionResult, selectOutgoingEdges } from './executionGraph.js';
 import { recordTerminalRunMetric } from './dashboardMetricsService.js';
+import { validateWorkflowExpressions } from '../../../shared/workflowExpressions.js';
+import { planDanglingWorkflowReferenceRepair } from '../../../shared/workflowDeletion.js';
 
 const validationError = issues => new Error(
     `Workflow validation failed: ${issues.map(issue => `${issue.path}: ${issue.message}`).join('; ')}`
@@ -173,6 +175,23 @@ const initializeRun = async ({ workflowId, userId, triggerPayload, executionOpti
         if (nodes.length === 0) throw new Error('Workflow has no nodes to execute');
         const validation = validateWorkflow({ nodes, edges, isActive: executionOptions.runType === 'production', registry: NodeRegistry });
         if (!validation.valid) throw validationError(validation.issues);
+        const expressionIssues = validateWorkflowExpressions({ nodes, edges });
+        if (expressionIssues.length > 0) throw validationError(expressionIssues);
+        const danglingPlan = planDanglingWorkflowReferenceRepair({
+            nodes,
+            edges,
+            schemaForNode: node => NodeRegistry.getDefinition?.(node?.type, node?.subType)?.configSchema || node?.schema || {}
+        });
+        if (danglingPlan.requiresReview) {
+            const issues = [
+                ...(danglingPlan.impact?.blockedReferences || []),
+                ...(danglingPlan.impact?.clearedReferences || [])
+            ].map(item => ({
+                path: item.configPath || `nodes.${item.nodeId}.config`,
+                message: item.message || 'This value refers to a step that no longer exists.'
+            }));
+            throw validationError(issues.length > 0 ? issues : [{ path: 'nodes', message: 'Repair broken workflow references before running this draft.' }]);
+        }
 
         const eventId = executionOptions.eventId || triggerPayload?.idempotencyKey || triggerPayload?.responseId || triggerPayload?.eventId || triggerPayload?.requestId;
         const contextData = {

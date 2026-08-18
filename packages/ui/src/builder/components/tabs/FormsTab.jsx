@@ -148,7 +148,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
             }
         });
         saveQueueRef.current = queue;
-        return () => { void queue.flush(); };
+        return () => { void queue.flush().catch(() => {}); };
     }, [activeFormId, reconcileSavedDraft]);
 
     const updateForm = useCallback((updates, { immediate = false } = {}) => {

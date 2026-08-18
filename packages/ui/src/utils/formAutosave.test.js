@@ -34,3 +34,19 @@ test('form autosave serializes a later edit behind an in-flight save', async () 
     await queue.flush();
     assert.deepEqual(saved, [{ title: 'First' }, { title: 'Second' }]);
 });
+
+test('form autosave reports background save errors', async () => {
+    let reportedError;
+    const queue = createDebouncedSaveQueue({
+        delay: 5,
+        save: async () => {
+            throw new Error('Invalid workflow definition.');
+        },
+        onError: error => { reportedError = error; }
+    });
+
+    queue.schedule({ nodes: [] });
+    await new Promise(resolve => setTimeout(resolve, 25));
+
+    assert.equal(reportedError?.message, 'Invalid workflow definition.');
+});

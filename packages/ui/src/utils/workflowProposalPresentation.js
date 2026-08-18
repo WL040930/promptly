@@ -11,6 +11,8 @@ const nodeChange = (node, type, detail) => ({
     detail
 });
 
+const fieldLabel = path => String(path || '').replace(/^nodes\.[^.]+\.config\./, '').replace(/[._-]+/g, ' ');
+
 const changesFromProposal = proposal => {
     const diff = isObject(proposal?.diff) ? proposal.diff : {};
     const changes = [
@@ -29,6 +31,20 @@ const changesFromProposal = proposal => {
             label: 'Workflow connection',
             detail: edge?.op === 'disconnect' ? 'Removed connection' : 'Updated connection'
         })),
+        ...arrayOrEmpty(diff.deletionEffects).flatMap((effect, effectIndex) => [
+            ...arrayOrEmpty(effect.clearedReferences).map((reference, referenceIndex) => ({
+                id: `repair_${effectIndex}_${referenceIndex}`,
+                type: 'update',
+                label: reference.title || reference.nodeId || 'Affected step',
+                detail: `Cleared ${fieldLabel(reference.configPath) || 'broken reference'}`
+            })),
+            ...((effect.bypassedEdges || []).length > 0 ? [{
+                id: `bypass_${effectIndex}`,
+                type: 'connect',
+                label: 'Workflow connection',
+                detail: 'Bypassed the removed step'
+            }] : [])
+        ]),
         ...arrayOrEmpty(proposal?.resourceChanges).map((resource, index) => ({
             id: `resource_${resource?.ref || index}`,
             type: 'provision',

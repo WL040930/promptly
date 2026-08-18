@@ -7,6 +7,7 @@ const fieldTypeLabel = type => ({
 }[type] || type || 'field');
 
 const changeWord = count => count === 1 ? 'change' : 'changes';
+const fieldLabel = path => sentence(path).replace(/^nodes\.[^.]+\.config\./, '').replace(/[._-]+/g, ' ');
 
 export const buildFormPresentation = ({ form = {}, proposal = {} } = {}) => {
     const patches = Array.isArray(proposal.patches) ? proposal.patches : [];
@@ -57,6 +58,20 @@ export const buildWorkflowPresentation = ({ workflow = {}, proposal = {} } = {})
         ...(diff.updatedNodes || []).map(node => ({ id: `update_${node.id}`, type: 'update', label: titleCase(node.title || node.subType), detail: 'Updated step' })),
         ...(diff.removedNodes || []).map(node => ({ id: `remove_${node.id}`, type: 'remove', label: titleCase(node.title || node.subType), detail: 'Removed step' })),
         ...(diff.edges || []).map((edge, index) => ({ id: `flow_${index}`, type: 'connect', label: 'Workflow connection', detail: edge.op === 'disconnect' ? 'Removed connection' : 'Updated connection' })),
+        ...(diff.deletionEffects || []).flatMap((effect, effectIndex) => [
+            ...(effect.clearedReferences || []).map((reference, referenceIndex) => ({
+                id: `repair_${effectIndex}_${referenceIndex}`,
+                type: 'update',
+                label: titleCase(reference.title || reference.nodeId),
+                detail: `Cleared ${fieldLabel(reference.configPath) || 'broken reference'}`
+            })),
+            ...((effect.bypassedEdges || []).length > 0 ? [{
+                id: `bypass_${effectIndex}`,
+                type: 'connect',
+                label: 'Workflow connection',
+                detail: 'Bypassed the removed step'
+            }] : [])
+        ]),
         ...(proposal.resourceChanges || []).filter(change => change?.type === 'create_google_spreadsheet').map(change => ({
             id: `resource_${change.ref}`,
             type: 'provision',

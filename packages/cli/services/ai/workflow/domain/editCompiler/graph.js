@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 
 export const nodeKeyFor = node => node.nodeKey || `${node.type}:${node.subType}`;
+const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 export const normalizeConfig = (config, schema) => {
     const inputNames = new Set((schema?.inputs || []).map(input => input.name));
@@ -85,6 +86,34 @@ export const withKnownSchema = (node, specsByNodeKey) => {
     const schema = specsByNodeKey.get(nodeKeyFor(node))?.schema;
     return schema ? { ...node, schema } : node;
 };
+
+const resolveWorkflowReferenceNodeIds = (value, refs) => {
+    if (Array.isArray(value)) return value.map(item => resolveWorkflowReferenceNodeIds(item, refs));
+    if (!isObject(value)) return value;
+
+    // The worker sees stable refs (n1, summarize_feedback, ...), while the
+    // persisted graph uses generated node IDs. Resolve only canonical
+    // workflow references here; unrelated config fields named nodeId must
+    // remain untouched.
+    if (value.$expr === 'reference' && value.v === 1 && typeof value.nodeId === 'string' && refs.has(value.nodeId)) {
+        return {
+            ...value,
+            nodeId: refs.get(value.nodeId)
+        };
+    }
+
+    return Object.fromEntries(Object.entries(value).map(([key, nested]) => [
+        key,
+        resolveWorkflowReferenceNodeIds(nested, refs)
+    ]));
+};
+
+export const resolveWorkflowReferenceNodeRefs = ({ nodes = [], refs = new Map() } = {}) => (
+    (nodes || []).map(node => ({
+        ...node,
+        config: resolveWorkflowReferenceNodeIds(node?.config || {}, refs)
+    }))
+);
 
 const connectionKey = ({ source, sourceHandle = null, target, targetHandle = null }) => JSON.stringify({
     source,

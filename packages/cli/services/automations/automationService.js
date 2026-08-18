@@ -43,7 +43,9 @@ const formForNodes = async ({ nodes = [], userId, transaction }) => {
  * keeps old workflows readable while guaranteeing that the next successful
  * save cannot retain a raw workflow reference in a workflow-expression field.
  */
-export const normalizeWorkflowForWrite = async ({ nodes = [], edges = [], userId, transaction = null } = {}) => {
+const isRepairableDanglingIssue = issue => issue?.code === 'WORKFLOW_REFERENCE_SOURCE_UNKNOWN';
+
+export const normalizeWorkflowForWrite = async ({ nodes = [], edges = [], userId, transaction = null, allowDanglingReferences = false } = {}) => {
     const form = await formForNodes({ nodes, userId, transaction });
     const formSchema = form?.toJSON?.() || null;
     const compiled = compileWorkflowBindings({ nodes, formSchema });
@@ -59,16 +61,19 @@ export const normalizeWorkflowForWrite = async ({ nodes = [], edges = [], userId
         ...normalized.issues,
         ...validateWorkflowExpressions({ nodes: normalized.nodes, edges, formSchema })
     ];
-    if (issues.length > 0) {
-        const error = new Error([...new Set(issues.map(item => item.message).filter(Boolean))].join(' '));
+    const warnings = allowDanglingReferences ? issues.filter(isRepairableDanglingIssue) : [];
+    const blockingIssues = allowDanglingReferences ? issues.filter(issue => !isRepairableDanglingIssue(issue)) : issues;
+    if (blockingIssues.length > 0) {
+        const error = new Error([...new Set(blockingIssues.map(item => item.message).filter(Boolean))].join(' '));
         error.code = 'AUTOMATION_WORKFLOW_REFERENCE_INVALID';
         error.status = 409;
-        error.issues = issues;
+        error.issues = blockingIssues;
         throw error;
     }
     return {
         nodes: normalized.nodes,
-        repairs: [...compiled.repairs, ...normalized.repairs]
+        repairs: [...compiled.repairs, ...normalized.repairs],
+        warnings
     };
 };
 
@@ -89,13 +94,13 @@ export const saveAutomationDraft = async ({ automationId, userId, nodes, edges, 
             throw revisionConflict(expectedRevision, automation.revision);
         }
 
-        const normalized = await normalizeWorkflowForWrite({ nodes, edges, userId, transaction });
+        const normalized = await normalizeWorkflowForWrite({ nodes, edges, userId, transaction, allowDanglingReferences: true });
         validateGraph({ nodes: normalized.nodes, edges, isActive: false });
         // Graph edits update only the working draft. Publishing is the sole
         // operation that creates a release in version history.
         const nextRevision = Number(automation.revision || 0) + 1;
         await automation.update({ nodes: normalized.nodes, edges, revision: nextRevision }, { transaction });
-        return { automation, version: null };
+        return { automation, version: null, warnings: normalized.warnings || [] };
     };
     return externalTransaction ? save(externalTransaction) : sequelize.transaction(save);
 };

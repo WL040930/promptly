@@ -11,11 +11,13 @@ import {
     normalizeEndpoint,
     normalizeSingleInputHandle,
     normalizeSingleOutputHandle,
+    resolveWorkflowReferenceNodeRefs,
     throwEditError,
     withKnownSchema
 } from './graph.js';
 import { compileControlFlowOperation } from './controlFlow.js';
 import { isLegacyControlFlowOperation, legacyOperationIssueForNodeKey } from './contracts.js';
+import { planWorkflowNodeDeletion } from '../../../../../../shared/workflowDeletion.js';
 
 export const buildWorkflowEditView = createEditView;
 
@@ -53,6 +55,7 @@ export const compileWorkflowEdits = ({ currentWorkflow = {}, operations = [], sp
     const originalEdges = JSON.parse(JSON.stringify(edges));
     const specsByNodeKey = new Map(specs.map(spec => [spec.nodeKey || `${spec.type}:${spec.subType}`, spec]));
     const refs = new Map(currentWorkflow.nodes?.map((node, index) => [`n${index + 1}`, node.id]) || []);
+    const deletionEffects = [];
 
     for (const operation of operations) {
         if (!operation || typeof operation.op !== 'string') {
@@ -67,8 +70,35 @@ export const compileWorkflowEdits = ({ currentWorkflow = {}, operations = [], sp
         } else if (operation.op === 'remove_node') {
             const nodeId = refs.get(operation.nodeRef);
             if (!nodeId) throwEditError(operation.op, `Unknown nodeRef '${operation.nodeRef}'.`, { code: 'WORKFLOW_NODE_REF_INVALID' });
-            nodes.splice(0, nodes.length, ...nodes.filter(node => node.id !== nodeId));
-            edges.splice(0, edges.length, ...edges.filter(edge => edge.source !== nodeId && edge.target !== nodeId));
+
+            // Earlier operations may have authored canonical references using
+            // the worker's stable node refs. Resolve those before the shared
+            // deletion planner examines the graph, so AI removal has exactly
+            // the same repair semantics as canvas removal.
+            nodes.splice(0, nodes.length, ...resolveWorkflowReferenceNodeRefs({ nodes, refs }));
+            const deletion = planWorkflowNodeDeletion({
+                nodes,
+                edges,
+                nodeIds: [nodeId],
+                schemaForNode: node => withKnownSchema(node, specsByNodeKey)?.schema || {},
+                schemasByNodeKey: specsByNodeKey
+            });
+            if (!deletion.canApply) {
+                throwEditError(
+                    operation.op,
+                    deletion.blockers?.[0]?.message || 'Deleting this step would leave an ambiguous or malformed workflow reference.',
+                    { code: 'WORKFLOW_NODE_DELETION_REQUIRES_REPAIR' }
+                );
+            }
+            nodes.splice(0, nodes.length, ...deletion.nodes);
+            edges.splice(0, edges.length, ...deletion.edges);
+            deletionEffects.push({
+                removedNodeId: nodeId,
+                removedNode: deletion.impact?.removedNodes?.[0] || null,
+                clearedReferences: deletion.impact?.clearedReferences || [],
+                bypassedEdges: deletion.impact?.bypassedEdges || [],
+                removedEdges: deletion.impact?.removedEdges || []
+            });
             refs.delete(operation.nodeRef);
         } else if (operation.op === 'update_node') {
             const nodeId = refs.get(operation.nodeRef);
@@ -109,10 +139,11 @@ export const compileWorkflowEdits = ({ currentWorkflow = {}, operations = [], sp
         }
     }
 
+    nodes.splice(0, nodes.length, ...resolveWorkflowReferenceNodeRefs({ nodes, refs }));
     nodes.splice(0, nodes.length, ...layoutWorkflow({ nodes, edges, mode: 'respect-pins' }));
     const validation = assertWorkflowDefinition(nodes, edges, Boolean(currentWorkflow.isActive), registry, true, !deferConfigValidation);
     if (!validation.valid && validation.issues?.length) {
         throwEditError('validate', 'The edit plan produced an invalid workflow graph. Review the node refs and connection handles.', { code: 'WORKFLOW_EDIT_GRAPH_INVALID' });
     }
-    return { nodes, edges, originalNodes, originalEdges, refs };
+    return { nodes, edges, originalNodes, originalEdges, refs, deletionEffects };
 };

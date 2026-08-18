@@ -310,8 +310,10 @@ export const buildWorkflowWorkerContext = ({
     }))),
     '',
     'Workflow Reference Contract:',
-    'Use only structured workflow data values: $binding with a server-issued form binding key, or $template containing literal text and $binding parts. Do not write legacy double-brace references or ${...}/steps.* interpolation syntax.',
+    'Use only structured workflow data values: $binding with a server-issued form binding key, $template for mixed text, or a canonical $expr reference to an upstream node output. Do not write legacy double-brace references or ${...}/steps.* interpolation syntax.',
     'triggerData, inputData, and event are connection handles, not workflow step IDs. Form values must use the attached fieldBindings through $binding or $template; never guess, copy, or remap a handle to a form step.',
+    'For an upstream node output, use {"$expr":"reference","v":1,"nodeId":"your_step_ref","path":["outputName"]}; use the node ref from this response, not a database ID. A $template may contain literal strings and canonical references.',
+    'Workflow-expression inputs accept $binding, $template, or $expr. Inputs marked node-template must receive plain text. The AI Task prompt may combine literal instructions with an upstream expression, and connected input data is included automatically when instructions are provided.',
     '',
     'Planner Requirements:',
     JSON.stringify(requirements || []),
@@ -351,12 +353,23 @@ export const buildWorkflowWorkerContext = ({
 ].join('\n');
 };
 
-export const buildWorkflowVerifierContext = ({ requirements, operations, diff, workflow, resourceChanges = [] }) => [
+export const buildWorkflowVerifierContext = ({ requirements, operations, diff, workflow, resourceChanges = [], specs = [] }) => [
     'Planner Requirements:',
     JSON.stringify(requirements || []),
     '',
     'Semantic Operations:',
     JSON.stringify(operations || []),
+    '',
+    'Node Output Contracts:',
+    JSON.stringify((specs || []).map(spec => ({
+        nodeKey: spec.nodeKey,
+        outputs: (spec.schema?.outputs || []).map(output => ({
+            name: output.name,
+            type: output.type || 'object',
+            isConnection: output.isConnection === true,
+            ...(output.description ? { description: output.description } : {})
+        }))
+    }))),
     '',
     'Proposed Resource Changes:',
     JSON.stringify(resourceChanges || []),

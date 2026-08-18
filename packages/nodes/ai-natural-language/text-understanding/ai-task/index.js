@@ -12,7 +12,11 @@ const SYSTEM_PROMPTS = {
 
 const buildPrompt = (taskType, userPrompt, extractionSchema, categories, inputData) => {
     const source = userPrompt || '{{inputData}}';
-    const resolvedSource = source.replaceAll('{{inputData}}', typeof inputData === 'string' ? inputData : JSON.stringify(inputData ?? ''));
+    const inputText = typeof inputData === 'string' ? inputData : JSON.stringify(inputData ?? '');
+    const hasInputData = inputData !== undefined && inputData !== null && inputText !== '';
+    const resolvedSource = source.includes('{{inputData}}')
+        ? source.replaceAll('{{inputData}}', inputText)
+        : (userPrompt && hasInputData ? `${source}\n\nInput data:\n${inputText}` : source);
     switch (taskType) {
         case 'extract': return `Extract the following fields from the text below.\n\nSchema: ${typeof extractionSchema === 'string' ? extractionSchema : JSON.stringify(extractionSchema || {})}\n\nText:\n${resolvedSource}`;
         case 'sentiment': return `Analyze the sentiment of the following text:\n\n${resolvedSource}`;
@@ -35,7 +39,6 @@ export default class AITaskNode extends BaseNode {
             task: structuredTasks.has(taskType) ? AI_TASKS.NODE_JSON : AI_TASKS.NODE_TEXT,
             messages: [{ role: 'user', parts: [{ text: prompt }] }],
             systemInstruction: systemPrompt,
-            mode: ['fast', 'best'].includes(config.mode) ? config.mode : null,
             operation: 'node:ai-task'
         });
 
@@ -51,3 +54,5 @@ export default class AITaskNode extends BaseNode {
         };
     }
 }
+
+export { buildPrompt };

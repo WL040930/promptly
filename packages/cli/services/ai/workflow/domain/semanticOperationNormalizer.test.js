@@ -81,3 +81,37 @@ test('rewrites a later semantic operation to a uniquely created earlier route', 
     assert.equal(operations[1].branches[1].from.nodeRef, 'cf_1_false');
     assert.equal(operations[1].merge.ref, 'cf_2_merge');
 });
+
+test('rewrites an upstream output reference when a semantic outcome gets a compiler ref', () => {
+    const { operations, issues } = normalizeSemanticWorkflowOperations({
+        operations: [
+            {
+                op: 'add_condition_branch', from: { nodeRef: 'n1', handle: 'triggerData' },
+                condition: { ref: 'low_rating', config: { valueA: { $binding: 'form_field_2' }, operator: 'less_than_or_equal', valueB: 3 } },
+                whenTrue: { ref: 'summarize_feedback', nodeKey: 'ai:aiTask', config: { taskType: 'summarize', prompt: 'Summarize the feedback.' } },
+                whenFalse: null
+            },
+            {
+                op: 'create_node',
+                node: {
+                    ref: 'support_email',
+                    nodeKey: 'action:email',
+                    config: {
+                        body: { $expr: 'reference', v: 1, nodeId: 'summarize_feedback', path: ['response'] }
+                    }
+                }
+            },
+            {
+                op: 'connect',
+                from: { nodeRef: 'summarize_feedback', handle: 'outputData' },
+                to: { nodeRef: 'support_email', handle: 'triggerData' }
+            }
+        ],
+        knownNodeKeys: ['logic:condition', 'ai:aiTask', 'action:email']
+    });
+
+    assert.deepEqual(issues, []);
+    assert.equal(operations[0].whenTrue.ref, 'cf_1_true');
+    assert.equal(operations[1].node.config.body.nodeId, 'cf_1_true');
+    assert.equal(operations[2].from.nodeRef, 'cf_1_true');
+});

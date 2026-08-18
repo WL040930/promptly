@@ -197,14 +197,14 @@ export const getWorkflow = asyncHandler(async (req, res) => {
 
 export const createWorkflow = asyncHandler(async (req, res) => {
     const { name, description, status, lifecycleStatus, icon, iconColor, iconBg, nodes = [], edges = [] } = req.body;
-    const normalized = await normalizeWorkflowForWrite({ nodes, edges, userId: req.user.id });
+    const normalized = await normalizeWorkflowForWrite({ nodes, edges, userId: req.user.id, allowDanglingReferences: true });
     const validationResponse = workflowValidationResponse(res, { nodes: normalized.nodes, edges, isActive: false });
     if (validationResponse) return validationResponse;
     const workflow = await Workflow.create({
         name: String(name || '').trim() || DEFAULT_AUTOMATION_NAME, description, isActive: false, status: status || lifecycleStatus || 'Draft', icon, iconColor, iconBg, nodes: normalized.nodes, edges, revision: 1,
         userId: req.user.id
     });
-    res.status(201).json({ ...workflow.toJSON(), release: await releaseSummary(workflow) });
+    res.status(201).json({ ...workflow.toJSON(), draftWarnings: normalized.warnings || [], release: await releaseSummary(workflow) });
 });
 
 export const updateWorkflow = asyncHandler(async (req, res) => {
@@ -217,15 +217,22 @@ export const updateWorkflow = asyncHandler(async (req, res) => {
     const nextNodes = nodes === undefined ? (workflow.nodes || []) : nodes;
     const nextEdges = edges === undefined ? (workflow.edges || []) : edges;
     if (isActive !== undefined) return res.status(400).json({ message: 'Use Publish, Pause, or Resume to change an automation’s live state.' });
-    const validationResponse = workflowValidationResponse(res, { nodes: nextNodes, edges: nextEdges, isActive: false });
+    const graphChanged = nodes !== undefined || edges !== undefined;
+    // Normalize bindings and legacy references before graph validation. The
+    // old order rejected valid user/AI-authored expressions before the
+    // persistence layer had a chance to compile them.
+    const normalized = Array.isArray(nextNodes) && Array.isArray(nextEdges)
+        ? await normalizeWorkflowForWrite({ nodes: nextNodes, edges: nextEdges, userId: req.user.id, allowDanglingReferences: true })
+        : { nodes: nextNodes };
+    const normalizedNodes = normalized.nodes;
+    const validationResponse = workflowValidationResponse(res, { nodes: normalizedNodes, edges: nextEdges, isActive: false });
     if (validationResponse) return validationResponse;
 
-    const graphChanged = nodes !== undefined || edges !== undefined;
     if (graphChanged) {
         const saved = await saveAutomationDraft({
             automationId: id,
             userId: req.user.id,
-            nodes: nextNodes,
+            nodes: normalizedNodes,
             edges: nextEdges,
             expectedRevision,
             source,
@@ -236,13 +243,8 @@ export const updateWorkflow = asyncHandler(async (req, res) => {
         // Metadata edits still persist the workflow record. Normalize a
         // historical graph before that write so an old raw reference cannot
         // survive an otherwise unrelated save.
-        const normalized = await normalizeWorkflowForWrite({
-            nodes: nextNodes,
-            edges: nextEdges,
-            userId: req.user.id
-        });
-        if (JSON.stringify(normalized.nodes) !== JSON.stringify(workflow.nodes || [])) {
-            await workflow.update({ nodes: normalized.nodes });
+        if (JSON.stringify(normalizedNodes) !== JSON.stringify(workflow.nodes || [])) {
+            await workflow.update({ nodes: normalizedNodes });
         }
     }
 
@@ -258,7 +260,7 @@ export const updateWorkflow = asyncHandler(async (req, res) => {
     // Draft updates must not change live subscriptions. The publish lifecycle
     // is the only place that reconciles triggers and schedules.
 
-    res.json({ ...workflow.toJSON(), release: await releaseSummary(workflow) });
+    res.json({ ...workflow.toJSON(), draftWarnings: normalized.warnings || [], release: await releaseSummary(workflow) });
 });
 
 export const deleteWorkflow = asyncHandler(async (req, res) => {

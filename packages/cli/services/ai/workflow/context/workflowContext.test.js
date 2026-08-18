@@ -207,6 +207,8 @@ test('worker context removes legacy placeholder examples and states the structur
     assert.doesNotMatch(context, /nodeId\.email/);
     assert.match(context, /Workflow Reference Contract/);
     assert.match(context, /triggerData, inputData, and event are connection handles/);
+    assert.match(context, /canonical \$expr reference to an upstream node output/);
+    assert.match(context, /The AI Task prompt may combine literal instructions with an upstream expression/);
 });
 
 test('worker context masks invalid interpolation values from the current workflow edit view', () => {

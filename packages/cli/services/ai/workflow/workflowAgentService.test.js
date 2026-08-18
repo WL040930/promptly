@@ -2,12 +2,72 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeGeneratedResourceValues } from './workflowAgentService.js';
 import { compileWorkflowEdits } from './domain/editCompiler/index.js';
+import { compileWorkflowBindings, validateWorkflowExpressions } from '../../../../shared/workflowExpressions.js';
 
 const registryFor = specs => ({
     getDefinition: (type, subType) => {
         const spec = specs.find(item => item.type === type && item.subType === subType);
         return spec ? { implementationStatus: 'experimental', configSchema: spec.schema } : null;
     }
+});
+
+test('remove_node repairs downstream references and safely bypasses a deleted middle step', () => {
+    const specs = [
+        {
+            nodeKey: 'trigger:webhook',
+            type: 'trigger',
+            subType: 'webhook',
+            schema: { inputs: [], outputs: [{ name: 'event', isConnection: true }] }
+        },
+        {
+            nodeKey: 'ai:task',
+            type: 'ai',
+            subType: 'aiTask',
+            schema: {
+                inputs: [{ name: 'inputData', isConnection: true }],
+                outputs: [{ name: 'outputData', isConnection: true }, { name: 'response' }]
+            }
+        },
+        {
+            nodeKey: 'action:email',
+            type: 'action',
+            subType: 'email',
+            schema: {
+                inputs: [
+                    { name: 'event', isConnection: true },
+                    { name: 'body', type: 'textarea', valueSyntax: 'workflow-expression', defaultValue: '' }
+                ],
+                outputs: []
+            }
+        }
+    ];
+    const workflow = {
+        nodes: [
+            { id: 'trigger', nodeKey: 'trigger:webhook', type: 'trigger', subType: 'webhook', title: 'Webhook', config: {} },
+            { id: 'summary', nodeKey: 'ai:task', type: 'ai', subType: 'aiTask', title: 'Summarize', config: {} },
+            {
+                id: 'email', nodeKey: 'action:email', type: 'action', subType: 'email', title: 'Email',
+                config: { body: { $expr: 'reference', v: 1, nodeId: 'summary', path: ['response'] } }
+            }
+        ],
+        edges: [
+            { id: 'in', source: 'trigger', sourceHandle: 'event', target: 'summary', targetHandle: 'inputData' },
+            { id: 'out', source: 'summary', sourceHandle: 'outputData', target: 'email', targetHandle: 'event' }
+        ]
+    };
+
+    const result = compileWorkflowEdits({
+        currentWorkflow: workflow,
+        operations: [{ op: 'remove_node', nodeRef: 'n2' }],
+        specs,
+        registry: registryFor(specs)
+    });
+
+    assert.equal(result.nodes.length, 2);
+    assert.equal(result.nodes.find(node => node.id === 'email').config.body, '');
+    assert.deepEqual(result.edges.map(edge => [edge.source, edge.target]), [['trigger', 'email']]);
+    assert.equal(result.deletionEffects[0].clearedReferences.length, 1);
+    assert.equal(result.deletionEffects[0].bypassedEdges.length, 1);
 });
 
 test('insert_after_route replaces the real route without model-authored destination edges', () => {
@@ -319,6 +379,126 @@ test('add_condition_branch can end the false route without creating a placeholde
     assert.equal(result.nodes.length, 3);
     assert.ok(result.edges.some(edge => edge.source === condition.id && edge.sourceHandle === 'true' && edge.target === supportEmail.id));
     assert.equal(result.edges.some(edge => edge.source === condition.id && edge.sourceHandle === 'false'), false);
+});
+
+test('low-rating branches can carry an AI summary into the support email body', () => {
+    const specs = [
+        {
+            nodeKey: 'trigger:form-submission', type: 'trigger', subType: 'form-submission',
+            schema: {
+                inputs: [{ name: 'formId', type: 'resource-select', resource: 'forms' }],
+                outputs: [
+                    { name: 'triggerData', isConnection: true },
+                    { name: 'fields', type: 'object' },
+                    { name: 'responseId', type: 'string' }
+                ]
+            }
+        },
+        {
+            nodeKey: 'logic:condition', type: 'logic', subType: 'condition',
+            schema: {
+                inputs: [
+                    { name: 'input1', isConnection: true },
+                    { name: 'valueA', type: 'text', valueSyntax: 'workflow-expression' },
+                    { name: 'operator', type: 'select' },
+                    { name: 'valueB', type: 'text', valueSyntax: 'workflow-expression' }
+                ],
+                outputs: [{ name: 'true', isConnection: true }, { name: 'false', isConnection: true }]
+            }
+        },
+        {
+            nodeKey: 'ai:aiTask', type: 'ai', subType: 'aiTask',
+            schema: {
+                inputs: [
+                    { name: 'inputData', isConnection: true },
+                    { name: 'taskType', type: 'select' },
+                    { name: 'prompt', type: 'textarea', valueSyntax: 'node-template' }
+                ],
+                outputs: [
+                    { name: 'outputData', isConnection: true },
+                    { name: 'response', type: 'string' }
+                ]
+            }
+        },
+        {
+            nodeKey: 'action:email', type: 'action', subType: 'email',
+            schema: {
+                inputs: [
+                    { name: 'triggerData', isConnection: true },
+                    { name: 'to', type: 'text', valueSyntax: 'workflow-expression' },
+                    { name: 'subject', type: 'text', valueSyntax: 'workflow-expression' },
+                    { name: 'body', type: 'textarea', valueSyntax: 'workflow-expression' }
+                ],
+                outputs: [{ name: 'outputData', isConnection: true }]
+            }
+        }
+    ];
+    const formSchema = {
+        id: 'feedback_form',
+        fields: [
+            { id: 'email', label: 'Email', type: 'email', required: true },
+            { id: 'rating', label: 'Overall Rating', type: 'number', required: true },
+            { id: 'comment', label: 'What did you think?', type: 'textarea' }
+        ]
+    };
+    const result = compileWorkflowEdits({
+        currentWorkflow: {
+            nodes: [{
+                id: 'form', type: 'trigger', subType: 'form-submission', nodeKey: 'trigger:form-submission',
+                title: 'Feedback submitted', config: { formId: 'feedback_form' }, position: { x: 50, y: 200 }
+            }],
+            edges: []
+        },
+        specs,
+        registry: registryFor(specs),
+        deferConfigValidation: true,
+        operations: [
+            {
+                op: 'add_condition_branch',
+                from: { nodeRef: 'n1', handle: 'triggerData' },
+                condition: {
+                    ref: 'low_rating',
+                    config: { valueA: { $binding: 'form_field_2' }, operator: 'less_than_or_equal', valueB: 3 }
+                },
+                whenTrue: {
+                    ref: 'summarize_feedback',
+                    nodeKey: 'ai:aiTask',
+                    title: 'Summarize feedback',
+                    config: { taskType: 'summarize', prompt: 'Summarize the respondent\'s feedback.' }
+                },
+                whenFalse: null
+            },
+            {
+                op: 'create_node',
+                node: {
+                    ref: 'support_email',
+                    nodeKey: 'action:email',
+                    title: 'Alert support',
+                    config: {
+                        to: 'limweilun3838@gmail.com',
+                        subject: 'Low rating feedback',
+                        body: { $expr: 'reference', v: 1, nodeId: 'summarize_feedback', path: ['response'] }
+                    }
+                }
+            },
+            {
+                op: 'connect',
+                from: { nodeRef: 'summarize_feedback', handle: 'outputData' },
+                to: { nodeRef: 'support_email', handle: 'triggerData' }
+            }
+        ]
+    });
+
+    const compiledBindings = compileWorkflowBindings({ nodes: result.nodes, formSchema });
+    assert.deepEqual(compiledBindings.issues, []);
+    assert.deepEqual(validateWorkflowExpressions({
+        nodes: compiledBindings.nodes,
+        edges: result.edges,
+        formSchema
+    }), []);
+    const email = compiledBindings.nodes.find(node => node.title === 'Alert support');
+    const summary = compiledBindings.nodes.find(node => node.title === 'Summarize feedback');
+    assert.equal(email.config.body.nodeId, summary.id);
 });
 
 test('add_switch_routes owns fixed switch handles and every outcome connection', () => {

@@ -23,6 +23,7 @@ import { cloneWorkflowNodeForPaste } from './utils/nodeClipboard.js';
 import { WORKFLOW_MODAL_LAYERS } from './modalLayers.js';
 import { createDebouncedSaveQueue } from '../utils/formAutosave.js';
 import { applyWorkflowNodeChanges } from '../utils/workflowMutationReconciliation.js';
+import { planDanglingWorkflowReferenceRepair, planWorkflowNodeDeletion } from '../../../shared/workflowDeletion.js';
 
 const WorkflowCanvas = lazy(() => import('./components/canvas/WorkflowCanvas'));
 const WorkflowAIAssistant = lazy(() => import('./components/sidebars/WorkflowAIAssistant.jsx'));
@@ -181,11 +182,14 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     const [draggedNode, setDraggedNode] = useState(null);
     const [modal, setModal] = useState({ isOpen: false, type: null, data: null, inputValue: '', formData: {} });
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [pendingDeletionPlan, setPendingDeletionPlan] = useState(null);
     const previousGlobalSidebarState = useRef(null);
     const wasBuilderRoute = useRef(false);
     const workflowRevisionRef = useRef(null);
     const workflowRevisionIdRef = useRef(null);
     const workflowSaveQueueRef = useRef(null);
+    const workflowGraphRef = useRef({ nodes: [], edges: [] });
+    const handleUndoRef = useRef(null);
     const updateWorkflowMutationRef = useRef(updateWorkflowMutation.mutateAsync);
 
     useEffect(() => {
@@ -195,6 +199,17 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     useEffect(() => {
         setViewMode(route?.editor === 'ai' ? 'ai' : 'canvas');
     }, [route?.automationId, route?.editor]);
+
+    const openDanglingRepairIfNeeded = useCallback(() => {
+        const repair = planDanglingWorkflowReferenceRepair({
+            nodes: workflowGraphRef.current.nodes,
+            edges: workflowGraphRef.current.edges,
+            schemaForNode: node => node?.schema || node?.configSchema || {}
+        });
+        if (!repair.canApply || !repair.requiresReview) return false;
+        setPendingDeletionPlan(previous => previous || { ...repair, mode: 'recovery' });
+        return true;
+    }, []);
 
     useEffect(() => {
         if (!activeWorkflowId) {
@@ -222,6 +237,25 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
 
         const queue = createDebouncedSaveQueue({
             delay: 650,
+            onError: error => {
+                const issues = Array.isArray(error?.payload?.issues) ? error.payload.issues : [];
+                const hasDanglingReference = issues.some(issue => (
+                    issue?.code === 'WORKFLOW_REFERENCE_SOURCE_UNKNOWN'
+                    || /step that no longer exists/i.test(issue?.message || '')
+                ));
+                if (hasDanglingReference) {
+                    const repair = planDanglingWorkflowReferenceRepair({
+                        nodes: workflowGraphRef.current.nodes,
+                        edges: workflowGraphRef.current.edges,
+                        schemaForNode: node => node?.schema || node?.configSchema || {}
+                    });
+                    if (repair.canApply && repair.requiresReview) {
+                        setPendingDeletionPlan({ ...repair, mode: 'recovery' });
+                        return;
+                    }
+                }
+                toast.error(error.message || 'Could not save workflow.');
+            },
             save: async updatedFields => {
                 const data = { ...updatedFields };
                 if ((updatedFields.nodes || updatedFields.edges)
@@ -233,15 +267,26 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                 if (result?.revision !== undefined && result?.revision !== null) {
                     workflowRevisionRef.current = result.revision;
                 }
+                if (Array.isArray(result?.draftWarnings) && result.draftWarnings.length > 0) {
+                    const repair = planDanglingWorkflowReferenceRepair({
+                        nodes: Array.isArray(data.nodes) ? data.nodes : workflowGraphRef.current.nodes,
+                        edges: Array.isArray(data.edges) ? data.edges : workflowGraphRef.current.edges,
+                        schemaForNode: node => node?.schema || node?.configSchema || {}
+                    });
+                    if (repair.canApply && repair.requiresReview) {
+                        setPendingDeletionPlan(previous => previous || { ...repair, mode: 'recovery' });
+                    }
+                    toast.info('Draft saved with broken references. Repair them before publishing or running it.');
+                }
                 return result;
             }
         });
         workflowSaveQueueRef.current = queue;
         return () => {
-            void queue.flush();
+            void queue.flush().catch(() => {});
             if (workflowSaveQueueRef.current === queue) workflowSaveQueueRef.current = null;
         };
-    }, [activeWorkflowId]);
+    }, [activeWorkflowId, toast]);
 
     // The builder temporarily collapses the global sidebar, then restores the
     // state the user had before entering it.
@@ -274,12 +319,14 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
 
     const handleTestRunClick = () => {
         if (!activeWorkflowId) return;
+        if (openDanglingRepairIfNeeded()) return;
         setRunMode('test');
         setIsTestRunModalOpen(true);
     };
 
     const handleProductionRunClick = () => {
         if (!activeWorkflowId) return;
+        if (openDanglingRepairIfNeeded()) return;
         if (!activeWorkflowData?.publishedRevisionId || !activeWorkflowData?.isActive) {
             toast.error('Publish and activate this automation before running it live.');
             return;
@@ -314,6 +361,11 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
     const nodes = useMemo(() => activeWorkflow?.nodes || [], [activeWorkflow?.nodes]);
     const edges = useMemo(() => activeWorkflow?.edges || [], [activeWorkflow?.edges]);
     const activeNode = useMemo(() => nodes.find(n => n.id === activeNodeId) || null, [nodes, activeNodeId]);
+    const workflowSchemaForNode = useCallback(node => node?.schema || node?.configSchema || {}, []);
+
+    useEffect(() => {
+        workflowGraphRef.current = { nodes, edges };
+    }, [nodes, edges]);
 
     const { takeSnapshot, undo, redo } = useUndoRedo(20);
 
@@ -351,6 +403,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
 
     const publishWorkflow = useCallback(async ({ closeConfirmOnSuccess = false } = {}) => {
         if (!activeWorkflowId) return;
+        if (openDanglingRepairIfNeeded()) return;
         try {
             // Finish any in-flight draft save before checking the publish
             // boundary. Publishing itself never creates a history entry.
@@ -361,7 +414,7 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
         } catch (error) {
             toast.error(error.message || 'Could not publish automation. Save a version first.');
         }
-    }, [activeWorkflow?.publishedRevisionId, activeWorkflowId, flushPendingWorkflowSave, publishWorkflowMutation, toast]);
+    }, [activeWorkflow?.publishedRevisionId, activeWorkflowId, flushPendingWorkflowSave, openDanglingRepairIfNeeded, publishWorkflowMutation, toast]);
 
     const handlePublishWorkflow = useCallback(() => {
         if (!activeWorkflowId) return;
@@ -392,6 +445,39 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
             handleWorkflowUpdate(nextState, true);
         }
     }, [redo, nodes, edges, handleWorkflowUpdate]);
+
+    useEffect(() => {
+        handleUndoRef.current = handleUndo;
+    }, [handleUndo]);
+
+    const closeDeletionReview = useCallback(() => {
+        setPendingDeletionPlan(null);
+    }, []);
+
+    const confirmDeletionReview = useCallback(() => {
+        const plan = pendingDeletionPlan;
+        if (!plan?.canApply) return;
+
+        const focusNodeId = plan.impact?.affectedNodeIds?.[0] || null;
+        handleWorkflowUpdate({ nodes: plan.nodes, edges: plan.edges });
+        setPendingDeletionPlan(null);
+
+        if (plan.mode === 'recovery') {
+            toast.success('Cleared the broken references. Review the affected step before saving again.');
+        } else {
+            toast.success('Step deleted and affected values cleared.', {
+                action: { label: 'Undo', onClick: () => handleUndoRef.current?.() }
+            });
+        }
+
+        if (focusNodeId) {
+            setActiveNodeId(focusNodeId);
+            setIsConfigModalOpen(true);
+        } else if (plan.mode !== 'recovery') {
+            setActiveNodeId(null);
+            setIsConfigModalOpen(false);
+        }
+    }, [pendingDeletionPlan, handleWorkflowUpdate, toast]);
 
     const handleApplyLayout = useCallback((laidOutNodes, mode) => {
         if (!Array.isArray(laidOutNodes)) return;
@@ -562,17 +648,39 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
         const removeChanges = changes.filter(c => c.type === 'remove');
         if (positionChanges.length === 0 && removeChanges.length === 0) return;
 
-        const update = applyWorkflowNodeChanges({ nodes, edges, changes });
-        if (removeChanges.length > 0) {
-            const removeIds = removeChanges.map(c => c.id);
-            if (removeIds.includes(activeNodeId)) {
-                setActiveNodeId(null);
-                setIsConfigModalOpen(false);
-            }
+        const positioned = applyWorkflowNodeChanges({
+            nodes,
+            edges,
+            changes: positionChanges
+        });
+
+        if (removeChanges.length === 0) {
+            handleWorkflowUpdate(positioned);
+            return;
         }
 
-        handleWorkflowUpdate(update);
-    }, [nodes, edges, activeNodeId, handleWorkflowUpdate]);
+        const deletionPlan = planWorkflowNodeDeletion({
+            nodes: positioned.nodes,
+            edges,
+            nodeIds: removeChanges.map(change => change.id),
+            schemaForNode: workflowSchemaForNode
+        });
+        if (!deletionPlan.canApply) {
+            toast.error('This step cannot be deleted until its broken references are repaired.');
+            return;
+        }
+        if (deletionPlan.requiresReview) {
+            setPendingDeletionPlan({ ...deletionPlan, mode: 'delete' });
+            return;
+        }
+
+        handleWorkflowUpdate({ nodes: deletionPlan.nodes, edges: deletionPlan.edges });
+        const removeIds = removeChanges.map(change => change.id);
+        if (removeIds.includes(activeNodeId)) {
+            setActiveNodeId(null);
+            setIsConfigModalOpen(false);
+        }
+    }, [nodes, edges, activeNodeId, handleWorkflowUpdate, workflowSchemaForNode, toast]);
 
     const handleToggleLayoutPin = useCallback((nodeId) => {
         const node = nodes.find(item => item.id === nodeId);
@@ -771,6 +879,44 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
                 confirmVariant="primary"
                 isLoading={publishWorkflowMutation.isPending}
             />
+
+            <ConfirmModal
+                isOpen={Boolean(pendingDeletionPlan)}
+                onClose={closeDeletionReview}
+                onConfirm={confirmDeletionReview}
+                title={pendingDeletionPlan?.mode === 'recovery' ? 'Repair broken references?' : 'Review step deletion'}
+                message={pendingDeletionPlan?.mode === 'recovery'
+                    ? 'This draft contains values that still point to a step that no longer exists. Clear those values before saving the draft again.'
+                    : `Deleting ${pendingDeletionPlan?.impact?.removedNodes?.[0]?.title || 'this step'} will update the workflow and may clear values used by later steps.`}
+                confirmText={pendingDeletionPlan?.mode === 'recovery' ? 'Clear and repair' : 'Delete and clear'}
+                confirmVariant={pendingDeletionPlan?.mode === 'recovery' ? 'primary' : 'dangerSolid'}
+            >
+                <div className="space-y-3 text-xs text-slate-600">
+                    {pendingDeletionPlan?.impact?.clearedReferences?.length > 0 && (
+                        <div>
+                            <p className="font-bold text-slate-800">Values that need review</p>
+                            <ul className="mt-2 max-h-36 space-y-1 overflow-y-auto rounded-lg border border-amber-200 bg-amber-50 p-2">
+                                {pendingDeletionPlan.impact.clearedReferences.map((item, index) => (
+                                    <li key={`${item.nodeId}-${item.configPath}-${index}`} className="flex items-start justify-between gap-3">
+                                        <span className="font-semibold text-slate-700">{item.title || item.nodeId}</span>
+                                        <code className="text-[10px] text-amber-800">{item.configPath.replace(/^nodes\.[^.]+\.config\./, '')}</code>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    {pendingDeletionPlan?.impact?.bypassedEdges?.length > 0 && (
+                        <p className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-indigo-800">
+                            The surrounding connection is simple enough to bypass automatically.
+                        </p>
+                    )}
+                    {pendingDeletionPlan?.impact?.blockedReferences?.length > 0 && (
+                        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-800">
+                            Some references are ambiguous or malformed and must be repaired manually first.
+                        </p>
+                    )}
+                </div>
+            </ConfirmModal>
 
             {/* Execution results panel */}
             <ExecutionPanel

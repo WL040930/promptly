@@ -21,3 +21,26 @@ test('legacy workflow proposals derive summary changes when presentation metadat
     assert.deepEqual(presentation.changes.map(change => change.label), ['Send email', 'Workflow connection']);
     assert.equal(presentation.changes.length, 2);
 });
+
+test('workflow deletion effects remain visible in the proposal summary', () => {
+    const presentation = workflowProposalPresentation({
+        name: 'Feedback follow-up',
+        nodes: [{ id: 'email', title: 'Send email', subType: 'email' }],
+        diff: {
+            addedNodes: [],
+            updatedNodes: [],
+            removedNodes: [{ id: 'summary', title: 'Summarize feedback' }],
+            edges: [],
+            deletionEffects: [{
+                clearedReferences: [{ title: 'Send email', nodeId: 'email', configPath: 'nodes.email.config.body' }],
+                bypassedEdges: [{ id: 'bypass' }]
+            }]
+        }
+    });
+
+    assert.deepEqual(presentation.changes.map(change => change.detail), [
+        'Removed step',
+        'Cleared body',
+        'Bypassed the removed step'
+    ]);
+});

@@ -442,7 +442,12 @@ const WorkflowCanvasInner = ({ initialNodes, initialEdges = [], activeNodeId, on
           // Ignore changes on the preview node
           const filteredChanges = changes.filter(c => c.id !== 'preview-drag-node');
           if (filteredChanges.length > 0) {
-            onNodesChange(filteredChanges);
+            // Deletion is a reviewed transaction in the parent builder. Keep
+            // React Flow's local state unchanged until the parent applies the
+            // confirmed plan, so cancelling the review cannot leave the
+            // canvas visually out of sync with the draft.
+            const nonRemovalChanges = filteredChanges.filter(change => change.type !== 'remove');
+            if (nonRemovalChanges.length > 0) onNodesChange(nonRemovalChanges);
             onNodesChangeCallback?.(filteredChanges);
           }
         }}

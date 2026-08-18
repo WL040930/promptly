@@ -31,7 +31,7 @@ const resolveActionNodeKey = ({ action, knownNodeKeys }) => {
 const rewriteKnownReferences = ({ value, aliases, ambiguous, issues }) => {
     if (Array.isArray(value)) return value.map(item => rewriteKnownReferences({ value: item, aliases, ambiguous, issues }));
     if (!isObject(value)) return value;
-    return Object.fromEntries(Object.entries(value).map(([key, nested]) => {
+    const rewritten = Object.fromEntries(Object.entries(value).map(([key, nested]) => {
         if (['nodeRef', 'afterNodeRef'].includes(key) && typeof nested === 'string') {
             if (aliases.has(nested)) return [key, aliases.get(nested)];
             if (ambiguous.has(nested)) {
@@ -45,6 +45,25 @@ const rewriteKnownReferences = ({ value, aliases, ambiguous, issues }) => {
         }
         return [key, rewriteKnownReferences({ value: nested, aliases, ambiguous, issues })];
     }));
+    if (rewritten.$expr === 'reference' && rewritten.v === 1 && typeof rewritten.nodeId === 'string' && aliases.has(rewritten.nodeId)) {
+        rewritten.nodeId = aliases.get(rewritten.nodeId);
+    }
+    return rewritten;
+};
+
+const rewriteExpressionNodeRefs = ({ value, aliases }) => {
+    if (Array.isArray(value)) return value.map(item => rewriteExpressionNodeRefs({ value: item, aliases }));
+    if (!isObject(value)) return value;
+    if (value.$expr === 'reference' && value.v === 1 && typeof value.nodeId === 'string' && aliases.has(value.nodeId)) {
+        return {
+            ...value,
+            nodeId: aliases.get(value.nodeId)
+        };
+    }
+    return Object.fromEntries(Object.entries(value).map(([key, nested]) => [
+        key,
+        rewriteExpressionNodeRefs({ value: nested, aliases })
+    ]));
 };
 
 const definitionRef = (definition, generatedRef, aliases, ambiguous) => {
@@ -133,7 +152,12 @@ export const normalizeSemanticWorkflowOperations = ({ operations = [], knownNode
     const issues = [];
     const normalized = (operations || []).map((original, index) => {
         const operation = rewriteKnownReferences({ value: clone(original), aliases, ambiguous, issues });
-        return normalizeOperation({ operation, index, aliases, ambiguous, knownNodeKeys });
+        const normalizedOperation = normalizeOperation({ operation, index, aliases, ambiguous, knownNodeKeys });
+        // A semantic operation may assign a compiler-owned ref to a branch
+        // action after reading its config. Resolve expressions in that same
+        // operation after the alias exists without rewriting its source
+        // nodeRef, which may intentionally point at the pre-existing route.
+        return rewriteExpressionNodeRefs({ value: normalizedOperation, aliases });
     });
     return { operations: normalized, issues };
 };

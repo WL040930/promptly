@@ -26,12 +26,12 @@ const compactInput = input => {
 };
 
 const compactConnections = (items = []) => items
-    .filter(item => item?.isConnection)
     .map(item => ({
         name: item.name,
         label: item.label || item.name,
         type: item.type || 'object',
-        description: item.description || ''
+        description: item.description || '',
+        isConnection: item.isConnection === true
     }));
 
 const implementationStatusFor = (NodeClass, metadata = {}) => {

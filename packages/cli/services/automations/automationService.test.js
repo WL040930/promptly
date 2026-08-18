@@ -52,6 +52,19 @@ test('draft persistence rejects an invalid legacy reference before writing', asy
     );
 });
 
+test('draft persistence can retain a dangling reference as a repair warning', async () => {
+    const result = await normalizeWorkflowForWrite({
+        nodes: [source, target({ to: '{{missing.email}}' })],
+        edges: [{ source: 'source_1', target: 'target_1' }],
+        userId: 'user_1',
+        allowDanglingReferences: true
+    });
+
+    assert.equal(result.warnings.length, 1);
+    assert.equal(result.warnings[0].code, 'WORKFLOW_REFERENCE_SOURCE_UNKNOWN');
+    assert.equal(result.nodes[1].config.to, '{{missing.email}}');
+});
+
 test('draft persistence rejects unsupported workflow interpolation before writing', async () => {
     await assert.rejects(
         () => normalizeWorkflowForWrite({

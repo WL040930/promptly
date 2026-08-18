@@ -1,10 +1,12 @@
+import { planWorkflowNodeDeletion } from '../../../shared/workflowDeletion.js';
+
 const REQUEST_ONLY_KEYS = new Set(['expectedRevision', 'source', 'summary']);
 const SERVER_METADATA_KEYS = ['revision', 'updatedAt', 'release'];
 
 const sameValue = (left, right) => JSON.stringify(left) === JSON.stringify(right);
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 
-export const applyWorkflowNodeChanges = ({ nodes = [], edges = [], changes = [] }) => {
+export const applyWorkflowNodeChanges = ({ nodes = [], edges = [], changes = [], schemaForNode }) => {
     const positionChanges = changes.filter(change => change.type === 'position' && change.position && !change.dragging);
     const removeChanges = changes.filter(change => change.type === 'remove');
     let nextNodes = [...nodes];
@@ -18,12 +20,18 @@ export const applyWorkflowNodeChanges = ({ nodes = [], edges = [], changes = [] 
     }
 
     if (removeChanges.length > 0) {
-        const removedNodeIds = new Set(removeChanges.map(change => change.id));
-        nextNodes = nextNodes.filter(node => !removedNodeIds.has(node.id));
-        nextEdges = edges.filter(edge => (
-            !removedNodeIds.has(edge.source)
-            && !removedNodeIds.has(edge.target)
-        ));
+        const deletionPlan = planWorkflowNodeDeletion({
+            nodes: nextNodes,
+            edges,
+            nodeIds: removeChanges.map(change => change.id),
+            schemaForNode
+        });
+        // This low-level helper is also used by keyboard/canvas adapters. A
+        // blocked plan must remain atomic; the builder performs the explicit
+        // review flow before applying the same plan.
+        if (!deletionPlan.canApply) return { nodes: [...nodes], ...(removeChanges.length > 0 ? { edges: [...edges] } : {}) };
+        nextNodes = deletionPlan.nodes;
+        nextEdges = deletionPlan.edges;
     }
 
     return {

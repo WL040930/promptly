@@ -112,6 +112,46 @@ const conditionSpec = {
     ui: {}
 };
 
+const aiTaskSpec = {
+    nodeKey: 'ai:aiTask',
+    type: 'ai',
+    subType: 'aiTask',
+    title: 'AI Task',
+    description: 'Summarizes or analyzes workflow input with the shared AI service',
+    implementationStatus: 'experimental',
+    schema: {
+        inputs: [
+            { name: 'inputData', isConnection: true },
+            { name: 'taskType', type: 'select', options: ['custom', 'summarize'] },
+            { name: 'prompt', type: 'textarea', valueSyntax: 'node-template' }
+        ],
+        outputs: [
+            { name: 'outputData', isConnection: true },
+            { name: 'response', type: 'string' }
+        ]
+    },
+    ui: {}
+};
+
+const summaryEmailSpec = {
+    nodeKey: 'action:email',
+    type: 'action',
+    subType: 'email',
+    title: 'Send summary email',
+    description: 'Sends a summary email',
+    implementationStatus: 'experimental',
+    schema: {
+        inputs: [
+            { name: 'triggerData', isConnection: true },
+            { name: 'to', type: 'text', required: true, valueSyntax: 'workflow-expression' },
+            { name: 'subject', type: 'text', required: true, valueSyntax: 'workflow-expression' },
+            { name: 'body', type: 'textarea', required: true, valueSyntax: 'workflow-expression' }
+        ],
+        outputs: [{ name: 'outputData', isConnection: true }]
+    },
+    ui: {}
+};
+
 const makeRegistry = (specs = [triggerSpec, emailSpec]) => ({
     getCompactCatalogue: () => specs.map(spec => ({
         nodeKey: spec.nodeKey,
@@ -2320,6 +2360,125 @@ test('pipeline builds the feedback routing request after prerequisite clarificat
     });
     const condition = result.nodes.find(node => node.subType === 'condition');
     assert.equal(result.edges.filter(edge => edge.source === condition.id && edge.sourceHandle === 'false').length, 0);
+});
+
+test('pipeline verifies a low-rating AI summary before sending the support alert', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const workflow = {
+        revision: 2,
+        nodes: [{
+            id: 'form_1',
+            type: 'trigger',
+            subType: 'form-submission',
+            nodeKey: 'trigger:form-submission',
+            title: 'Customer Feedback submitted',
+            config: { formId: 'form_feedback' },
+            position: { x: 100, y: 150 }
+        }],
+        edges: []
+    };
+    const formSchema = {
+        id: 'form_feedback',
+        title: 'Customer Feedback',
+        fields: [
+            { id: 'email', label: 'Email', type: 'email', required: true },
+            { id: 'rating', label: 'Overall Rating', type: 'rating', required: true },
+            { id: 'comment', label: 'What did you think?', type: 'paragraph' }
+        ]
+    };
+    const sourceText = 'If Overall Rating is 3 or below, ask AI to summarize what the customer said and send an alert email to limweilun3838@gmail.com.';
+    let verifierPrompt = '';
+    let workerPrompt = '';
+    const provider = {
+        async generateContent(contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Summarize low-rating feedback and alert support.',
+                    requirements: [
+                        { id: 'req_rating', description: 'When Overall Rating is 3 or below, take the true branch.' },
+                        { id: 'req_summary', description: 'Summarize what the customer said with AI and send that summary to limweilun3838@gmail.com.' }
+                    ],
+                    selectedNodeKeys: ['logic:condition', 'ai:aiTask', 'action:email'],
+                    capabilities: []
+                }) };
+            }
+            if (options.operation === 'workflow:worker') {
+                workerPrompt = contents[0].parts[0].text;
+                return { text: JSON.stringify({
+                    operations: [
+                        {
+                            op: 'add_condition_branch',
+                            from: { nodeRef: 'n1', handle: 'event' },
+                            condition: {
+                                ref: 'low_rating',
+                                config: { valueA: { $binding: 'form_field_2' }, operator: 'less_than_or_equal', valueB: 3 }
+                            },
+                            whenTrue: {
+                                ref: 'summarize_feedback',
+                                nodeKey: 'ai:aiTask',
+                                title: 'Summarize feedback',
+                                config: { taskType: 'summarize', prompt: 'Summarize the customer feedback.' }
+                            },
+                            whenFalse: null
+                        },
+                        {
+                            op: 'create_node',
+                            node: {
+                                ref: 'support_email',
+                                nodeKey: 'action:email',
+                                title: 'Alert support',
+                                config: {
+                                    to: 'limweilun3838@gmail.com',
+                                    subject: 'Low rating feedback',
+                                    body: { $expr: 'reference', v: 1, nodeId: 'summarize_feedback', path: ['response'] }
+                                }
+                            }
+                        },
+                        {
+                            op: 'connect',
+                            from: { nodeRef: 'summarize_feedback', handle: 'outputData' },
+                            to: { nodeRef: 'support_email', handle: 'triggerData' }
+                        }
+                    ]
+                }) };
+            }
+            if (options.operation === 'workflow:verifier') {
+                verifierPrompt = contents[0].parts[0].text;
+                return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+            }
+            throw new Error(`Unexpected provider operation: ${options.operation}`);
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'Customer Feedback Form',
+        currentWorkflow: workflow,
+        formSchema,
+        turnContext: {
+            command: { type: 'submit_clarification', state: { supportRecipient: 'limweilun3838@gmail.com' } },
+            intent: { sourceText, latestText: 'Customer Feedback Form' }
+        },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, conditionSpec, aiTaskSpec, summaryEmailSpec]),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.verification.status, 'pass');
+    const summary = result.nodes.find(node => node.title === 'Summarize feedback');
+    const email = result.nodes.find(node => node.title === 'Alert support');
+    assert.ok(summary);
+    assert.ok(email);
+    assert.deepEqual(email.config.body, {
+        $expr: 'reference',
+        v: 1,
+        nodeId: summary.id,
+        path: ['response']
+    });
+    assert.match(workerPrompt, /limweilun3838@gmail\.com/);
+    assert.match(verifierPrompt, /Node Output Contracts/);
+    assert.match(verifierPrompt, /"response"/);
 });
 
 test('pipeline resumes a form choice clarification with the selected owned form', async () => {

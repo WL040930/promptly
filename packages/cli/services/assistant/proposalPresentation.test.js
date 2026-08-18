@@ -90,3 +90,30 @@ test('workflow presentation labels a provisioned response Sheet as a one-time re
     });
     assert.deepEqual(presentation.flow, ['Promptly Form', 'Google Sheets Action']);
 });
+
+test('workflow presentation exposes reference repairs caused by step deletion', () => {
+    const presentation = buildWorkflowPresentation({
+        workflow: { name: 'Feedback follow-up' },
+        proposal: {
+            diff: {
+                addedNodes: [],
+                updatedNodes: [],
+                removedNodes: [{ id: 'summary', title: 'Summarize feedback' }],
+                edges: [],
+                deletionEffects: [{
+                    clearedReferences: [{ title: 'Send email', nodeId: 'email', configPath: 'nodes.email.config.body' }],
+                    bypassedEdges: [{ id: 'bypass' }]
+                }]
+            },
+            nodes: [{ title: 'Send email' }],
+            readiness: { ready: true }
+        }
+    });
+
+    assert.deepEqual(presentation.changes.map(change => change.detail), [
+        'Removed step',
+        'Cleared body',
+        'Bypassed the removed step'
+    ]);
+    assert.match(presentation.outcome, /updates 1/i);
+});
