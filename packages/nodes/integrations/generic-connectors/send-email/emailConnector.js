@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 const EMAIL_PATTERN = /^[^\s@<>(),;:\\]+@[^\s@<>(),;]+\.[^\s@<>(),;]+$/;
 const MAX_SUBJECT_LENGTH = 255;
 const MAX_BODY_LENGTH = 1024 * 1024;
-const MAX_RECIPIENTS = 100;
+export const MAX_RECIPIENTS = 100;
 
 export const parseRecipients = value => {
     const values = Array.isArray(value) ? value : String(value ?? '').split(/[,;]/);
@@ -39,6 +39,90 @@ export const validateEmailMessage = message => {
     if (text.length > MAX_BODY_LENGTH || html.length > MAX_BODY_LENGTH) throw new Error('Email body cannot exceed 1 MB.');
 
     return { to, cc, bcc, replyTo, subject, text, html };
+};
+
+const escapeHtml = value => String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
+const rowCell = (row, column) => {
+    const exact = Object.hasOwn(row, column)
+        ? column
+        : Object.keys(row).find(key => key.toLocaleLowerCase() === String(column).toLocaleLowerCase());
+    return exact === undefined ? undefined : row[exact];
+};
+
+const templateValue = value => Array.isArray(value) ? value.join(', ') : String(value ?? '');
+
+/** Render [[Column name]] using a single row. HTML insertions are escaped. */
+export const renderRowTemplate = ({ template, row, html = false, rowIndex = null }) => String(template ?? '').replace(/\[\[([^\]]+)\]\]/g, (_token, rawColumn) => {
+    const column = String(rawColumn || '').trim();
+    const value = rowCell(row, column);
+    if (value === undefined) {
+        const prefix = rowIndex === null ? '' : `Row ${rowIndex + 1}: `;
+        throw new Error(`${prefix}email template refers to missing column '${column}'.`);
+    }
+    const rendered = templateValue(value);
+    return html ? escapeHtml(rendered) : rendered;
+});
+
+const normalizeRows = value => {
+    let rows = value;
+    if (typeof rows === 'string') {
+        try { rows = JSON.parse(rows); } catch { throw new Error('Rows to email must be a JSON array or connected row data.'); }
+    }
+    if (!Array.isArray(rows) || rows.some(row => row === null || typeof row !== 'object' || Array.isArray(row))) {
+        throw new Error('Rows to email must be an array of row objects. Connect a Filter Rows step or supply row objects.');
+    }
+    return rows;
+};
+
+/**
+ * Materialize and validate every private message before any delivery is
+ * queued. Repeated recipients are deduplicated deterministically by their
+ * first matched row.
+ */
+export const buildIndividualRowMessages = ({ rows, recipientColumn, subject, text, html, cc, bcc, replyTo }) => {
+    const normalizedRows = normalizeRows(rows);
+    const column = String(recipientColumn || '').trim();
+    if (!column) throw new Error('Recipient column is required for individual row emails.');
+
+    const messages = [];
+    const seenRecipients = new Set();
+    let skippedDuplicates = 0;
+    for (const [rowIndex, row] of normalizedRows.entries()) {
+        const recipientValue = rowCell(row, column);
+        if (recipientValue === undefined || recipientValue === null || String(recipientValue).trim() === '') {
+            throw new Error(`Row ${rowIndex + 1} has no value for recipient column '${column}'.`);
+        }
+        const rendered = {
+            to: recipientValue,
+            cc: renderRowTemplate({ template: cc, row, rowIndex }),
+            bcc: renderRowTemplate({ template: bcc, row, rowIndex }),
+            replyTo: renderRowTemplate({ template: replyTo, row, rowIndex }),
+            subject: renderRowTemplate({ template: subject, row, rowIndex }),
+            text: renderRowTemplate({ template: text, row, rowIndex }),
+            html: renderRowTemplate({ template: html, row, html: true, rowIndex })
+        };
+        const validated = validateEmailMessage(rendered);
+        for (const recipient of validated.to) {
+            const dedupeKey = recipient.toLocaleLowerCase();
+            if (seenRecipients.has(dedupeKey)) {
+                skippedDuplicates += 1;
+                continue;
+            }
+            seenRecipients.add(dedupeKey);
+            if (messages.length >= MAX_RECIPIENTS) {
+                throw new Error(`Individual row email cannot have more than ${MAX_RECIPIENTS} unique recipients.`);
+            }
+            messages.push({ ...validated, to: [recipient] });
+        }
+    }
+    if (messages.length === 0) throw new Error('No unique recipient emails were found in the matching rows.');
+    return { messages, recipientCount: messages.length, skippedDuplicates };
 };
 
 const encodeHeader = value => /^[\x00-\x7F]*$/.test(value)

@@ -11,7 +11,7 @@ import {
 import VariableInput from '../inputs/VariableInput.jsx';
 import ResourceSelectInput from '../inputs/ResourceSelectInput.jsx';
 import CronInput from '../inputs/CronInput.jsx';
-import { DataGridInput, JsonInput, KeyValueInput, NodeSelectInput, StringListInput } from '../inputs/StructuredInputs.jsx';
+import { DataGridInput, FilterListInput, JsonInput, KeyValueInput, NodeSelectInput, ParameterListInput, StringListInput } from '../inputs/StructuredInputs.jsx';
 import { getUpstreamOutputs } from '../../utils/getUpstreamOutputs.js';
 import { buildNodeInspectorModel } from '../../utils/nodeInspectorModel.js';
 import { workflowTextFieldValue } from '../../utils/workflowPreviewValue.js';
@@ -202,6 +202,8 @@ const PropertyInspector = ({ activeNode, onUpdateNode, onTestWorkflow, nodes = [
         if (input.type === 'key-value') return <KeyValueInput value={value} onChange={onChange} keyPlaceholder={input.keyPlaceholder} valuePlaceholder={input.valuePlaceholder} availableVars={availableVars} valueSyntax={input.valueSyntax}/>;
         if (input.type === 'string-list') return <StringListInput value={value} onChange={onChange} placeholder={input.placeholder} suggestions={input.suggestions || []} availableVars={availableVars} valueSyntax={input.valueSyntax}/>;
         if (input.type === 'data-grid') return <DataGridInput value={value} onChange={onChange} availableVars={availableVars} valueSyntax={input.valueSyntax}/>;
+        if (input.type === 'parameter-list') return <ParameterListInput value={value} onChange={onChange}/>;
+        if (input.type === 'filter-list') return <FilterListInput value={value} onChange={onChange} availableVars={availableVars} valueSyntax={input.valueSyntax}/>;
         if (input.type === 'object' || input.type === 'json') return <JsonInput value={value} onChange={onChange} placeholder={input.placeholder} rows={input.rows} availableVars={availableVars} valueSyntax={input.valueSyntax}/>;
         if (input.type === 'secret') return <SecretInput value={value} onChange={onChange} placeholder={input.placeholder}/>;
 

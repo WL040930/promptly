@@ -6,7 +6,8 @@ const TERMINAL_STATUSES = new Map([
     // actionable after the request has been rejected.
     ['ignored', 'Ignored'],
     ['superseded', 'Superseded'],
-    ['stale', 'Stale']
+    ['stale', 'Stale'],
+    ['failed', 'Failed']
 ]);
 
 export const normalizeProposalStatus = status => String(status || '').trim().toLowerCase();

@@ -4,12 +4,13 @@ import EmailDelivery from '../../../../cli/models/execution/EmailDelivery.js';
 import { sendEmail } from '../../../../cli/utils/email.js';
 import { getGoogleClientForUser } from '../../../../cli/services/triggers/googleTriggerClient.js';
 import {
+    buildIndividualRowMessages,
     buildRawMimeMessage,
     isRetryableEmailError,
     validateEmailMessage,
     withRetries
 } from './emailConnector.js';
-import { enqueueEmailDelivery } from '../../../../cli/services/engine/emailDeliveryService.js';
+import { enqueueEmailDeliveries, enqueueEmailDelivery } from '../../../../cli/services/engine/emailDeliveryService.js';
 
 const DEBUG_PREFIX = '[DEBUG-send-email]';
 const PENDING_TIMEOUT_MS = 10 * 60 * 1000;
@@ -94,6 +95,86 @@ export default class SendEmailNode extends BaseNode {
             return { success: false, errorCode: 'EMAIL_CONFIG_INVALID', error: `Unsupported email provider "${provider}".` };
         }
 
+        const contextWithNode = context;
+        if (!contextWithNode.__runtime) {
+            Object.defineProperty(contextWithNode, '__runtime', {
+                value: {},
+                enumerable: false,
+                configurable: true,
+                writable: true
+            });
+        }
+        contextWithNode.__runtime.currentNodeId = this.id;
+
+        if (config.recipientMode === 'individualRows') {
+            if ((config.deliveryMode || 'async') !== 'async') {
+                return {
+                    success: false,
+                    errorCode: 'EMAIL_CONFIG_INVALID',
+                    error: 'One private email per matching row requires Async send mode.'
+                };
+            }
+
+            let batch;
+            try {
+                const connectedRows = this.getRuntimeInput(contextWithNode, 'triggerData');
+                const rows = config.rows !== undefined && config.rows !== null && config.rows !== ''
+                    ? config.rows
+                    : connectedRows;
+                batch = buildIndividualRowMessages({
+                    rows,
+                    recipientColumn: config.recipientColumn,
+                    subject: config.subject,
+                    text: config.body,
+                    html: config.htmlBody,
+                    cc: config.cc,
+                    bcc: config.bcc,
+                    replyTo: config.replyTo
+                });
+            } catch (error) {
+                logFailure('invalid-individual-row-config', { error: error.message, recipientColumn: preview(config.recipientColumn) });
+                return { success: false, errorCode: 'EMAIL_CONFIG_INVALID', error: error.message };
+            }
+
+            logDebug('execute-individual-rows', {
+                nodeId: this.id,
+                provider,
+                recipients: batch.recipientCount,
+                skippedDuplicates: batch.skippedDuplicates
+            });
+            try {
+                const queued = await enqueueEmailDeliveries({
+                    context: contextWithNode,
+                    nodeId: this.id,
+                    provider,
+                    messages: batch.messages
+                });
+                const outputData = {
+                    ...queued,
+                    recipientCount: batch.recipientCount,
+                    skippedDuplicates: batch.skippedDuplicates
+                };
+                return {
+                    success: true,
+                    outputData,
+                    ...outputData,
+                    to: `${batch.recipientCount} private recipient${batch.recipientCount === 1 ? '' : 's'}`,
+                    subject: String(config.subject || ''),
+                    logEntry: {
+                        deliveryId: queued.deliveryId,
+                        deliveryStatus: queued.deliveryStatus,
+                        recipientCount: batch.recipientCount,
+                        asynchronous: true
+                    },
+                    details: queued.deduplicated
+                        ? 'Private recipient emails were already queued for this event.'
+                        : `${queued.queuedCount} private recipient email${queued.queuedCount === 1 ? '' : 's'} queued for asynchronous delivery.`
+                };
+            } catch (error) {
+                return { success: false, errorCode: error.code || 'EMAIL_QUEUE_FAILED', error: error.message };
+            }
+        }
+
         let message;
         try {
             message = validateEmailMessage({
@@ -111,17 +192,6 @@ export default class SendEmailNode extends BaseNode {
         }
 
         logDebug('execute-start', { nodeId: this.id, provider, recipients: message.to.length, subject: preview(message.subject) });
-        const contextWithNode = context;
-        if (!contextWithNode.__runtime) {
-            Object.defineProperty(contextWithNode, '__runtime', {
-                value: {},
-                enumerable: false,
-                configurable: true,
-                writable: true
-            });
-        }
-        contextWithNode.__runtime.currentNodeId = this.id;
-
         if ((config.deliveryMode || 'async') === 'async') {
             try {
                 const queued = await enqueueEmailDelivery({

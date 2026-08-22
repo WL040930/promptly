@@ -112,6 +112,12 @@ const env = {
         url: requireEnv('SUPABASE_URL'),
         anonKey: requireEnv('SUPABASE_ANON_KEY'),
         serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || null
+    },
+    features: {
+        // Both flags default on. Set either to "false" for a quick rollback
+        // while keeping the old public form-upload endpoint available.
+        privateFormUploads: process.env.FORM_PRIVATE_UPLOADS !== 'false',
+        chatWorkflowInvocations: process.env.CHAT_WORKFLOW_INVOCATIONS !== 'false'
     }
 };
 

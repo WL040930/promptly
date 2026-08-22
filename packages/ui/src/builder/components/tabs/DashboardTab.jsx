@@ -232,28 +232,28 @@ const DashboardTab = () => {
                         </section>
 
                         <section className="grid gap-5 xl:grid-cols-12">
-                            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 xl:col-span-7">
+                            <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 xl:col-span-7">
                                 <SectionHeading eyebrow="Attention queue" title="What needs your attention?" detail="The fastest path to a healthier workspace." action="View automations" onAction={() => go('workflows')} />
-                                <div className="mt-5 space-y-2">
+                                <div className="mt-5 space-y-2 min-w-0">
                                     {summary.attentionItems.length > 0 ? summary.attentionItems.map(item => (
-                                        <button key={item.id} type="button" onClick={() => item.runId ? openRun(item.runId) : openWorkflow(item.workflowId)} className="group flex w-full items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3 text-left transition hover:border-indigo-200 hover:bg-indigo-50/50">
+                                        <button key={item.id} type="button" onClick={() => item.runId ? openRun(item.runId) : openWorkflow(item.workflowId)} className="group flex w-full min-w-0 items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3 text-left transition hover:border-indigo-200 hover:bg-indigo-50/50">
                                             <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${item.kind === 'failure' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>{item.kind === 'failure' ? <XCircle size={17} /> : <Workflow size={17} />}</span>
-                                            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-slate-800">{item.title}</span><span className="mt-0.5 block truncate text-xs text-slate-500">{item.detail}</span></span>
+                                            <span className="min-w-0 flex-1 overflow-hidden"><span className="block truncate text-sm font-bold text-slate-800" title={item.title}>{item.title}</span><span className="mt-0.5 block truncate text-xs text-slate-500" title={item.detail}>{item.detail}</span></span>
                                             <span className="hidden shrink-0 text-[11px] text-slate-400 sm:block">{item.time}</span><ChevronRight size={16} className="shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-indigo-500" />
                                         </button>
                                     )) : <EmptyPanel icon={CheckCircle2} title="Nothing needs attention" detail="Your workspace is clear. New runs and drafts will appear here when they need review." onAction={() => go('workflows')} action="Open automations" />}
                                 </div>
                             </div>
 
-                            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 xl:col-span-5">
+                            <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 xl:col-span-5">
                                 <SectionHeading eyebrow="Recent executions" title="Latest activity" detail="Keep an eye on what just ran." action="View all" onAction={() => go('logs')} />
-                                <div className="mt-5 space-y-1">
+                                <div className="mt-5 space-y-1 min-w-0">
                                     {recentLogs.length > 0 ? recentLogs.slice(0, 5).map(log => {
                                         const normalizedStatus = String(log.status || '').toLowerCase();
                                         const success = ['success', 'succeeded'].includes(normalizedStatus);
                                         const waiting = ['waiting', 'running', 'resuming', 'pending'].includes(normalizedStatus);
                                         const cancelled = normalizedStatus === 'cancelled';
-                                        return <button key={log.id} type="button" onClick={() => openRun(log.id)} className="group flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition hover:bg-slate-50"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${success ? 'bg-emerald-50 text-emerald-600' : waiting ? 'bg-amber-50 text-amber-600' : cancelled ? 'bg-slate-100 text-slate-500' : 'bg-red-50 text-red-600'}`}>{success ? <CheckCircle2 size={16} /> : waiting ? <Clock3 size={16} /> : <XCircle size={16} />}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-800">{workflowNameForLog(log)}</span><span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400"><span>{waiting ? 'Waiting for approval' : cancelled ? 'Cancelled because automation was deleted' : log.trigger || 'Manual run'}</span><span>·</span><span>{formatRelative(log.time)}</span></span></span><span className="shrink-0 text-[11px] font-medium text-slate-400">{formatDuration(log.durationMs)}</span></button>;
+                                        return <button key={log.id} type="button" onClick={() => openRun(log.id)} className="group flex w-full min-w-0 items-center gap-3 rounded-xl p-2.5 text-left transition hover:bg-slate-50"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${success ? 'bg-emerald-50 text-emerald-600' : waiting ? 'bg-amber-50 text-amber-600' : cancelled ? 'bg-slate-100 text-slate-500' : 'bg-red-50 text-red-600'}`}>{success ? <CheckCircle2 size={16} /> : waiting ? <Clock3 size={16} /> : <XCircle size={16} />}</span><span className="min-w-0 flex-1 overflow-hidden"><span className="block truncate text-sm font-semibold text-slate-800" title={workflowNameForLog(log)}>{workflowNameForLog(log)}</span><span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400"><span className="truncate">{waiting ? 'Waiting for approval' : cancelled ? 'Cancelled because automation was deleted' : log.trigger || 'Manual run'}</span><span>·</span><span className="shrink-0">{formatRelative(log.time)}</span></span></span><span className="shrink-0 text-[11px] font-medium text-slate-400">{formatDuration(log.durationMs)}</span></button>;
                                     }) : <EmptyPanel icon={Activity} title="No executions yet" detail="Run an automation to start building an activity history." onAction={() => go('workflows')} action="Open automations" />}
                                 </div>
                             </div>

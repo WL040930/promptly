@@ -1,4 +1,5 @@
 import { validateNodeConfig } from '../../../shared/nodeConfigContract.js';
+import { chatWorkflowInvocationFromConfig } from '../triggers/chatWorkflowInvocationContract.js';
 
 const isObject = value => value && typeof value === 'object' && !Array.isArray(value);
 
@@ -108,6 +109,19 @@ export const validateWorkflow = ({ nodes = [], edges = [], isActive = false, req
                         `nodes[${index}].${configIssue.path}`,
                         configIssue.message,
                         configIssue.severity
+                    );
+                    if (target.severity === 'warning') warnings.push(target);
+                    else issues.push(target);
+                });
+            }
+            if (node.type === 'trigger' && node.subType === 'agent' && node.config?.chatEnabled === true) {
+                const invocation = chatWorkflowInvocationFromConfig(node.config || {});
+                invocation.issues.forEach(configIssue => {
+                    const target = issue(
+                        `INVALID_CHAT_WORKFLOW_${configIssue.code}`,
+                        `nodes[${index}].config.${configIssue.path}`,
+                        configIssue.message,
+                        isActive ? 'error' : 'warning'
                     );
                     if (target.severity === 'warning') warnings.push(target);
                     else issues.push(target);

@@ -82,7 +82,7 @@ export const createSendMessageHandler = ({
     let attached = null;
     let eventClarification = null;
     const eventNeedsWork = event && (
-        ['agent_plan_approved', 'decide_for_me', 'submit_clarification', 'form_target_selected', 'workflow_target_selected'].includes(event.type)
+        ['agent_plan_approved', 'decide_for_me', 'submit_clarification', 'submit_workflow_run_payload', 'form_target_selected', 'workflow_target_selected'].includes(event.type)
         || (event.type === 'form_saved' && event.runId)
     );
     if (eventNeedsWork) {

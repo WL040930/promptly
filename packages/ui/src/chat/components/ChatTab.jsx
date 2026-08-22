@@ -271,6 +271,23 @@ export default function ChatTab({ conversationId = null }) {
             ? formSelection
             : { schema: formSelection, selectedPatchIds };
         try {
+            if (message.kind === 'workflow_lifecycle_proposal') {
+                const decision = await decideChatProposalMutation.mutateAsync({ sessionId, messageId: message.id, action: 'approve' });
+                setMessages(previous => {
+                    const updated = previous.map(item => item.id === message.id
+                        ? { ...item, proposalStatus: decision?.message?.proposalStatus || decision?.status, payload: decision?.message?.payload || item.payload }
+                        : item);
+                    return decision?.nextProposal && !updated.some(item => item.id === decision.nextProposal.id)
+                        ? [...updated, decision.nextProposal]
+                        : updated;
+                });
+                if (decision?.status === 'failed' || decision?.status === 'stale') {
+                    toast.error(decision?.message?.payload?.error?.message || 'The workflow action could not be completed.');
+                    return false;
+                }
+                toast.success(decision?.nextProposal ? 'Action completed. The next action is ready for review.' : 'Workflow action completed.');
+                return true;
+            }
             if (payload.runId) {
                 const formOverrides = message.kind === 'form_proposal' && Array.isArray(selection.selectedPatchIds)
                     ? {
@@ -317,7 +334,12 @@ export default function ChatTab({ conversationId = null }) {
                     : null;
                 const decision = await decideChatProposalMutation.mutateAsync({ sessionId, messageId: message.id, action: 'approve', overrides });
                 result = decision.resource;
-                setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied', payload: decision?.message?.payload || item.payload } : item));
+                setMessages(previous => {
+                    const updated = previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied', payload: decision?.message?.payload || item.payload } : item);
+                    return decision?.nextProposal && !updated.some(item => item.id === decision.nextProposal.id)
+                        ? [...updated, decision.nextProposal]
+                        : updated;
+                });
             }
             setMessages(previous => previous.map(item => item.id === message.id ? { ...item, proposalStatus: 'applied' } : item));
             if (message.kind === 'form_proposal') await send(null, { type: 'form_saved', messageId: message.id, formId: result.formId });
@@ -375,7 +397,7 @@ export default function ChatTab({ conversationId = null }) {
         try {
             if (message.payload?.runId) {
                 await rejectAgentRunMutation.mutateAsync(message.payload.runId);
-            } else if (['solution_proposal', 'form_proposal', 'workflow_diff', 'workflow_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
+            } else if (['solution_proposal', 'form_proposal', 'workflow_diff', 'workflow_proposal', 'workflow_lifecycle_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind)) {
                 await decideChatProposalMutation.mutateAsync({ sessionId, messageId: message.id, action: 'reject' });
             } else {
                 await send(null, { type: 'proposal_ignored', messageId: message.id });

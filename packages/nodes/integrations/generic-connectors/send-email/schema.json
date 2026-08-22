@@ -25,10 +25,51 @@
       "helpText": "Async queues the email and lets the workflow continue. Choose wait only when a following step needs the provider message ID."
     },
     {
+      "name": "recipientMode",
+      "type": "select",
+      "label": "Recipients",
+      "defaultValue": "group",
+      "options": [
+        { "label": "One message to all recipients", "value": "group" },
+        { "label": "One private email per matching row", "value": "individualRows" }
+      ],
+      "helpText": "Use the private mode after Filter Rows to send each matching row its own email. It always queues delivery asynchronously."
+    },
+    {
+      "name": "rows",
+      "type": "object",
+      "label": "Matching rows",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "Connect Filter Rows, or insert row objects from a previous step with {}",
+      "showWhen": { "field": "recipientMode", "equals": "individualRows" },
+      "helpText": "Leave this empty to use the connected Filter Rows output."
+    },
+    {
+      "name": "recipientColumn",
+      "type": "text",
+      "label": "Recipient email column",
+      "placeholder": "Email",
+      "showWhen": { "field": "recipientMode", "equals": "individualRows" },
+      "requiredWhen": { "field": "recipientMode", "equals": "individualRows" },
+      "helpText": "The exact header from the matching rows. Column matching ignores letter case."
+    },
+    {
       "name": "to",
       "type": "text",
       "label": "To (recipient email)",
       "required": true,
+      "showWhen": {
+        "any": [
+          { "field": "recipientMode", "equals": "group" },
+          { "field": "recipientMode", "empty": true }
+        ]
+      },
+      "requiredWhen": {
+        "any": [
+          { "field": "recipientMode", "equals": "group" },
+          { "field": "recipientMode", "empty": true }
+        ]
+      },
       "valueSyntax": "workflow-expression",
       "placeholder": "user@example.com or insert data from a previous step with {}",
       "defaultValue": ""
@@ -39,7 +80,7 @@
       "label": "Subject",
       "required": true,
       "valueSyntax": "workflow-expression",
-      "placeholder": "Hello [Name], your order is ready — insert data from a previous step with {}",
+      "placeholder": "Hello [Name], your order is ready — use [[Column]] for one email per row",
       "defaultValue": ""
     },
     {
@@ -48,7 +89,7 @@
       "label": "Email Body",
       "required": true,
       "valueSyntax": "workflow-expression",
-      "placeholder": "Hi [Name],\n\nYour order has shipped.\n\nBest regards — insert data from a previous step with {}",
+      "placeholder": "Hi [Name],\n\nYour order has shipped.\n\nUse [[Column]] for one email per row.",
       "defaultValue": ""
     },
     {
@@ -104,6 +145,22 @@
       "type": "string",
       "label": "Delivery Status",
       "description": "Queued or sent."
+    },
+    {
+      "name": "recipientCount",
+      "type": "number",
+      "label": "Private recipient count",
+      "description": "The number of unique row recipients that received their own queued email."
+    },
+    {
+      "name": "queuedCount",
+      "type": "number",
+      "label": "Queued recipient emails"
+    },
+    {
+      "name": "deduplicatedCount",
+      "type": "number",
+      "label": "Already queued recipient emails"
     },
     {
       "name": "to",

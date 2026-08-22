@@ -15,7 +15,9 @@ export const NODE_INPUT_TYPES = Object.freeze([
     'json',
     'key-value',
     'string-list',
-    'data-grid'
+    'data-grid',
+    'parameter-list',
+    'filter-list'
 ]);
 
 export const NODE_INPUT_VALUE_SYNTAXES = Object.freeze([
@@ -172,6 +174,12 @@ const validateStructuredInput = (input, value) => {
     if (input.type === 'data-grid' && (!Array.isArray(structured) || structured.some(row => !Array.isArray(row)))) {
         return issue('INVALID_DATA_GRID', input.name, `${input.label || input.name} must contain rows and columns.`);
     }
+    if (input.type === 'parameter-list' && !Array.isArray(structured)) {
+        return issue('INVALID_PARAMETER_LIST', input.name, `${input.label || input.name} must be a list of parameters.`);
+    }
+    if (input.type === 'filter-list' && !Array.isArray(structured)) {
+        return issue('INVALID_FILTER_LIST', input.name, `${input.label || input.name} must be a list of filters.`);
+    }
     return null;
 };
 
@@ -216,7 +224,7 @@ export const validateNodeConfig = ({ schema = {}, config = {}, mode = 'draft' } 
             }
         }
 
-        if (['object', 'json', 'key-value', 'string-list', 'data-grid'].includes(input.type)) {
+        if (['object', 'json', 'key-value', 'string-list', 'data-grid', 'parameter-list', 'filter-list'].includes(input.type)) {
             const structuredIssue = validateStructuredInput(input, value);
             if (structuredIssue) issues.push(structuredIssue);
         }

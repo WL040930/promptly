@@ -5,6 +5,7 @@ import EmailDelivery from '../../models/execution/EmailDelivery.js';
 import WorkflowContinuation from '../../models/execution/WorkflowContinuation.js';
 import {
     EMAIL_DELIVERY_CONTINUATION_KIND,
+    enqueueEmailDeliveries,
     enqueueEmailDelivery,
     processQueuedEmailContinuation
 } from './emailDeliveryService.js';
@@ -58,6 +59,77 @@ test('async email delivery persists a resolved message and a durable queue entry
         restore(EmailDelivery.sequelize, { transaction: originals.transaction });
         restore(EmailDelivery, { findOne: originals.findOne, create: originals.create });
         restore(WorkflowContinuation, { create: originals.createContinuation });
+    }
+});
+
+test('individual-recipient emails queue all messages in one transaction with recipient-specific keys', async () => {
+    const originals = {
+        transaction: EmailDelivery.sequelize.transaction,
+        findOne: EmailDelivery.findOne,
+        create: EmailDelivery.create,
+        createContinuation: WorkflowContinuation.create
+    };
+    const calls = [];
+    try {
+        EmailDelivery.sequelize.transaction = async callback => {
+            calls.push({ kind: 'transaction' });
+            return callback({ id: 'transaction_1', LOCK: { UPDATE: 'UPDATE' } });
+        };
+        EmailDelivery.findOne = async () => null;
+        EmailDelivery.create = async values => {
+            calls.push({ kind: 'delivery', values });
+            return { id: `delivery_${calls.filter(call => call.kind === 'delivery').length}`, ...values };
+        };
+        WorkflowContinuation.create = async values => {
+            calls.push({ kind: 'continuation', values });
+            return { id: `continuation_${calls.filter(call => call.kind === 'continuation').length}`, ...values };
+        };
+
+        const result = await enqueueEmailDeliveries({
+            context: { metadata: { workflowId: 'workflow_1', userId: 'user_1', runId: 'run_1', idempotencyKey: 'event_1' } },
+            nodeId: 'email_1',
+            provider: 'system-default',
+            messages: [
+                { to: 'ada@example.com', subject: 'Hello Ada', text: 'Hi Ada' },
+                { to: 'bea@example.com', subject: 'Hello Bea', text: 'Hi Bea' }
+            ]
+        });
+
+        assert.equal(calls.filter(call => call.kind === 'transaction').length, 1);
+        assert.equal(calls.filter(call => call.kind === 'delivery').length, 2);
+        assert.equal(calls.filter(call => call.kind === 'continuation').length, 2);
+        assert.equal(result.queuedCount, 2);
+        assert.equal(result.deduplicatedCount, 0);
+        assert.equal(result.deliveries.length, 2);
+        assert.notEqual(calls[1].values.idempotencyKey, calls[3].values.idempotencyKey);
+        assert.match(calls[1].values.idempotencyKey, /^event_1:recipient:/);
+    } finally {
+        restore(EmailDelivery.sequelize, { transaction: originals.transaction });
+        restore(EmailDelivery, { findOne: originals.findOne, create: originals.create });
+        restore(WorkflowContinuation, { create: originals.createContinuation });
+    }
+});
+
+test('individual-recipient batch validation happens before any queue transaction', async () => {
+    const originalTransaction = EmailDelivery.sequelize.transaction;
+    let transactionCalled = false;
+    try {
+        EmailDelivery.sequelize.transaction = async () => {
+            transactionCalled = true;
+            throw new Error('should not start');
+        };
+        await assert.rejects(() => enqueueEmailDeliveries({
+            context: { metadata: { workflowId: 'workflow_1', userId: 'user_1', runId: 'run_1', idempotencyKey: 'event_1' } },
+            nodeId: 'email_1',
+            provider: 'system-default',
+            messages: [
+                { to: 'ada@example.com', subject: 'Hello Ada', text: 'Hi Ada' },
+                { to: 'not-an-email', subject: 'Hello', text: 'Hi' }
+            ]
+        }), /Invalid email recipient/);
+        assert.equal(transactionCalled, false);
+    } finally {
+        restore(EmailDelivery.sequelize, { transaction: originalTransaction });
     }
 });
 

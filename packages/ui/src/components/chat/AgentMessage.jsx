@@ -1,6 +1,7 @@
 import Button from '../ui/Button.jsx';
 import FormProposalWidget from './FormProposalWidget.jsx';
 import WorkflowProposalWidget from './WorkflowProposalWidget.jsx';
+import WorkflowLifecycleProposalWidget from './WorkflowLifecycleProposalWidget.jsx';
 import SolutionProposalWidget from './SolutionProposalWidget.jsx';
 import MarkdownRenderer from '../ui/MarkdownRenderer.jsx';
 import MessageOptionsWidget from './MessageOptionsWidget.jsx';
@@ -58,7 +59,7 @@ const TokenUsageBreakdown = ({ tokenUsage }) => {
 
 export default function AgentMessage({ message, onApply, onIgnore, onOption, onRecoveryAction, isTyping, isAccepting, isRejecting, isLatest = true }) {
     const payload = message.payload || message.proposal || {};
-    const isProposal = message.proposal != null || ['solution_proposal', 'workflow_proposal', 'workflow_diff', 'form_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind);
+    const isProposal = message.proposal != null || ['solution_proposal', 'workflow_proposal', 'workflow_diff', 'workflow_lifecycle_proposal', 'form_proposal', 'form_duplicate_proposal', 'form_delete_proposal', 'form_bulk_delete_proposal', 'form_response_clear_proposal'].includes(message.kind);
     const rawStatus = message.proposalStatus || payload.status;
     const status = proposalStatusLabel(rawStatus);
     const showProposalActions = shouldShowProposalActions(rawStatus);
@@ -69,6 +70,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
     const work = message.sender === 'bot' ? payload.work : null;
     const isFormProposal = message.sender !== 'user' && kind === 'form_proposal';
     const isWorkflowProposal = message.sender !== 'user' && (kind === 'workflow_proposal' || kind === 'workflow_diff');
+    const isWorkflowLifecycleProposal = message.sender !== 'user' && kind === 'workflow_lifecycle_proposal';
     const isSolutionProposal = message.sender !== 'user' && kind === 'solution_proposal';
     const presentation = messagePresentation(message);
     const isCompactWork = presentation === 'work';
@@ -142,7 +144,7 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                     </div>
                 ) : message.sender !== 'user' && (message.isError || kind === 'error') ? (
                     <AssistantFailureCard message={message} onAction={onRecoveryAction} isWorking={isTyping} />
-                ) : kind === 'assistant_work' || isFormProposal || isWorkflowProposal || isSolutionProposal || isClarification ? null : (
+                ) : kind === 'assistant_work' || isFormProposal || isWorkflowProposal || isWorkflowLifecycleProposal || isSolutionProposal || isClarification ? null : (
                     <div className={`relative w-full min-w-0 rounded-2xl ${message.sender === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/60 shadow-sm'}`}>
                         <div className="w-full min-w-0 overflow-x-auto p-3.5 text-sm leading-relaxed">
                             {message.sender === 'user' ? (
@@ -261,7 +263,19 @@ export default function AgentMessage({ message, onApply, onIgnore, onOption, onR
                     />
                 )}
 
-                {isProposal && !['form_proposal', 'workflow_proposal', 'workflow_diff', 'solution_proposal'].includes(kind) && (
+                {isProposal && isWorkflowLifecycleProposal && (
+                    <WorkflowLifecycleProposalWidget
+                        proposal={payload}
+                        status={rawStatus}
+                        summary={message.text}
+                        onAccept={() => onApply?.(message)}
+                        onIgnore={() => onIgnore?.(message)}
+                        accepting={isAccepting}
+                        rejecting={isRejecting}
+                    />
+                )}
+
+                {isProposal && !['form_proposal', 'workflow_proposal', 'workflow_diff', 'workflow_lifecycle_proposal', 'solution_proposal'].includes(kind) && (
                     <div className={`mt-2 w-full overflow-hidden rounded-2xl border flex flex-col ${proposalTone.card}`}>
                         <div className={`flex items-start gap-3 border-b px-4 py-3 ${proposalTone.header}`}>
                             <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${proposalTone.icon}`}>

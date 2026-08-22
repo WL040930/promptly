@@ -118,6 +118,8 @@ const FormPreview = ({ form, accentColor = '#5b4ee8', onSubmitCallback, embedded
                                         <div className="relative z-10">
                                             <FieldRenderer
                                                 field={field}
+                                                formId={form.id}
+                                                uploadMode={form.fileUploadMode || 'private'}
                                                 accentColor={accentColor}
                                                 value={values[field.id]}
                                                 onChange={(val) => handleChange(field.id, val)}

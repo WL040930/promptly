@@ -7,6 +7,29 @@ import PagePagination from '../../components/ui/PagePagination.jsx';
 
 const renderValue = (val, toast) => {
     if (val === undefined || val === null || val === '') return <span className="text-gray-300">—</span>;
+    if (val && typeof val === 'object' && val.kind === 'promptly-file' && val.assetId) {
+        const url = val.downloadPath || `/api/storage/assets/${val.assetId}`;
+        return (
+            <div className="flex items-center gap-2 min-w-0">
+                <a
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="truncate text-indigo-700 hover:underline"
+                    title={val.name || 'Open uploaded file'}
+                >
+                    {val.name || 'Uploaded file'}
+                </a>
+                <a
+                    href={`${url}?download=true`}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-2 py-1 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg text-[11px] font-bold transition-colors"
+                    title="Download file"
+                >
+                    Download
+                </a>
+            </div>
+        );
+    }
     if (Array.isArray(val)) return val.join(', ');
     if (typeof val === 'boolean') return val ? 'Yes' : 'No';
     if (typeof val === 'string' && val.startsWith('/api/storage/download/')) {
@@ -158,7 +181,9 @@ const FormResponses = ({ form }) => {
                 if (val === undefined || val === null) val = '';
                 if (Array.isArray(val)) val = val.join(', ');
                 if (typeof val === 'boolean') val = val ? 'Yes' : 'No';
-                if (typeof val === 'string' && val.startsWith('/api/storage/download/')) {
+                if (val && typeof val === 'object' && val.kind === 'promptly-file' && val.assetId) {
+                    val = window.location.origin + (val.downloadPath || `/api/storage/assets/${val.assetId}`);
+                } else if (typeof val === 'string' && val.startsWith('/api/storage/download/')) {
                     val = window.location.origin + val;
                 }
                 const stringVal = String(val).replace(/"/g, '""');

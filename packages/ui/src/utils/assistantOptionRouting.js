@@ -1,4 +1,4 @@
-const EVENT_OPTIONS = new Set(['decide_for_me', 'submit_clarification']);
+const EVENT_OPTIONS = new Set(['decide_for_me', 'submit_clarification', 'submit_workflow_run_payload']);
 
 /**
  * Return only option values that must cross the assistant event boundary.

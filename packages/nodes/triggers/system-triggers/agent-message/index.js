@@ -10,6 +10,9 @@ export default class AIAgentMessageNode extends BaseNode {
             triggerData: payload,
             message:     payload.message   || '',
             sessionId:   payload.sessionId || null,
+            parameters:  payload.parameters || {},
+            invocationKey: payload.invocationKey || null,
+            invocationId: payload.invocationId || null,
         };
     }
 }

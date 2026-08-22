@@ -281,6 +281,141 @@ export function DataGridInput({ value, onChange, availableVars = [], valueSyntax
     );
 }
 
+const parameterListValue = value => {
+    let current = value;
+    if (typeof current === 'string') {
+        try { current = JSON.parse(current); } catch { current = []; }
+    }
+    if (!Array.isArray(current)) return [];
+    return current.map(item => ({
+        name: String(item?.name || ''),
+        type: ['string', 'number', 'integer', 'boolean'].includes(item?.type) ? item.type : 'string',
+        description: String(item?.description || ''),
+        required: item?.required === true
+    }));
+};
+
+/** A compact editor for the common, flat chat-workflow parameter contract. */
+export function ParameterListInput({ value, onChange }) {
+    const serialized = useMemo(() => JSON.stringify(value ?? []), [value]);
+    const [parameters, setParameters] = useState(() => parameterListValue(value));
+
+    useEffect(() => setParameters(parameterListValue(value)), [serialized]);
+
+    const commit = next => {
+        const normalized = next.slice(0, 20).map(item => ({
+            name: String(item.name || '').trim(),
+            type: item.type || 'string',
+            description: String(item.description || '').trim(),
+            required: item.required === true
+        }));
+        setParameters(normalized);
+        onChange?.(normalized);
+    };
+
+    return (
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50/70">
+            <div className="grid grid-cols-[minmax(0,0.8fr)_96px_52px_32px] gap-2 border-b border-slate-200 px-2.5 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                <span>Name and help text</span><span>Type</span><span>Required</span><span />
+            </div>
+            <div className="flex flex-col gap-2 p-2">
+                {parameters.length === 0 && <p className="px-1 py-2 text-center text-xs text-slate-400">No parameters. This workflow can run from a matching chat request without extra data.</p>}
+                {parameters.map((parameter, index) => (
+                    <div key={index} className="grid grid-cols-[minmax(0,0.8fr)_96px_52px_32px] gap-2 items-start">
+                        <div className="flex min-w-0 flex-col gap-1.5">
+                            <input value={parameter.name} onChange={event => commit(parameters.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} placeholder="status" className={fieldClassName}/>
+                            <input value={parameter.description} onChange={event => commit(parameters.map((item, itemIndex) => itemIndex === index ? { ...item, description: event.target.value } : item))} placeholder="What should the AI fill?" className={`${fieldClassName} text-xs`}/>
+                        </div>
+                        <select value={parameter.type} onChange={event => commit(parameters.map((item, itemIndex) => itemIndex === index ? { ...item, type: event.target.value } : item))} className={`${fieldClassName} text-xs`}>
+                            <option value="string">Text</option>
+                            <option value="number">Number</option>
+                            <option value="integer">Whole number</option>
+                            <option value="boolean">Yes / no</option>
+                        </select>
+                        <label className="flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white">
+                            <input type="checkbox" checked={parameter.required} onChange={event => commit(parameters.map((item, itemIndex) => itemIndex === index ? { ...item, required: event.target.checked } : item))}/>
+                        </label>
+                        <button type="button" aria-label="Remove parameter" onClick={() => commit(parameters.filter((_, itemIndex) => itemIndex !== index))} className={`${iconButtonClassName} mt-0.5`}>×</button>
+                    </div>
+                ))}
+                <button type="button" disabled={parameters.length >= 20} onClick={() => commit([...parameters, { name: '', type: 'string', description: '', required: false }])} className="rounded-lg border border-dashed border-[#c9c4ff] bg-white px-3 py-2 text-xs font-bold text-[#5b4ee8] transition hover:bg-[#f7f6ff] disabled:cursor-not-allowed disabled:opacity-50">
+                    + Add parameter
+                </button>
+            </div>
+        </div>
+    );
+}
+
+const FILTER_OPERATORS = [
+    ['equals', 'Equals'],
+    ['notEquals', 'Does not equal'],
+    ['contains', 'Contains'],
+    ['startsWith', 'Starts with'],
+    ['greater', 'Greater than'],
+    ['less', 'Less than'],
+    ['isEmpty', 'Is empty'],
+    ['isNotEmpty', 'Is not empty']
+];
+
+const filterListValue = value => {
+    let current = value;
+    if (typeof current === 'string') {
+        try { current = JSON.parse(current); } catch { current = []; }
+    }
+    if (!Array.isArray(current)) return [];
+    return current.map(item => ({
+        column: String(item?.column || ''),
+        operator: FILTER_OPERATORS.some(([key]) => key === item?.operator) ? item.operator : 'equals',
+        value: item?.value ?? ''
+    }));
+};
+
+/** Common AND filters for tabular workflow data such as Google Sheets reads. */
+export function FilterListInput({ value, onChange, availableVars = [], valueSyntax }) {
+    const serialized = useMemo(() => JSON.stringify(value ?? []), [value]);
+    const [filters, setFilters] = useState(() => filterListValue(value));
+    useEffect(() => setFilters(filterListValue(value)), [serialized]);
+
+    const commit = next => {
+        const normalized = next.slice(0, 20).map(item => ({
+            column: String(item.column || '').trim(),
+            operator: item.operator || 'equals',
+            ...(item.operator === 'isEmpty' || item.operator === 'isNotEmpty' ? {} : { value: item.value ?? '' })
+        }));
+        setFilters(normalized);
+        onChange?.(normalized);
+    };
+
+    return (
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50/70">
+            <div className="grid grid-cols-[minmax(0,0.8fr)_132px_minmax(0,1fr)_32px] gap-2 border-b border-slate-200 px-2.5 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                <span>Column</span><span>Match</span><span>Value</span><span />
+            </div>
+            <div className="flex flex-col gap-2 p-2">
+                {filters.length === 0 && <p className="px-1 py-2 text-center text-xs text-slate-400">Add one or more filters. Every filter must match.</p>}
+                {filters.map((filter, index) => {
+                    const needsValue = !['isEmpty', 'isNotEmpty'].includes(filter.operator);
+                    return (
+                        <div key={index} className="grid grid-cols-[minmax(0,0.8fr)_132px_minmax(0,1fr)_32px] gap-2 items-center">
+                            <input value={filter.column} onChange={event => commit(filters.map((item, itemIndex) => itemIndex === index ? { ...item, column: event.target.value } : item))} placeholder="Status" className={fieldClassName}/>
+                            <select value={filter.operator} onChange={event => commit(filters.map((item, itemIndex) => itemIndex === index ? { ...item, operator: event.target.value } : item))} className={`${fieldClassName} text-xs`}>
+                                {FILTER_OPERATORS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                            </select>
+                            {needsValue ? (
+                                <VariableInput value={filter.value} onChange={nextValue => commit(filters.map((item, itemIndex) => itemIndex === index ? { ...item, value: nextValue } : item))} placeholder="Active" availableVars={availableVars} valueSyntax={valueSyntax}/>
+                            ) : <span className="px-2 text-xs italic text-slate-400">No value needed</span>}
+                            <button type="button" aria-label="Remove filter" onClick={() => commit(filters.filter((_, itemIndex) => itemIndex !== index))} className={iconButtonClassName}>×</button>
+                        </div>
+                    );
+                })}
+                <button type="button" disabled={filters.length >= 20} onClick={() => commit([...filters, { column: '', operator: 'equals', value: '' }])} className="rounded-lg border border-dashed border-[#c9c4ff] bg-white px-3 py-2 text-xs font-bold text-[#5b4ee8] transition hover:bg-[#f7f6ff] disabled:cursor-not-allowed disabled:opacity-50">
+                    + Add filter
+                </button>
+            </div>
+        </div>
+    );
+}
+
 export function NodeSelectInput({ value, onChange, nodes = [], currentNodeId, placeholder = 'Select a previous step…' }) {
     const options = nodes.filter(node => node.id !== currentNodeId);
     return (

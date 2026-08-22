@@ -231,7 +231,7 @@ const DefaultTextField = ({ field, value, onChange, inputStyle }) => {
 // Main component
 // ---------------------------------------------------------------------------
 
-const FieldRenderer = ({ field, accentColor = '#5b4ee8', value, onChange }) => {
+const FieldRenderer = ({ field, formId = null, uploadMode = 'private', accentColor = '#5b4ee8', value, onChange }) => {
     const inputStyle = {
         '--tw-ring-color': accentColor + '40',
         '--tw-ring-offset-width': '2px',
@@ -243,7 +243,7 @@ const FieldRenderer = ({ field, accentColor = '#5b4ee8', value, onChange }) => {
     const labelEl = <FieldLabel field={field} accentColor={accentColor} />;
 
     if (field.type === 'file') {
-        return <FileUploadField field={field} value={value} onChange={onChange} labelEl={labelEl} />;
+        return <FileUploadField field={field} formId={formId} uploadMode={uploadMode} value={value} onChange={onChange} labelEl={labelEl} />;
     }
 
     const sharedProps = { field, value, onChange, accentColor, inputStyle };

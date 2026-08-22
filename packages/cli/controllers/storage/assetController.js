@@ -11,6 +11,7 @@ export const uploadWorkflowAsset = asyncHandler(async (req, res) => {
 export const downloadWorkflowAsset = asyncHandler(async (req, res) => {
     const { asset, buffer } = await downloadAsset({ id: req.params.id, userId: req.user.id });
     res.setHeader('Content-Type', asset.mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${asset.originalName}"`);
+    const disposition = req.query.download === 'true' ? 'attachment' : 'inline';
+    res.setHeader('Content-Disposition', `${disposition}; filename="${asset.originalName}"`);
     res.send(buffer);
 });

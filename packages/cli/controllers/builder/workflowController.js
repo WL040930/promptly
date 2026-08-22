@@ -1,16 +1,15 @@
 import { Op, QueryTypes } from 'sequelize';
 import { Workflow, WorkflowVersion } from '../../models/index.js';
 import sequelize from '../../db/index.js';
-import { executeWorkflow } from '../../services/engine/executionEngine.js';
 import { recordTerminalRunMetric } from '../../services/engine/dashboardMetricsService.js';
 import { retainRunsForDeletedWorkflow } from '../../services/engine/runRetentionService.js';
 import asyncHandler from '../../utils/asyncHandler.js';
 import SchedulerService from '../../services/scheduler/schedulerService.js';
 import NodeRegistry from '../../utils/NodeRegistry.js';
 import { validateWorkflow } from '../../services/engine/workflowValidator.js';
-import { reconcileWorkflow, removeWorkflow } from '../../services/triggers/triggerRuntime.js';
-import { normalizeWorkflowForWrite, saveAutomationDraft, publishAutomation, pauseAutomation } from '../../services/automations/automationService.js';
-import { deactivateWorkflowTriggerBindings } from '../../services/triggers/workflowTriggerBindingService.js';
+import { removeWorkflow } from '../../services/triggers/triggerRuntime.js';
+import { normalizeWorkflowForWrite, saveAutomationDraft } from '../../services/automations/automationService.js';
+import { performWorkflowLifecycleAction } from '../../services/automations/workflowLifecycleService.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 import { invalidateDashboardMetrics } from '../dashboard/dashboardController.js';
 
@@ -44,16 +43,6 @@ const workflowValidationResponse = (res, workflow) => {
     });
     if (validation.valid) return null;
     return res.status(400).json({ message: 'Invalid workflow definition.', issues: validation.issues });
-};
-
-const syncSchedule = (workflowId, userId, nodes, isActive) => {
-    const scheduleNode = (nodes || []).find(node => node.type === 'trigger' && node.subType === 'schedule');
-    if (scheduleNode && isActive) {
-        const { cronExpression = '0 9 * * *', timezone = 'UTC' } = scheduleNode.config || {};
-        SchedulerService.register(workflowId, userId, cronExpression, timezone);
-    } else {
-        SchedulerService.deregister(workflowId);
-    }
 };
 
 const parsePage = (value, fallback = 1) => Math.max(Number.parseInt(value, 10) || fallback, 1);
@@ -316,50 +305,45 @@ export const deleteWorkflow = asyncHandler(async (req, res) => {
 export const triggerWorkflow = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { payload, revisionId } = req.body;
-    const log = await executeWorkflow(id, req.user.id, payload, { runType: 'test', revisionId, trigger: 'manual-test' });
-    res.json(log);
+    const result = await performWorkflowLifecycleAction({
+        workflowId: id,
+        userId: req.user.id,
+        action: 'test_run',
+        payload,
+        revisionId,
+        trigger: 'manual-test'
+    });
+    res.json(result.run);
 });
 
 export const triggerProductionWorkflow = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const workflow = await Workflow.findOne({ where: { id, userId: req.user.id } });
-    if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
-    if (!workflow.publishedRevisionId) return res.status(409).json({ message: 'Publish this automation before running it live.' });
-    if (!workflow.isActive) return res.status(409).json({ message: 'Activate this automation before running it live.' });
-
-    const log = await executeWorkflow(id, req.user.id, req.body?.payload || {}, {
-        runType: 'production',
-        revisionId: workflow.publishedRevisionId,
+    const result = await performWorkflowLifecycleAction({
+        workflowId: id,
+        userId: req.user.id,
+        action: 'live_run',
+        payload: req.body?.payload || {},
         trigger: 'manual-production'
     });
-    res.json(log);
+    res.json(result.run);
 });
 
 export const publishWorkflow = asyncHandler(async (req, res) => {
-    const workflow = await publishAutomation({ automationId: req.params.id, userId: req.user.id });
-    try {
-        await reconcileWorkflow(workflow);
-    } catch (error) {
-        await workflow.update({ isActive: false, status: 'Trigger setup failed' });
-        await deactivateWorkflowTriggerBindings({ workflowId: workflow.id });
-        const message = error.code === 'TRIGGER_PUBLIC_ORIGIN_REQUIRED'
-            ? error.message
-            : 'Automation trigger could not be connected.';
-        return res.status(503).json({
-            message,
-            code: error.code || 'TRIGGER_CONNECTION_FAILED',
-            error: error.message
-        });
-    }
-    syncSchedule(workflow.id, req.user.id, workflow.nodes, true);
-    res.json({ ...workflow.toJSON(), release: await releaseSummary(workflow) });
+    const result = await performWorkflowLifecycleAction({
+        workflowId: req.params.id,
+        userId: req.user.id,
+        action: 'publish'
+    });
+    res.json({ ...result.workflow.toJSON(), release: await releaseSummary(result.workflow) });
 });
 
 export const pauseWorkflow = asyncHandler(async (req, res) => {
-    const workflow = await pauseAutomation({ automationId: req.params.id, userId: req.user.id });
-    await removeWorkflow(workflow.id);
-    SchedulerService.deregister(workflow.id);
-    res.json({ ...workflow.toJSON(), release: await releaseSummary(workflow) });
+    const result = await performWorkflowLifecycleAction({
+        workflowId: req.params.id,
+        userId: req.user.id,
+        action: 'pause'
+    });
+    res.json({ ...result.workflow.toJSON(), release: await releaseSummary(result.workflow) });
 });
 
 // --- Versioning Endpoints ---

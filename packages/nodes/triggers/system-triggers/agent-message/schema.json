@@ -1,8 +1,60 @@
 {
-  "inputs": [],
+  "inputs": [
+    {
+      "name": "chatEnabled",
+      "type": "boolean",
+      "label": "Enable from Ask Promptly chat",
+      "defaultValue": false,
+      "helpText": "Only enabled, published workflows can be selected from chat. Every chat run still requires approval."
+    },
+    {
+      "name": "invocationKey",
+      "type": "text",
+      "label": "Invocation key",
+      "placeholder": "email-matched-sheet-rows",
+      "requiredWhen": { "field": "chatEnabled", "equals": true },
+      "pattern": "^[a-z][a-z0-9_-]{1,79}$",
+      "validationMessage": "Start with a lowercase letter and use lowercase letters, numbers, hyphens, or underscores.",
+      "showWhen": { "field": "chatEnabled", "equals": true },
+      "group": "Chat invocation"
+    },
+    {
+      "name": "description",
+      "type": "textarea",
+      "label": "When should chat use this workflow?",
+      "placeholder": "Read the configured customer sheet, filter rows by a requested status, and email each matching person.",
+      "rows": 3,
+      "requiredWhen": { "field": "chatEnabled", "equals": true },
+      "showWhen": { "field": "chatEnabled", "equals": true },
+      "group": "Chat invocation"
+    },
+    {
+      "name": "parameters",
+      "type": "parameter-list",
+      "label": "Parameters the AI may fill",
+      "defaultValue": [],
+      "showWhen": { "field": "chatEnabled", "equals": true },
+      "group": "Chat invocation",
+      "helpText": "Use simple fields for common requests. The AI fills these from the user message and asks when required information is missing."
+    },
+    {
+      "name": "parameterSchema",
+      "type": "json",
+      "label": "Advanced parameter JSON Schema",
+      "defaultValue": {},
+      "rows": 12,
+      "advanced": true,
+      "showWhen": { "field": "chatEnabled", "equals": true },
+      "group": "Chat invocation",
+      "helpText": "Optional. A non-empty flat object schema overrides the parameter editor. It must use additionalProperties: false."
+    }
+  ],
   "outputs": [
-    { "name": "triggerData", "type": "object", "label": "Full Payload",    "isConnection": true, "description": "The entire payload passed by the agent." },
-    { "name": "message",     "type": "string", "label": "User Message",    "description": "The message from the user that triggered this workflow." },
-    { "name": "sessionId",   "type": "string", "label": "Chat Session ID", "description": "The chat session that triggered this workflow." }
+    { "name": "triggerData", "type": "object", "label": "Full Payload", "isConnection": true, "description": "The entire payload passed by the agent." },
+    { "name": "message", "type": "string", "label": "User Message", "description": "The message from the user that triggered this workflow." },
+    { "name": "sessionId", "type": "string", "label": "Chat Session ID", "description": "The chat session that triggered this workflow." },
+    { "name": "parameters", "type": "object", "label": "AI Parameters", "expandable": true, "description": "Validated parameters extracted from the user message." },
+    { "name": "invocationKey", "type": "string", "label": "Invocation Key", "description": "The chat workflow key selected by AI." },
+    { "name": "invocationId", "type": "string", "label": "Invocation ID", "description": "Unique ID for this approved chat invocation." }
   ]
 }

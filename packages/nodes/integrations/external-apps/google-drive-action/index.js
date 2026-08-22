@@ -1,8 +1,19 @@
 import { BaseNode } from '../../../BaseNode.js';
 import { getGoogleClientForUser } from '../../../../cli/services/triggers/googleTriggerClient.js';
 import { downloadAsset, createAsset } from '../../../../cli/services/storage/assetService.js';
+import { isPromptlyFileReference } from '../../../../cli/services/forms/formFileService.js';
 
 const driveRequest = (client, request) => client.request({ ...request, url: request.url.startsWith('http') ? request.url : `https://www.googleapis.com/drive/v3${request.url}` });
+
+const assetIdForUpload = config => {
+    const reference = config.file !== undefined && config.file !== null && config.file !== ''
+        ? config.file
+        : config.assetId;
+    if (isPromptlyFileReference(reference)) return reference.assetId;
+    const assetId = String(reference || '').trim();
+    if (!assetId) throw new Error('Choose a Promptly asset or connect a file from a previous step.');
+    return assetId;
+};
 
 export default class GoogleDriveNode extends BaseNode {
     async execute(context) {
@@ -22,7 +33,7 @@ export default class GoogleDriveNode extends BaseNode {
             const asset = await createAsset({ userId, buffer, originalName: metadata.data?.name || 'drive-file', mimeType: metadata.data?.mimeType || 'application/octet-stream', workflowId: context.metadata?.workflowId, runId: context.metadata?.runId, source: 'google-drive' });
             return { success: true, outputData: { assetId: asset.id, fileId: config.fileId, metadata: metadata.data }, assetId: asset.id, fileId: config.fileId, webViewLink: metadata.data?.webViewLink || null };
         }
-        const { asset, buffer } = await downloadAsset({ id: config.assetId, userId });
+        const { asset, buffer } = await downloadAsset({ id: assetIdForUpload(config), userId });
         const boundary = `promptly_${Date.now()}`;
         const metadata = { name: config.fileName || asset.originalName, mimeType: asset.mimeType, ...(config.folderId ? { parents: [config.folderId] } : {}) };
         const body = Buffer.concat([

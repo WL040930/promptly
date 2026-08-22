@@ -7,7 +7,8 @@
     ]},
     { "name": "query", "type": "text", "label": "Search text", "valueSyntax": "workflow-expression", "placeholder": "invoice March or insert data from a previous step with {}", "showWhen": { "field": "operation", "equals": "search" }, "requiredWhen": { "field": "operation", "equals": "search" } },
     { "name": "fileId", "type": "resource-select", "resource": "google-drive-files", "label": "Drive file", "showWhen": { "field": "operation", "in": ["download"] }, "requiredWhen": { "field": "operation", "equals": "download" } },
-    { "name": "assetId", "type": "resource-select", "resource": "workflow-assets", "label": "Promptly asset", "showWhen": { "field": "operation", "equals": "upload" }, "requiredWhen": { "field": "operation", "equals": "upload" } },
+    { "name": "assetId", "type": "resource-select", "resource": "workflow-assets", "label": "Promptly asset", "showWhen": { "field": "operation", "equals": "upload" }, "helpText": "Use this for a file already stored in Promptly." },
+    { "name": "file", "type": "text", "label": "File from a previous step", "valueSyntax": "workflow-expression", "placeholder": "Insert a form-upload file reference with {}", "showWhen": { "field": "operation", "equals": "upload" }, "helpText": "When set, this takes precedence over the selected asset and accepts a structured form upload." },
     { "name": "fileName", "type": "text", "label": "Uploaded filename", "valueSyntax": "workflow-expression", "defaultValue": "promptly-export.txt", "showWhen": { "field": "operation", "equals": "upload" } },
     { "name": "folderId", "type": "text", "label": "Drive folder ID (optional)", "valueSyntax": "workflow-expression", "showWhen": { "field": "operation", "equals": "upload" } }
   ],

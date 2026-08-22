@@ -1,7 +1,7 @@
 import { isAssistantWorkTerminal } from './assistantWorkPresentation.js';
 
 const FORM_PROPOSAL_KINDS = new Set(['form_proposal']);
-const WORKFLOW_PROPOSAL_KINDS = new Set(['workflow_proposal', 'workflow_diff']);
+const WORKFLOW_PROPOSAL_KINDS = new Set(['workflow_proposal', 'workflow_diff', 'workflow_lifecycle_proposal']);
 
 /**
  * Pick the visual treatment from the message's durable meaning, not from

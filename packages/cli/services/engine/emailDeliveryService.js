@@ -6,6 +6,7 @@ import AutomationRun from '../../models/execution/AutomationRun.js';
 import EmailDelivery from '../../models/execution/EmailDelivery.js';
 import WorkflowContinuation from '../../models/execution/WorkflowContinuation.js';
 import {
+    MAX_RECIPIENTS,
     buildRawMimeMessage,
     isRetryableEmailError,
     validateEmailMessage
@@ -99,11 +100,7 @@ const deliveryResponse = ({ delivery, deduplicated = false }) => ({
     deduplicated
 });
 
-/**
- * Persist the resolved email before the workflow continues. The continuation
- * row is the durable queue entry, so a server restart cannot lose the send.
- */
-export const enqueueEmailDelivery = async ({ context, nodeId, provider, message }) => {
+const asyncDeliveryContext = ({ context, nodeId }) => {
     const workflowId = context.metadata?.workflowId;
     const userId = context.metadata?.userId;
     const runId = context.metadata?.runId;
@@ -113,62 +110,138 @@ export const enqueueEmailDelivery = async ({ context, nodeId, provider, message 
         error.code = 'EMAIL_ASYNC_CONTEXT_MISSING';
         throw error;
     }
+    return { workflowId, userId, runId, idempotencyKey: String(idempotencyKey) };
+};
 
+const perRecipientIdempotencyKey = ({ baseKey, message }) => {
+    const recipients = message.to.map(recipient => String(recipient).trim().toLocaleLowerCase()).join(',');
+    // Keep the source event recognizable while always fitting the 255-char
+    // database column. The hash makes a single workflow event safely fan out.
+    return `${String(baseKey).slice(0, 190)}:recipient:${hash(recipients).slice(0, 48)}`;
+};
+
+const assertMatchingMessage = ({ delivery, recipientHash, subjectHash }) => {
+    if (delivery.recipientHash === recipientHash && delivery.subjectHash === subjectHash) return;
+    const error = new Error('The same idempotency key was used with a different email message.');
+    error.code = 'EMAIL_IDEMPOTENCY_CONFLICT';
+    throw error;
+};
+
+const enqueueMessage = async ({ transaction, workflowId, userId, runId, nodeId, provider, message, idempotencyKey }) => {
     const recipientHash = hash([...message.to, ...message.cc, ...message.bcc, ...message.replyTo].join(','));
     const subjectHash = hash(message.subject);
-    const key = deliveryKey({ workflowId, nodeId, idempotencyKey: String(idempotencyKey) });
+    const key = deliveryKey({ workflowId, nodeId, idempotencyKey });
+    let delivery = await EmailDelivery.findOne({ where: key, transaction, lock: transaction.LOCK.UPDATE });
+    let created = false;
 
-    return EmailDelivery.sequelize.transaction(async transaction => {
-        let delivery = await EmailDelivery.findOne({ where: key, transaction, lock: transaction.LOCK.UPDATE });
-        if (delivery && (delivery.recipientHash !== recipientHash || delivery.subjectHash !== subjectHash)) {
-            const error = new Error('The same idempotency key was used with a different email message.');
-            error.code = 'EMAIL_IDEMPOTENCY_CONFLICT';
-            throw error;
-        }
-        if (delivery?.status === 'sent') return deliveryResponse({ delivery, deduplicated: true });
-        if (delivery && isOpen(delivery.status) && Date.now() - new Date(delivery.updatedAt).getTime() < PENDING_TIMEOUT_MS) {
+    if (delivery) {
+        assertMatchingMessage({ delivery, recipientHash, subjectHash });
+        if (delivery.status === 'sent') return deliveryResponse({ delivery, deduplicated: true });
+        if (isOpen(delivery.status) && Date.now() - new Date(delivery.updatedAt).getTime() < PENDING_TIMEOUT_MS) {
             return deliveryResponse({ delivery, deduplicated: true });
         }
-
-        if (!delivery) {
-            try {
-                delivery = await EmailDelivery.create({
-                    ...key,
-                    userId,
-                    provider,
-                    recipientHash,
-                    subjectHash,
-                    status: 'pending'
-                }, { transaction });
-            } catch (error) {
-                if (error.name !== 'SequelizeUniqueConstraintError') throw error;
-                delivery = await EmailDelivery.findOne({ where: key, transaction, lock: transaction.LOCK.UPDATE });
-                if (delivery?.status === 'sent') return deliveryResponse({ delivery, deduplicated: true });
-                if (!delivery) throw error;
-            }
-        } else {
-            await delivery.update({
+    } else {
+        try {
+            delivery = await EmailDelivery.create({
+                ...key,
+                userId,
                 provider,
                 recipientHash,
                 subjectHash,
-                status: 'pending',
-                lastError: null
+                status: 'pending'
             }, { transaction });
+            created = true;
+        } catch (error) {
+            if (error.name !== 'SequelizeUniqueConstraintError') throw error;
+            delivery = await EmailDelivery.findOne({ where: key, transaction, lock: transaction.LOCK.UPDATE });
+            if (!delivery) throw error;
+            assertMatchingMessage({ delivery, recipientHash, subjectHash });
+            if (delivery.status === 'sent') return deliveryResponse({ delivery, deduplicated: true });
+            if (isOpen(delivery.status) && Date.now() - new Date(delivery.updatedAt).getTime() < PENDING_TIMEOUT_MS) {
+                return deliveryResponse({ delivery, deduplicated: true });
+            }
+        }
+    }
+
+    if (!created) {
+        await delivery.update({
+            provider,
+            recipientHash,
+            subjectHash,
+            status: 'pending',
+            lastError: null
+        }, { transaction });
+    }
+
+    const continuation = await WorkflowContinuation.create({
+        runId,
+        workflowId,
+        userId,
+        nodeId,
+        kind: EMAIL_DELIVERY_CONTINUATION_KIND,
+        status: 'pending',
+        availableAt: new Date(),
+        payload: { deliveryId: delivery.id, provider, message }
+    }, { transaction });
+
+    return { ...deliveryResponse({ delivery }), continuationId: continuation.id };
+};
+
+/**
+ * Persist a batch of already-resolved messages before the workflow continues.
+ * One transaction means an individual-recipient send is all queued or not
+ * queued at all; continuations are the durable queue entries.
+ */
+export const enqueueEmailDeliveries = async ({ context, nodeId, provider, messages }) => {
+    if (!Array.isArray(messages) || messages.length === 0) {
+        const error = new Error('At least one email message is required for asynchronous delivery.');
+        error.code = 'EMAIL_BATCH_EMPTY';
+        throw error;
+    }
+    if (messages.length > MAX_RECIPIENTS) {
+        const error = new Error(`Individual row email cannot have more than ${MAX_RECIPIENTS} messages.`);
+        error.code = 'EMAIL_BATCH_TOO_LARGE';
+        throw error;
+    }
+
+    // Validate the entire batch before the transaction opens, so invalid row
+    // data cannot leave a partial set of recipient emails behind.
+    const normalizedMessages = messages.map(message => validateEmailMessage(message));
+    const { workflowId, userId, runId, idempotencyKey } = asyncDeliveryContext({ context, nodeId });
+    return EmailDelivery.sequelize.transaction(async transaction => {
+        const deliveries = [];
+        for (const message of normalizedMessages) {
+            const messageIdempotencyKey = normalizedMessages.length === 1
+                ? idempotencyKey
+                : perRecipientIdempotencyKey({ baseKey: idempotencyKey, message });
+            deliveries.push(await enqueueMessage({
+                transaction,
+                workflowId,
+                userId,
+                runId,
+                nodeId,
+                provider,
+                message,
+                idempotencyKey: messageIdempotencyKey
+            }));
         }
 
-        const continuation = await WorkflowContinuation.create({
-            runId,
-            workflowId,
-            userId,
-            nodeId,
-            kind: EMAIL_DELIVERY_CONTINUATION_KIND,
-            status: 'pending',
-            availableAt: new Date(),
-            payload: { deliveryId: delivery.id, provider, message }
-        }, { transaction });
-
-        return { ...deliveryResponse({ delivery }), continuationId: continuation.id };
+        const deduplicatedCount = deliveries.filter(delivery => delivery.deduplicated).length;
+        return {
+            deliveryId: deliveries[0]?.deliveryId || null,
+            deliveryStatus: deliveries.every(delivery => delivery.deliveryStatus === 'sent') ? 'sent' : 'queued',
+            deduplicated: deduplicatedCount === deliveries.length,
+            deliveries,
+            queuedCount: deliveries.length - deduplicatedCount,
+            deduplicatedCount
+        };
     });
+};
+
+/** Backward-compatible single-message API used by existing email nodes. */
+export const enqueueEmailDelivery = async ({ context, nodeId, provider, message }) => {
+    const batch = await enqueueEmailDeliveries({ context, nodeId, provider, messages: [message] });
+    return batch.deliveries[0];
 };
 
 const retryAt = attempts => new Date(Date.now() + (2 ** attempts) * 1000);

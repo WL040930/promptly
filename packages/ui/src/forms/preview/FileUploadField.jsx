@@ -5,7 +5,13 @@ import { compressImage } from '../editor/fields/imageUtils';
 // Sub-components
 // ---------------------------------------------------------------------------
 
-const UploadedFileCard = ({ value, onClear }) => (
+const fileNameFor = value => typeof value === 'string'
+    ? value.split('/').pop() || 'Uploaded file'
+    : value?.name || 'Uploaded file';
+
+const legacyDownloadUrl = value => typeof value === 'string' && value.startsWith('/api/storage/download/') ? value : null;
+
+const UploadedFileCard = ({ value, onClear, isRemoving }) => (
     <div className="border-2 border-emerald-500 bg-emerald-50 rounded-2xl p-6 flex items-center justify-between">
         <div className="flex items-center gap-4 truncate">
             <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
@@ -15,13 +21,17 @@ const UploadedFileCard = ({ value, onClear }) => (
                 </svg>
             </div>
             <div className="truncate">
-                <p className="text-[15px] font-bold text-emerald-900 truncate">File Uploaded</p>
-                <a href={value} target="_blank" rel="noreferrer" className="text-sm font-medium text-emerald-600 hover:underline truncate block">
-                    View File
-                </a>
+                <p className="text-[15px] font-bold text-emerald-900 truncate">{fileNameFor(value)}</p>
+                {legacyDownloadUrl(value) ? (
+                    <a href={legacyDownloadUrl(value)} target="_blank" rel="noreferrer" className="text-sm font-medium text-emerald-600 hover:underline truncate block">
+                        View File
+                    </a>
+                ) : (
+                    <p className="text-sm font-medium text-emerald-700 truncate">Ready to submit</p>
+                )}
             </div>
         </div>
-        <button type="button" onClick={onClear} aria-label="Remove uploaded file" className="p-2 text-emerald-600 hover:bg-emerald-100 rounded-full transition-colors shrink-0">
+        <button type="button" onClick={onClear} disabled={isRemoving} aria-label="Remove uploaded file" className="p-2 text-emerald-600 hover:bg-emerald-100 rounded-full transition-colors shrink-0 disabled:opacity-50">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -71,8 +81,9 @@ const UploadErrorMessage = ({ message }) => (
 // Main component
 // ---------------------------------------------------------------------------
 
-const FileUploadField = ({ field, value, onChange, labelEl }) => {
+const FileUploadField = ({ field, formId, uploadMode = 'private', value, onChange, labelEl }) => {
     const [isUploading, setIsUploading] = useState(false);
+    const [isRemoving, setIsRemoving] = useState(false);
     const [uploadError, setUploadError] = useState(null);
 
     const handleFileSelect = async (e) => {
@@ -85,19 +96,32 @@ const FileUploadField = ({ field, value, onChange, labelEl }) => {
         try {
             file = await compressImage(file);
 
-            const ext = file.name.split('.').pop() || 'bin';
-            const secureFileName = `${crypto.randomUUID()}.${ext}`;
+            if (uploadMode === 'legacy') {
+                const ext = file.name.split('.').pop() || 'bin';
+                const secureFileName = `${crypto.randomUUID()}.${ext}`;
+                const response = await fetch(`/api/storage/upload/${secureFileName}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+                    body: file,
+                });
+                if (!response.ok) throw new Error('Failed to upload file');
+                onChange?.(`/api/storage/download/${secureFileName}`);
+                return;
+            }
 
-            const response = await fetch(`/api/storage/upload/${secureFileName}`, {
+            if (!formId) throw new Error('This form is missing the information required to upload files securely.');
+            const response = await fetch(`/api/forms/public/${encodeURIComponent(formId)}/files`, {
                 method: 'POST',
-                headers: { 'Content-Type': file.type || 'application/octet-stream' },
+                headers: {
+                    'Content-Type': file.type || 'application/octet-stream',
+                    'X-Field-Id': field.id,
+                    'X-File-Name': file.name || 'upload'
+                },
                 body: file,
             });
-
-            if (!response.ok) throw new Error('Failed to upload file');
-
-            // Use backend proxy URL instead of exposing raw storage URLs
-            onChange?.(`/api/storage/download/${secureFileName}`);
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(body.message || 'Failed to upload file');
+            onChange?.(body.file);
         } catch (err) {
             console.error('Upload Error:', err);
             setUploadError(err.message || 'Upload failed');
@@ -106,11 +130,36 @@ const FileUploadField = ({ field, value, onChange, labelEl }) => {
         }
     };
 
+    const handleClear = async () => {
+        setUploadError(null);
+        if (typeof value === 'string' || !value?.assetId || !value?.uploadClaim || !formId) {
+            onChange?.('');
+            return;
+        }
+        setIsRemoving(true);
+        try {
+            const response = await fetch(`/api/forms/public/${encodeURIComponent(formId)}/files/${encodeURIComponent(value.assetId)}`, {
+                method: 'DELETE',
+                headers: { 'X-Upload-Claim': value.uploadClaim }
+            });
+            if (!response.ok && response.status !== 404) {
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body.message || 'Failed to remove file');
+            }
+            onChange?.('');
+        } catch (err) {
+            console.error('Upload removal error:', err);
+            setUploadError(err.message || 'Could not remove file');
+        } finally {
+            setIsRemoving(false);
+        }
+    };
+
     return (
         <div className="animate-slide-up-fade">
             {labelEl}
             {value
-                ? <UploadedFileCard value={value} onClear={() => onChange?.('')} />
+                ? <UploadedFileCard value={value} onClear={handleClear} isRemoving={isRemoving} />
                 : <DropZone id={`field-${field.id}`} accept={field.accept} isUploading={isUploading} onChange={handleFileSelect} />
             }
             {uploadError && <UploadErrorMessage message={uploadError} />}

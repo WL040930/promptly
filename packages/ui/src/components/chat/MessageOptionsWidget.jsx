@@ -31,6 +31,7 @@ export default function MessageOptionsWidget({
     const evaluation = resolveClarificationSubmission({ inputs: options, state: isResolved ? initialState : formState });
     const answers = resolution?.answers || evaluation.answers;
     const canSubmit = evaluation.complete;
+    const isWorkflowRunPayload = options.some(input => input?.workflowRunPayload === true);
     const resolutionTitle = resolution?.type === 'superseded'
         ? 'Question superseded'
         : resolution?.type === 'defaulted'
@@ -50,7 +51,7 @@ export default function MessageOptionsWidget({
         if (!canSubmit) return;
         const text = answers.map(({ label, answer }) => `${label}: ${answer}`).join('\n');
         onSend?.({
-            type: 'submit_clarification',
+            type: isWorkflowRunPayload ? 'submit_workflow_run_payload' : 'submit_clarification',
             text,
             state: evaluation.state,
             ...(clarificationMessageId ? { clarificationMessageId } : {}),

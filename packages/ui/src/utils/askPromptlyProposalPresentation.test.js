@@ -34,6 +34,20 @@ test('Ask Promptly keeps preparation details with a compound solution review', (
     assert.equal(result[0].payload.work, coordinatorWork.payload.work);
 });
 
+test('Ask Promptly keeps preparation details with a lifecycle action review', () => {
+    const proposal = {
+        id: 'proposal_3',
+        sender: 'bot',
+        kind: 'workflow_lifecycle_proposal',
+        payload: { action: 'publish', workflowName: 'Notify respondents' }
+    };
+
+    const result = coalesceAskPromptlyProposalMessages([coordinatorWork, proposal]);
+
+    assert.equal(result.length, 1);
+    assert.equal(result[0].payload.work, coordinatorWork.payload.work);
+});
+
 test('active or specialist progress remains visible until it has its own final proposal', () => {
     const active = { ...coordinatorWork, payload: { work: { surface: 'ask_promptly', status: 'drafting' } } };
     const specialist = { ...coordinatorWork, payload: { work: { surface: 'form', outcomeKind: 'proposal' } } };

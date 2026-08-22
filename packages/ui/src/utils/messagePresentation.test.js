@@ -39,6 +39,10 @@ test('Ask Promptly coordinator work expands after a proposal outcome', () => {
     }), 'proposal_work');
 });
 
+test('workflow lifecycle approvals use the workflow proposal presentation', () => {
+    assert.equal(messagePresentation({ sender: 'bot', kind: 'workflow_lifecycle_proposal' }), 'workflow_proposal');
+});
+
 test('terminal non-proposal work is not presented as live progress', () => {
     assert.equal(messagePresentation({
         sender: 'bot', kind: 'assistant_work', payload: { work: { surface: 'ask_promptly', status: 'completed' } }

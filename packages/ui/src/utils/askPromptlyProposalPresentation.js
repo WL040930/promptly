@@ -1,4 +1,4 @@
-const PROPOSAL_KINDS = new Set(['form_proposal', 'workflow_proposal', 'workflow_diff', 'solution_proposal']);
+const PROPOSAL_KINDS = new Set(['form_proposal', 'workflow_proposal', 'workflow_diff', 'workflow_lifecycle_proposal', 'solution_proposal']);
 
 const isAskPromptlyProposalWork = message => (
     message?.sender === 'bot'

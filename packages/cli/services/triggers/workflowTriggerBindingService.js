@@ -1,4 +1,5 @@
 import { WorkflowTriggerBinding } from '../../models/index.js';
+import { CHAT_WORKFLOW_TRIGGER_KIND, chatWorkflowInvocationFromConfig } from './chatWorkflowInvocationContract.js';
 
 const localBindingForNode = node => {
     const config = node?.config || {};
@@ -8,6 +9,25 @@ const localBindingForNode = node => {
     }
     if (node.subType === 'webhook' && config.webhookId) {
         return { kind: 'webhook', resourceId: String(config.webhookId), config };
+    }
+    if (node.subType === 'agent' && config.chatEnabled === true) {
+        const invocation = chatWorkflowInvocationFromConfig(config);
+        if (!invocation.valid) {
+            const error = new Error(invocation.issues.map(item => item.message).join(' '));
+            error.code = 'CHAT_WORKFLOW_INVOCATION_INVALID';
+            error.issues = invocation.issues;
+            throw error;
+        }
+        return {
+            kind: CHAT_WORKFLOW_TRIGGER_KIND,
+            resourceId: invocation.invocationKey,
+            config: {
+                chatEnabled: true,
+                invocationKey: invocation.invocationKey,
+                description: invocation.description,
+                parameterSchema: invocation.parameterSchema
+            }
+        };
     }
     return null;
 };

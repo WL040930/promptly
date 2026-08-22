@@ -7,6 +7,8 @@ import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 import { getApprovalSummary } from '../engine/continuationService.js';
 import { replaceChatSessionState } from './chatTurnLifecycle.js';
 import { buildWorkflowPresentation } from '../assistant/proposalPresentation.js';
+import { WORKFLOW_LIFECYCLE_ACTIONS } from '../automations/workflowLifecycleService.js';
+import { createWorkflowLifecycleProposal } from './chatWorkflowLifecycleService.js';
 
 const completed = output => ({ status: 'completed', output });
 
@@ -57,7 +59,7 @@ const compactWorkflowContext = workflow => {
     };
 };
 
-export const buildWorkflowProposalPayload = ({ workflow = null, result = {} } = {}) => {
+export const buildWorkflowProposalPayload = ({ workflow = null, result = {}, afterApprovalActions = [] } = {}) => {
     const workflowValue = workflow?.toJSON?.() || workflow || { nodes: [], edges: [] };
     const action = (workflowValue.nodes || []).length > 0 ? 'edit_workflow' : 'create_workflow';
     const payload = {
@@ -75,7 +77,8 @@ export const buildWorkflowProposalPayload = ({ workflow = null, result = {} } = 
         resourceChanges: result.resourceChanges || [],
         resourceIntent: result.resourceIntent || null,
         contextDelta: result.contextDelta || null,
-        diagnosis: result.diagnosis || null
+        diagnosis: result.diagnosis || null,
+        afterApprovalActions: Array.isArray(afterApprovalActions) ? afterApprovalActions : []
     };
 
     return {
@@ -528,11 +531,39 @@ export const createChatCapabilityRegistry = ({
             'proposal'
         ),
         tool(
+            'propose_workflow_lifecycle_actions',
+            'Prepare reviewable publish, pause, test-run, or live-run actions for an existing workflow. Never execute an action directly.',
+            {
+                workflowId: { type: ['string', 'null'] },
+                actions: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: 3,
+                    items: { type: 'string', enum: WORKFLOW_LIFECYCLE_ACTIONS }
+                }
+            },
+            async ({ args }) => {
+                const reply = await createWorkflowLifecycleProposal({
+                    session,
+                    userId,
+                    workflowId: args.workflowId || effectiveContext.workflowId || null,
+                    actions: args.actions
+                });
+                return reply;
+            },
+            'proposal'
+        ),
+        tool(
             'propose_workflow_change',
             'Prepare a reviewable workflow creation or workflow change proposal. Do not apply changes.',
             {
                 workflowId: { type: ['string', 'null'] },
-                prompt: { type: 'string' }
+                prompt: { type: 'string' },
+                afterApprovalActions: {
+                    type: 'array',
+                    maxItems: 3,
+                    items: { type: 'string', enum: WORKFLOW_LIFECYCLE_ACTIONS }
+                }
             },
             async ({ args }) => {
                 const workflowId = args.workflowId || effectiveContext.workflowId || null;
@@ -561,7 +592,7 @@ export const createChatCapabilityRegistry = ({
                 const reply = await saveReply(session, {
                     text: result.message || 'I prepared the requested workflow changes for your review.',
                     kind: 'workflow_proposal',
-                    payload: buildWorkflowProposalPayload({ workflow, result }),
+                    payload: buildWorkflowProposalPayload({ workflow, result, afterApprovalActions: args.afterApprovalActions || [] }),
                     proposalStatus: 'pending'
                 });
                 

@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRawMimeMessage, isRetryableEmailError, parseRecipients, validateEmailMessage, withRetries } from './integrations/generic-connectors/send-email/emailConnector.js';
+import {
+    buildIndividualRowMessages,
+    buildRawMimeMessage,
+    isRetryableEmailError,
+    parseRecipients,
+    validateEmailMessage,
+    withRetries
+} from './integrations/generic-connectors/send-email/emailConnector.js';
 
 test('email connector validates recipient lists and message headers', () => {
     assert.deepEqual(parseRecipients('a@example.com, b@example.com'), ['a@example.com', 'b@example.com']);
@@ -40,6 +47,9 @@ test('Send Email defaults to durable asynchronous delivery and exposes queue out
     const deliveryMode = schema.inputs.find(input => input.name === 'deliveryMode');
     assert.equal(deliveryMode.defaultValue, 'async');
     assert.deepEqual(deliveryMode.options.map(option => option.value), ['async', 'wait']);
+    const recipientMode = schema.inputs.find(input => input.name === 'recipientMode');
+    assert.equal(recipientMode.defaultValue, 'group');
+    assert.deepEqual(recipientMode.options.map(option => option.value), ['group', 'individualRows']);
     assert.deepEqual(schema.outputs.filter(output => ['deliveryId', 'deliveryStatus'].includes(output.name)).map(output => output.name), ['deliveryId', 'deliveryStatus']);
 });
 
@@ -57,4 +67,40 @@ test('email validation accepts normalized async messages with empty optional rec
     assert.deepEqual(normalized.cc, []);
     assert.deepEqual(normalized.bcc, []);
     assert.deepEqual(normalized.replyTo, []);
+});
+
+test('individual row emails render a private message per unique recipient', () => {
+    const result = buildIndividualRowMessages({
+        rows: [
+            { Email: 'ada@example.com', Name: 'Ada', Status: '<Active>' },
+            { Email: 'ADA@example.com', Name: 'Duplicate', Status: 'Inactive' },
+            { Email: 'bea@example.com', Name: 'Bea', Status: 'Active' }
+        ],
+        recipientColumn: 'email',
+        subject: 'Hi [[Name]]',
+        text: 'Status: [[Status]]',
+        html: '<p>Status: [[Status]]</p>'
+    });
+
+    assert.equal(result.recipientCount, 2);
+    assert.equal(result.skippedDuplicates, 1);
+    assert.deepEqual(result.messages[0], {
+        to: ['ada@example.com'],
+        cc: [],
+        bcc: [],
+        replyTo: [],
+        subject: 'Hi Ada',
+        text: 'Status: <Active>',
+        html: '<p>Status: &lt;Active&gt;</p>'
+    });
+    assert.equal(result.messages[1].subject, 'Hi Bea');
+});
+
+test('individual row emails validate template columns before delivery can be queued', () => {
+    assert.throws(() => buildIndividualRowMessages({
+        rows: [{ Email: 'ada@example.com', Name: 'Ada' }],
+        recipientColumn: 'Email',
+        subject: 'Hi [[Missing]]',
+        text: 'Hello'
+    }), /missing column 'Missing'/);
 });

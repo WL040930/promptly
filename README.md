@@ -95,8 +95,12 @@ JWT_SECRET=your_super_secret_jwt_key
 # Storage
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your_supabase_anon_key
-# Required for private workflow assets and Drive transfers.
+# Required for private workflow assets, private form uploads, and Drive transfers.
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+# Optional rollout switches. Both new capabilities are enabled by default.
+# Set either to false only while you need the legacy behavior during a rollout.
+# FORM_PRIVATE_UPLOADS=false
+# CHAT_WORKFLOW_INVOCATIONS=false
 
 # AI Integration
 OPENROUTER_API_KEY=your_openrouter_api_key
@@ -123,6 +127,18 @@ AI_DEFAULT_MODEL=nvidia/nemotron-3-super-120b-a12b:free
 # Required for managed transcription.
 OPENAI_API_KEY=your_openai_api_key
 ```
+
+Form file fields now use the private `workflow-assets` bucket by default. A
+submitted response stores a durable asset reference, so a workflow can pass it
+to Google Drive without exposing a public Supabase URL. The existing public
+`form-uploads` bucket and `/api/storage/upload/:filename` route remain for
+legacy forms when `FORM_PRIVATE_UPLOADS=false`; they are not deleted or
+migrated automatically.
+
+For chat-initiated workflows, enable the **Agent Message** trigger on a
+published workflow, declare its parameters, and add a description. Promptly
+extracts only those parameters, asks for missing values, and always shows a
+live-run approval before it executes the workflow.
 
 ### 3. Bootstrap a Reset Database
 

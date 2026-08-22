@@ -23,11 +23,22 @@ const storageRequest = async ({ method, key, body, contentType }) => {
     return response;
 };
 
-export const createAsset = async ({ userId, buffer, originalName, mimeType = 'application/octet-stream', workflowId = null, runId = null, formId = null, source = 'upload', metadata = {} }) => {
+export const createAsset = async ({
+    userId,
+    buffer,
+    originalName,
+    mimeType = 'application/octet-stream',
+    workflowId = null,
+    runId = null,
+    formId = null,
+    source = 'upload',
+    status = 'clean',
+    metadata = {}
+}) => {
     if (!Buffer.isBuffer(buffer) || buffer.length > MAX_BYTES) throw new Error('Asset must be a buffer no larger than 50 MB.');
     const key = storageKey({ userId, name: originalName });
     await storageRequest({ method: 'POST', key, body: buffer, contentType: mimeType });
-    return Asset.create({ userId, workflowId, runId, formId, storageKey: key, bucket: BUCKET, originalName: safeName(originalName), mimeType, byteSize: buffer.length, checksum: checksum(buffer), status: 'clean', source, metadata });
+    return Asset.create({ userId, workflowId, runId, formId, storageKey: key, bucket: BUCKET, originalName: safeName(originalName), mimeType, byteSize: buffer.length, checksum: checksum(buffer), status, source, metadata });
 };
 
 export const getAssetForUser = async ({ id, userId }) => {
@@ -44,5 +55,11 @@ export const downloadAsset = async ({ id, userId }) => {
 };
 
 export const listAssets = ({ userId }) => Asset.findAll({ where: { userId, status: 'clean' }, order: [['createdAt', 'DESC']], limit: 100 });
+
+/**
+ * Remove the object backing an asset. Callers own the lifecycle transition in
+ * the database so a failed storage delete never makes a pending upload usable.
+ */
+export const deleteStoredAsset = asset => storageRequest({ method: 'DELETE', key: asset.storageKey });
 
 export { BUCKET, MAX_BYTES };

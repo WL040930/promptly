@@ -25,6 +25,12 @@ import { resolveAssistantNavigation } from '../../../shared/assistantNavigation.
 import { clearChatSessionState, replaceChatSessionState } from './chatTurnLifecycle.js';
 import { clarificationInputsOrFallback, resolveClarificationSubmission } from '../../../shared/clarificationContract.js';
 import { applyFormChange } from '../forms/formWorkflowDependencyService.js';
+import {
+    createWorkflowLifecycleProposal,
+    decideWorkflowLifecycleProposal,
+    handleWorkflowRunPayloadEvent
+} from './chatWorkflowLifecycleService.js';
+import { chatWorkflowInvocationService } from './chatWorkflowInvocationService.js';
 
 const askPromptlyCoordinator = createAskPromptlyCoordinator({
     processAgenticTurn,
@@ -137,7 +143,12 @@ const ensureWorkflowRevision = (workflow, expected) => {
  */
 export const decideChatProposal = async ({ session, userId, messageId, action = 'approve', overrides = null } = {}) => {
     if (!session?.id || !messageId) throw new Error('A session and proposal message are required.');
+    const lifecycleProposal = await AssistantMessage.findOne({
+        where: { id: messageId, threadId: session.id, kind: 'workflow_lifecycle_proposal' }
+    });
+    if (lifecycleProposal) return decideWorkflowLifecycleProposal({ session, userId, messageId, action });
     let result;
+    let deferredLifecycleActions = null;
     await sequelize.transaction(async transaction => {
         const message = await AssistantMessage.findOne({
             where: { id: messageId, threadId: session.id },
@@ -324,6 +335,12 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
                 await saved.update({ nodes: normalized.nodes, edges, revision: nextRevision }, { transaction });
             }
             result = { workflowId: saved.id, action: workflow ? 'edit_workflow' : 'create_workflow' };
+            if (Array.isArray(proposal.afterApprovalActions) && proposal.afterApprovalActions.length > 0) {
+                deferredLifecycleActions = {
+                    workflowId: saved.id,
+                    actions: proposal.afterApprovalActions
+                };
+            }
         } else {
             const error = new Error('Unsupported chat proposal.');
             error.code = 'CHAT_PROPOSAL_UNSUPPORTED';
@@ -336,6 +353,15 @@ export const decideChatProposal = async ({ session, userId, messageId, action = 
         await clearChatSessionState(session, { transaction });
         result = { status: 'applied', message: messagePayload({ toJSON: () => ({ ...message.toJSON(), proposalStatus: 'applied', payload: nextPayload }) }), resource: result };
     });
+    if (deferredLifecycleActions && result?.status === 'applied') {
+        const next = await createWorkflowLifecycleProposal({
+            session,
+            userId,
+            workflowId: deferredLifecycleActions.workflowId,
+            actions: deferredLifecycleActions.actions
+        });
+        result.nextProposal = next.reply || null;
+    }
     return result;
 };
 
@@ -476,6 +502,13 @@ const formResult = async ({ session, userId, request, formId, continuation = nul
 
 export const applyEvent = async (session, userId, event, onEvent = null) => {
     if (!event?.type) return null;
+    if (event.type === 'submit_workflow_run_payload') {
+        return handleWorkflowRunPayloadEvent({ session, userId, event });
+    }
+    if (event.type === 'submit_clarification') {
+        const invocationResult = await chatWorkflowInvocationService.handleClarification({ session, userId, event });
+        if (invocationResult) return invocationResult;
+    }
     const state = session.state || {};
     if (event.type === 'agent_plan_approved' && event.runId) {
         const run = await AgentRun.findOne({ where: { id: event.runId, threadId: session.id, userId } });
@@ -699,7 +732,7 @@ export const applyEvent = async (session, userId, event, onEvent = null) => {
 
 const systemInstruction = `You are Promptly Agent, an AI assistant helping users build automation workflows and forms.
 Use the registered capabilities when you need account facts or when preparing a reviewable proposal.
-Never invent resource IDs. Resolve named resources before editing them. Never apply changes directly; proposals require explicit user approval. For requests to delete multiple or all forms, use propose_delete_all_forms so the user can review one complete proposal; never issue repeated single-form deletes silently.
+Never invent resource IDs. Resolve named resources before editing them. Never apply changes directly; proposals require explicit user approval. For workflow lifecycle requests, use propose_workflow_lifecycle_actions and keep every requested action in order; the user must approve each action separately. For a workflow change followed by publish or run, pass those follow-up actions as afterApprovalActions to propose_workflow_change. For requests to delete multiple or all forms, use propose_delete_all_forms so the user can review one complete proposal; never issue repeated single-form deletes silently.
 If native function calling is unavailable, output a tool request exactly as <TOOL>{"name":"tool_name","args":{...}}</TOOL> and wait for <TOOL_RESPONSE>...</TOOL_RESPONSE> before continuing.`;
 
 // Tool definitions are generated by chatCapabilityRegistry.js.
@@ -719,6 +752,17 @@ export const processChatMessage = async ({ session, userId, context = {}, onEven
         });
         onEvent?.({ type: 'navigation.ready', navigation, messageId: reply.id });
         return { replyObj: reply, totalTokenUsage: null };
+    }
+    if (env.features.chatWorkflowInvocations
+        && (!pendingAgentState.status || ['idle', 'form_conversation'].includes(pendingAgentState.status))) {
+        const invocation = await chatWorkflowInvocationService.routeMessage({
+            session,
+            userId,
+            message: latestUserMessage?.text || ''
+        });
+        if (invocation?.reply) {
+            return { replyObj: invocation.reply, totalTokenUsage: null };
+        }
     }
     // A pending clarification is scoped to its original question. An
     // unrelated sentence must start a fresh turn instead of being appended to

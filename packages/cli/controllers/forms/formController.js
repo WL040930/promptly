@@ -1,10 +1,17 @@
 import sequelize from '../../db/index.js';
 import { AssistantThread, Form, FormResponse, WorkflowTriggerBinding } from '../../models/index.js';
+import env from '../../config/env.js';
 import { validateFormSchema } from '../../services/ai/form/domain/formSchemaValidator.js';
 import asyncHandler from '../../utils/asyncHandler.js';
 import { executeWorkflow } from '../../services/engine/executionEngine.js';
 import { formAssistant } from '../../services/ai/form/formAssistant.js';
 import { applyFormChange, previewFormChange as previewFormChangePlan } from '../../services/forms/formWorkflowDependencyService.js';
+import {
+    claimFormFiles,
+    createPendingFormFile,
+    discardPendingFormFile,
+    purgeExpiredPendingFormFiles
+} from '../../services/forms/formFileService.js';
 
 export const getForms = asyncHandler(async (req, res) => {
     const forms = await Form.findAll({
@@ -208,7 +215,44 @@ export const getPublicForm = asyncHandler(async (req, res) => {
         }
     }
 
-    res.json(form);
+    res.json({
+        ...form.toJSON(),
+        fileUploadMode: env.features.privateFormUploads ? 'private' : 'legacy'
+    });
+});
+
+export const uploadPublicFormFile = asyncHandler(async (req, res) => {
+    if (!env.features.privateFormUploads) {
+        return res.status(409).json({
+            code: 'FORM_PRIVATE_UPLOADS_DISABLED',
+            message: 'Private form uploads are temporarily disabled.'
+        });
+    }
+    const form = await Form.findByPk(req.params.formId);
+    if (!form) return res.status(404).json({ message: 'Form not found' });
+
+    const result = await createPendingFormFile({
+        form,
+        fieldId: req.headers['x-field-id'],
+        buffer: req.body,
+        originalName: req.headers['x-file-name'],
+        mimeType: req.headers['content-type']
+    });
+    // Cleanup is intentionally best effort: an expired upload is already
+    // impossible to claim, even if storage is temporarily unavailable.
+    void purgeExpiredPendingFormFiles().catch(error => console.warn('[FormFile] Pending-upload cleanup failed:', error.message));
+    res.status(201).json(result);
+});
+
+export const discardPublicFormFile = asyncHandler(async (req, res) => {
+    const form = await Form.findByPk(req.params.formId);
+    if (!form) return res.status(404).json({ message: 'Form not found' });
+    await discardPendingFormFile({
+        form,
+        assetId: req.params.assetId,
+        uploadClaim: req.headers['x-upload-claim']
+    });
+    res.status(204).end();
 });
 
 // Form Responses
@@ -239,9 +283,10 @@ export const submitFormResponse = asyncHandler(async (req, res) => {
             throw error;
         }
 
+        const claimedResponseData = await claimFormFiles({ form, responseData, transaction });
         const response = await FormResponse.create({
             formId,
-            responseData,
+            responseData: claimedResponseData,
             snapshot: form.fields
         }, { transaction });
         await form.increment('responseCount', { transaction });
@@ -250,7 +295,7 @@ export const submitFormResponse = asyncHandler(async (req, res) => {
 
     // ── Fire-and-forget: dispatch any workflows bound to this form ──────────
     const initialPayload = {
-        fields:      responseData,
+        fields:      response.responseData,
         responseId:  response.id,
         submittedAt: response.createdAt,
     };

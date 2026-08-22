@@ -1,0 +1,35 @@
+{
+  "inputs": [
+    { "name": "inputData", "type": "object", "label": "Rows", "isConnection": true },
+    {
+      "name": "rows",
+      "type": "object",
+      "label": "Rows to filter",
+      "valueSyntax": "workflow-expression",
+      "placeholder": "Connect a Google Sheets Read step, or insert rows from a previous step with {}",
+      "helpText": "Google Sheets reads use their first row as column headers. A connected value takes effect when this field is empty."
+    },
+    {
+      "name": "filters",
+      "type": "filter-list",
+      "label": "Match every filter",
+      "defaultValue": [],
+      "required": true,
+      "valueSyntax": "workflow-expression",
+      "helpText": "Rows must satisfy every filter (AND). String matching ignores case unless changed below."
+    },
+    {
+      "name": "caseSensitive",
+      "type": "boolean",
+      "label": "Use case-sensitive string matching",
+      "defaultValue": false
+    }
+  ],
+  "outputs": [
+    { "name": "outputData", "type": "object", "label": "Matching rows", "isConnection": true },
+    { "name": "rows", "type": "object", "label": "Matching rows", "expandable": true },
+    { "name": "matchedCount", "type": "number", "label": "Matching row count" },
+    { "name": "totalCount", "type": "number", "label": "Input row count" },
+    { "name": "columns", "type": "object", "label": "Columns" }
+  ]
+}
