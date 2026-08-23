@@ -42,6 +42,21 @@ const googleSheetsAction = {
     }
 };
 
+const confirmationEmail = {
+    nodeKey: 'action:email',
+    type: 'action',
+    title: 'Send confirmation email',
+    schema: {
+        inputs: [
+            { name: 'inputData', isConnection: true },
+            { name: 'to', type: 'text', valueSyntax: 'workflow-expression' },
+            { name: 'subject', type: 'text', valueSyntax: 'workflow-expression' },
+            { name: 'body', type: 'textarea', valueSyntax: 'workflow-expression' }
+        ],
+        outputs: [{ name: 'outputData', isConnection: true }]
+    }
+};
+
 test('linear assembler permits a terminal approval without inventing an approval route', () => {
     const result = assembleLinearWorkflow({
         workflow: { nodes: [], edges: [] },
@@ -88,4 +103,37 @@ test('linear assembler emits a semantic approval gate before a following action'
         approval: { ref: 'review_feedback', title: 'Review new row', config: {} },
         whenApproved: { ref: 'append_feedback', nodeKey: 'action:googleSheets', title: 'Google Sheets', config: {} }
     });
+});
+
+test('linear assembler replaces a legacy respondent recipient with the server-owned binding', () => {
+    const result = assembleLinearWorkflow({
+        workflow: { nodes: [], edges: [] },
+        specs: [formTrigger, approval, confirmationEmail],
+        formSchema: { id: 'form_event', fields: [{ id: 'email', label: 'Email', type: 'email', required: true }] },
+        formWorkflowContracts: { respondentEmail: { $binding: 'form_email' } },
+        capabilities: ['respondent_confirmation', 'owner_approval'],
+        plan: {
+            selectedNodeKeys: ['trigger:form-submission', 'logic:approval', 'action:email'],
+            capabilities: ['respondent_confirmation', 'owner_approval'],
+            linearSteps: [
+                { ref: 'event_form', nodeKey: 'trigger:form-submission', requirementIds: ['req_1'], config: {} },
+                { ref: 'review_event', nodeKey: 'logic:approval', requirementIds: ['req_1'], config: {} },
+                {
+                    ref: 'send_confirmation',
+                    nodeKey: 'action:email',
+                    requirementIds: ['req_1'],
+                    config: {
+                        to: '{{triggerData.fields.email}}',
+                        subject: 'Thanks for registering',
+                        body: 'We received your registration.'
+                    }
+                }
+            ]
+        }
+    });
+
+    assert.equal(result.reason, null);
+    const approvalOperation = result.operations.find(operation => operation.op === 'add_approval_gate');
+    assert.deepEqual(approvalOperation.whenApproved.config.to, { $binding: 'form_email' });
+    assert.doesNotMatch(JSON.stringify(result.operations), /\{\{triggerData/);
 });

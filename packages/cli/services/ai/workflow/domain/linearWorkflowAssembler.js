@@ -22,7 +22,14 @@ const unavailable = reason => ({ operations: null, reason });
  * The caller only needs to provide the current workflow, selected specs, and
  * an ownership-checked form schema when the blueprint contains a form trigger.
  */
-export const assembleLinearWorkflow = ({ workflow = {}, plan = {}, specs = [], formSchema = null } = {}) => {
+export const assembleLinearWorkflow = ({
+    workflow = {},
+    plan = {},
+    specs = [],
+    formSchema = null,
+    capabilities = [],
+    formWorkflowContracts = null
+} = {}) => {
     if ((workflow.nodes || []).length > 0 || (workflow.edges || []).length > 0) {
         return unavailable('The linear assembler only builds a new workflow.');
     }
@@ -77,6 +84,12 @@ export const assembleLinearWorkflow = ({ workflow = {}, plan = {}, specs = [], f
         return unavailable('The response spreadsheet destination is ambiguous for the linear assembler.');
     }
     const responseSheet = responseSheetChanges[0] || null;
+    const effectiveCapabilities = new Set([...(plan.capabilities || []), ...capabilities]);
+    const emailStepCount = resolvedSteps.filter(item => item.spec.nodeKey === 'action:email').length;
+    const respondentEmailBinding = formWorkflowContracts?.respondentEmail;
+    const shouldBindRespondentEmail = effectiveCapabilities.has('respondent_confirmation')
+        && isObject(respondentEmailBinding)
+        && (emailStepCount === 1 || effectiveCapabilities.has('owner_approval'));
     const preparedSteps = [];
     for (const { step, spec, index } of resolvedSteps) {
         const config = { ...defaultConfigFor(spec), ...(isObject(step.config) ? cloneValue(step.config) : {}) };
@@ -89,6 +102,12 @@ export const assembleLinearWorkflow = ({ workflow = {}, plan = {}, specs = [], f
             config.operation = 'append';
             config.spreadsheetId = { $provision: responseSheet.ref };
             config.range = `'${sheetTitle}'!A1`;
+        }
+        // The form prerequisite resolver owns the respondent address. Replace
+        // only this capability's recipient so a legacy model token cannot
+        // reach the worker or the strict workflow-expression compiler.
+        if (spec.nodeKey === 'action:email' && shouldBindRespondentEmail) {
+            config.to = cloneValue(respondentEmailBinding);
         }
         const missing = missingRequiredConfig(spec, config);
         if (missing.length > 0) {

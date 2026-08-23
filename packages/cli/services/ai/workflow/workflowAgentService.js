@@ -216,7 +216,7 @@ export const validateGeneratedResourceValues = (args = {}) => normalizeGenerated
 
 const isEmailAction = node => node?.subType === 'email' || node?.nodeKey === 'action:email';
 
-const respondentConfirmationPattern = /(?:\b(?:thank[- ]?you|confirmation|confirm|acknowledg)\b.{0,80}\b(?:email|message|respondent|user|applicant|submitter)\b|\b(?:email|notify|send)\b.{0,80}\b(?:respondent|user|applicant|submitter)\b)/i;
+const respondentConfirmationPattern = /(?:\b(?:thank[- ]?you|confirmation|confirm|acknowledg)\b.{0,80}\b(?:email|message|respondent|user|applicant|submitter|registrant)\b|\b(?:email|notify|send)\b.{0,80}\b(?:respondent|user|applicant|submitter|registrant)\b|\b(?:email|notify|send)\b.{0,80}\b(?:thank[- ]?you|confirmation|confirm|acknowledg)\b)/i;
 const applicationReviewPattern = /\b(?:approve|approval|reject|rejected|rejection)\b/i;
 
 export const requiredCapabilitiesForRequest = message => {

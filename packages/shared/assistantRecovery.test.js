@@ -57,6 +57,18 @@ test('assistant recovery keeps generic failure details safe and actionable', () 
     assert.equal(result.details[0].message, 'A node is invalid.');
 });
 
+test('assistant recovery explains planner omissions without exposing a raw required-field error', () => {
+    const result = buildAssistantRecovery({
+        surface: 'workflow',
+        code: 'WORKFLOW_AI_UNSAFE_PROPOSAL',
+        issues: [{ code: 'REQUIRED', path: 'resourceChanges[0].title', message: 'A value is required.' }],
+        context: { retryText: 'Save the registration response to a new Google Sheet.' }
+    });
+
+    assert.equal(result.details[0].message, 'Promptly generated an incomplete workflow value and needs to rebuild this part of the request.');
+    assert.doesNotMatch(result.details[0].message, /A value is required/i);
+});
+
 test('assistant recovery hides incomplete operations nested in an unsafe workflow proposal', () => {
     const result = buildAssistantRecovery({
         surface: 'workflow',

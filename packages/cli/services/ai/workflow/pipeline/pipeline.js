@@ -1726,7 +1726,23 @@ export const generateWorkflowTurn = async ({
     if ((currentWorkflow.nodes || []).length === 0 && requested.length === 0) {
         throw createPipelineError('The workflow plan did not identify any supported nodes.', 'WORKFLOW_AI_NODE_SELECTION_REQUIRED');
     }
-    const capabilities = unique(plan.capabilities || []);
+    const requestCapabilities = requiredCapabilitiesForRequest(semanticRequest)
+        .filter(capability => capability !== 'respondent_confirmation' || Boolean(resolvedFormSchema));
+    const capabilities = unique([...(plan.capabilities || []), ...requestCapabilities]);
+    if (requestCapabilities.length > 0 && !requestCapabilities.every(capability => (plan.capabilities || []).includes(capability))) {
+        plan = { ...plan, capabilities };
+    }
+    // A respondent confirmation is a server-owned data-flow contract. Build
+    // its structured binding before the linear blueprint is assembled so the
+    // model cannot reintroduce a legacy {{...}} recipient token.
+    if (capabilities.includes('respondent_confirmation') && resolvedFormSchema && !formWorkflowContracts?.respondentEmail) {
+        const respondentEmail = resolveRespondentEmailField({
+            formSchema: resolvedFormSchema,
+            preferredFieldId: resolvedFormSchema.respondentEmailFieldId || resolvedFormSchema.settings?.respondentEmailFieldId || null
+        });
+        const bindingKey = respondentEmail.field ? fieldBindingKey(resolvedFormSchema, respondentEmail.field.id) : null;
+        if (bindingKey) formWorkflowContracts = { ...(formWorkflowContracts || {}), respondentEmail: { $binding: bindingKey } };
+    }
     const sheetDestination = resolveFormResponseSheetDestination({
         resourceChanges: plan.resourceChanges || [],
         spreadsheetIntent,
@@ -1751,11 +1767,32 @@ export const generateWorkflowTurn = async ({
     const spreadsheetRange = selectedSpreadsheetRange({ resourceContext, spreadsheetId: spreadsheetIntent.spreadsheetId });
     plan = applySelectedSpreadsheetToLinearSteps({ plan, spreadsheetIntent, range: spreadsheetRange });
     const linearAssembly = plan.type === 'plan_complete'
-        ? assembleLinearWorkflow({ workflow: currentWorkflow, plan, specs, formSchema: resolvedFormSchema })
+        ? assembleLinearWorkflow({
+            workflow: currentWorkflow,
+            plan,
+            specs,
+            formSchema: resolvedFormSchema,
+            capabilities,
+            formWorkflowContracts
+        })
         : { operations: null, reason: 'Only complete plans can provide a linear workflow blueprint.' };
+    // Preflight the deterministic blueprint once. If it contains a raw or
+    // otherwise unsafe workflow value, do not regenerate the same invalid
+    // fallback after AI repair attempts; let the repair path work from the
+    // preserved issue instead.
+    const linearAssemblyIssues = linearAssembly.operations
+        ? validateWorkflowWorkerResult({ operations: linearAssembly.operations }, { specs, workflow: currentWorkflow })
+        : [];
+    const safeLinearAssembly = linearAssemblyIssues.length > 0
+        ? {
+            operations: null,
+            reason: 'The deterministic linear workflow blueprint failed output validation.',
+            issues: linearAssemblyIssues
+        }
+        : linearAssembly;
     let previousResponse = null;
-    let repairIssues = [];
-    let firstRepairIssues = [];
+    let repairIssues = linearAssemblyIssues;
+    let firstRepairIssues = linearAssemblyIssues;
     let verifierRepairIssues = [];
     const captureRepairIssues = issues => {
         repairIssues = issues || [];
@@ -1774,7 +1811,7 @@ export const generateWorkflowTurn = async ({
         });
 
         let workerCall;
-        if (attempt === 0 && linearAssembly.operations) {
+        if (attempt === 0 && safeLinearAssembly.operations) {
             onProgress?.({
                 status: 'building',
                 phase: 'draft',
@@ -1782,7 +1819,7 @@ export const generateWorkflowTurn = async ({
                 message: 'Connecting the workflow steps',
                 detail: 'Promptly is applying the validated linear blueprint and binding the selected resources.'
             });
-            workerCall = { value: { operations: linearAssembly.operations }, rawText: JSON.stringify({ operations: linearAssembly.operations }), response: null };
+            workerCall = { value: { operations: safeLinearAssembly.operations }, rawText: JSON.stringify({ operations: safeLinearAssembly.operations }), response: null };
         } else if (attempt === 0 && plan.type === 'direct_plan') {
             workerCall = { value: { operations: plan.operations }, rawText: JSON.stringify({ operations: plan.operations }), response: null };
         } else {
@@ -2008,12 +2045,7 @@ export const generateWorkflowTurn = async ({
     }
 
     if (!unverifiedProposal) {
-        const fallback = assembleLinearWorkflow({
-            workflow: currentWorkflow,
-            plan,
-            specs,
-            formSchema: resolvedFormSchema
-        });
+        const fallback = safeLinearAssembly;
         if (fallback.operations) {
             onProgress?.({
                 status: 'building',

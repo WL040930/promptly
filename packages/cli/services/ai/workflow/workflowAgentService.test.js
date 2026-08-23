@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeGeneratedResourceValues } from './workflowAgentService.js';
+import { normalizeGeneratedResourceValues, requiredCapabilitiesForRequest } from './workflowAgentService.js';
 import { compileWorkflowEdits } from './domain/editCompiler/index.js';
 import { compileWorkflowBindings, validateWorkflowExpressions } from '../../../../shared/workflowExpressions.js';
 
@@ -9,6 +9,12 @@ const registryFor = specs => ({
         const spec = specs.find(item => item.type === type && item.subType === subType);
         return spec ? { implementationStatus: 'experimental', configSchema: spec.schema } : null;
     }
+});
+
+test('required capability inference recognizes a Gmail confirmation after approval', () => {
+    assert.deepEqual(requiredCapabilitiesForRequest(
+        'After submission, request approval, send a Gmail confirmation after approval, and save the response to Google Sheets.'
+    ), ['respondent_confirmation', 'owner_approval']);
 });
 
 test('remove_node repairs downstream references and safely bypasses a deleted middle step', () => {

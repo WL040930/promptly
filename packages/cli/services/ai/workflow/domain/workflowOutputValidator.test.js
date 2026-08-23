@@ -181,12 +181,12 @@ test('planner normalization canonicalizes common Google Sheet resource aliases',
     ]);
 });
 
-test('planner validator rejects a spreadsheet change without a title', () => {
+test('planner validator accepts a spreadsheet change without a title for server defaulting', () => {
     const issues = validateWorkflowPlannerResult({
         type: 'plan_complete', summary: 'Save responses.', requirements: [{ id: 'req_1', description: 'Create a sheet.' }], selectedNodeKeys: [],
         resourceChanges: [{ ref: 'responses_sheet', type: 'create_google_spreadsheet' }]
     });
-    assert.ok(issues.some(item => item.path === 'resourceChanges[0].title'));
+    assert.deepEqual(issues, []);
 });
 
 test('planner validator explains the canonical type for an unknown resource change', () => {

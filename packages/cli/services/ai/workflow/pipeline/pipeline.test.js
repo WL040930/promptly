@@ -642,6 +642,60 @@ test('pipeline canonicalizes a model Sheet resource alias after a create-new-she
     });
 });
 
+test('pipeline defaults a missing new Sheet title before provisioning', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const plannerResult = {
+        type: 'plan_complete',
+        summary: 'Save each Event Registration response.',
+        requirements: [{ id: 'req_1', description: 'Append each response to the new Event Registration Sheet.' }],
+        selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
+        linearSteps: [
+            { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Form submitted', requirementIds: ['req_1'], config: {} },
+            { ref: 'save_response', nodeKey: 'action:googleSheets', title: 'Save response', requirementIds: ['req_1'], config: {} }
+        ],
+        capabilities: [],
+        // The model omitted title. The server should derive it from the
+        // selected form before any Google provisioning is attempted.
+        resourceChanges: [{ ref: 'response_spreadsheet', type: 'create_google_spreadsheet', sheetTitle: 'Responses' }]
+    };
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner' || options.operation === 'workflow:planner repair') {
+                return { text: JSON.stringify(plannerResult) };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'Create a new Sheet: Create a new Event Registration Sheet',
+        currentWorkflow: { nodes: [], edges: [] },
+        formSchema: {
+            id: 'form_event', title: 'Event Registration',
+            fields: [{ id: 'name', label: 'Name', type: 'text', required: true }]
+        },
+        turnContext: {
+            command: { type: 'submit_clarification', state: { spreadsheetId: 'create' } },
+            intent: {
+                sourceText: 'When the Event Registration form is submitted, save the response to the Event Registration Google Sheet.',
+                latestText: 'Create a new Sheet: Create a new Event Registration Sheet',
+                authority: 'user'
+            }
+        },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, googleSheetsSpec]),
+        resourceLookup: async () => { throw new Error('Create intent must not browse existing Sheets.'); },
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(result.resourceChanges[0].title, 'Event Registration');
+    assert.equal(result.resourceChanges[0].sheetTitle, 'Responses');
+    assert.deepEqual(result.nodes.find(node => node.nodeKey === 'action:googleSheets')?.config?.spreadsheetId, {
+        $provision: result.resourceChanges[0].ref
+    });
+});
+
 test('pipeline reuses an applied Sheet for an approval follow-up instead of searching a legacy clarification receipt', async () => {
     const { generateWorkflowTurn } = await import('./pipeline.js');
     const workflow = {
@@ -840,7 +894,7 @@ test('pipeline unwraps an exact form resource ID accidentally wrapped as provisi
                         summary: 'Send a thank-you email after owner approval.',
                         requirements: [{ id: 'req_1', description: 'Send a thank-you email to the respondent after approval.' }],
                         selectedNodeKeys: ['trigger:form-submission', 'logic:approval', 'action:email'],
-                        capabilities: ['owner_approval', 'respondent_confirmation']
+                        capabilities: ['owner_approval']
                     })
                 };
             }
@@ -1829,6 +1883,82 @@ test('pipeline assembles Form → Approval → Google Sheets as one semantic gat
     assert.ok(result.edges.some(edge => edge.source === result.nodes[0].id && edge.target === approvalNode.id));
     assert.ok(result.edges.some(edge => edge.source === approvalNode.id && edge.sourceHandle === 'approved' && edge.target === sheetNode.id));
     assert.equal(result.edges.some(edge => edge.source === approvalNode.id && edge.sourceHandle === 'rejected'), false);
+});
+
+test('pipeline builds the hackathon registration flow with safe confirmation binding and Sheet defaults', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let workerCalls = 0;
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Collect hackathon registrations, request approval, confirm the applicant, and save the response.',
+                        requirements: [{ id: 'req_hackathon', description: 'After approval, send a Gmail confirmation and append the registration to a new Google Sheet.' }],
+                        selectedNodeKeys: ['trigger:form-submission', 'logic:approval', 'action:email', 'action:googleSheets'],
+                        linearSteps: [
+                            { ref: 'hackathon_form', nodeKey: 'trigger:form-submission', title: 'Hackathon registration submitted', requirementIds: ['req_hackathon'], config: {} },
+                            { ref: 'review_registration', nodeKey: 'logic:approval', title: 'Review registration', requirementIds: ['req_hackathon'], config: {} },
+                            {
+                                ref: 'send_confirmation',
+                                nodeKey: 'action:email',
+                                title: 'Send Gmail confirmation',
+                                requirementIds: ['req_hackathon'],
+                                config: {
+                                    to: '{{triggerData.fields.email}}',
+                                    subject: 'Hackathon registration received',
+                                    body: 'Your registration was approved.'
+                                }
+                            },
+                            { ref: 'save_registration', nodeKey: 'action:googleSheets', title: 'Save registration', requirementIds: ['req_hackathon'], config: {} }
+                        ],
+                        // The model omitted the title and used the legacy
+                        // recipient token; both are repaired by server-owned
+                        // normalization before the worker/compiler boundary.
+                        resourceChanges: [{ ref: 'hackathon_responses', type: 'create_google_spreadsheet', sheetTitle: 'Responses' }],
+                        capabilities: ['owner_approval', 'respondent_confirmation']
+                    })
+                };
+            }
+            if (options.operation === 'workflow:worker' || options.operation === 'workflow:worker repair') {
+                workerCalls += 1;
+                throw new Error('The deterministic hackathon blueprint should not call the worker.');
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'Create a hackathon registration form. After submission, request approval, send a Gmail confirmation after approval, and save the response to Google Sheets.',
+        currentWorkflow: { nodes: [], edges: [] },
+        formSchema: {
+            id: 'form_hackathon',
+            title: 'Hackathon Registration',
+            fields: [
+                { id: 'name', label: 'Name', type: 'text', required: true },
+                { id: 'email', label: 'Email', type: 'email', required: true },
+                { id: 'team', label: 'Team name', type: 'text', required: true }
+            ]
+        },
+        turnContext: { command: { type: 'submit_clarification', state: { createSpreadsheet: 'create' } } },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, approvalSpec, summaryEmailSpec, googleSheetsSpec]),
+        resourceLoader: async () => ({ forms: { error: { message: 'Form list is temporarily unavailable.' }, options: [] } })
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(workerCalls, 0);
+    assert.match(result.resourceChanges[0].title, /Hackathon Registration/i);
+    const emailNode = result.nodes.find(node => node.nodeKey === 'action:email');
+    const formNode = result.nodes.find(node => node.nodeKey === 'trigger:form-submission');
+    assert.deepEqual(emailNode.config.to, {
+        $expr: 'reference',
+        v: 1,
+        nodeId: formNode.id,
+        path: ['fields', 'email']
+    });
+    assert.equal(JSON.stringify(result.nodes).includes('{{triggerData'), false);
 });
 
 test('pipeline supports Ask Promptly compound wording with a proposed form schema and a new response Sheet', async () => {

@@ -1,5 +1,9 @@
 const safeIssueMessage = issue => {
     const generatedWorkflowErrors = {
+        REQUIRED: 'Promptly generated an incomplete workflow value and needs to rebuild this part of the request.',
+        WORKFLOW_REFERENCE_RAW_TOKEN: 'Promptly generated an outdated workflow reference and needs to rebuild this part of the request.',
+        WORKFLOW_REFERENCE_LEGACY_FORBIDDEN: 'Promptly generated an outdated workflow reference and needs to rebuild this part of the request.',
+        WORKFLOW_REFERENCE_ROOT_HANDLE: 'Promptly used a connection handle where workflow data was required and needs to rebuild this part of the request.',
         WORKFLOW_EDIT_OPERATION_INVALID: 'Promptly generated an incomplete workflow step.',
         WORKFLOW_NODE_KEY_INVALID: 'Promptly selected a workflow step that is not available.',
         WORKFLOW_EDIT_GRAPH_INVALID: 'Promptly could not create valid connections between the workflow steps.',

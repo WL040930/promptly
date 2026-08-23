@@ -297,7 +297,10 @@ const validateResourceChanges = changes => {
                 allowed: [...RESOURCE_CHANGE_TYPES]
             });
         }
-        issues.push(...textIssues(change.title, `${path}.title`, { required: true, max: 180 }));
+        // The planner may omit a new Sheet title. The pipeline derives a safe
+        // title from the selected form/request before provisioning; keep the
+        // downstream resource contract strict once that normalization runs.
+        issues.push(...textIssues(change.title, `${path}.title`, { max: 180 }));
         if (change.sheetTitle !== undefined) issues.push(...textIssues(change.sheetTitle, `${path}.sheetTitle`, { max: 100 }));
         if (change.ref && refs.has(change.ref)) issues.push(issue('DUPLICATE_RESOURCE_CHANGE_REF', `${path}.ref`, 'Resource change refs must be unique.'));
         refs.add(change.ref);
