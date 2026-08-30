@@ -7,6 +7,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import { useBrowserNotifications } from '../context/BrowserNotificationContext.jsx';
 import Button from '../components/ui/Button.jsx';
 import { EDITOR_PREFERENCES, getEditorPreference, setEditorPreference } from '../utils/storage.js';
+import { PASSWORD_REQUIREMENTS_ERROR, PASSWORD_REQUIREMENTS_HINT, isValidPassword } from '../../../shared/passwordPolicy.js';
 
 export default function SettingsModal({ user, onClose, onLogout, initialTab = 'general' }) {
     const [activeTab, setActiveTab] = useState(initialTab);
@@ -66,8 +67,7 @@ export default function SettingsModal({ user, onClose, onLogout, initialTab = 'g
     const updatePassword = async event => {
         event.preventDefault();
         if (newPassword !== confirmPassword) return toast.error('Passwords do not match.');
-        const valid = newPassword.length >= 12 && /[A-Z]/.test(newPassword) && /[a-z]/.test(newPassword) && /[0-9]/.test(newPassword) && /[^A-Za-z0-9]/.test(newPassword);
-        if (!valid) return toast.error('Password must be at least 12 characters and include uppercase, lowercase, number, and symbol.');
+        if (!isValidPassword(newPassword)) return toast.error(PASSWORD_REQUIREMENTS_ERROR);
         try {
             await changePasswordMutation.mutateAsync(newPassword);
             setNewPassword('');
@@ -153,6 +153,7 @@ export default function SettingsModal({ user, onClose, onLogout, initialTab = 'g
                             <section className="border-t border-slate-100 pt-6">
                                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">Security</h3>
                                 <p className="mt-1 text-sm text-slate-500">Update the password used to sign in to Promptly.</p>
+                                <p className="mt-1 text-sm text-slate-500">{PASSWORD_REQUIREMENTS_HINT}</p>
                                 <form onSubmit={updatePassword} className="mt-4 grid gap-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4 sm:grid-cols-2">
                                     <label className="text-xs font-bold uppercase tracking-wider text-slate-600">New password<input type={showNewPassword ? 'text' : 'password'} value={newPassword} onChange={event => setNewPassword(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" /></label>
                                     <label className="text-xs font-bold uppercase tracking-wider text-slate-600">Confirm password<input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" /></label>

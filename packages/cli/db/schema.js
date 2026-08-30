@@ -6,6 +6,14 @@
 export const ensureDatabaseSchema = async (sequelize) => {
     await sequelize.query(`CREATE EXTENSION IF NOT EXISTS pg_trgm;`);
     await sequelize.query(`
+        ALTER TABLE IF EXISTS "automations" ADD COLUMN IF NOT EXISTS "demoKey" VARCHAR(80);
+        ALTER TABLE IF EXISTS "forms" ADD COLUMN IF NOT EXISTS "demoKey" VARCHAR(80);
+        ALTER TABLE IF EXISTS "automation_runs" ADD COLUMN IF NOT EXISTS "demoKey" VARCHAR(80);
+        CREATE INDEX IF NOT EXISTS "workflows_user_demo" ON "automations" ("userId", "demoKey");
+        CREATE INDEX IF NOT EXISTS "forms_user_demo" ON "forms" ("userId", "demoKey");
+        CREATE INDEX IF NOT EXISTS "automation_runs_user_demo" ON "automation_runs" ("userId", "demoKey");
+    `);
+    await sequelize.query(`
         DO $$
         BEGIN
             IF to_regclass('public.assistant_threads') IS NOT NULL THEN

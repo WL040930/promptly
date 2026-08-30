@@ -6,6 +6,7 @@ import { getDashboardPath, getRouteState, navigate, parsePath } from './utils/ro
 import AppLoadingSkeleton from './components/ui/AppLoadingSkeleton.jsx';
 import WorkspaceShell from './workspace/WorkspaceShell.jsx';
 import WorkspacePageRouter from './workspace/WorkspacePageRouter.jsx';
+import { WorkspaceScopeProvider } from './context/WorkspaceScopeContext.jsx';
 import { getAuthRedirect } from './utils/authNavigation.js';
 import { applySiteMetadata } from './utils/siteMetadata.js';
 import { clearPendingAITurnNotifications } from './utils/browserNotifications.js';
@@ -75,18 +76,23 @@ function App() {
     if (user && !user.onboardingCompletedAt && (routeState.isOnboarding || routeState.isDashboard)) {
         const onboardingRoute = routeState.isOnboarding ? { page: 'home' } : route;
         return (
-            <WorkspaceShell user={user} route={onboardingRoute} onLogout={handleLogout}>
-                <WorkspacePageRouter route={onboardingRoute} />
-                <WorkspaceTour user={user} onOnboardingComplete={handleUserUpdate} />
-            </WorkspaceShell>
+            <WorkspaceScopeProvider userId={user.id}>
+                <WorkspaceShell user={user} route={onboardingRoute} onLogout={handleLogout}>
+                    <WorkspacePageRouter route={onboardingRoute} />
+                    <WorkspaceTour user={user} autoStart onOnboardingComplete={handleUserUpdate} />
+                </WorkspaceShell>
+            </WorkspaceScopeProvider>
         );
     }
 
     if (routeState.isDashboard && user) {
         return (
-            <WorkspaceShell user={user} route={route} onLogout={handleLogout}>
-                <WorkspacePageRouter route={route} />
-            </WorkspaceShell>
+            <WorkspaceScopeProvider userId={user.id}>
+                <WorkspaceShell user={user} route={route} onLogout={handleLogout}>
+                    <WorkspacePageRouter route={route} />
+                    <WorkspaceTour user={user} onOnboardingComplete={handleUserUpdate} />
+                </WorkspaceShell>
+            </WorkspaceScopeProvider>
         );
     }
 

@@ -13,7 +13,6 @@ import {
     Gauge,
     Plus,
     RefreshCw,
-    Sparkles,
     Workflow,
     XCircle,
     Zap
@@ -51,13 +50,13 @@ const statusForWorkflow = workflow => {
 
 function SectionHeading({ eyebrow, title, detail, action, onAction }) {
     return (
-        <div className="flex items-start justify-between gap-4">
+        <div className="dashboard-section-heading flex items-start justify-between gap-4">
             <div>
-                {eyebrow && <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-indigo-500">{eyebrow}</p>}
+                {eyebrow && <p className="dashboard-section-eyebrow text-[10px] font-bold uppercase tracking-[0.18em] text-indigo-500">{eyebrow}</p>}
                 <h2 className="mt-1 text-base font-bold tracking-tight text-slate-900">{title}</h2>
                 {detail && <p className="mt-1 text-xs leading-5 text-slate-500">{detail}</p>}
             </div>
-            {action && <button type="button" onClick={onAction} className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800">{action}<ArrowRight size={14} /></button>}
+            {action && <button type="button" onClick={onAction} className="dashboard-section-action inline-flex shrink-0 items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800">{action}<ArrowRight size={14} /></button>}
         </div>
     );
 }
@@ -83,10 +82,10 @@ function MetricCard({ label, value, detail, icon: Icon, tone = 'indigo', onClick
     );
 
     if (onClick) {
-        return <button type="button" onClick={onClick} className="group rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md">{content}</button>;
+        return <button type="button" onClick={onClick} className="dashboard-metric-card group rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md">{content}</button>;
     }
 
-    return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">{content}</div>;
+    return <div className="dashboard-metric-card rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">{content}</div>;
 }
 
 function DashboardSkeleton() {
@@ -199,21 +198,24 @@ const DashboardTab = () => {
                     : 'Ready for your first automation';
 
     return (
-        <div ref={container} className="surface-grid flex min-h-0 flex-1 overflow-y-auto p-4 font-sans sm:p-6 lg:p-8">
+        <div ref={container} className="dashboard-page surface-grid flex min-h-0 flex-1 overflow-y-auto p-4 font-sans sm:p-6 lg:p-8">
             <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-                <header className="workspace-surface flex flex-col gap-5 rounded-[1.75rem] p-5 sm:p-7 lg:flex-row lg:items-end lg:justify-between">
+                <header data-tour="dashboard-overview" className="dashboard-hero workspace-surface flex flex-col gap-5 rounded-[1.75rem] p-5 sm:p-7 lg:flex-row lg:items-end lg:justify-between">
                     <div className="min-w-0">
-                        <p className="eyebrow">Workspace overview</p>
-                        <h1 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Make work move forward.</h1>
-                        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">See what is running, what needs attention, and where to continue building.</p>
-                        <div className="mt-4 inline-flex max-w-full items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600">
+                        <div className="dashboard-hero-kicker">
+                            <p className="eyebrow">Overview</p>
+                            <span className="dashboard-live-label"><span className={`h-2 w-2 shrink-0 rounded-full ${summary.failures.length > 0 ? 'bg-amber-500' : 'bg-emerald-500'}`} />Live workspace</span>
+                        </div>
+                        <h1 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Workspace overview</h1>
+                        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Monitor automations, review recent runs, and pick up where you left off.</p>
+                        <div className="dashboard-status-line mt-4 inline-flex max-w-full items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600">
                             <span className={`h-2 w-2 shrink-0 rounded-full ${summary.failures.length > 0 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
                             <span className="truncate">{statusLabel}</span>
                         </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={() => navigateTo({ page: 'automation-new', method: 'ai' })} className="inline-flex items-center gap-2 rounded-xl bg-[#5b4ee8] px-4 py-2.5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(91,78,232,0.2)] transition hover:-translate-y-0.5 hover:bg-[#4e42d0]"><Sparkles size={16} />Create with AI</button>
-                        <button type="button" onClick={() => navigateTo({ page: 'automation-new', method: 'visual' })} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:-translate-y-0.5 hover:bg-slate-50"><Plus size={16} />Build manually</button>
+                    <div className="dashboard-hero-actions flex flex-wrap gap-2">
+                        <button type="button" onClick={() => navigateTo({ page: 'automation-new', method: 'visual' })} className="dashboard-button dashboard-button-primary inline-flex items-center gap-2 rounded-xl bg-[#5b4ee8] px-4 py-2.5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(91,78,232,0.2)] transition hover:-translate-y-0.5 hover:bg-[#4e42d0]"><Plus size={16} />New automation</button>
+                        <button type="button" onClick={() => navigateTo({ page: 'assistant' })} className="dashboard-button dashboard-button-secondary inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:-translate-y-0.5 hover:bg-slate-50"><Bot size={16} />Open assistant</button>
                     </div>
                 </header>
 
@@ -224,7 +226,7 @@ const DashboardTab = () => {
                     </div>
                 ) : isLoading ? <DashboardSkeleton /> : (
                     <>
-                        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <section className="dashboard-metrics grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                             <MetricCard label="Active now" value={summary.activeCount} detail="Automations currently enabled" icon={Zap} tone="indigo" onClick={() => go('workflows')} />
                             <MetricCard label="Drafts" value={summary.draftCount} detail="Automations still being built" icon={Workflow} tone="slate" onClick={() => go('workflows')} />
                             <MetricCard label="Success rate" value={metrics.successRate || '—'} detail={`${metrics.totalRuns || 0} recorded executions`} icon={Gauge} tone="emerald" onClick={() => go('logs')} />
@@ -232,8 +234,8 @@ const DashboardTab = () => {
                         </section>
 
                         <section className="grid gap-5 xl:grid-cols-12">
-                            <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 xl:col-span-7">
-                                <SectionHeading eyebrow="Attention queue" title="What needs your attention?" detail="The fastest path to a healthier workspace." action="View automations" onAction={() => go('workflows')} />
+                            <div className="dashboard-panel min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 xl:col-span-7">
+                                <SectionHeading eyebrow="Needs attention" title="Items to review" detail="Failures, drafts, and paused automations." action="View automations" onAction={() => go('workflows')} />
                                 <div className="mt-5 space-y-2 min-w-0">
                                     {summary.attentionItems.length > 0 ? summary.attentionItems.map(item => (
                                         <button key={item.id} type="button" onClick={() => item.runId ? openRun(item.runId) : openWorkflow(item.workflowId)} className="group flex w-full min-w-0 items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3 text-left transition hover:border-indigo-200 hover:bg-indigo-50/50">
@@ -245,8 +247,8 @@ const DashboardTab = () => {
                                 </div>
                             </div>
 
-                            <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 xl:col-span-5">
-                                <SectionHeading eyebrow="Recent executions" title="Latest activity" detail="Keep an eye on what just ran." action="View all" onAction={() => go('logs')} />
+                            <div className="dashboard-panel min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 xl:col-span-5">
+                                <SectionHeading eyebrow="Recent runs" title="Latest activity" detail="The most recent automation runs." action="View all" onAction={() => go('logs')} />
                                 <div className="mt-5 space-y-1 min-w-0">
                                     {recentLogs.length > 0 ? recentLogs.slice(0, 5).map(log => {
                                         const normalizedStatus = String(log.status || '').toLowerCase();
@@ -254,38 +256,38 @@ const DashboardTab = () => {
                                         const waiting = ['waiting', 'running', 'resuming', 'pending'].includes(normalizedStatus);
                                         const cancelled = normalizedStatus === 'cancelled';
                                         return <button key={log.id} type="button" onClick={() => openRun(log.id)} className="group flex w-full min-w-0 items-center gap-3 rounded-xl p-2.5 text-left transition hover:bg-slate-50"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${success ? 'bg-emerald-50 text-emerald-600' : waiting ? 'bg-amber-50 text-amber-600' : cancelled ? 'bg-slate-100 text-slate-500' : 'bg-red-50 text-red-600'}`}>{success ? <CheckCircle2 size={16} /> : waiting ? <Clock3 size={16} /> : <XCircle size={16} />}</span><span className="min-w-0 flex-1 overflow-hidden"><span className="block truncate text-sm font-semibold text-slate-800" title={workflowNameForLog(log)}>{workflowNameForLog(log)}</span><span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400"><span className="truncate">{waiting ? 'Waiting for approval' : cancelled ? 'Cancelled because automation was deleted' : log.trigger || 'Manual run'}</span><span>·</span><span className="shrink-0">{formatRelative(log.time)}</span></span></span><span className="shrink-0 text-[11px] font-medium text-slate-400">{formatDuration(log.durationMs)}</span></button>;
-                                    }) : <EmptyPanel icon={Activity} title="No executions yet" detail="Run an automation to start building an activity history." onAction={() => go('workflows')} action="Open automations" />}
+                                    }) : <EmptyPanel icon={Activity} title="No executions yet" detail="Runs appear here after you test or trigger an automation. Explore the sample workspace if you want to see the full loop first." onAction={() => go('workflows')} action="Open automations" />}
                                 </div>
                             </div>
                         </section>
 
                         <section className="grid gap-5 xl:grid-cols-12">
-                            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 xl:col-span-7">
-                                <SectionHeading eyebrow="Workspace pulse" title="Run volume this week" detail="A simple view of execution momentum." />
+                            <div className="dashboard-panel rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 xl:col-span-7">
+                                <SectionHeading eyebrow="Run volume" title="This week" detail="Execution count over the last seven days." />
                                 <div className="mt-6 flex h-48 items-end gap-2 sm:gap-4">
                                     {weeklyData.map((item, index) => {
                                         const runs = Number(item.runs) || 0;
                                         const height = runs === 0 ? 8 : Math.max(12, (runs / maxRuns) * 100);
-                                        return <div key={`${item.day}-${index}`} className="group flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2"><div className="relative flex h-full w-full max-w-12 items-end"><span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 rounded-lg bg-slate-800 px-2 py-1 text-[10px] font-bold text-white opacity-0 transition group-hover:opacity-100">{runs}</span><div className={`w-full rounded-t-xl transition-all ${runs === maxRuns && runs > 0 ? 'bg-indigo-600' : 'bg-indigo-200 group-hover:bg-indigo-400'}`} style={{ height: `${height}%` }} /></div><span className="text-[11px] font-semibold text-slate-400">{item.day}</span></div>;
+                                        return <div key={`${item.day}-${index}`} className="dashboard-chart-column group flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2"><div className="relative flex h-full w-full max-w-12 items-end"><span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 rounded-lg bg-slate-800 px-2 py-1 text-[10px] font-bold text-white opacity-0 transition group-hover:opacity-100">{runs}</span><div className={`dashboard-chart-bar w-full rounded-t-xl transition-all ${runs === maxRuns && runs > 0 ? 'bg-indigo-600' : 'bg-indigo-200 group-hover:bg-indigo-400'}`} style={{ height: `${height}%` }} /></div><span className="text-[11px] font-semibold text-slate-400">{item.day}</span></div>;
                                     })}
                                 </div>
                                 {weeklyData.every(item => !Number(item.runs)) && <p className="mt-3 text-center text-xs text-slate-400">No runs recorded in the last 7 days.</p>}
                             </div>
 
-                            <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-600 via-indigo-600 to-violet-700 p-5 text-white shadow-lg shadow-indigo-900/10 sm:p-6 xl:col-span-5">
+                            <div className="dashboard-guidance-card rounded-2xl border border-slate-800 p-5 text-white shadow-lg sm:p-6 xl:col-span-5">
                                 <div className="flex h-full flex-col">
-                                    <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15"><Bot size={20} /></span>
-                                    <h2 className="mt-5 text-xl font-bold tracking-tight">Keep building momentum.</h2>
-                                    <p className="mt-2 text-sm leading-6 text-indigo-100">Start with a goal in plain language or open the visual builder when you already know the steps.</p>
-                                    <div className="mt-auto flex flex-wrap gap-2 pt-6"><button type="button" onClick={() => navigateTo({ page: 'automation-new', method: 'ai' })} className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2.5 text-xs font-bold text-indigo-700 hover:bg-indigo-50"><Sparkles size={14} />Create with AI</button><button type="button" onClick={() => navigateTo({ page: 'automation-new', method: 'visual' })} className="inline-flex items-center gap-2 rounded-xl bg-indigo-500/50 px-3.5 py-2.5 text-xs font-bold text-white ring-1 ring-white/20 hover:bg-indigo-500"><Plus size={14} />Build manually</button></div>
+                                    <div className="dashboard-guidance-topline"><span className="dashboard-guidance-mark"><Bot size={18} /></span><span>Need a hand?</span></div>
+                                    <h2 className="mt-5 text-xl font-bold tracking-tight">Build from an outcome.</h2>
+                                    <p className="mt-2 text-sm leading-6 text-slate-300">Describe what you want to happen, or open the builder and connect the steps yourself.</p>
+                                    <div className="mt-auto flex flex-wrap gap-2 pt-6"><button type="button" onClick={() => navigateTo({ page: 'automation-new', method: 'ai' })} className="dashboard-guidance-primary inline-flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-xs font-bold"><Bot size={14} />Describe a workflow<ArrowRight size={13} /></button><button type="button" onClick={() => navigateTo({ page: 'automation-new', method: 'visual' })} className="dashboard-guidance-secondary inline-flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-xs font-bold"><Plus size={14} />Open builder</button></div>
                                 </div>
                             </div>
                         </section>
 
-                        <section className="grid gap-3 sm:grid-cols-3">
-                            <button type="button" onClick={() => go('workflows')} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-200 hover:shadow-md"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><Workflow size={17} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-slate-800">Manage automations</span><span className="mt-0.5 block text-xs text-slate-500">Open, edit, or activate flows</span></span><ArrowRight size={16} className="text-slate-300" /></button>
-                            <button type="button" onClick={() => go('forms')} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-200 hover:shadow-md"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600"><FilePlus2 size={17} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-slate-800">Design a form</span><span className="mt-0.5 block text-xs text-slate-500">Collect the input your flows need</span></span><ArrowRight size={16} className="text-slate-300" /></button>
-                            <button type="button" onClick={() => go('logs')} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-200 hover:shadow-md"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600"><Clock3 size={17} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-slate-800">Review runs</span><span className="mt-0.5 block text-xs text-slate-500">Inspect results and failures</span></span><ArrowRight size={16} className="text-slate-300" /></button>
+                        <section className="dashboard-quick-actions grid gap-3 sm:grid-cols-3">
+                            <button type="button" onClick={() => go('workflows')} className="dashboard-quick-action flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-200 hover:shadow-md"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><Workflow size={17} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-slate-800">Manage automations</span><span className="mt-0.5 block text-xs text-slate-500">Open, edit, or activate flows</span></span><ArrowRight size={16} className="text-slate-300" /></button>
+                            <button type="button" onClick={() => go('forms')} className="dashboard-quick-action flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-200 hover:shadow-md"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600"><FilePlus2 size={17} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-slate-800">Design a form</span><span className="mt-0.5 block text-xs text-slate-500">Collect the input your flows need</span></span><ArrowRight size={16} className="text-slate-300" /></button>
+                            <button type="button" onClick={() => go('logs')} className="dashboard-quick-action flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-200 hover:shadow-md"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600"><Clock3 size={17} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-slate-800">Review runs</span><span className="mt-0.5 block text-xs text-slate-500">Inspect results and failures</span></span><ArrowRight size={16} className="text-slate-300" /></button>
                         </section>
                     </>
                 )}

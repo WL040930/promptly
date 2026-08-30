@@ -166,7 +166,7 @@ const LogsTab = ({ workflowId: initialWorkflowId = '' } = {}) => {
                                 <Activity className="h-6 w-6 text-slate-400" />
                             </div>
                             <h3 className="text-sm font-semibold text-slate-900">No runs found</h3>
-                            <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">No runs match your current filters.</p>
+                            <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">{search || status !== 'All' || workflowId ? 'No runs match your current filters. Clear the filters to see the full history.' : 'Runs appear after an automation is tested or triggered. The sample workspace includes examples of success, waiting, and failure.'}</p>
                         </div>
                     ) : (
                         <>

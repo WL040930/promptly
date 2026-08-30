@@ -20,7 +20,8 @@ const AutomationRun = sequelize.define('AutomationRun', {
     steps: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
     output: { type: DataTypes.JSONB, allowNull: true },
     completedAt: { type: DataTypes.DATE, allowNull: true },
-    metricsRecordedAt: { type: DataTypes.DATE, allowNull: true }
+    metricsRecordedAt: { type: DataTypes.DATE, allowNull: true },
+    demoKey: { type: DataTypes.STRING(80), allowNull: true }
 }, {
     tableName: 'automation_runs',
     timestamps: true,
@@ -29,6 +30,7 @@ const AutomationRun = sequelize.define('AutomationRun', {
         { fields: ['workflowNameSnapshot'], name: 'automation_runs_workflow_name' },
         { fields: ['status', 'updatedAt'], name: 'automation_runs_status_updated' },
         { fields: ['userId', 'createdAt'], name: 'automation_runs_user_created' },
+        { fields: ['userId', 'demoKey'], name: 'automation_runs_user_demo' },
         {
             name: 'automation_runs_user_status_created_id',
             fields: ['userId', 'status', { name: 'createdAt', order: 'DESC' }, { name: 'id', order: 'DESC' }]

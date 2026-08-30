@@ -19,6 +19,7 @@ import ExecutionPanel from './components/panels/ExecutionPanel';
 import BuilderLoadingSkeleton from './components/layout/BuilderLoadingSkeleton.jsx';
 import { useUndoRedo } from '../hooks/useUndoRedo';
 import { useToast } from '../context/ToastContext.jsx';
+import { useWorkspaceScope } from '../context/WorkspaceScopeContext.jsx';
 import ConfirmModal from '../components/modals/ConfirmModal.jsx';
 import { cloneWorkflowNodeForPaste } from './utils/nodeClipboard.js';
 import { WORKFLOW_MODAL_LAYERS } from './modalLayers.js';
@@ -160,6 +161,7 @@ function HistoryDrawer({ isOpen, onClose, workflowId, currentWorkflow }) {
 
 const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed }) => {
     // ── Server data ──────────────────────────────────────────────────────────
+    const { scope } = useWorkspaceScope();
     const activeWorkflowId = route?.automationId || null;
     const { data: activeWorkflowData, isPending: isActiveWorkflowPending } = useWorkflow(activeWorkflowId);
     const activeFormId = useMemo(
@@ -391,12 +393,12 @@ const WorkflowBuilderView = ({ route, isSidebarCollapsed, setSidebarCollapsed })
         // Keep the editor responsive immediately, then persist one latest
         // graph snapshot after the user pauses. The queue is single-flight so
         // a high-latency database cannot reorder writes or build a backlog.
-        queryClient.setQueryData(['workflows', activeWorkflowId], current =>
+        queryClient.setQueryData(['workflows', activeWorkflowId, { scope }], current =>
             current ? { ...current, ...updatedFields } : current
         );
         workflowSaveQueueRef.current?.schedule(updatedFields);
         return Promise.resolve(null);
-    }, [activeWorkflowId, queryClient, nodes, edges, takeSnapshot]);
+    }, [activeWorkflowId, queryClient, nodes, edges, takeSnapshot, scope]);
 
     const flushPendingWorkflowSave = useCallback(() => workflowSaveQueueRef.current?.flush() || Promise.resolve(null), []);
 

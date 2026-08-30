@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { resetPassword } from '../api/auth.js'
 import AuthShell from './components/AuthShell.jsx'
+import { PASSWORD_REQUIREMENTS_ERROR, PASSWORD_REQUIREMENTS_HINT, isValidPassword } from '../../../shared/passwordPolicy.js'
 
 const ResetPasswordPage = ({ token, onLogin }) => {
     const [password, setPassword] = useState('')
@@ -10,6 +11,7 @@ const ResetPasswordPage = ({ token, onLogin }) => {
 
     const handleSubmit = async (event) => {
         event.preventDefault()
+        if (!isValidPassword(password)) { setError(PASSWORD_REQUIREMENTS_ERROR); return }
         setIsSubmitting(true); setError(null); setMessage(null)
         try { setMessage((await resetPassword(token, password)).message || 'Your password has been reset.') }
         catch (err) { setError(err?.message || 'This reset link is invalid or has expired. Request a new one and try again.') }
@@ -23,7 +25,7 @@ const ResetPasswordPage = ({ token, onLogin }) => {
         </div> : <>
             <form className="auth-form" onSubmit={handleSubmit}>
                 <label className="auth-field"><span>New password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Choose a secure password" autoComplete="new-password" required autoFocus /></label>
-                <p className="auth-hint">Use at least 8 characters. A passphrase works well.</p>
+                <p className="auth-hint">{PASSWORD_REQUIREMENTS_HINT}</p>
                 {error && <div className="auth-alert" role="alert"><span>!</span><p>{error}</p></div>}
                 <button className="auth-submit" type="submit" disabled={isSubmitting || !password.trim()}>{isSubmitting && <i className="auth-spinner" />}{isSubmitting ? 'Updating password…' : 'Update password'}<b>→</b></button>
             </form>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useFormResponses } from '../../api/hooks/useForms.js';
 import { getFormResponses } from '../../api/backend.js';
 import { useToast } from '../../context/ToastContext.jsx';
+import { useWorkspaceScope } from '../../context/WorkspaceScopeContext.jsx';
 import FormResponsesSkeleton from './FormResponsesSkeleton.jsx';
 import PagePagination from '../../components/ui/PagePagination.jsx';
 
@@ -107,6 +108,7 @@ const buildColumns = (form, responses) => {
 };
 
 const FormResponses = ({ form }) => {
+    const { scope } = useWorkspaceScope();
     const [page, setPage] = useState(1);
     const pageSize = 25;
     const { data: responsePage, isLoading: loading, error } = useFormResponses(form?.id, { page, pageSize });
@@ -157,7 +159,7 @@ const FormResponses = ({ form }) => {
         let exportPage = 1;
         try {
             while (true) {
-                const result = await getFormResponses(form.id, { page: exportPage, pageSize: exportPageSize });
+                const result = await getFormResponses(form.id, { page: exportPage, pageSize: exportPageSize, scope });
                 const batch = result?.data || [];
                 allResponses.push(...batch);
                 const total = result?.pagination?.total || allResponses.length;

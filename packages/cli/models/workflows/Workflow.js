@@ -58,6 +58,10 @@ const Workflow = sequelize.define(
         edges: {
             type: DataTypes.JSONB,
             defaultValue: []
+        },
+        demoKey: {
+            type: DataTypes.STRING(80),
+            allowNull: true
         }
     },
     {
@@ -67,6 +71,7 @@ const Workflow = sequelize.define(
             { fields: ['userId', 'updatedAt'], name: 'workflows_user_updated' },
             { fields: ['userId', 'isActive'], name: 'workflows_user_active' },
             { fields: ['userId', 'status'], name: 'workflows_user_status' },
+            { fields: ['userId', 'demoKey'], name: 'workflows_user_demo' },
             { fields: ['isActive'], name: 'workflows_active' },
         ]
     }

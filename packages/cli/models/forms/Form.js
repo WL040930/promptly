@@ -29,13 +29,18 @@ const Form = sequelize.define(
         responseCount: {
             type: DataTypes.INTEGER,
             defaultValue: 0
+        },
+        demoKey: {
+            type: DataTypes.STRING(80),
+            allowNull: true
         }
     },
     {
         tableName: 'forms',
         timestamps: true,
         indexes: [
-            { fields: ['userId', 'updatedAt'], name: 'forms_user_updated' }
+            { fields: ['userId', 'updatedAt'], name: 'forms_user_updated' },
+            { fields: ['userId', 'demoKey'], name: 'forms_user_demo' }
         ]
     }
 );

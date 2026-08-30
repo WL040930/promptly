@@ -1,14 +1,19 @@
 import { apiRequest } from './client.js';
+
+const scopedPath = (path, scope = 'live') => scope === 'demo'
+    ? `${path}${path.includes('?') ? '&' : '?'}scope=demo`
+    : path;
+
 // --- Automations ---
-export const getWorkflows = () => apiRequest('/api/automations');
-export const getWorkflowListPage = ({ page = 1, pageSize = 10, search = '', status = 'All', health = 'All' } = {}) => {
+export const getWorkflows = (scope = 'live') => apiRequest(scopedPath('/api/automations', scope));
+export const getWorkflowListPage = ({ page = 1, pageSize = 10, search = '', status = 'All', health = 'All', scope = 'live' } = {}) => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (search) params.set('search', search);
     if (status !== 'All') params.set('status', status);
     if (health !== 'All') params.set('health', health);
-    return apiRequest(`/api/automations/list?${params.toString()}`);
+    return apiRequest(scopedPath(`/api/automations/list?${params.toString()}`, scope));
 };
-export const getWorkflow = (id) => apiRequest(`/api/automations/${id}`);
+export const getWorkflow = (id, scope = 'live') => apiRequest(scopedPath(`/api/automations/${id}`, scope));
 export const createWorkflow = (data) => apiRequest('/api/automations', { method: 'POST', body: JSON.stringify(data) });
 export const updateWorkflow = (id, data) => apiRequest(`/api/automations/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 export const publishWorkflow = (id) => apiRequest(`/api/automations/${id}/publish`, { method: 'POST' });
@@ -16,12 +21,12 @@ export const pauseWorkflow = (id) => apiRequest(`/api/automations/${id}/pause`, 
 export const deleteWorkflow = (id) => apiRequest(`/api/automations/${id}`, { method: 'DELETE' });
 export const triggerWorkflow = (id, payload, revisionId = null) => apiRequest(`/api/automations/${id}/test`, { method: 'POST', body: JSON.stringify({ payload, ...(revisionId ? { revisionId } : {}) }) });
 export const triggerProductionWorkflow = (id, payload = {}) => apiRequest(`/api/automations/${id}/run`, { method: 'POST', body: JSON.stringify({ payload }) });
-export const getWorkflowVersions = (id, { page = 1, pageSize = 20, source = null } = {}) => {
+export const getWorkflowVersions = (id, { page = 1, pageSize = 20, source = null, scope = 'live' } = {}) => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (source) params.set('source', source);
-    return apiRequest(`/api/automations/${id}/versions?${params.toString()}`);
+    return apiRequest(scopedPath(`/api/automations/${id}/versions?${params.toString()}`, scope));
 };
-export const getWorkflowVersion = (id, versionId) => apiRequest(`/api/automations/${id}/versions/${versionId}`);
+export const getWorkflowVersion = (id, versionId, scope = 'live') => apiRequest(scopedPath(`/api/automations/${id}/versions/${versionId}`, scope));
 export const restoreWorkflowVersion = (id, versionId) => apiRequest(`/api/automations/${id}/versions/${versionId}/restore`, { method: 'POST' });
 export const getWorkflowAIChat = (id, limit = 50, before = null) => {
     const params = new URLSearchParams({ limit: String(limit) });
@@ -40,15 +45,15 @@ export const getNodeResourceOptions = (resource, params = {}) => {
 };
 
 // --- Forms ---
-export const getForms = () => apiRequest('/api/forms');
-export const getForm = (id) => apiRequest(`/api/forms/${id}`);
+export const getForms = (scope = 'live') => apiRequest(scopedPath('/api/forms', scope));
+export const getForm = (id, scope = 'live') => apiRequest(scopedPath(`/api/forms/${id}`, scope));
 export const createForm = (data) => apiRequest('/api/forms', { method: 'POST', body: JSON.stringify(data) });
 export const previewFormChange = (id, data) => apiRequest(`/api/forms/${id}/change-preview`, { method: 'POST', body: JSON.stringify(data) });
 export const updateForm = (id, data) => apiRequest(`/api/forms/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 export const decideFormProposal = (formId, messageId, data) => apiRequest(`/api/forms/${formId}/ai-proposals/${messageId}/decide`, { method: 'POST', body: JSON.stringify(data) });
 export const deleteForm = (id) => apiRequest(`/api/forms/${id}`, { method: 'DELETE' });
 export const submitFormResponse = (formId, responseData) => apiRequest(`/api/forms/${formId}/responses`, { method: 'POST', body: JSON.stringify({ responseData }) });
-export const getFormResponses = (formId, { page = 1, pageSize = 25 } = {}) => apiRequest(`/api/forms/${formId}/responses?page=${page}&pageSize=${pageSize}`);
+export const getFormResponses = (formId, { page = 1, pageSize = 25, scope = 'live' } = {}) => apiRequest(scopedPath(`/api/forms/${formId}/responses?page=${page}&pageSize=${pageSize}`, scope));
 export const getPublicForm = (id) => apiRequest(`/api/forms/public/${id}`);
 export const getFormChatHistory = (formId, limit = 50, before = null) => {
     const params = new URLSearchParams({ limit: String(limit) });
@@ -59,7 +64,7 @@ export const clearFormAIChat = (formId) => apiRequest(`/api/forms/${formId}/chat
 export const resetFormAIContext = (formId) => apiRequest(`/api/forms/${formId}/ai-context`, { method: 'DELETE' });
 
 // --- Logs ---
-export const getExecutionLogs = ({ search = '', status = 'All', workflowId = '', cursor = null, pageSize = 10 } = {}) => {
+export const getExecutionLogs = ({ search = '', status = 'All', workflowId = '', cursor = null, pageSize = 10, scope = 'live' } = {}) => {
     const params = new URLSearchParams();
     if (search) params.append('search', search);
     if (status && status !== 'All') params.append('status', status);
@@ -67,13 +72,13 @@ export const getExecutionLogs = ({ search = '', status = 'All', workflowId = '',
     if (cursor) params.append('cursor', cursor);
     params.append('pageSize', pageSize);
     const queryString = params.toString();
-    return apiRequest(`/api/runs${queryString ? '?' + queryString : ''}`);
+    return apiRequest(scopedPath(`/api/runs${queryString ? '?' + queryString : ''}`, scope));
 };
 
-export const getExecutionLog = (id) => apiRequest(`/api/runs/${id}`);
+export const getExecutionLog = (id, scope = 'live') => apiRequest(scopedPath(`/api/runs/${id}`, scope));
 
 // --- Dashboard ---
-export const getDashboardMetrics = () => apiRequest('/api/dashboard/metrics');
+export const getDashboardMetrics = (scope = 'live') => apiRequest(scopedPath('/api/dashboard/metrics', scope));
 
 // --- Chat ---
 export const getChatSessions = () => apiRequest('/api/conversations');

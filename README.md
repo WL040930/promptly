@@ -1,195 +1,133 @@
 # Promptly
 
-Promptly is an AI-powered automation and workspace builder. It allows users to automate their workflows, build interactive forms, and manage data without writing a single line of code—using a configurable AI provider (OpenRouter with NVIDIA Nemotron is the default).
+Promptly is an AI-assisted automation workspace for building forms and multi-step administrative workflows. It combines conversational assistants with a visual workflow editor, then lets users review, test, publish, monitor, and pause their automations.
 
-## 🌟 Features
+The default AI route uses OpenRouter with NVIDIA Nemotron. Gemini, NVIDIA, Groq, and Cerebras can also be configured.
 
-- **Promptly Agent (AI Chat)**: A conversational assistant that helps you construct automations, extract intents, and manage your workspace interactively.
-- **Workflow Builder**: A visual, drag-and-drop node-based editor (`@xyflow/react`) for creating advanced automation sequences with triggers, AI nodes, and integrations.
-- **Form Builder**: Create, edit, and deploy beautiful, highly customizable data-collection forms with real-time previews and response tracking.
-- **Interactive Dashboards**: Visual analytics and statistics powered by Recharts, enabling users to track workflow runs, form submissions, and active automations.
-- **Premium UI/UX**: Built with modern web design principles featuring glassmorphism, responsive Tailwind CSS layouts, and smooth micro-interactions powered by GSAP.
+## What it does
 
-## 🛠 Tech Stack
+- Create and revise workflows with Workflow AI or Ask Promptly, then review the proposed changes before applying them.
+- Build forms manually or with Form AI, publish them, collect responses, manage uploads, and export response data.
+- Design workflows in a visual editor with validation, test runs, published revisions, version restoration, and run history.
+- Start workflows from form submissions, schedules, webhooks, supported Google events, database events, or approved chat invocations.
+- Use workflow nodes for Google Sheets, Gmail, Google Drive, Google Calendar, HTTP requests, email delivery, data transformation, conditions, approvals, delays, error handling, and more.
+- Review pending runtime approvals and execution details from the workspace.
 
-This project is structured as a monorepo containing a full-stack Javascript application.
+Generated workflow and form changes are reviewable before they are applied. A runtime approval is separate: add an **Approval** node when a production workflow must pause for a decision before continuing.
 
-### Frontend (`packages/ui`)
-- **React 18** + **Vite**: Fast, modern frontend framework.
-- **Tailwind CSS**: Utility-first styling for premium, responsive layouts.
-- **GSAP**: Industry-standard animation library for smooth UI transitions.
-- **React Flow (`@xyflow/react`)**: Interactive node-based workflow builder.
-- **Recharts**: Composable charting library for dashboard analytics.
+## Stack
 
-### Backend (`packages/cli`)
-- **Node.js** + **Express**: Robust RESTful API server.
-- **PostgreSQL** + **Sequelize (ORM)**: Relational database for structured storage.
-- **AI providers**: OpenRouter, Google Gemini, Groq, and Cerebras adapters with tiered routing and fallback support.
-- **JSON Web Tokens (JWT)** + **Bcrypt**: Secure user authentication.
+| Layer | Technology |
+| --- | --- |
+| Frontend | React 18, Vite, Tailwind CSS, TanStack Query, React Flow, Recharts, GSAP |
+| API | Node.js, Express, Server-Sent Events |
+| Data | PostgreSQL, Sequelize, Supabase Storage |
+| Identity and integrations | JWT, bcrypt, Google OAuth, SMTP |
+| AI | OpenRouter, Gemini, NVIDIA, Groq, or Cerebras |
 
-## 🚀 Getting Started
+## Prerequisites
 
-### Prerequisites
-- Node.js (v18+)
-- PostgreSQL Database
-- OpenRouter API Key (or another configured AI provider)
+- Node.js 20 or newer
+- PostgreSQL
+- A Supabase project for workflow assets and form uploads
+- Google OAuth client credentials
+- An SMTP account for password-reset and email-delivery features
+- At least one AI-provider API key
 
-### 1. Installation
+## Local setup
 
-Clone the repository and install dependencies from the root directory:
+1. Install dependencies.
 
-```bash
-npm install
-```
+   ```bash
+   npm ci
+   ```
 
-### 2. Environment Configuration
+2. Create a local environment file.
 
-Create a `.env` file in the root directory and configure the following variables:
+   ```bash
+   cp .env.example .env
+   ```
 
-For the complete local, tunnel, and Google OAuth setup—including which URL belongs in each variable—see [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md). A safe starting point is also available in [.env.example](.env.example).
+   Fill in every required value. The variable-by-variable reference is in
+   [.env.example](.env.example); use [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md)
+   for local, tunnel, and Google OAuth URL configuration.
 
-```env
-# Browser-facing frontend origin. This is where you open the app.
-CLIENT_ORIGIN=http://localhost:5173
+3. Start the frontend and API.
 
-# Canonical site origin used by robots.txt and sitemap.xml.
-# Leave unset locally; set this to the real frontend origin in production.
-# SITE_URL=https://app.example.com
+   ```bash
+   npm run dev
+   ```
 
-# Public HTTPS origin used for Google triggers and other external callbacks.
-# Leave unset locally unless you are using a tunnel.
-# TRIGGER_PUBLIC_ORIGIN=https://your-public-api.example.com
+   - Frontend: <http://localhost:5173>
+   - API health check: <http://localhost:3000/api/health>
 
-# Server
-PORT=3000
-
-# Database (PostgreSQL)
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=your_postgres_user
-DB_PASSWORD=your_postgres_password
-DB_DATABASE=promptly_db
-# Persistent Supabase session-pool settings; tune per production replica count.
-DB_POOL_MAX=5
-DB_POOL_MIN=0
-DB_POOL_ACQUIRE_MS=10000
-DB_POOL_IDLE_MS=10000
-DB_IDLE_IN_TRANSACTION_TIMEOUT_MS=15000
-DB_APPLICATION_NAME=promptly-api
-
-# Google OAuth
-GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-# This is an exact callback URL, not a bare origin.
-GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
-
-# External trigger callbacks
-# Required for Google Sheets and Gmail push triggers. This must be the public
-# origin that actually routes to the API.
-GOOGLE_GMAIL_PUBSUB_TOPIC=projects/your-project/topics/promptly-gmail
-GOOGLE_PUBSUB_AUDIENCE=https://your-public-api.example.com/api/provider-events/gmail
-
-# Security
-JWT_SECRET=your_super_secret_jwt_key
-
-# Storage
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your_supabase_anon_key
-# Required for private workflow assets, private form uploads, and Drive transfers.
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-# Optional rollout switches. Both new capabilities are enabled by default.
-# Set either to false only while you need the legacy behavior during a rollout.
-# FORM_PRIVATE_UPLOADS=false
-# CHAT_WORKFLOW_INVOCATIONS=false
-
-# AI Integration
-OPENROUTER_API_KEY=your_openrouter_api_key
-AI_DEFAULT_PROVIDER=openrouter
-AI_DEFAULT_MODEL=nvidia/nemotron-3-super-120b-a12b:free
-# Direct NVIDIA endpoint (optional):
-# NVIDIA_API_KEY=your_nvidia_api_key
-# AI_DEFAULT_PROVIDER=nvidia
-# AI_DEFAULT_MODEL=nvidia/nemotron-3-super-120b-a12b
-# NVIDIA_ENABLE_THINKING=true
-# NVIDIA_REASONING_BUDGET=16384
-# Optional tier overrides and failover providers:
-# AI_FAST_PROVIDER=openrouter
-# AI_FAST_MODEL=nvidia/nemotron-3-super-120b-a12b:free
-# AI_QUALITY_PROVIDER=openrouter
-# AI_QUALITY_MODEL=nvidia/nemotron-3-super-120b-a12b:free
-# AI_FALLBACK_PROVIDERS=cerebras,openrouter,groq
-# Optional completion policy. Unlimited omits the app-level output cap;
-# providers still enforce their own context-window and model limits.
-# AI_UNLIMITED_COMPLETION_TOKENS=true
-# Or use one finite cap for every task (overrides per-task defaults):
-# AI_MAX_COMPLETION_TOKENS=4096
-# GEMINI_API_KEY=your_gemini_api_key
-# Required for managed transcription.
-OPENAI_API_KEY=your_openai_api_key
-```
-
-Form file fields now use the private `workflow-assets` bucket by default. A
-submitted response stores a durable asset reference, so a workflow can pass it
-to Google Drive without exposing a public Supabase URL. The existing public
-`form-uploads` bucket and `/api/storage/upload/:filename` route remain for
-legacy forms when `FORM_PRIVATE_UPLOADS=false`; they are not deleted or
-migrated automatically.
-
-For chat-initiated workflows, enable the **Agent Message** trigger on a
-published workflow, declare its parameters, and add a description. Promptly
-extracts only those parameters, asks for missing values, and always shows a
-live-run approval before it executes the workflow.
-
-### 3. Bootstrap a Reset Database
-
-`npm run dev` automatically checks whether the Promptly tables exist and bootstraps a fresh database when they do not. You can also run the bootstrap directly:
+On a new or reset database, startup creates the Sequelize tables and the
+PostgreSQL-only schema resources the application needs. Existing initialized
+databases are left unchanged. You can also run this setup explicitly:
 
 ```bash
 npm run db:bootstrap
 ```
 
-It creates the Sequelize model tables and indexes, then provisions the PostgreSQL-only pieces that models cannot express (database-change triggers and storage buckets/policy). It is intentionally separate from server startup.
+## Environment essentials
 
-### 4. Running the Application
+The application will not start until these are configured:
 
-You can start both the backend server and frontend Vite development server concurrently using a single command from the root directory:
+| Area | Required values |
+| --- | --- |
+| Database | `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_DATABASE` |
+| Security | `JWT_SECRET` (at least 32 characters) |
+| Google OAuth | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` |
+| Email | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` |
+| Supabase | `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
+| AI | A key for the provider selected by `AI_DEFAULT_PROVIDER` |
 
-```bash
-npm run dev
-```
+`CLIENT_ORIGIN` is the browser URL used for CORS and post-auth redirects.
+`SITE_URL` is only for `robots.txt` and `sitemap.xml`. `TRIGGER_PUBLIC_ORIGIN`
+is the public HTTPS API origin used by external callbacks; it is not a frontend
+URL unless one tunnel serves both through the Vite proxy.
 
-This uses `concurrently` to run:
-- Backend API (nodemon watching `packages/cli/server.js`) on `http://localhost:3000`
-- Frontend UI (vite dev server) on `http://localhost:5173`
+Private workflow assets, private form uploads, and Google Drive transfers
+additionally require `SUPABASE_SERVICE_ROLE_KEY`. Gmail push triggers require
+`GOOGLE_GMAIL_PUBSUB_TOPIC`; production Gmail provider events also require
+`GOOGLE_PUBSUB_AUDIENCE`.
 
-Normal startup does not alter the database schema. The development command only invokes bootstrap when one or more Promptly tables are missing.
+## Commands
 
-The frontend dev server proxies `/api` requests to the local backend. Keep both processes running when using a tunnel; the tunnel setup is documented in [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md).
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the API and Vite development server together |
+| `npm run start` | Start the API server |
+| `npm run build` | Build the frontend for production |
+| `npm run db:bootstrap` | Initialize a new or reset database |
+| `npm test` | Run the automated test suite |
+| `npm run test:e2e` | Run Playwright end-to-end tests |
 
-## 📁 Project Structure
+## Deployment
+
+The included [Dockerfile](Dockerfile) builds the frontend and serves it from
+the Express application on port 3000. Set `CLIENT_ORIGIN`, `SITE_URL`, and
+`TRIGGER_PUBLIC_ORIGIN` to the deployed public origins, then register the exact
+`GOOGLE_REDIRECT_URI` in Google Cloud Console.
+
+If the frontend is deployed separately from the API, set `VITE_API_BASE_URL`
+at frontend build time to the public API origin. Leave it unset during ordinary
+local Vite development.
+
+## Project structure
 
 ```text
 promptly/
 ├── packages/
-│   ├── cli/                  # Backend Node.js/Express Application
-│   │   ├── controllers/      # Route logic (chat, dashboard, builder, forms)
-│   │   ├── models/           # Sequelize DB models
-│   │   ├── routes/           # Express API endpoints
-│   │   ├── services/         # AI, workflow, and integration services
-│   │   └── server.js         # Backend entry point
-│   │
-│   └── ui/                   # Frontend React Application
-│       ├── src/
-│       │   ├── api/          # Backend client wrappers
-│       │   ├── builder/      # Workflow and Form Builder UI
-│       │   ├── chat/         # AI Chat interface
-│       │   ├── components/   # Shared UI components & Toast Context
-│       │   └── App.jsx       # Main React entry point
-│       └── index.html
-│
-├── package.json              # Root package configuration & scripts
-└── .env                      # Environment variables
+│   ├── cli/       # Express API, services, models, routes, workflow runtime
+│   ├── nodes/     # Dynamic workflow-node definitions and executors
+│   ├── shared/    # Shared contracts and utilities
+│   └── ui/        # React application
+├── .env.example   # Environment-variable template
+├── Dockerfile
+└── package.json
 ```
 
-## 📄 License
-MIT License
+## License
+
+MIT

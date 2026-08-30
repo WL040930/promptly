@@ -12,25 +12,43 @@ import {
     discardPendingFormFile,
     purgeExpiredPendingFormFiles
 } from '../../services/forms/formFileService.js';
+import {
+    assertWritableWorkspaceRecord,
+    workspaceScopeFromRequest,
+    workspaceWhere
+} from '../../utils/workspaceScope.js';
+
+const ownedForm = (formId, userId) => Form.findOne({ where: { id: formId, userId } });
+
+const writableForm = async (formId, userId) => {
+    const form = await ownedForm(formId, userId);
+    if (form) assertWritableWorkspaceRecord(form);
+    return form;
+};
 
 export const getForms = asyncHandler(async (req, res) => {
+    const scope = workspaceScopeFromRequest(req);
     const forms = await Form.findAll({
-        where: { userId: req.user.id },
+        where: workspaceWhere({ userId: req.user.id, scope }),
         // The sidebar only needs identity, visual settings, and recency. Field
         // schemas are loaded by the detail endpoint for the active form.
-        attributes: ['id', 'title', 'description', 'settings', 'responseCount', 'createdAt', 'updatedAt'],
+        attributes: ['id', 'title', 'description', 'settings', 'responseCount', 'demoKey', 'createdAt', 'updatedAt'],
         order: [['updatedAt', 'DESC']]
     });
     res.json(forms);
 });
 
 export const getForm = asyncHandler(async (req, res) => {
-    const form = await Form.findOne({ where: { id: req.params.id, userId: req.user.id } });
+    const scope = workspaceScopeFromRequest(req);
+    const form = await Form.findOne({ where: workspaceWhere({ userId: req.user.id, scope, extra: { id: req.params.id } }) });
     if (!form) return res.status(404).json({ message: 'Form not found' });
     res.json(form);
 });
 
 export const createForm = asyncHandler(async (req, res) => {
+    if (workspaceScopeFromRequest(req) === 'demo') {
+        return res.status(409).json({ code: 'DEMO_WORKSPACE_READ_ONLY', message: 'The sample workspace is read-only. Exit sample workspace to create a form.' });
+    }
     const { title, description, settings, fields } = req.body;
     const validationIssues = validateFormSchema({ title, description: description || '', settings: settings || {}, fields: fields || [] });
     if (validationIssues.length > 0) {
@@ -44,6 +62,8 @@ export const createForm = asyncHandler(async (req, res) => {
 // assistant result, and update the form conversation state as one lifecycle.
 export const submitFormAITurn = asyncHandler(async (req, res) => {
     const { formId } = req.params;
+    const form = await writableForm(formId, req.user.id);
+    if (!form) return res.status(404).json({ message: 'Form not found' });
     const { command, clarificationMode, requestId, expectedStateVersion } = req.body || {};
     const useSSE = String(req.headers.accept || '').includes('text/event-stream');
 
@@ -93,17 +113,23 @@ export const submitFormAITurn = asyncHandler(async (req, res) => {
 });
 
 export const clearFormAIChat = asyncHandler(async (req, res) => {
+    const form = await writableForm(req.params.formId, req.user.id);
+    if (!form) return res.status(404).json({ message: 'Form not found' });
     const result = await formAssistant.clearChat({ userId: req.user.id, formId: req.params.formId });
     res.json(result);
 });
 
 export const resetFormAIContext = asyncHandler(async (req, res) => {
+    const form = await writableForm(req.params.formId, req.user.id);
+    if (!form) return res.status(404).json({ message: 'Form not found' });
     const result = await formAssistant.resetContext({ userId: req.user.id, formId: req.params.formId });
     res.json(result);
 });
 
 export const decideFormProposal = asyncHandler(async (req, res) => {
     const { formId, messageId } = req.params;
+    const form = await writableForm(formId, req.user.id);
+    if (!form) return res.status(404).json({ message: 'Form not found' });
     const { action = 'accept', selectedPatchIds, expectedStateVersion, fieldDeletionReview } = req.body || {};
     try {
         const result = await formAssistant.decideProposal({
@@ -141,7 +167,7 @@ export const updateForm = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { title, description, settings, fields, baseFormUpdatedAt, fieldDeletionReview } = req.body;
     
-    const form = await Form.findOne({ where: { id, userId: req.user.id } });
+    const form = await writableForm(id, req.user.id);
     if (!form) return res.status(404).json({ message: 'Form not found' });
 
     const nextSchema = {
@@ -165,7 +191,7 @@ export const updateForm = asyncHandler(async (req, res) => {
 export const previewFormChange = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { title, description, settings, fields } = req.body || {};
-    const form = await Form.findOne({ where: { id, userId: req.user.id } });
+    const form = await writableForm(id, req.user.id);
     if (!form) return res.status(404).json({ message: 'Form not found' });
     const nextSchema = {
         ...form.toJSON(),
@@ -179,7 +205,7 @@ export const previewFormChange = asyncHandler(async (req, res) => {
 
 export const deleteForm = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const form = await Form.findOne({ where: { id, userId: req.user.id } });
+    const form = await writableForm(id, req.user.id);
     if (!form) return res.status(404).json({ message: 'Form not found' });
 
     await sequelize.transaction(async (transaction) => {
@@ -324,7 +350,8 @@ export const getFormResponses = asyncHandler(async (req, res) => {
     const pageSize = Math.min(Math.max(Number.parseInt(req.query.pageSize || req.query.limit, 10) || 25, 1), 100);
 
     // Check form belongs to user
-    const form = await Form.findOne({ where: { id: formId, userId: req.user.id } });
+    const scope = workspaceScopeFromRequest(req);
+    const form = await Form.findOne({ where: workspaceWhere({ userId: req.user.id, scope, extra: { id: formId } }) });
     if (!form) return res.status(404).json({ message: 'Form not found' });
 
     const { rows, count } = await FormResponse.findAndCountAll({ 
@@ -338,6 +365,9 @@ export const getFormResponses = asyncHandler(async (req, res) => {
 
 // Form Chat History
 export const getFormChatHistory = asyncHandler(async (req, res) => {
+    const form = await ownedForm(req.params.formId, req.user.id);
+    if (!form) return res.status(404).json({ message: 'Form not found' });
+    if (form.demoKey) return res.json({ messages: [], nextBefore: null, state: null });
     const result = await formAssistant.getHistory({
         userId: req.user.id,
         formId: req.params.formId,

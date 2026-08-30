@@ -1,6 +1,7 @@
 import { AutomationRun, Workflow } from '../../models/index.js';
 import { Op } from 'sequelize';
 import asyncHandler from '../../utils/asyncHandler.js';
+import { workspaceScopeFromRequest, workspaceWhere } from '../../utils/workspaceScope.js';
 
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 100;
@@ -46,8 +47,8 @@ export const decodeLogCursor = value => {
     }
 };
 
-const buildLogWhereClause = async ({ userId, search, status, workflowId }) => {
-    const whereClause = { userId };
+const buildLogWhereClause = async ({ userId, scope = 'live', search, status, workflowId }) => {
+    const whereClause = workspaceWhere({ userId, scope });
 
     if (status && status !== 'All') {
         const normalizedStatus = {
@@ -69,7 +70,7 @@ const buildLogWhereClause = async ({ userId, search, status, workflowId }) => {
     if (search) {
         const matchedWorkflows = await Workflow.findAll({
             where: {
-                userId,
+                ...workspaceWhere({ userId, scope }),
                 name: { [Op.iLike]: `%${search}%` }
             },
             attributes: ['id']
@@ -89,9 +90,11 @@ const buildLogWhereClause = async ({ userId, search, status, workflowId }) => {
 
 export const getExecutionLogs = asyncHandler(async (req, res) => {
     const { search = '', status = 'All', workflowId = '' } = req.query;
+    const scope = workspaceScopeFromRequest(req);
     const pageSize = parsePageSize(req.query.pageSize);
     const whereClause = await buildLogWhereClause({
         userId: req.user.id,
+        scope,
         search: search.trim(),
         status,
         workflowId
@@ -139,11 +142,9 @@ export const getExecutionLogs = asyncHandler(async (req, res) => {
 });
 
 export const getExecutionLog = asyncHandler(async (req, res) => {
+    const scope = workspaceScopeFromRequest(req);
     const log = await AutomationRun.findOne({
-        where: {
-            id: req.params.id,
-            userId: req.user.id
-        },
+        where: workspaceWhere({ userId: req.user.id, scope, extra: { id: req.params.id } }),
         include: [{
             model: Workflow,
             as: 'workflow',

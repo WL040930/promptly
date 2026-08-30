@@ -7,6 +7,8 @@ import Button from '../components/ui/Button.jsx';
 import GoogleConnectionHealthModal from '../components/modals/GoogleConnectionHealthModal.jsx';
 import { subscribeToSettingsModal } from '../utils/settingsModal.js';
 import { getPreferredEditorForNewAutomation } from '../utils/storage.js';
+import { useWorkspaceScope } from '../context/WorkspaceScopeContext.jsx';
+import { requestTutorial } from '../onboarding/tutorialEvents.js';
 
 const SettingsModal = lazy(() => import('../dashboard/SettingsModal.jsx'));
 
@@ -46,6 +48,7 @@ const icons = {
     runs: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></svg>,
     approvals: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 4 4L19 6" /><path d="M4 4h16v16H4z" /></svg>,
     assistant: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M8 8h8M8 12h5" /></svg>,
+    help: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M9.6 9a2.5 2.5 0 1 1 4.2 1.8c-.9.8-1.8 1.2-1.8 2.7" /><path d="M12 17h.01" /></svg>,
     settings: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1.51 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 3.6 15H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9.18l-.06-.06A2 2 0 1 1 7.37 6.3l.06.06A1.65 1.65 0 0 0 9.25 6.7H9.5A1.65 1.65 0 0 0 11 5.18V5a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 20.4 11H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" /></svg>
 };
 
@@ -105,6 +108,7 @@ function WorkspaceSidebarMenu({
     onNavigate,
     onCreateAutomation,
     onOpenSettings,
+    onOpenTutorial,
     onLogout,
     collapsed = false,
     mobile = false
@@ -129,6 +133,9 @@ function WorkspaceSidebarMenu({
                 </button>
 
                 <div className="mt-auto pt-6">
+                    <button data-tour="help" type="button" onClick={onOpenTutorial} title="Help and tutorial" className={`workspace-help-link mb-1 flex w-full items-center gap-3 rounded-xl border border-transparent p-2.5 text-left font-medium transition-colors hover:bg-white/10 hover:text-white ${isCollapsed ? 'justify-center' : ''}`}>
+                        <span className="shrink-0">{icons.help}</span>{!isCollapsed && <span>Help &amp; tutorial</span>}
+                    </button>
                     <button data-tour="settings" type="button" onClick={() => onOpenSettings()} title="Settings" className={`workspace-settings-link flex w-full items-center gap-3 rounded-xl border border-transparent p-2.5 text-left font-medium transition-colors hover:bg-white/10 hover:text-white ${isCollapsed ? 'justify-center' : ''}`}>
                         <span className="shrink-0">{icons.settings}</span>{!isCollapsed && <span>Settings</span>}
                     </button>
@@ -147,6 +154,7 @@ function WorkspaceSidebarMenu({
 }
 
 export default function WorkspaceShell({ user, route, onLogout, children }) {
+    const { scope, isDemo, isDemoLoading, resetDemo, exitDemo, removeDemo } = useWorkspaceScope();
     const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem('promptly.sidebar.collapsed') === 'true');
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -157,8 +165,9 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
     const googleHealthKey = googleHealth?.requiresReconnect ? `${googleHealth.status}:${googleHealth.reason || 'unknown'}` : null;
     const activePage = route ? pageForRoute(route) : 'home';
     const approvalSummaryQuery = useQuery({
-        queryKey: ['approval-summary'],
+        queryKey: ['approval-summary', { scope }],
         queryFn: () => apiRequest('/api/continuations/approvals/summary'),
+        enabled: !isDemo,
         // The approvals page owns the detailed poll while it is open. Avoid a
         // duplicate summary request and stop all polling in hidden tabs.
         refetchInterval: () => (
@@ -166,7 +175,7 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
         ),
         refetchOnWindowFocus: true
     });
-    const pendingApprovalCount = Number(approvalSummaryQuery.data?.pendingCount || 0);
+    const pendingApprovalCount = isDemo ? 0 : Number(approvalSummaryQuery.data?.pendingCount || 0);
 
     useEffect(() => {
         if (!googleHealthKey && dismissedGoogleHealthKey) setDismissedGoogleHealthKey(null);
@@ -222,17 +231,25 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
 
     const openSettings = (tab = 'general') => {
         setMobileNavOpen(false);
+        if (isDemo) exitDemo();
         setSettingsTab(tab);
         setSettingsOpen(true);
     };
 
     const createAutomation = () => {
         setMobileNavOpen(false);
+        if (isDemo) exitDemo();
         navigateTo({ page: 'automation-new', method: getPreferredEditorForNewAutomation() });
+    };
+
+    const openTutorial = () => {
+        setMobileNavOpen(false);
+        requestTutorial({ scope: isDemo ? 'demo' : 'live' });
     };
 
     const go = (page) => {
         setMobileNavOpen(false);
+        if (isDemo && page === 'approvals') exitDemo();
         if (page === 'home') navigateTo({ page: 'home' });
         else if (page === 'automations') navigateTo({ page: 'automations' });
         else if (page === 'forms') navigateTo({ page: 'forms' });
@@ -262,12 +279,12 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
 
     return (
         <div className="workspace-shell flex h-screen overflow-hidden bg-[#f5f6fb] font-sans text-[#171827]">
-            <aside className={`workspace-sidebar relative z-50 flex shrink-0 flex-col text-white transition-all duration-300 ${collapsed ? 'is-collapsed w-[70px]' : 'w-[252px]'}`}>
+            <aside className={`workspace-sidebar sticky top-0 z-50 flex h-screen min-h-screen shrink-0 flex-col text-white transition-all duration-300 ${collapsed ? 'is-collapsed w-[70px]' : 'w-[252px]'}`}>
                 <div className={`workspace-sidebar-head flex h-16 items-center ${collapsed ? 'justify-center' : 'justify-between px-4'}`}>
                     {!collapsed && <div className="workspace-brand flex items-center gap-2.5"><img src="/logo.png" alt="Promptly" className="h-8 w-8 rounded-[10px] ring-1 ring-white/15" /><span className="font-display text-lg font-bold tracking-tight text-white">Promptly<span>.</span></span></div>}
                     <Button variant="ghost" size="icon-md" onClick={toggleCollapsed} className="p-1.5 text-slate-400 hover:bg-white/10 hover:text-white"><PanelLeftIcon /></Button>
                 </div>
-                <WorkspaceSidebarMenu user={user} activePage={activePage} pendingApprovalCount={pendingApprovalCount} onNavigate={go} onCreateAutomation={createAutomation} onOpenSettings={openSettings} collapsed={collapsed} />
+                <WorkspaceSidebarMenu user={user} activePage={activePage} pendingApprovalCount={pendingApprovalCount} onNavigate={go} onCreateAutomation={createAutomation} onOpenSettings={openSettings} onOpenTutorial={openTutorial} collapsed={collapsed} />
             </aside>
 
             {mobileNavOpen && (
@@ -278,7 +295,7 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
                             <div className="workspace-brand flex items-center gap-2.5"><img src="/logo.png" alt="Promptly" className="h-8 w-8 rounded-[10px] ring-1 ring-white/15" /><span className="font-display text-lg font-bold tracking-tight text-white">Promptly<span>.</span></span></div>
                             <Button variant="ghost" size="icon-md" onClick={() => setMobileNavOpen(false)} className="workspace-mobile-close-button p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" aria-label="Close workspace menu"><CloseIcon /></Button>
                         </div>
-                        <WorkspaceSidebarMenu user={user} activePage={activePage} pendingApprovalCount={pendingApprovalCount} onNavigate={go} onCreateAutomation={createAutomation} onOpenSettings={openSettings} onLogout={onLogout} mobile />
+                        <WorkspaceSidebarMenu user={user} activePage={activePage} pendingApprovalCount={pendingApprovalCount} onNavigate={go} onCreateAutomation={createAutomation} onOpenSettings={openSettings} onOpenTutorial={openTutorial} onLogout={onLogout} mobile />
                     </aside>
                 </div>
             )}
@@ -294,7 +311,19 @@ export default function WorkspaceShell({ user, route, onLogout, children }) {
                         <button type="button" data-tour="create-automation" onClick={createAutomation} className="workspace-mobile-new-button" aria-label="Create automation"><PlusIcon /><span>New</span></button>
                     </div>
                 </div>
-                <div className="workspace-content-stage flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{content}</div>
+                <div className="workspace-content-stage flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                    {isDemo && (
+                        <div className="workspace-demo-banner" role="status">
+                            <div className="workspace-demo-banner-copy"><span className="workspace-demo-banner-label">Sample workspace</span><span>Read-only examples — your real workspace is unchanged.</span></div>
+                            <div className="workspace-demo-banner-actions">
+                                <button type="button" onClick={() => void resetDemo()} disabled={isDemoLoading}>Reset sample</button>
+                                <button type="button" onClick={exitDemo} disabled={isDemoLoading}>Exit sample</button>
+                                <button type="button" onClick={() => void removeDemo()} disabled={isDemoLoading}>Remove</button>
+                            </div>
+                        </div>
+                    )}
+                    {content}
+                </div>
             </main>
 
             {settingsOpen && <Suspense fallback={null}><SettingsModal user={user} onClose={closeSettings} onLogout={onLogout} initialTab={settingsTab} /></Suspense>}

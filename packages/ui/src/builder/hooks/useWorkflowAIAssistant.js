@@ -7,6 +7,7 @@ import { isDurableStreamDetachError, submitWorkflowAITurnStream } from '../../ap
 import { useDurableTurnMonitor } from '../../api/hooks/useDurableTurnMonitor.js';
 import { useAIStream } from '../../context/AIStreamContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
+import { useWorkspaceScope } from '../../context/WorkspaceScopeContext.jsx';
 import { navigateTo } from '../../utils/router.js';
 import { requestSettingsModal } from '../../utils/settingsModal.js';
 import { markSupersededWorkflowProposals, markWorkflowProposalStale } from '../../components/chat/proposalStatus.js';
@@ -88,6 +89,7 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
     const workflowId = workflow?.id || null;
     const queryClient = useQueryClient();
     const toast = useToast();
+    const { scope } = useWorkspaceScope();
     const queryKey = ['workflowAI', workflowId];
     const [input, setInputState] = useState(() => readDraft(workflowId) || initialPrompt || '');
     const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
@@ -325,10 +327,10 @@ export const useWorkflowAIAssistant = (workflow, { onBeforeSend, initialPrompt =
                 messages: (page.messages || []).map(message => message.id === result.message?.id ? result.message : message)
             })));
             if (result.workflow) {
-                queryClient.setQueryData(['workflows', workflowId], result.workflow);
-                queryClient.setQueryData(['workflows'], old => old ? old.map(item => item.id === workflowId ? result.workflow : item) : old);
+                queryClient.setQueryData(['workflows', workflowId, { scope }], result.workflow);
+                queryClient.setQueryData(['workflows', { scope }], old => old ? old.map(item => item.id === workflowId ? result.workflow : item) : old);
             }
-            queryClient.invalidateQueries({ queryKey: ['workflows', workflowId] });
+            queryClient.invalidateQueries({ queryKey: ['workflows', workflowId, { scope }] });
         },
         onError: (error, variables) => {
             const code = error?.code || error?.payload?.code;

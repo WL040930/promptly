@@ -494,7 +494,7 @@ const FormsTab = ({ formId: initialFormId = null, section: initialSection = 'bui
                                 </svg>
                             </div>
                             <h3 className="text-lg font-bold tracking-tight text-slate-900">{isActiveFormLoading ? 'Loading form…' : 'No forms found'}</h3>
-                            <p className="mx-auto mb-6 mt-2 max-w-sm text-sm text-slate-500">{isActiveFormLoading ? 'Loading the selected form schema.' : 'Create a new form to get started.'}</p>
+                            <p className="mx-auto mb-6 mt-2 max-w-sm text-sm text-slate-500">{isActiveFormLoading ? 'Loading the selected form schema.' : 'Forms collect the information your automations need. Create one to start shaping the input.'}</p>
                             <button
                                 onClick={handleCreateForm}
                                 hidden={isActiveFormLoading}

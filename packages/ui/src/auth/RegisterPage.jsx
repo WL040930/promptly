@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { register } from '../api/auth.js'
 import AuthShell from './components/AuthShell.jsx'
+import { PASSWORD_REQUIREMENTS_ERROR, PASSWORD_REQUIREMENTS_HINT, isValidPassword } from '../../../shared/passwordPolicy.js'
 
 const RegisterPage = ({ onLogin, onLoginSuccess }) => {
     const [email, setEmail] = useState('')
@@ -13,6 +14,7 @@ const RegisterPage = ({ onLogin, onLoginSuccess }) => {
     const handleSubmit = async (event) => {
         event.preventDefault()
         if (password !== confirmPassword) { setError('The two passwords need to match.'); return }
+        if (!isValidPassword(password)) { setError(PASSWORD_REQUIREMENTS_ERROR); return }
         setIsSubmitting(true); setError(null)
         try {
             const payload = await register({ email, password })
@@ -28,7 +30,7 @@ const RegisterPage = ({ onLogin, onLoginSuccess }) => {
             <label className="auth-field"><span>Work email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@company.com" autoComplete="email" required autoFocus /></label>
             <label className="auth-field"><span>Create password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Choose a secure password" autoComplete="new-password" required /></label>
             <label className={`auth-field ${!passwordsMatch ? 'is-invalid' : ''}`}><span>Confirm password</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repeat your password" autoComplete="new-password" required /></label>
-            <p className="auth-hint">Use at least 8 characters. A passphrase works well.</p>
+            <p className="auth-hint">{PASSWORD_REQUIREMENTS_HINT}</p>
             {error && <div className="auth-alert" role="alert"><span>!</span><p>{error}</p></div>}
             <button className="auth-submit" type="submit" disabled={isSubmitting || !email.trim() || !password.trim() || !confirmPassword.trim()}>{isSubmitting && <i className="auth-spinner" />}{isSubmitting ? 'Creating account…' : 'Create account'}<b>→</b></button>
         </form>

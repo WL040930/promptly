@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { triggerProductionWorkflow, triggerWorkflow } from '../backend.js';
+import { useWorkspaceScope } from '../../context/WorkspaceScopeContext.jsx';
 
 /**
  * Triggers a manual workflow run.
@@ -15,9 +16,12 @@ import { triggerProductionWorkflow, triggerWorkflow } from '../backend.js';
  *   { id, status, durationMs, steps: [{ name, type, status, time, details }] }
  */
 export function useRunWorkflow() {
+    const { scope } = useWorkspaceScope();
     return useMutation({
         mutationFn: ({ workflowId, payload = {}, revisionId = null, runType = 'test' }) =>
-            runType === 'production'
+            scope === 'demo'
+                ? Promise.reject(new Error('The sample workspace is read-only. Exit sample workspace to run an automation.'))
+                : runType === 'production'
                 ? triggerProductionWorkflow(workflowId, payload)
                 : triggerWorkflow(workflowId, payload, revisionId),
     });

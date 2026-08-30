@@ -2,19 +2,82 @@ import { AutomationRun, DashboardRunMetric, Workflow } from '../../models/index.
 import sequelize from '../../db/index.js';
 import { QueryTypes } from 'sequelize';
 import asyncHandler from '../../utils/asyncHandler.js';
+import { workspaceScopeFromRequest, workspaceWhere } from '../../utils/workspaceScope.js';
 
 const METRICS_CACHE_TTL_MS = 30_000;
 const metricsCache = new Map();
 
 export const invalidateDashboardMetrics = userId => {
-    if (userId) metricsCache.delete(userId);
+    if (!userId) return;
+    for (const key of metricsCache.keys()) {
+        if (String(key).startsWith(`${userId}:`)) metricsCache.delete(key);
+    }
+};
+
+const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const weeklyDataForRuns = runs => {
+    const today = new Date();
+    return Array.from({ length: 7 }, (_, index) => {
+        const day = new Date(today);
+        day.setHours(0, 0, 0, 0);
+        day.setDate(today.getDate() - (6 - index));
+        const next = new Date(day);
+        next.setDate(day.getDate() + 1);
+        const runsOnDay = runs.filter(run => {
+            const createdAt = new Date(run.createdAt);
+            return createdAt >= day && createdAt < next;
+        }).length;
+        return { day: days[day.getDay()], runs: runsOnDay };
+    });
+};
+
+const activityTypeFor = status => {
+    const normalized = String(status || '').toLowerCase();
+    return ['success', 'succeeded'].includes(normalized)
+        ? 'success'
+        : ['waiting', 'running', 'resuming', 'pending'].includes(normalized)
+            ? 'pending'
+            : 'error';
 };
 
 export const getDashboardMetrics = asyncHandler(async (req, res) => {
     const userId = req.user.id;
-    const cached = metricsCache.get(userId);
+    const scope = workspaceScopeFromRequest(req);
+    const cacheKey = `${userId}:${scope}`;
+    const cached = metricsCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
         return res.json(cached.value);
+    }
+
+    if (scope === 'demo') {
+        const [activeWorkflowCount, demoRuns] = await Promise.all([
+            Workflow.count({ where: workspaceWhere({ userId, scope, extra: { isActive: true } }) }),
+            AutomationRun.findAll({
+                where: workspaceWhere({ userId, scope }),
+                order: [['createdAt', 'DESC']],
+                limit: 100,
+                include: [{ model: Workflow, as: 'workflow', attributes: ['name'], required: false }]
+            })
+        ]);
+        const completedRuns = demoRuns.filter(run => !['waiting', 'running', 'resuming', 'pending'].includes(String(run.status || '').toLowerCase()));
+        const successfulRuns = completedRuns.filter(run => ['success', 'succeeded'].includes(String(run.status || '').toLowerCase()));
+        const metrics = {
+            activeWorkflowCount,
+            totalRuns: demoRuns.length,
+            successRate: completedRuns.length === 0 ? '—' : `${((successfulRuns.length / completedRuns.length) * 100).toFixed(1)}%`,
+            weeklyData: weeklyDataForRuns(demoRuns),
+            recentActivities: demoRuns.slice(0, 5).map(log => ({
+                id: log.id,
+                action: `${log.workflow?.name || log.workflowNameSnapshot || 'Sample automation'} ${log.status}`,
+                detail: `Triggered by ${log.trigger}`,
+                time: log.time,
+                type: activityTypeFor(log.status),
+                latency: log.durationMs === null || log.durationMs === undefined ? '—' : `${log.durationMs}ms`
+            }))
+        };
+        metricsCache.set(cacheKey, { value: metrics, expiresAt: Date.now() + METRICS_CACHE_TTL_MS });
+        return res.json(metrics);
     }
     
     // Run queries concurrently for better performance
@@ -24,7 +87,7 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
         weeklyData,
         recentActivities
     ] = await Promise.all([
-        Workflow.count({ where: { userId, status: 'Active' } }),
+        Workflow.count({ where: workspaceWhere({ userId, scope, extra: { isActive: true } }) }),
 
         DashboardRunMetric.findAll({
             where: { userId },
@@ -49,7 +112,7 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
         ),
 
         AutomationRun.findAll({
-            where: { userId },
+            where: workspaceWhere({ userId, scope }),
             order: [['createdAt', 'DESC']],
             limit: 5,
             include: [{ model: Workflow, as: 'workflow', attributes: ['name'], required: false }]
@@ -63,7 +126,6 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
     const successRate = completedRunsNum === 0 ? '—' : `${((successRunsNum / completedRunsNum) * 100).toFixed(1)}%`;
 
     // Fill in any days with zero runs so the chart always shows 7 bars
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const today = new Date();
     const last7Days = Array.from({ length: 7 }, (_, i) => {
         const d = new Date(today);
@@ -90,6 +152,6 @@ export const getDashboardMetrics = asyncHandler(async (req, res) => {
             latency: `${log.durationMs}ms`
         }))
     };
-    metricsCache.set(userId, { value: metrics, expiresAt: Date.now() + METRICS_CACHE_TTL_MS });
+    metricsCache.set(cacheKey, { value: metrics, expiresAt: Date.now() + METRICS_CACHE_TTL_MS });
     res.json(metrics);
 });

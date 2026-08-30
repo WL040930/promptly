@@ -5,6 +5,7 @@ import { isDurableStreamDetachError, submitFormAITurnStream } from '../../api/ai
 import { useDurableTurnMonitor } from '../../api/hooks/useDurableTurnMonitor.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useAIStream } from '../../context/AIStreamContext.jsx';
+import { useWorkspaceScope } from '../../context/WorkspaceScopeContext.jsx';
 import { DEFAULT_CLARIFICATION_MODE } from '../../../../shared/agentContract.js';
 import { getClarificationModePreference, setClarificationModePreference } from '../../utils/storage.js';
 import { navigateTo } from '../../utils/router.js';
@@ -67,6 +68,7 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
     const formId = form?.id || null;
     const queryClient = useQueryClient();
     const toast = useToast();
+    const { scope } = useWorkspaceScope();
     const queryKey = ['formChat', formId];
     const [input, setInputState] = useState(() => readDraft(formId));
     const [clarificationMode, setClarificationMode] = useState(() => getClarificationModePreference() || DEFAULT_CLARIFICATION_MODE);
@@ -366,8 +368,8 @@ export const useFormAIAssistant = (form, { onBeforeSend, onFormApplied } = {}) =
             });
             setPendingFormDeletionReview(null);
             syncStateVersion(result.state?.version);
-            queryClient.setQueryData(['forms'], old => old ? old.map(item => item.id === formId ? result.form : item) : old);
-            queryClient.setQueryData(['forms', formId], result.form);
+            queryClient.setQueryData(['forms', { scope }], old => old ? old.map(item => item.id === formId ? result.form : item) : old);
+            queryClient.setQueryData(['forms', formId, { scope }], result.form);
             queryClient.setQueryData(queryKey, old => updateLatestPage(old, page => ({
                 ...page,
                 state: result.state || page.state,

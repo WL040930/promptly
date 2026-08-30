@@ -12,6 +12,12 @@ import { normalizeWorkflowForWrite, saveAutomationDraft } from '../../services/a
 import { performWorkflowLifecycleAction } from '../../services/automations/workflowLifecycleService.js';
 import { DEFAULT_AUTOMATION_NAME } from '../../../shared/automationDefaults.js';
 import { invalidateDashboardMetrics } from '../dashboard/dashboardController.js';
+import {
+    assertWritableWorkspaceRecord,
+    demoKeyForScope,
+    workspaceScopeFromRequest,
+    workspaceWhere
+} from '../../utils/workspaceScope.js';
 
 const graphsMatch = (leftNodes = [], leftEdges = [], rightNodes = [], rightEdges = []) => (
     JSON.stringify(leftNodes || []) === JSON.stringify(rightNodes || [])
@@ -48,8 +54,8 @@ const workflowValidationResponse = (res, workflow) => {
 const parsePage = (value, fallback = 1) => Math.max(Number.parseInt(value, 10) || fallback, 1);
 const parsePageSize = (value, fallback = 10) => Math.min(Math.max(Number.parseInt(value, 10) || fallback, 1), 50);
 
-const workflowWhere = ({ userId, search = '', status = 'All' }) => {
-    const where = { userId };
+const workflowWhere = ({ userId, scope = 'live', search = '', status = 'All', extra = {} }) => {
+    const where = workspaceWhere({ userId, scope, extra });
     if (search.trim()) where.name = { [Op.iLike]: `%${search.trim()}%` };
     if (status === 'Active') where.isActive = true;
     if (status === 'Paused') {
@@ -69,14 +75,19 @@ export const workflowHealthSql = `
         SELECT "workflowId", status, "createdAt",
             ROW_NUMBER() OVER (PARTITION BY "workflowId" ORDER BY "createdAt" DESC, id DESC) AS rank
         FROM "automation_runs"
-        WHERE "userId" = :userId AND "workflowId" IN (:workflowIds)
+        WHERE "userId" = :userId
+          AND "demoKey" IS NOT DISTINCT FROM :demoKey
+          AND "workflowId" IN (:workflowIds)
     ) recent
     WHERE rank <= 5
 `;
 
-const healthForWorkflows = async ({ userId, workflowIds }) => {
+const healthForWorkflows = async ({ userId, scope = 'live', workflowIds }) => {
     if (workflowIds.length === 0) return new Map();
-    const rows = await Workflow.sequelize.query(workflowHealthSql, { replacements: { userId, workflowIds }, type: QueryTypes.SELECT });
+    const rows = await Workflow.sequelize.query(workflowHealthSql, {
+        replacements: { userId, demoKey: demoKeyForScope(scope), workflowIds },
+        type: QueryTypes.SELECT
+    });
     const statusesByWorkflow = new Map();
     for (const row of rows) {
         const statuses = statusesByWorkflow.get(row.workflowId) || [];
@@ -96,18 +107,19 @@ export const getWorkflowListPage = asyncHandler(async (req, res) => {
     const pageSize = parsePageSize(req.query.pageSize);
     const status = ['All', 'Active', 'Draft', 'Paused'].includes(req.query.status) ? req.query.status : 'All';
     const health = ['All', 'Healthy', 'Needs attention', 'No runs'].includes(req.query.health) ? req.query.health : 'All';
+    const scope = workspaceScopeFromRequest(req);
     const candidates = await Workflow.findAll({
-        where: workflowWhere({ userId: req.user.id, search: String(req.query.search || ''), status }),
+        where: workflowWhere({ userId: req.user.id, scope, search: String(req.query.search || ''), status }),
         attributes: ['id', 'isActive', 'status', 'updatedAt'],
         order: [['updatedAt', 'DESC'], ['id', 'DESC']]
     });
-    const healthById = await healthForWorkflows({ userId: req.user.id, workflowIds: candidates.map(item => item.id) });
+    const healthById = await healthForWorkflows({ userId: req.user.id, scope, workflowIds: candidates.map(item => item.id) });
     const filtered = health === 'All' ? candidates : candidates.filter(item => healthById.get(item.id)?.health === health);
     const total = filtered.length;
     const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
     const pageIds = pageItems.map(item => item.id);
     const workflows = pageIds.length > 0
-        ? await Workflow.findAll({ where: { id: pageIds, userId: req.user.id }, order: [['updatedAt', 'DESC'], ['id', 'DESC']] })
+        ? await Workflow.findAll({ where: workflowWhere({ userId: req.user.id, scope, extra: { id: pageIds } }), order: [['updatedAt', 'DESC'], ['id', 'DESC']] })
         : [];
     const publishedIds = [...new Set(workflows.map(workflow => workflow.publishedRevisionId).filter(Boolean))];
     const publishedVersions = publishedIds.length > 0
@@ -145,7 +157,8 @@ export const getWorkflowListPage = asyncHandler(async (req, res) => {
 });
 
 export const getWorkflows = asyncHandler(async (req, res) => {
-    const workflows = await Workflow.findAll({ where: { userId: req.user.id } });
+    const scope = workspaceScopeFromRequest(req);
+    const workflows = await Workflow.findAll({ where: workspaceWhere({ userId: req.user.id, scope }) });
     const publishedIds = [...new Set(workflows.map(workflow => workflow.publishedRevisionId).filter(Boolean))];
     const publishedVersions = publishedIds.length > 0
         ? await WorkflowVersion.findAll({ where: { id: publishedIds }, attributes: ['id', 'workflowId', 'versionNumber', 'nodes', 'edges'] })
@@ -177,14 +190,18 @@ export const getWorkflows = asyncHandler(async (req, res) => {
 
 export const getWorkflow = asyncHandler(async (req, res) => {
     const { id } = req.params;
+    const scope = workspaceScopeFromRequest(req);
     const workflow = await Workflow.findOne({ 
-        where: { id, userId: req.user.id } 
+        where: workspaceWhere({ userId: req.user.id, scope, extra: { id } })
     });
     if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
     res.json({ ...workflow.toJSON(), release: await releaseSummary(workflow) });
 });
 
 export const createWorkflow = asyncHandler(async (req, res) => {
+    if (workspaceScopeFromRequest(req) === 'demo') {
+        return res.status(409).json({ code: 'DEMO_WORKSPACE_READ_ONLY', message: 'The sample workspace is read-only. Exit sample workspace to create an automation.' });
+    }
     const { name, description, status, lifecycleStatus, icon, iconColor, iconBg, nodes = [], edges = [] } = req.body;
     const normalized = await normalizeWorkflowForWrite({ nodes, edges, userId: req.user.id, allowDanglingReferences: true });
     const validationResponse = workflowValidationResponse(res, { nodes: normalized.nodes, edges, isActive: false });
@@ -202,6 +219,7 @@ export const updateWorkflow = asyncHandler(async (req, res) => {
     
     let workflow = await Workflow.findOne({ where: { id, userId: req.user.id } });
     if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
+    assertWritableWorkspaceRecord(workflow);
 
     const nextNodes = nodes === undefined ? (workflow.nodes || []) : nodes;
     const nextEdges = edges === undefined ? (workflow.edges || []) : edges;
@@ -256,6 +274,7 @@ export const deleteWorkflow = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const workflow = await Workflow.findOne({ where: { id, userId: req.user.id } });
     if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
+    assertWritableWorkspaceRecord(workflow);
     
     // Stop external work before removing the live automation. Historical runs
     // are handled in the database transaction below and are never destroyed.
@@ -271,6 +290,7 @@ export const deleteWorkflow = asyncHandler(async (req, res) => {
             lock: transaction.LOCK.UPDATE
         });
         if (!currentWorkflow) return;
+        assertWritableWorkspaceRecord(currentWorkflow);
 
         deletionSummary = await retainRunsForDeletedWorkflow({
             workflowId: id,
@@ -304,6 +324,9 @@ export const deleteWorkflow = asyncHandler(async (req, res) => {
 
 export const triggerWorkflow = asyncHandler(async (req, res) => {
     const { id } = req.params;
+    const workflow = await Workflow.findOne({ where: { id, userId: req.user.id } });
+    if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
+    assertWritableWorkspaceRecord(workflow);
     const { payload, revisionId } = req.body;
     const result = await performWorkflowLifecycleAction({
         workflowId: id,
@@ -318,6 +341,9 @@ export const triggerWorkflow = asyncHandler(async (req, res) => {
 
 export const triggerProductionWorkflow = asyncHandler(async (req, res) => {
     const { id } = req.params;
+    const workflow = await Workflow.findOne({ where: { id, userId: req.user.id } });
+    if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
+    assertWritableWorkspaceRecord(workflow);
     const result = await performWorkflowLifecycleAction({
         workflowId: id,
         userId: req.user.id,
@@ -329,6 +355,9 @@ export const triggerProductionWorkflow = asyncHandler(async (req, res) => {
 });
 
 export const publishWorkflow = asyncHandler(async (req, res) => {
+    const workflow = await Workflow.findOne({ where: { id: req.params.id, userId: req.user.id } });
+    if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
+    assertWritableWorkspaceRecord(workflow);
     const result = await performWorkflowLifecycleAction({
         workflowId: req.params.id,
         userId: req.user.id,
@@ -338,6 +367,9 @@ export const publishWorkflow = asyncHandler(async (req, res) => {
 });
 
 export const pauseWorkflow = asyncHandler(async (req, res) => {
+    const workflow = await Workflow.findOne({ where: { id: req.params.id, userId: req.user.id } });
+    if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
+    assertWritableWorkspaceRecord(workflow);
     const result = await performWorkflowLifecycleAction({
         workflowId: req.params.id,
         userId: req.user.id,
@@ -350,7 +382,8 @@ export const pauseWorkflow = asyncHandler(async (req, res) => {
 
 export const getWorkflowVersions = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const workflow = await Workflow.findOne({ where: { id, userId: req.user.id }, attributes: ['id'] });
+    const scope = workspaceScopeFromRequest(req);
+    const workflow = await Workflow.findOne({ where: workspaceWhere({ userId: req.user.id, scope, extra: { id } }), attributes: ['id'] });
     if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
     const page = parsePage(req.query.page);
     const pageSize = parsePageSize(req.query.pageSize, 20);
@@ -376,7 +409,8 @@ export const getWorkflowVersions = asyncHandler(async (req, res) => {
 });
 
 export const getWorkflowVersion = asyncHandler(async (req, res) => {
-    const workflow = await Workflow.findOne({ where: { id: req.params.id, userId: req.user.id }, attributes: ['id'] });
+    const scope = workspaceScopeFromRequest(req);
+    const workflow = await Workflow.findOne({ where: workspaceWhere({ userId: req.user.id, scope, extra: { id: req.params.id } }), attributes: ['id'] });
     if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
     const version = await WorkflowVersion.findOne({ where: { id: req.params.versionId, workflowId: workflow.id } });
     if (!version) return res.status(404).json({ message: 'Workflow version not found' });
@@ -388,6 +422,7 @@ export const restoreWorkflowVersion = asyncHandler(async (req, res) => {
     
     const workflow = await Workflow.findOne({ where: { id, userId: req.user.id } });
     if (!workflow) return res.status(404).json({ message: 'Workflow not found' });
+    assertWritableWorkspaceRecord(workflow);
     
     const version = await WorkflowVersion.findOne({ where: { id: versionId, workflowId: id } });
     if (!version) return res.status(404).json({ message: 'Version not found' });

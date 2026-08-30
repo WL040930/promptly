@@ -5,7 +5,7 @@ import { Op } from 'sequelize';
 import User from '../../models/core/User.js';
 import Connection from '../../models/core/Connection.js';
 import env from '../../config/env.js';
-import { normalizeEmail, emailPattern, passwordPattern } from '../../utils/validators.js';
+import { normalizeEmail, emailPattern, passwordPattern, PASSWORD_REQUIREMENTS_ERROR } from '../../utils/validators.js';
 import { sendEmail } from '../../utils/email.js';
 import { getResetPasswordHtml } from '../../utils/emailTemplates.js';
 
@@ -21,7 +21,7 @@ const serializeUser = async (user) => {
         email: user.email,
         onboardingStatus: user.onboardingCompletedAt ? 'completed' : 'not_started',
         onboardingCompletedAt: user.onboardingCompletedAt || null,
-        onboardingVersion: 2,
+        onboardingVersion: 3,
         googleEmail: google?.accountEmail || null,
         googleId: google?.externalAccountId || null
     };
@@ -40,10 +40,7 @@ const register = async (req, res) => {
     }
 
     if (!passwordPattern.test(password)) {
-        return res.status(400).json({
-            error:
-                'Password must be at least 12 characters and include uppercase, lowercase, number, and symbol.'
-        });
+        return res.status(400).json({ error: PASSWORD_REQUIREMENTS_ERROR });
     }
 
     const existingUser = await User.findOne({ where: { email } });
@@ -160,9 +157,7 @@ export const resetPassword = async (req, res) => {
     const password = String(req.body.password || '');
 
     if (!passwordPattern.test(password)) {
-        return res.status(400).json({
-            error: 'Password must be at least 12 characters and include uppercase, lowercase, number, and symbol.'
-        });
+        return res.status(400).json({ error: PASSWORD_REQUIREMENTS_ERROR });
     }
 
     const user = await User.findOne({
@@ -198,9 +193,7 @@ export const changePassword = async (req, res) => {
 
     // Validate new password pattern
     if (!passwordPattern.test(newPassword)) {
-        return res.status(400).json({
-            error: 'New password must be at least 12 characters and include uppercase, lowercase, number, and symbol.'
-        });
+        return res.status(400).json({ error: PASSWORD_REQUIREMENTS_ERROR });
     }
 
     user.passwordHash = await bcrypt.hash(newPassword, 10);

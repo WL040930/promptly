@@ -42,7 +42,11 @@ const needsPostgresSetup = async () => {
                 AND to_regclass('public.automation_runs_trigger_trgm') IS NOT NULL
                 AND to_regclass('public.automation_runs_error_trgm') IS NOT NULL
                 AND to_regclass('public.automation_runs_workflow_name_trgm') IS NOT NULL
-                AS trigram_indexes_ready;
+                AS trigram_indexes_ready,
+            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'automations' AND column_name = 'demoKey')
+                AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'forms' AND column_name = 'demoKey')
+                AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'automation_runs' AND column_name = 'demoKey')
+                AS onboarding_demo_columns_ready;
     `);
     const state = rows[0];
     return !Object.values(state).every(Boolean);
