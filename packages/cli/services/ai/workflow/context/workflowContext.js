@@ -2,6 +2,7 @@ import { getClarificationModeInstruction, normalizeClarificationMode } from '../
 import { buildWorkflowEditView } from '../domain/editCompiler/index.js';
 import { projectFormResourceContext } from '../../form/context/formResourceContext.js';
 import { buildFormBindingCatalogue } from '../../../../../shared/workflowExpressions.js';
+import { normalizeWebhookBodySchema, webhookBodyFields } from '../../../../../shared/webhookPayloadContract.js';
 
 const MAX_CONTEXT_TEXT = 12000;
 const MAX_HISTORY = 10;
@@ -41,6 +42,37 @@ const plannerWorkflowView = workflow => {
     };
 };
 
+const webhookContractEntry = ({ nodeRef, title, config = {} }) => {
+    const contract = normalizeWebhookBodySchema(config.bodySchema);
+    return {
+        nodeRef,
+        title: title || 'Webhook',
+        configured: contract.configured && contract.issues.length === 0,
+        ...(contract.issues.length > 0 ? { issues: contract.issues.map(issue => ({ code: issue.code, path: issue.path, message: issue.message })) } : {}),
+        fields: contract.configured && contract.issues.length === 0
+            ? webhookBodyFields(contract.schema).map(field => ({
+                path: field.pathString,
+                type: field.schemaType,
+                required: field.required,
+                ...(field.enum ? { enum: field.enum } : {})
+            }))
+            : []
+    };
+};
+
+const webhookContractCatalogue = workflow => {
+    const nodes = workflow?.nodes || [];
+    const editView = buildWorkflowEditView(workflow);
+    return editView.nodes
+        .map((node, index) => ({ node, raw: nodes[index] }))
+        .filter(({ node }) => node?.subType === 'webhook')
+        .map(({ node, raw }) => webhookContractEntry({ nodeRef: node.ref, title: node.title, config: raw?.config }));
+};
+
+const plannedWebhookContractCatalogue = linearSteps => (linearSteps || [])
+    .filter(step => step?.nodeKey === 'trigger:webhook')
+    .map(step => webhookContractEntry({ nodeRef: step.ref, title: step.title, config: step.config }));
+
 const compactHistoryMessage = message => {
     const value = message?.toJSON ? message.toJSON() : message;
     return {
@@ -79,6 +111,7 @@ const compactPlannerInput = input => {
     if (!input?.name || input.isConnection) return null;
     return {
         name: input.name,
+        ...(input.schemaKind ? { schemaKind: input.schemaKind } : {}),
         ...(input.required === true ? { required: true } : {}),
         ...(input.defaultValue !== undefined ? { defaultValue: compactValue(input.defaultValue) } : {}),
         ...(input.resource ? { resource: input.resource } : {})
@@ -147,7 +180,7 @@ const sanitizeWorkerResponse = value => {
 // complete authoritative schema after node selection.
 const compactCatalogue = catalogue => (catalogue || []).map(item => {
     const inputs = (item.inputs || [])
-        .filter(input => input?.required === true || input?.resource)
+        .filter(input => input?.required === true || input?.resource || input?.schemaKind === 'webhook-body')
         .slice(0, 12)
         .map(compactPlannerInput)
         .filter(Boolean);
@@ -218,12 +251,14 @@ export const buildWorkflowPlannerContext = ({
     const compactResourceContext = compactValue(resourceContext || {});
     const workflowView = plannerWorkflowView(workflow);
     const plannerCatalogue = compactCatalogue(catalogue);
+    const webhookContracts = webhookContractCatalogue(workflow);
     const recentHistory = history.slice(-MAX_HISTORY).map(compactHistoryMessage);
     const pending = compactPending(pendingProposal);
 
     addSection('Resource Identity and Continuity', compactResourceContext);
     addSection('Workflow Continuity', 'You are editing this existing workflow. Preserve its purpose, accepted decisions, and graph behavior unless the Current Request explicitly changes them.', { required: true });
     addSection('Current Workflow Edit View', workflowView, { required: true });
+    addSection('Webhook Payload Contracts', webhookContracts, { required: true });
     addSection('Available Node Catalogue', plannerCatalogue, { required: true });
     addSection('Clarification Mode', `${normalizeClarificationMode(clarificationMode)} - ${getClarificationModeInstruction(clarificationMode)}`, { required: true });
     if (forceDecision) addSection('Decision Resolution', 'Choose sensible defaults now. Ask again only when execution or safety is blocked.', { required: true });
@@ -266,7 +301,7 @@ export const buildWorkflowPlannerContext = ({
     };
 };
 
-export const workflowContextInternals = Object.freeze({ compactCatalogue });
+export const workflowContextInternals = Object.freeze({ compactCatalogue, webhookContractCatalogue });
 
 const describeRepairIssue = item => [
     `${item.code || 'INVALID'} at ${item.path || 'response'}: ${item.message || 'Invalid output.'}`,
@@ -290,9 +325,18 @@ export const buildWorkflowWorkerContext = ({
     repairIssues = []
 }) => {
     const editView = sanitizeWorkerWorkflowView(workflow, specs);
+    const webhookContracts = [
+        ...webhookContractCatalogue(workflow),
+        ...plannedWebhookContractCatalogue(linearSteps)
+    ];
     return [
     'Current Workflow Edit View:',
     JSON.stringify(editView),
+    '',
+    'Webhook Payload Contracts:',
+    JSON.stringify(webhookContracts),
+    'For a configured webhook, these are the only declared body paths. Use canonical references with the webhook node ref and a path beginning ["body", ...]. Do not use triggerData.amount or invent undeclared body paths.',
+    'If a workflow needs webhook body fields and the contract is not configured, the planner must ask for a JSON example body or field:type list before proposing mappings.',
     '',
     'Valid Existing Node Refs:',
     JSON.stringify(editView.nodes.map(node => node.ref)),
@@ -378,6 +422,10 @@ export const buildWorkflowVerifierContext = ({ requirements, operations, diff, w
     '',
     'Resolved Form Workflow Contracts:',
     JSON.stringify(formPrerequisites || '(none)'),
+    '',
+    'Webhook Payload Contracts:',
+    JSON.stringify(webhookContractCatalogue(workflow)),
+    'Verify every webhook body reference uses a declared contract field and canonical path ["body", ...].',
     '',
     'Compiled Diff:',
     JSON.stringify(diff || {}),

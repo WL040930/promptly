@@ -25,7 +25,7 @@ function isObjectLike(v) {
 }
 
 function canUseCustomPath(v) {
-  return ['object', 'any'].includes(v?.type) || v?.hasChildren;
+  return v?.allowsCustomPath !== false && (['object', 'any'].includes(v?.type) || v?.hasChildren);
 }
 
 export default function VariablePickerModal({ isOpen, onClose, onSelect, availableVars = [] }) {

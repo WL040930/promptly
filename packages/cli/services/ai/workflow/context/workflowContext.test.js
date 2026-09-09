@@ -68,6 +68,36 @@ test('planner context keeps node routing information while excluding full schema
     assert.ok(result.metrics.historyCharacters > 0);
 });
 
+test('planner and worker contexts expose the webhook body field catalogue', () => {
+    const workflow = {
+        nodes: [{
+            id: 'webhook_1',
+            title: 'Purchase Webhook',
+            type: 'trigger',
+            subType: 'webhook',
+            nodeKey: 'trigger:webhook',
+            config: {
+                bodySchema: {
+                    type: 'object',
+                    properties: {
+                        amount: { type: 'number' },
+                        customer: { type: 'object', properties: { email: { type: 'string' } } }
+                    },
+                    required: ['amount']
+                }
+            }
+        }],
+        edges: []
+    };
+    const planner = buildWorkflowPlannerContext({ workflow, catalogue: [], request: 'Use amount', clarificationMode: 'ask_when_needed' });
+    assert.match(planner.prompt, /Webhook Payload Contracts/);
+    assert.match(planner.prompt, /body\.amount/);
+    assert.match(planner.prompt, /body\.customer\.email/);
+    const worker = buildWorkflowWorkerContext({ workflow, specs: [], requirements: [], capabilities: [], resourceContext: {} });
+    assert.match(worker, /body\.amount/);
+    assert.match(worker, /triggerData\.amount/);
+});
+
 test('planner catalogue keeps every enabled node key in a compact routing contract', async () => {
     await NodeRegistry.init({ nodesDir });
     const rawCatalogue = NodeRegistry.getCompactCatalogue();

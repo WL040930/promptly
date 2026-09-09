@@ -4,6 +4,7 @@ import FieldRenderer from '../../../forms/preview/FieldRenderer.jsx';
 import Button from '../../../components/ui/Button.jsx';
 import { WORKFLOW_MODAL_LAYERS } from '../../modalLayers.js';
 import { useWorkflowForms } from '../../hooks/useWorkflowForms.js';
+import { webhookExampleFromSchema } from '../../../../../shared/webhookPayloadContract.js';
 
 const STORAGE_KEY = (id) => `promptly-test-payload-${id}`;
 
@@ -26,6 +27,14 @@ function detectTrigger(nodes) {
 
 const EMPTY_ROW = { key: '', value: '' };
 const EMPTY_JSON = '{\n  \n}';
+
+const rowsFromObject = value => {
+    const rows = Object.entries(value || {}).map(([key, item]) => ({
+        key,
+        value: typeof item === 'object' && item !== null ? JSON.stringify(item) : String(item)
+    }));
+    return rows.length > 0 ? [...rows, EMPTY_ROW] : [EMPTY_ROW];
+};
 
 const TRIGGER_META = {
     form:     { label: 'Form Submission', color: 'bg-violet-100 text-violet-700 border-violet-200' },
@@ -139,6 +148,9 @@ function FormFillMode({ form, savedValues, onSubmit, isSubmitting, isProduction 
 const TestRunModal = ({ isOpen, onClose, onConfirm, isLoading, workflowId, nodes, runType = 'test' }) => {
     const isProduction = runType === 'production';
     const trigger = useMemo(() => detectTrigger(nodes), [nodes]);
+    const webhookExample = useMemo(() => trigger.type === 'webhook'
+        ? webhookExampleFromSchema(trigger.node?.config?.bodySchema)
+        : {}, [trigger]);
     const { formsById, isLoading: isLoadingLinkedForms } = useWorkflowForms(nodes);
     const linkedForm = useMemo(() => {
         if (trigger.type !== 'form') return null;
@@ -163,16 +175,17 @@ const TestRunModal = ({ isOpen, onClose, onConfirm, isLoading, workflowId, nodes
             setFormKey(k => k + 1);
         } else {
             setActiveTab('kv');
-            if (saved && typeof saved === 'object') {
-                const rows = Object.entries(saved).map(([k, v]) => ({ key: k, value: String(v) }));
-                setKvRows([...rows, EMPTY_ROW]);
+            if (saved !== null && saved !== undefined) {
+                setKvRows(saved && typeof saved === 'object' && !Array.isArray(saved) ? rowsFromObject(saved) : [EMPTY_ROW]);
                 setRawJson(JSON.stringify(saved, null, 2));
             } else {
-                setKvRows([EMPTY_ROW]);
-                setRawJson(EMPTY_JSON);
+                setKvRows(rowsFromObject(webhookExample));
+                setRawJson(Object.keys(webhookExample).length > 0
+                    ? JSON.stringify(webhookExample, null, 2)
+                    : EMPTY_JSON);
             }
         }
-    }, [isOpen, workflowId, trigger.type]);
+    }, [isOpen, workflowId, trigger.type, webhookExample]);
 
     const handleKvChange = (rows) => {
         setKvRows(rows);
@@ -192,7 +205,7 @@ const TestRunModal = ({ isOpen, onClose, onConfirm, isLoading, workflowId, nodes
 
     const handleNonFormSubmit = () => {
         try {
-            const payload = JSON.parse(rawJson) || {};
+            const payload = JSON.parse(rawJson);
             storage.save(workflowId, payload);
             onConfirm(payload);
         } catch {
@@ -221,8 +234,8 @@ const TestRunModal = ({ isOpen, onClose, onConfirm, isLoading, workflowId, nodes
         storage.clear(workflowId);
         setSavedFormValues({});
         setFormKey(k => k + 1);
-        setKvRows([EMPTY_ROW]);
-        setRawJson(EMPTY_JSON);
+        setKvRows(rowsFromObject(webhookExample));
+        setRawJson(Object.keys(webhookExample).length > 0 ? JSON.stringify(webhookExample, null, 2) : EMPTY_JSON);
         setJsonError(null);
     };
 

@@ -348,7 +348,7 @@ export const triggerProductionWorkflow = asyncHandler(async (req, res) => {
         workflowId: id,
         userId: req.user.id,
         action: 'live_run',
-        payload: req.body?.payload || {},
+        payload: req.body?.payload ?? {},
         trigger: 'manual-production'
     });
     res.json(result.run);

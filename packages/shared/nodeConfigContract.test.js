@@ -71,6 +71,20 @@ test('json inputs accept any valid JSON value, including arrays', () => {
     assert.deepEqual(result.issues, []);
 });
 
+test('webhook body contracts are optional but invalid schemas block active configuration', () => {
+    const webhookSchema = {
+        inputs: [{ name: 'bodySchema', type: 'json', schemaKind: 'webhook-body', defaultValue: {} }]
+    };
+    assert.equal(validateNodeConfig({ schema: webhookSchema, config: {}, mode: 'active' }).valid, true);
+    const invalid = validateNodeConfig({
+        schema: webhookSchema,
+        config: { bodySchema: { type: 'object', properties: { amount: { type: 'string', pattern: '^RM' } } } },
+        mode: 'active'
+    });
+    assert.equal(invalid.valid, false);
+    assert.ok(invalid.issues.some(issue => issue.code === 'WEBHOOK_SCHEMA_KEY_UNSUPPORTED'));
+});
+
 test('Google Sheets Create headers are a flat text list while append values remain a row grid', async () => {
     const createSchema = (await import('../nodes/integrations/external-apps/google-sheets-create-action/schema.json', { with: { type: 'json' } })).default;
     const appendSchema = (await import('../nodes/integrations/external-apps/google-sheets-action/schema.json', { with: { type: 'json' } })).default;

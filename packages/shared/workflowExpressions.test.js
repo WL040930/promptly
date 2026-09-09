@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     buildFormBindingCatalogue,
+    collectWebhookBodyReferenceKeys,
     compileWorkflowBindings,
     normalizeWorkflowReferences,
     resolveWorkflowExpression,
@@ -17,6 +18,23 @@ const emailSchema = {
         { name: 'prompt', valueSyntax: 'node-template' }
     ],
     outputs: []
+};
+
+const webhook = {
+    id: 'webhook_1',
+    subType: 'webhook',
+    type: 'trigger',
+    config: {
+        webhookId: 'inbound_1',
+        bodySchema: {
+            type: 'object',
+            properties: {
+                amount: { type: 'number' },
+                customer: { type: 'object', properties: { email: { type: 'string' } } }
+            },
+            required: ['amount']
+        }
+    }
 };
 
 const normalizeEmailWorkflow = ({ nodes, edges = [{ source: 'trigger_1', target: 'email_1' }], formSchema = form, rejectLegacy = false } = {}) => normalizeWorkflowReferences({
@@ -53,6 +71,50 @@ test('resolves canonical expressions without exposing template syntax to nodes',
     const expression = { $expr: 'template', v: 1, parts: [{ text: 'Hi ' }, { reference: { $expr: 'reference', v: 1, nodeId: 'trigger_1', path: ['fields', 'f_real_name'] } }] };
     assert.equal(resolveWorkflowExpression(expression, { trigger_1: { fields: { f_real_name: 'Sam' } } }).value, 'Hi Sam');
     assert.equal(validateWorkflowExpressions({ nodes: [trigger, { id: 'email_1', config: { body: expression } }], formSchema: form }).length, 0);
+});
+
+test('accepts declared webhook body references in canonical form', () => {
+    const result = validateWorkflowExpressions({
+        nodes: [webhook, { id: 'email_1', config: { body: { $expr: 'reference', v: 1, nodeId: 'webhook_1', path: ['body', 'amount'] } } }],
+        edges: [{ source: 'webhook_1', target: 'email_1' }],
+        requireWebhookContractForBodyPaths: true
+    });
+    assert.deepEqual(result, []);
+});
+
+test('rejects invented webhook body paths and uncontracted AI mappings', () => {
+    const unknown = validateWorkflowExpressions({
+        nodes: [webhook, { id: 'email_1', config: { body: { $expr: 'reference', v: 1, nodeId: 'webhook_1', path: ['body', 'purchaseAction'] } } }],
+        edges: [{ source: 'webhook_1', target: 'email_1' }],
+        requireWebhookContractForBodyPaths: true
+    });
+    assert.equal(unknown[0].code, 'WEBHOOK_BODY_FIELD_UNKNOWN');
+
+    const missing = validateWorkflowExpressions({
+        nodes: [{ ...webhook, config: { webhookId: 'inbound_1' } }, { id: 'email_1', config: { body: { $expr: 'reference', v: 1, nodeId: 'webhook_1', path: ['body', 'amount'] } } }],
+        edges: [{ source: 'webhook_1', target: 'email_1' }],
+        requireWebhookContractForBodyPaths: true
+    });
+    assert.equal(missing[0].code, 'WEBHOOK_BODY_SCHEMA_REQUIRED');
+});
+
+test('keeps an unchanged legacy webhook reference compatible while strict AI mappings require a contract', () => {
+    const existing = {
+        ...webhook,
+        config: { webhookId: 'inbound_1' }
+    };
+    const unchanged = {
+        id: 'email_1',
+        config: { body: { $expr: 'reference', v: 1, nodeId: 'webhook_1', path: ['body', 'amount'] } }
+    };
+    const legacyKeys = collectWebhookBodyReferenceKeys([existing, unchanged]);
+    assert.deepEqual(validateWorkflowExpressions({
+        nodes: [existing, unchanged],
+        edges: [{ source: 'webhook_1', target: 'email_1' }],
+        requireWebhookContractForBodyPaths: true,
+        strictWebhookReferenceTargets: new Set(['email_1']),
+        legacyWebhookReferenceKeys: legacyKeys
+    }), []);
 });
 
 test('resolves an omitted optional form field as an empty value', () => {

@@ -17,5 +17,10 @@ ui:
 Trigger via HTTP POST
 
 ## Configuration Schema
-The LLM must configure this node with the following JSON schema:
-- (Define schema here)
+The LLM may configure this node with the following fields:
+- `webhookId`: The generated endpoint identifier.
+- `secret`: Optional request verification token.
+- `deliveryMode`: `async` or `sync`.
+- `bodySchema`: Optional typed JSON Schema for the request body. Use a root object with typed properties. Nested objects and arrays of scalar values are supported; extra properties are allowed. Do not invent body fields that are not present in this contract.
+
+When a downstream step needs a webhook field, reference the non-connection `body` output with a canonical workflow expression, for example `{ "$expr": "reference", "v": 1, "nodeId": "webhook_trigger", "path": ["body", "amount"] }`.

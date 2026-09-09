@@ -42,7 +42,8 @@ import {
     resolveFormResponseSheetDestination,
     validateFormResponseSheetDestination
 } from '../domain/formResponseSheetDestination.js';
-import { normalizeWorkflowReferences, validateWorkflowExpressions } from '../../../../../shared/workflowExpressions.js';
+import { collectWebhookBodyReferenceKeys, normalizeWorkflowReferences, validateWorkflowExpressions } from '../../../../../shared/workflowExpressions.js';
+import { normalizeWebhookBodySchema } from '../../../../../shared/webhookPayloadContract.js';
 import {
     buildWorkflowOutputRepairContext,
     buildWorkflowPlannerContext,
@@ -177,7 +178,9 @@ export const workflowPipelineInternals = Object.freeze({
     isConditionalNotificationRequest,
     isSwitchRouteRequest,
     isErrorHandlerRequest,
-    isBranchJoinRequest
+    isBranchJoinRequest,
+    ensureWebhookBodyContractInPlan,
+    workflowPlanNeedsWebhookBodyClarification
 });
 
 const mergeRepairIssues = (first = [], latest = []) => {
@@ -339,6 +342,192 @@ const plannerNodeKeyIssues = (result, catalogue) => {
 };
 
 const spreadsheetRequestPattern = /\b(?:save|store|record|write|append|add)\b[\s\S]{0,120}\b(?:excel|spreadsheets?|google\s*sheets?|sheets?)\b|\b(?:excel|spreadsheets?|google\s*sheets?)\b[\s\S]{0,120}\b(?:save|store|record|write|append|add)\b/i;
+const webhookBodyDetailPattern = /\b(?:request\s+body|payload|body\s+field|body\s+fields?|field\s+list|amount|requestId|requesterEmail|purpose|customer\.?email)\b/i;
+const webhookFieldTypePattern = /\b[A-Za-z_][\w-]*\s*(?::|\()\s*(?:string|number|integer|boolean|object|array(?:\s*<\s*(?:string|number|integer|boolean)\s*>)?)\s*\)?\b/i;
+const webhookFieldListPattern = /\b(?:payload|request\s+body|body)\s+(?:includes?|contains?|has|fields?\s+(?:are|include))\s*:?\s*[A-Za-z_][\w-]*(?:\s*(?:,|and)\s*[A-Za-z_][\w-]*){1,}/i;
+const webhookFieldTypeToken = /([A-Za-z_][\w.-]*)\s*(?::|\()\s*(string|number|integer|boolean|object|array(?:\s*<\s*(string|number|integer|boolean)\s*>)?)\s*\)?/gi;
+const hasWebhookJsonExample = value => {
+    const text = String(value || '');
+    const candidate = text.match(/\{[\s\S]*\}/)?.[0];
+    if (!candidate) return false;
+    try {
+        const parsed = JSON.parse(candidate);
+        return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed);
+    } catch {
+        return false;
+    }
+};
+const webhookBodyDetailsPresent = request => hasWebhookJsonExample(request)
+    || webhookFieldTypePattern.test(String(request || ''))
+    || webhookFieldListPattern.test(String(request || ''));
+const webhookContractInConfig = config => {
+    const normalized = normalizeWebhookBodySchema(config?.bodySchema);
+    return normalized.configured && normalized.issues.length === 0;
+};
+
+const webhookSchemaForExampleValue = value => {
+    if (value === null) return null;
+    if (typeof value === 'string') return { type: 'string' };
+    if (typeof value === 'boolean') return { type: 'boolean' };
+    if (typeof value === 'number' && Number.isFinite(value)) return { type: Number.isInteger(value) ? 'integer' : 'number' };
+    if (Array.isArray(value)) {
+        if (value.length === 0) return null;
+        const itemSchemas = value.map(webhookSchemaForExampleValue);
+        if (itemSchemas.some(schema => !schema || !['string', 'number', 'integer', 'boolean'].includes(schema.type))) return null;
+        const first = JSON.stringify(itemSchemas[0]);
+        if (!itemSchemas.every(schema => JSON.stringify(schema) === first)) return null;
+        return { type: 'array', items: itemSchemas[0] };
+    }
+    if (isObject(value)) {
+        const properties = {};
+        for (const [name, child] of Object.entries(value)) {
+            if (!/^[A-Za-z0-9_-]+$/.test(name)) return null;
+            const childSchema = webhookSchemaForExampleValue(child);
+            if (!childSchema) return null;
+            properties[name] = childSchema;
+        }
+        return {
+            type: 'object',
+            properties,
+            required: Object.keys(properties)
+        };
+    }
+    return null;
+};
+
+const webhookSchemaFromRequest = request => {
+    const text = String(request || '');
+    const candidate = text.match(/\{[\s\S]*\}/)?.[0];
+    if (candidate) {
+        try {
+            const parsed = JSON.parse(candidate);
+            if (isObject(parsed)) {
+                if (parsed.type === 'object' && isObject(parsed.properties)) return parsed;
+                const schema = webhookSchemaForExampleValue(parsed);
+                if (schema) return schema;
+            }
+        } catch {
+            // The planner still receives the original request and can ask for
+            // a clearer example if the surrounding prose is not valid JSON.
+        }
+    }
+
+    const matches = [...text.matchAll(webhookFieldTypeToken)];
+    if (matches.length === 0) {
+        const list = text.match(/\b(?:payload|request\s+body|body)\s+(?:includes?|contains?|has|fields?\s+(?:are|include))\s*:?\s*(.+?)(?:[.!?]|$)/i)?.[1];
+        const names = String(list || '')
+            .replace(/\band\b/gi, ',')
+            .split(',')
+            .map(item => item.trim().replace(/^(?:the|a|an)\s+/i, ''))
+            .map(item => item.match(/^([A-Za-z_][\w-]*)$/)?.[1])
+            .filter(Boolean);
+        if (names.length < 2 || new Set(names).size !== names.length) return null;
+        const numberName = /(?:amount|count|number|total|price|quantity|limit|threshold|score|age)$/i;
+        const booleanName = /^(?:is|has|can|should|approved|enabled|active|urgent)/i;
+        return {
+            type: 'object',
+            properties: Object.fromEntries(names.map(name => [name, {
+                type: booleanName.test(name) ? 'boolean' : numberName.test(name) ? 'number' : 'string'
+            }])),
+            required: names
+        };
+    }
+    const root = { type: 'object', properties: {} };
+    for (const match of matches) {
+        const segments = match[1].split('.');
+        if (segments.some(segment => !/^[A-Za-z0-9_-]+$/.test(segment))) return null;
+        const typeText = match[2].toLowerCase().replace(/\s+/g, '');
+        const schema = typeText.startsWith('array<')
+            ? { type: 'array', items: { type: typeText.slice(6, -1) } }
+            : { type: typeText };
+        let cursor = root;
+        for (const [index, segment] of segments.entries()) {
+            if (index === segments.length - 1) {
+                if (cursor.properties[segment] && JSON.stringify(cursor.properties[segment]) !== JSON.stringify(schema)) {
+                    return null;
+                }
+                cursor.properties[segment] = schema;
+                cursor.required = [...new Set([...(cursor.required || []), segment])];
+                break;
+            }
+            const existing = cursor.properties[segment];
+            if (existing && existing.type !== 'object') {
+                return null;
+            }
+            cursor.properties[segment] = existing || { type: 'object', properties: {} };
+            cursor = cursor.properties[segment];
+        }
+    }
+    const addRequired = schema => {
+        if (schema?.type !== 'object') return;
+        schema.required = Object.keys(schema.properties || {});
+        Object.values(schema.properties || {}).forEach(addRequired);
+    };
+    addRequired(root);
+    return root;
+};
+
+function ensureWebhookBodyContractInPlan({ plan, request, workflow }) {
+    if (!['direct_plan', 'plan_complete'].includes(plan?.type)) return plan;
+    const hasWebhook = (workflow?.nodes || []).some(node => node?.type === 'trigger' && node?.subType === 'webhook')
+        || plan?.selectedNodeKeys?.includes('trigger:webhook')
+        || plan?.linearSteps?.some(step => step?.nodeKey === 'trigger:webhook');
+    if (!hasWebhook || !webhookBodyDetailsPresent(request)) return plan;
+    const inferredSchema = webhookSchemaFromRequest(request);
+    if (!inferredSchema) return plan;
+    let next = plan;
+    if (Array.isArray(next.linearSteps)) {
+        const linearSteps = next.linearSteps.map(step => step?.nodeKey === 'trigger:webhook' && !webhookContractInConfig(step.config)
+            ? { ...step, config: { ...(step.config || {}), bodySchema: inferredSchema } }
+            : step);
+        next = { ...next, linearSteps };
+    }
+    if (Array.isArray(next.operations)) {
+        const triggers = new Set((workflow?.nodes || [])
+            .filter(node => node?.type === 'trigger' && node?.subType === 'webhook')
+            .map(node => String(node.id)));
+        const operations = next.operations.map(operation => {
+            if (operation?.op === 'create_node' && operation.node?.nodeKey === 'trigger:webhook' && !webhookContractInConfig(operation.node.config)) {
+                return { ...operation, node: { ...operation.node, config: { ...(operation.node.config || {}), bodySchema: inferredSchema } } };
+            }
+            if (operation?.op === 'update_node' && triggers.has(String(operation.nodeRef)) && !webhookContractInConfig(operation.updates?.config)) {
+                return { ...operation, updates: { ...(operation.updates || {}), config: { ...(operation.updates?.config || {}), bodySchema: inferredSchema } } };
+            }
+            return operation;
+        });
+        next = { ...next, operations };
+    }
+    const currentTrigger = (workflow?.nodes || []).find(node => node?.type === 'trigger' && node?.subType === 'webhook');
+    const hasPlannedContract = (next.linearSteps || []).some(step => step?.nodeKey === 'trigger:webhook' && webhookContractInConfig(step.config))
+        || (next.operations || []).some(operation => (
+            (operation?.op === 'create_node' && webhookContractInConfig(operation.node?.config))
+            || (operation?.op === 'update_node' && webhookContractInConfig({ bodySchema: operation.updates?.config?.bodySchema }))
+        ));
+    if (currentTrigger && !webhookContractInConfig(currentTrigger.config) && !hasPlannedContract && Array.isArray(next.operations)) {
+        next = {
+            ...next,
+            operations: [{ op: 'update_node', nodeRef: currentTrigger.id, updates: { config: { bodySchema: inferredSchema } } }, ...next.operations]
+        };
+    }
+    return next;
+}
+
+function workflowPlanNeedsWebhookBodyClarification({ plan, request, workflow }) {
+    if (!['direct_plan', 'plan_complete'].includes(plan?.type)) return false;
+    const planText = JSON.stringify(plan);
+    const includesWebhook = (workflow?.nodes || []).some(node => node?.subType === 'webhook' && node?.type === 'trigger')
+        || plan?.selectedNodeKeys?.includes('trigger:webhook')
+        || plan?.linearSteps?.some(step => step?.nodeKey === 'trigger:webhook')
+        || planText.includes('trigger:webhook');
+    if (!includesWebhook || !webhookBodyDetailPattern.test(`${request || ''} ${planText}`)) return false;
+    const currentHasContract = (workflow?.nodes || []).some(node => node?.subType === 'webhook' && webhookContractInConfig(node.config));
+    const plannedHasContract = (plan?.linearSteps || []).some(step => step?.nodeKey === 'trigger:webhook' && webhookContractInConfig(step.config));
+    const operationHasContract = (plan?.operations || []).some(operation => (
+        webhookContractInConfig(operation?.updates?.config)
+        || webhookContractInConfig(operation?.node?.config)
+    ));
+    return !(currentHasContract || plannedHasContract || operationHasContract || webhookBodyDetailsPresent(request));
+}
 const explicitSpreadsheetIdPattern = /(?:docs\.google\.com\/spreadsheets\/d\/|\b[a-zA-Z0-9_-]{20,200}\b)/;
 const normalizeSpreadsheetResourceChanges = ({ plan, request, workflow, formSchema, spreadsheetIntent }) => {
     if (!Array.isArray(plan?.resourceChanges)) return plan;
@@ -830,6 +1019,11 @@ const applyAndValidate = async ({
     // Form-response column mappings are server-owned. Compile the graph first,
     // apply that mapping, then run the normal strict configuration validation.
     const applied = compileWorkflowEdits({ currentWorkflow: workflow, operations, specs, registry, deferConfigValidation: true });
+    const originalNodesById = new Map((workflow?.nodes || []).map(node => [node.id, node]));
+    const strictWebhookReferenceTargets = new Set(applied.nodes
+        .filter(node => !originalNodesById.has(node.id) || JSON.stringify(node) !== JSON.stringify(originalNodesById.get(node.id)))
+        .map(node => node.id));
+    const legacyWebhookReferenceKeys = collectWebhookBodyReferenceKeys(workflow?.nodes || []);
     const formTrigger = applied.nodes.find(node => node?.subType === 'form-submission');
     const resolvedFormSchema = formSchema || (
         formTrigger?.config?.formId && formLoader
@@ -869,11 +1063,21 @@ const applyAndValidate = async ({
         edges: applied.edges,
         formSchema: resolvedFormSchema,
         schemasByNodeKey: specs,
-        rejectLegacy: true
+        rejectLegacy: true,
+        requireWebhookContractForBodyPaths: true,
+        strictWebhookReferenceTargets,
+        legacyWebhookReferenceKeys
     });
     const referenceIssues = [
         ...canonicalReferences.issues,
-        ...validateWorkflowExpressions({ nodes: canonicalReferences.nodes, edges: applied.edges, formSchema: resolvedFormSchema })
+        ...validateWorkflowExpressions({
+            nodes: canonicalReferences.nodes,
+            edges: applied.edges,
+            formSchema: resolvedFormSchema,
+            requireWebhookContractForBodyPaths: true,
+            strictWebhookReferenceTargets,
+            legacyWebhookReferenceKeys
+        })
     ];
     if (referenceIssues.length > 0) {
         throw createPipelineError(
@@ -1607,6 +1811,20 @@ export const generateWorkflowTurn = async ({
                 tokenUsage: { ...usage, requestCalls: budget.calls }
             };
         }
+    }
+
+    plan = ensureWebhookBodyContractInPlan({ plan, request: semanticRequest, workflow: currentWorkflow });
+    if (workflowPlanNeedsWebhookBodyClarification({ plan, request: semanticRequest, workflow: currentWorkflow })) {
+        return {
+            type: 'message',
+            message: 'What should the webhook request body contain? Paste an example JSON body or list the fields with their types (for example, amount: number and requesterEmail: string).',
+            inputs: [{
+                id: 'webhookBodyContract',
+                type: 'textarea',
+                label: 'Webhook JSON body or field types'
+            }],
+            tokenUsage: { ...usage, requestCalls: budget.calls }
+        };
     }
 
     await recordAiDiagnostic({

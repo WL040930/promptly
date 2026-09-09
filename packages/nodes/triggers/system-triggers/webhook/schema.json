@@ -23,6 +23,16 @@
         { "label": "Synchronous response", "value": "sync" }
       ],
       "helpText": "Sync mode waits up to 10 seconds for a Respond to Webhook step."
+    },
+    {
+      "name": "bodySchema",
+      "type": "json",
+      "label": "Request Body Contract",
+      "defaultValue": {},
+      "rows": 14,
+      "schemaKind": "webhook-body",
+      "placeholder": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"amount\": { \"type\": \"number\" }\n  },\n  \"required\": [\"amount\"]\n}",
+      "helpText": "Optional JSON Schema for body fields. Nested objects and scalar arrays are supported; undeclared fields are allowed."
     }
   ],
   "outputs": [

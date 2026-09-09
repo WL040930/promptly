@@ -1,4 +1,5 @@
 import { varTypeForField } from './formFieldTypeMap.js';
+import { normalizeWebhookBodySchema } from '../../../../shared/webhookPayloadContract.js';
 
 const PATH_SEGMENT_RE = /^[\w-]+$/;
 
@@ -55,7 +56,7 @@ function nestedDescription(parentLabel, schema) {
   return schema?.description || `Nested field from ${parentLabel}`;
 }
 
-function addNestedProperties(vars, { schema, basePath, runtimeBasePath, baseLabel, nodeId, nodeTitle, depth = 0, parentPath = null, source, allowPlainObject = false }) {
+function addNestedProperties(vars, { schema, basePath, runtimeBasePath, baseLabel, nodeId, nodeTitle, depth = 0, parentPath = null, source, allowPlainObject = false, variableMetadata = {} }) {
   const entries = getPropertyEntries(schema, allowPlainObject);
 
   for (const [key, childSchema] of entries) {
@@ -76,6 +77,7 @@ function addNestedProperties(vars, { schema, basePath, runtimeBasePath, baseLabe
       depth: depth + 1,
       isNested: true,
       source,
+      ...variableMetadata,
     });
 
     addNestedProperties(vars, {
@@ -89,11 +91,12 @@ function addNestedProperties(vars, { schema, basePath, runtimeBasePath, baseLabe
       parentPath: path,
       source,
       allowPlainObject,
+      variableMetadata,
     });
   }
 }
 
-function addOutputVariable(vars, { nodeId, nodeTitle, output, source }) {
+function addOutputVariable(vars, { nodeId, nodeTitle, output, source, variableMetadata = {} }) {
   const path = `${nodeTitle}.${output.name}`;
   const runtimePath = `${nodeId}.${output.name}`;
   const label = output.label || output.name;
@@ -108,6 +111,7 @@ function addOutputVariable(vars, { nodeId, nodeTitle, output, source }) {
     nodeTitle,
     depth: 0,
     source,
+    ...variableMetadata,
   });
 
   addNestedProperties(vars, {
@@ -118,6 +122,7 @@ function addOutputVariable(vars, { nodeId, nodeTitle, output, source }) {
     nodeId,
     nodeTitle,
     source,
+    variableMetadata,
   });
 }
 
@@ -240,10 +245,24 @@ export function getUpstreamOutputs(nodeId, nodes, edges, resolvedFormFields = {}
       }
 
       // Normal (non-expandable) output
-      const outputForPicker = node.config?.taskType === 'extract' && o.name === 'response' && node.config?.extractionSchema
-        ? { ...o, type: 'object' }
-        : o;
-      addOutputVariable(vars, { nodeId: id, nodeTitle, output: outputForPicker, source: 'schema' });
+      const webhookContract = node.subType === 'webhook' && o.name === 'body'
+        ? normalizeWebhookBodySchema(node.config?.bodySchema)
+        : null;
+      const hasWebhookContract = Boolean(webhookContract?.configured && webhookContract.issues.length === 0);
+      const outputForPicker = hasWebhookContract
+        ? { ...o, ...webhookContract.schema, type: 'object' }
+        : node.config?.taskType === 'extract' && o.name === 'response' && node.config?.extractionSchema
+          ? { ...o, type: 'object' }
+          : o;
+      addOutputVariable(vars, {
+        nodeId: id,
+        nodeTitle,
+        output: outputForPicker,
+        source: 'schema',
+        variableMetadata: hasWebhookContract
+          ? { isSchemaBackedWebhookBody: true, allowsCustomPath: false }
+          : {}
+      });
       addAiExtractionFields(vars, node, nodeTitle, outputForPicker);
     }
 

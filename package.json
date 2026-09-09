@@ -68,5 +68,12 @@
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.15",
     "vite": "^4.4.5"
+  },
+  "allowScripts": {
+    "esbuild@0.18.20": true,
+    "@google/genai@2.10.0": true,
+    "fsevents@2.3.3": true,
+    "fsevents@2.3.2": true,
+    "protobufjs@7.6.4": true
   }
 }

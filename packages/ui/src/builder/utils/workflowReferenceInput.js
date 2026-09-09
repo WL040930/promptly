@@ -48,6 +48,12 @@ const resolveEditorReference = ({ sourcePath, token, availableVars }) => {
         issue: issue('WORKFLOW_REFERENCE_SOURCE_AMBIGUOUS', 'reference', `The workflow step '${source}' is ambiguous. Choose a value from the picker.`, token)
     };
 
+    const schemaBackedWebhookBody = sourceVars.some(variable => variable?.isSchemaBackedWebhookBody)
+        && path[0] === 'body';
+    if (schemaBackedWebhookBody) return {
+        issue: issue('WORKFLOW_REFERENCE_PATH_INVALID', 'reference', `The webhook body field '${path.slice(1).join('.') || ''}' is not declared by its request body contract.`, token)
+    };
+
     if (path[0] === 'fields') {
         return {
             issue: issue('WORKFLOW_REFERENCE_FIELD_MISSING', 'reference', `The form field '${path[1] || ''}' is not available upstream.`, token)

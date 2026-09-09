@@ -1,6 +1,8 @@
 import { WorkflowTriggerBinding } from '../../models/index.js';
 import { executeWorkflow } from '../../services/engine/executionEngine.js';
 import asyncHandler from '../../utils/asyncHandler.js';
+import { normalizeWebhookBodySchema } from '../../../shared/webhookPayloadContract.js';
+import { validateWebhookBody, webhookContractsAgree } from '../../services/triggers/webhookPayloadValidation.js';
 
 /**
  * POST /api/webhooks/:webhookId
@@ -13,7 +15,7 @@ export const handleWebhook = asyncHandler(async (req, res) => {
     const { webhookId } = req.params;
 
     const initialPayload = {
-        body:      req.body      || {},
+        body:      req.body === undefined ? {} : req.body,
         headers:   req.headers   || {},
         method:    req.method,
         timestamp: new Date().toISOString(),
@@ -38,6 +40,32 @@ export const handleWebhook = asyncHandler(async (req, res) => {
                 }
             }
             matches.push(binding);
+        }
+
+        const contracts = matches.map(binding => normalizeWebhookBodySchema(binding.config?.bodySchema));
+        if (contracts.some(contract => contract.issues.length > 0)) {
+            return res.status(500).json({
+                status: 'failed',
+                webhookId,
+                error: 'The webhook request body contract is invalid.'
+            });
+        }
+        if (!webhookContractsAgree(matches.map(binding => binding.config?.bodySchema))) {
+            return res.status(409).json({
+                status: 'failed',
+                webhookId,
+                error: 'Workflows sharing this webhook use incompatible request body contracts.'
+            });
+        }
+        const bodySchema = contracts.find(contract => contract.configured)?.schema || null;
+        const bodyValidation = validateWebhookBody({ body: initialPayload.body, bodySchema });
+        if (!bodyValidation.valid) {
+            return res.status(400).json({
+                status: 'invalid_payload',
+                webhookId,
+                error: 'Request body does not match the configured schema.',
+                issues: bodyValidation.issues
+            });
         }
 
         const syncMatches = matches.filter(match => match.config?.deliveryMode === 'sync');

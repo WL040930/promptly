@@ -1,5 +1,5 @@
 import { applyResourceContextDelta, buildResourceIdentity } from '../../assistant/resourceContext.js';
-import { compileWorkflowBindings, normalizeWorkflowReferences, validateWorkflowExpressions } from '../../../../shared/workflowExpressions.js';
+import { collectWebhookBodyReferenceKeys, compileWorkflowBindings, normalizeWorkflowReferences, validateWorkflowExpressions } from '../../../../shared/workflowExpressions.js';
 import { finishAssistantWork } from '../../../../shared/assistantWork.js';
 import { applyFormResponseSpreadsheetContract } from './formSpreadsheetContract.js';
 import { provisionWorkflowResources } from './workflowResourceProvisioner.js';
@@ -100,18 +100,33 @@ export const createWorkflowProposalApplier = ({
     const validateBindings = async ({ workflow, userId, transaction, nodes = [], edges = workflow.edges || [] }) => {
         const form = await attachedForm(workflow, userId, transaction, nodes);
         const formSchema = form?.toJSON?.() || null;
+        const originalNodesById = new Map((workflow?.nodes || []).map(node => [node.id, node]));
+        const strictWebhookReferenceTargets = new Set((nodes || [])
+            .filter(node => !originalNodesById.has(node.id) || JSON.stringify(node) !== JSON.stringify(originalNodesById.get(node.id)))
+            .map(node => node.id));
+        const legacyWebhookReferenceKeys = collectWebhookBodyReferenceKeys(workflow?.nodes || []);
         const compiledBindings = compileWorkflowBindings({ nodes, formSchema });
         const normalizedReferences = normalizeWorkflowReferences({
             nodes: compiledBindings.nodes,
             edges,
             formSchema,
             schemaForNode: node => NodeRegistry.getDefinition?.(node?.type, node?.subType)?.configSchema || node?.schema || {},
-            rejectLegacy: false
+            rejectLegacy: false,
+            requireWebhookContractForBodyPaths: true,
+            strictWebhookReferenceTargets,
+            legacyWebhookReferenceKeys
         });
         const issues = [
             ...compiledBindings.issues,
             ...normalizedReferences.issues,
-            ...validateWorkflowExpressions({ nodes: normalizedReferences.nodes, edges, formSchema })
+            ...validateWorkflowExpressions({
+                nodes: normalizedReferences.nodes,
+                edges,
+                formSchema,
+                requireWebhookContractForBodyPaths: true,
+                strictWebhookReferenceTargets,
+                legacyWebhookReferenceKeys
+            })
         ];
         if (issues.length > 0) {
             throw errorWith(

@@ -1,3 +1,5 @@
+import { webhookBodyPathIssue } from './webhookPayloadContract.js';
+
 const EXPRESSION_KEY = '$expr';
 const BINDING_KEY = '$binding';
 const TEMPLATE_KEY = '$template';
@@ -50,6 +52,24 @@ export const buildFormBindingCatalogue = formSchema => ({
 });
 
 const issue = (code, path, message, details = {}) => ({ code, path, message, ...details });
+const webhookReferenceKey = ({ targetNodeId, sourceNodeId, path }) => `${targetNodeId || ''}|${sourceNodeId || ''}|${(path || []).join('.')}`;
+
+export const collectWebhookBodyReferenceKeys = (nodes = []) => {
+    const keys = new Set();
+    const walk = (value, targetNodeId) => {
+        if (isWorkflowExpression(value)) {
+            if (value[EXPRESSION_KEY] === 'reference' && value.path?.[0] === 'body') {
+                keys.add(webhookReferenceKey({ targetNodeId, sourceNodeId: value.nodeId, path: value.path }));
+            }
+            if (value[EXPRESSION_KEY] === 'template') (value.parts || []).forEach(part => walk(part?.reference, targetNodeId));
+            return;
+        }
+        if (Array.isArray(value)) return value.forEach(item => walk(item, targetNodeId));
+        if (isObject(value)) Object.values(value).forEach(item => walk(item, targetNodeId));
+    };
+    (nodes || []).forEach(node => walk(node?.config || {}, node?.id));
+    return keys;
+};
 
 export const findUnsupportedWorkflowReferenceTokens = value => {
     if (typeof value !== 'string') return [];
@@ -248,7 +268,7 @@ const outputForPath = ({ source, sourceSchema, path }) => {
     return outputs.find(output => output.name === path[0]) || undefined;
 };
 
-const resolveServerReference = ({ token, sourcePath, targetNode, nodes, edges, formSchema, schemaForNode, schemasByNodeKey }) => {
+const resolveServerReference = ({ token, sourcePath, targetNode, nodes, edges, formSchema, schemaForNode, schemasByNodeKey, requireWebhookContractForBodyPaths = false, strictWebhookReferenceTargets = null, legacyWebhookReferenceKeys = null }) => {
     const { source, path } = parsedLegacyReference(sourcePath || token);
     const referencePath = `${sourcePath || token}`;
     if (WORKFLOW_REFERENCE_HANDLES.has(source)) {
@@ -360,6 +380,26 @@ const resolveServerReference = ({ token, sourcePath, targetNode, nodes, edges, f
                 )
             };
         }
+        if (sourceNode?.subType === 'webhook' && path[0] === 'body') {
+            const webhookIssue = webhookBodyPathIssue({
+                schema: sourceNode.config?.bodySchema,
+                path,
+                requireSchema: requireWebhookContractForBodyPaths
+                    && (!strictWebhookReferenceTargets || strictWebhookReferenceTargets.has(targetNode?.id))
+                    && !(legacyWebhookReferenceKeys?.has(webhookReferenceKey({ targetNodeId: targetNode?.id, sourceNodeId: sourceNode.id, path }))),
+            });
+            if (webhookIssue) {
+                return {
+                    issue: tokenIssue(
+                        webhookIssue.code,
+                        referencePath,
+                        token,
+                        webhookIssue.message,
+                        webhookIssue.pathValue ? { pathValue: webhookIssue.pathValue } : {}
+                    )
+                };
+            }
+        }
     }
 
     return { nodeId: sourceNode.id, path };
@@ -376,7 +416,10 @@ export const normalizeWorkflowReferences = ({
     formSchema = null,
     schemaForNode,
     schemasByNodeKey,
-    rejectLegacy = false
+    rejectLegacy = false,
+    requireWebhookContractForBodyPaths = false,
+    strictWebhookReferenceTargets = null,
+    legacyWebhookReferenceKeys = null
 } = {}) => {
     const issues = [];
     const repairs = [];
@@ -401,7 +444,10 @@ export const normalizeWorkflowReferences = ({
                     edges,
                     formSchema,
                     schemaForNode,
-                    schemasByNodeKey
+                    schemasByNodeKey,
+                    requireWebhookContractForBodyPaths,
+                    strictWebhookReferenceTargets,
+                    legacyWebhookReferenceKeys
                 })
             });
             config[inputName] = result.value;
@@ -467,7 +513,7 @@ export const compileWorkflowBindings = ({ nodes = [], formSchema = null } = {}) 
     return { nodes: compiledNodes, catalogue, issues, repairs };
 };
 
-const referenceIssues = ({ expression, path, nodesById, fieldIds, targetNodeId = null, upstreamByTarget = null }) => {
+const referenceIssues = ({ expression, path, nodesById, fieldIds, targetNodeId = null, upstreamByTarget = null, requireWebhookContractForBodyPaths = false, strictWebhookReferenceTargets = null, legacyWebhookReferenceKeys = null }) => {
     if (expression[EXPRESSION_KEY] === 'reference') {
         if (WORKFLOW_REFERENCE_HANDLES.has(expression.nodeId)) return [issue('WORKFLOW_REFERENCE_ROOT_HANDLE', path, `'${expression.nodeId}' is a connection handle, not a workflow step.`)];
         if (!nodesById.has(expression.nodeId)) return [issue('WORKFLOW_REFERENCE_SOURCE_UNKNOWN', path, 'This value refers to a step that no longer exists.')];
@@ -481,6 +527,16 @@ const referenceIssues = ({ expression, path, nodesById, fieldIds, targetNodeId =
             if (source?.subType !== 'form-submission') return [issue('WORKFLOW_REFERENCE_SOURCE_INVALID', path, 'A form field must come from the form-submission step.')];
             if (!fieldIds.has(expression.path[1])) return [issue('WORKFLOW_REFERENCE_FIELD_MISSING', path, 'The referenced form field no longer exists.')];
         }
+        if (source?.subType === 'webhook' && expression.path[0] === 'body') {
+            const webhookIssue = webhookBodyPathIssue({
+                schema: source.config?.bodySchema,
+                path: expression.path,
+                requireSchema: requireWebhookContractForBodyPaths
+                    && (!strictWebhookReferenceTargets || strictWebhookReferenceTargets.has(targetNodeId))
+                    && !(legacyWebhookReferenceKeys?.has(webhookReferenceKey({ targetNodeId, sourceNodeId: expression.nodeId, path: expression.path }))),
+            });
+            if (webhookIssue) return [issue(webhookIssue.code, path, webhookIssue.message, webhookIssue.pathValue ? { pathValue: webhookIssue.pathValue } : {})];
+        }
         return [];
     }
     if (expression[EXPRESSION_KEY] === 'template') {
@@ -489,7 +545,7 @@ const referenceIssues = ({ expression, path, nodesById, fieldIds, targetNodeId =
             const partPath = `${path}.parts[${index}]`;
             if (isObject(part) && typeof part.text === 'string' && !Object.hasOwn(part, 'reference')) return [];
             if (isObject(part) && part.reference && isWorkflowExpression(part.reference) && !Object.hasOwn(part, 'text')) {
-                return referenceIssues({ expression: part.reference, path: partPath, nodesById, fieldIds, targetNodeId, upstreamByTarget });
+                return referenceIssues({ expression: part.reference, path: partPath, nodesById, fieldIds, targetNodeId, upstreamByTarget, requireWebhookContractForBodyPaths, strictWebhookReferenceTargets, legacyWebhookReferenceKeys });
             }
             return [issue('WORKFLOW_TEMPLATE_INVALID', partPath, 'Each workflow template part must be literal text or a reference.')];
         });
@@ -497,14 +553,14 @@ const referenceIssues = ({ expression, path, nodesById, fieldIds, targetNodeId =
     return [issue('WORKFLOW_EXPRESSION_INVALID', path, 'This workflow value has an unsupported expression.')];
 };
 
-export const validateWorkflowExpressions = ({ nodes = [], edges = null, formSchema = null } = {}) => {
+export const validateWorkflowExpressions = ({ nodes = [], edges = null, formSchema = null, requireWebhookContractForBodyPaths = false, strictWebhookReferenceTargets = null, legacyWebhookReferenceKeys = null } = {}) => {
     const nodesById = new Map((nodes || []).map(node => [node.id, node]));
     const fieldIds = new Set(activeFields(formSchema).map(field => field.id));
     const upstreamByTarget = Array.isArray(edges)
         ? new Map((nodes || []).map(node => [node.id, upstreamIdsFor(node.id, edges)]))
         : null;
     const walk = (value, path, targetNodeId) => {
-        if (isWorkflowExpression(value)) return referenceIssues({ expression: value, path, nodesById, fieldIds, targetNodeId, upstreamByTarget });
+        if (isWorkflowExpression(value)) return referenceIssues({ expression: value, path, nodesById, fieldIds, targetNodeId, upstreamByTarget, requireWebhookContractForBodyPaths, strictWebhookReferenceTargets, legacyWebhookReferenceKeys });
         if (Array.isArray(value)) return value.flatMap((item, index) => walk(item, `${path}[${index}]`, targetNodeId));
         if (isObject(value)) return Object.entries(value).flatMap(([key, item]) => walk(item, path ? `${path}.${key}` : key, targetNodeId));
         return [];

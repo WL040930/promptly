@@ -1,4 +1,5 @@
 import { isWorkflowExpression } from './workflowExpressions.js';
+import { validateWebhookBodySchema } from './webhookPayloadContract.js';
 
 export const NODE_INPUT_TYPES = Object.freeze([
     'text',
@@ -227,6 +228,15 @@ export const validateNodeConfig = ({ schema = {}, config = {}, mode = 'draft' } 
         if (['object', 'json', 'key-value', 'string-list', 'data-grid', 'parameter-list', 'filter-list'].includes(input.type)) {
             const structuredIssue = validateStructuredInput(input, value);
             if (structuredIssue) issues.push(structuredIssue);
+        }
+
+        if (input.schemaKind === 'webhook-body') {
+            const contract = validateWebhookBodySchema(value);
+            contract.issues.forEach(contractIssue => issues.push(issue(
+                contractIssue.code,
+                input.name,
+                contractIssue.message
+            )));
         }
 
         if (input.pattern && typeof value === 'string') {

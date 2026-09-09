@@ -3,6 +3,7 @@ import { executeWorkflow } from '../engine/executionEngine.js';
 import SchedulerService from '../scheduler/schedulerService.js';
 import { reconcileWorkflow, removeWorkflow } from '../triggers/triggerRuntime.js';
 import { deactivateWorkflowTriggerBindings } from '../triggers/workflowTriggerBindingService.js';
+import { validateWebhookBody } from '../triggers/webhookPayloadValidation.js';
 import { pauseAutomation, publishAutomation } from './automationService.js';
 
 export const WORKFLOW_LIFECYCLE_ACTIONS = Object.freeze([
@@ -145,6 +146,25 @@ const ensurePayload = payload => {
     return payload;
 };
 
+const webhookTriggerFor = workflow => (workflow?.nodes || []).find(node => node?.type === 'trigger' && node?.subType === 'webhook') || null;
+
+export const prepareWebhookPayload = ({ workflow, payload }) => {
+    const trigger = webhookTriggerFor(workflow);
+    if (!trigger) return { payload, validation: { valid: true, issues: [] } };
+
+    // Test/live-run input is the JSON request body. Always wrap it here so a
+    // user payload containing keys such as `body` or `headers` is not mistaken
+    // for an already-built runtime envelope.
+    const envelope = {
+        body: payload,
+        headers: {},
+        method: 'POST',
+        timestamp: new Date().toISOString()
+    };
+    const validation = validateWebhookBody({ body: envelope.body, bodySchema: trigger.config?.bodySchema });
+    return { payload: envelope, validation };
+};
+
 const findWorkflow = async ({ workflowId, userId }) => {
     const workflow = await Workflow.findOne({ where: { id: workflowId, userId } });
     if (!workflow) throw errorWith('WORKFLOW_NOT_FOUND', 'Workflow not found.', 404);
@@ -201,9 +221,27 @@ export const performWorkflowLifecycleAction = async ({
         return { action: normalizedAction, workflow };
     }
 
-    const runPayload = ensurePayload(payload);
+    const webhookPayload = webhookTriggerFor(workflow) ? payload : ensurePayload(payload);
+    const preparedWebhook = prepareWebhookPayload({ workflow, payload: webhookPayload });
+    if (preparedWebhook.validation.configurationIssues?.length > 0) {
+        throw errorWith(
+            'WEBHOOK_SCHEMA_INVALID',
+            'The webhook request body contract is invalid.',
+            409,
+            { issues: preparedWebhook.validation.configurationIssues }
+        );
+    }
+    if (!preparedWebhook.validation.valid) {
+        const error = errorWith(
+            'WEBHOOK_PAYLOAD_INVALID',
+            'Request body does not match the configured schema.',
+            400,
+            { issues: preparedWebhook.validation.issues }
+        );
+        throw error;
+    }
     const isLive = normalizedAction === 'live_run';
-    const run = await executeWorkflow(workflowId, userId, runPayload, {
+    const run = await executeWorkflow(workflowId, userId, preparedWebhook.payload, {
         runType: isLive ? 'production' : 'test',
         ...(isLive ? { revisionId: workflow.publishedRevisionId } : (revisionId ? { revisionId } : {})),
         trigger: trigger || (isLive ? 'manual-production' : 'manual-test'),

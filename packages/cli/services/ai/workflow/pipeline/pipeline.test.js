@@ -210,6 +210,41 @@ test('workflow complexity budgets reserve deeper recovery for forms, resources, 
     }).id, 'simple');
 });
 
+test('workflow planning asks once for a webhook body contract when typed fields are needed', async () => {
+    const { workflowPipelineInternals } = await import('./pipeline.js');
+    const { workflowPlanNeedsWebhookBodyClarification, ensureWebhookBodyContractInPlan } = workflowPipelineInternals;
+    const plan = {
+        type: 'plan_complete',
+        selectedNodeKeys: ['trigger:webhook', 'action:email'],
+        requirements: [{ id: 'req_1', description: 'Email the amount from the webhook payload.' }]
+    };
+    assert.equal(workflowPlanNeedsWebhookBodyClarification({ plan, request: 'Build a webhook that emails the amount in its payload.', workflow: { nodes: [] } }), true);
+    assert.equal(workflowPlanNeedsWebhookBodyClarification({ plan, request: 'Build a webhook with amount: number and requesterEmail: string.', workflow: { nodes: [] } }), false);
+    assert.equal(workflowPlanNeedsWebhookBodyClarification({ plan, request: 'The JSON payload includes requestId, requesterEmail, amount, and purpose.', workflow: { nodes: [] } }), false);
+    assert.equal(workflowPlanNeedsWebhookBodyClarification({ plan: { ...plan, linearSteps: [{ nodeKey: 'trigger:webhook', config: { bodySchema: { type: 'object', properties: { amount: { type: 'number' } } } } }] }, request: 'Email the amount from the payload.', workflow: { nodes: [] } }), false);
+    const contractPlan = ensureWebhookBodyContractInPlan({
+        plan: { ...plan, linearSteps: [{ nodeKey: 'trigger:webhook', config: {} }] },
+        request: 'Use this JSON body: {"requestId":"r1","amount":500,"approved":false}.',
+        workflow: { nodes: [] }
+    });
+    assert.deepEqual(contractPlan.linearSteps[0].config.bodySchema, {
+        type: 'object',
+        properties: {
+            requestId: { type: 'string' },
+            amount: { type: 'integer' },
+            approved: { type: 'boolean' }
+        },
+        required: ['requestId', 'amount', 'approved']
+    });
+    const fieldListPlan = ensureWebhookBodyContractInPlan({
+        plan: { ...plan, linearSteps: [{ nodeKey: 'trigger:webhook', config: {} }] },
+        request: 'The JSON payload includes requestId, requesterEmail, amount, and purpose.',
+        workflow: { nodes: [] }
+    });
+    assert.equal(fieldListPlan.linearSteps[0].config.bodySchema.properties.amount.type, 'number');
+    assert.equal(fieldListPlan.linearSteps[0].config.bodySchema.properties.requesterEmail.type, 'string');
+});
+
 test('workflow budgets reserve four provider attempts for planner and draft recovery stages', async () => {
     const { WORKFLOW_COMPLEXITY_BUDGETS } = (await import('./pipeline.js')).workflowPipelineInternals;
 

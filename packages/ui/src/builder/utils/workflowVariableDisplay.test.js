@@ -51,6 +51,63 @@ test('variable picker keeps a readable path but inserts an unambiguous runtime p
     assert.equal(field.runtimePath, 'node_form_1.fields.f_email');
 });
 
+test('webhook contracts expose typed body fields and reject arbitrary child paths', () => {
+    const webhookNode = {
+        id: 'webhook_1',
+        title: 'Inbound Purchase',
+        subType: 'webhook',
+        type: 'trigger',
+        config: {
+            bodySchema: {
+                type: 'object',
+                properties: {
+                    amount: { type: 'number' },
+                    customer: { type: 'object', properties: { email: { type: 'string' } } }
+                }
+            }
+        },
+        schema: {
+            outputs: [
+                { name: 'triggerData', isConnection: true, type: 'object' },
+                { name: 'body', type: 'object' },
+                { name: 'headers', type: 'object' }
+            ]
+        }
+    };
+    const vars = getUpstreamOutputs('email_1', [webhookNode, { id: 'email_1', title: 'Notify' }], [{ source: 'webhook_1', target: 'email_1' }]);
+    assert.deepEqual(vars.filter(variable => variable.path.startsWith('Inbound Purchase.body.')).map(variable => variable.path), [
+        'Inbound Purchase.body.amount',
+        'Inbound Purchase.body.customer',
+        'Inbound Purchase.body.customer.email'
+    ]);
+    const amount = vars.find(variable => variable.runtimePath === 'webhook_1.body.amount');
+    assert.equal(amount.type, 'number');
+    assert.equal(amount.allowsCustomPath, false);
+
+    const unknown = normalizeEditorWorkflowValue({
+        value: '{{webhook_1.body.purchaseAction}}',
+        availableVars: vars,
+        path: 'config.body'
+    });
+    assert.equal(unknown.issues[0].code, 'WORKFLOW_REFERENCE_PATH_INVALID');
+});
+
+test('legacy webhooks retain generic body paths', () => {
+    const vars = getUpstreamOutputs('email_1', [{
+        id: 'webhook_legacy',
+        title: 'Legacy Webhook',
+        subType: 'webhook',
+        type: 'trigger',
+        config: {},
+        schema: { outputs: [{ name: 'body', type: 'object' }] }
+    }, { id: 'email_1', title: 'Notify' }], [{ source: 'webhook_legacy', target: 'email_1' }]);
+    const result = normalizeEditorWorkflowValue({
+        value: '{{webhook_legacy.body.anyFutureField}}',
+        availableVars: vars
+    });
+    assert.deepEqual(result.issues, []);
+});
+
 test('editor picker descriptors become canonical references instead of raw tokens', () => {
     const availableVars = [{
         path: 'Promptly Form.fields.f_email',

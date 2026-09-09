@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractLiveTriggerBindings } from './workflowTriggerBindingService.js';
+import { WorkflowTriggerBinding } from '../../models/index.js';
+import { assertWebhookBindingContractsCompatible, extractLiveTriggerBindings } from './workflowTriggerBindingService.js';
 
 test('extractLiveTriggerBindings indexes form, webhook, and explicitly enabled chat triggers from a release only', () => {
     const bindings = extractLiveTriggerBindings({
@@ -32,4 +33,31 @@ test('extractLiveTriggerBindings indexes form, webhook, and explicitly enabled c
         { kind: 'agent-message', resourceId: 'email-matched-rows', nodeId: 'chat_node', revisionId: 'revision_1' }
     ]);
     assert.deepEqual(bindings[2].config.parameterSchema.required, ['status']);
+});
+
+test('shared webhook bindings require identical normalized body contracts before publish', async () => {
+    const originalFindAll = WorkflowTriggerBinding.findAll;
+    WorkflowTriggerBinding.findAll = async () => [{ workflowId: 'other_workflow', kind: 'webhook', resourceId: 'inbound_1', config: {
+        bodySchema: { type: 'object', properties: { amount: { type: 'number' } } }
+    } }];
+    try {
+        await assertWebhookBindingContractsCompatible({
+            workflowId: 'current_workflow',
+            bindings: [{ kind: 'webhook', resourceId: 'inbound_1', workflowId: 'current_workflow', config: {
+                bodySchema: { type: 'object', properties: { amount: { type: 'number' } } }
+            } }]
+        });
+
+        await assert.rejects(
+            assertWebhookBindingContractsCompatible({
+                workflowId: 'current_workflow',
+                bindings: [{ kind: 'webhook', resourceId: 'inbound_1', workflowId: 'current_workflow', config: {
+                    bodySchema: { type: 'object', properties: { amount: { type: 'string' } } }
+                } }]
+            }),
+            error => error.code === 'WEBHOOK_PAYLOAD_CONTRACT_CONFLICT' && error.status === 409
+        );
+    } finally {
+        WorkflowTriggerBinding.findAll = originalFindAll;
+    }
 });
