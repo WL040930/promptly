@@ -10,11 +10,16 @@ const normalizeProfile = profile => ({
 const findConfiguredProfileForProvider = (profiles, providerName) => Object.values(profiles)
     .find(profile => profile.provider === providerName);
 
+const normalizedExcludedProviders = providers => new Set((Array.isArray(providers) ? providers : [])
+    .map(provider => String(provider || '').trim().toLowerCase())
+    .filter(Boolean));
+
 export const resolveProviderRoutes = (task, {
     registry,
     providerOverride = null,
     mode = null,
     maxAttempts = null,
+    excludeProviders = [],
     profiles = env.ai?.tiers || {},
     fallbackProviders = env.ai?.fallbackProviders || []
 } = {}) => {
@@ -22,6 +27,7 @@ export const resolveProviderRoutes = (task, {
     const attemptLimit = Number.isInteger(maxAttempts) && maxAttempts > 0 ? maxAttempts : policy.maxAttempts;
     const routes = [];
     const seen = new Set();
+    const excluded = normalizedExcludedProviders(excludeProviders);
 
     if (providerOverride) {
         const primaryProfile = normalizeProfile(profiles[policy.profiles[0]]);
@@ -39,6 +45,7 @@ export const resolveProviderRoutes = (task, {
     for (const profileName of policy.profiles) {
         const profile = normalizeProfile(profiles[profileName]);
         if (!profile.providerName || !profile.model) continue;
+        if (excluded.has(profile.providerName)) continue;
         if (!registry.hasCredentials(profile.providerName)) continue;
 
         const key = `${profile.providerName}:${profile.model}`;
@@ -50,6 +57,7 @@ export const resolveProviderRoutes = (task, {
     for (const providerName of fallbackProviders) {
         const configuredProfile = findConfiguredProfileForProvider(profiles, providerName);
         const model = configuredProfile?.model || registry.getDefaultModel(providerName);
+        if (excluded.has(providerName)) continue;
         if (!providerName || !model || !registry.hasCredentials(providerName)) continue;
 
         const key = `${providerName}:${model}`;

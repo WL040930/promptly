@@ -1,7 +1,7 @@
 import NodeRegistry from '../../../../utils/NodeRegistry.js';
 import { CLARIFICATION_MODES, normalizeClarificationMode } from '../../../../../shared/agentContract.js';
 import { validateWorkflow } from '../../../engine/workflowValidator.js';
-import { recordAiDiagnostic } from '../../core/diagnosticsLogger.js';
+import { describeAiOutput, recordAiDiagnostic } from '../../core/diagnosticsLogger.js';
 import {
     compileWorkflowDraft,
     loadWorkflowResource,
@@ -1171,17 +1171,34 @@ const requestAndValidate = async ({
     maxAttempts = null,
     existingWorkflow = null
 }) => {
-    // Planner resource changes have a small compatibility boundary: models
-    // sometimes call a proposed Google Sheet `create_google_sheet` or
-    // `create_sheet`. Normalize those known spellings before strict contract
-    // validation; unknown resource types still fail closed.
+    // Planner output has a small compatibility boundary: normalize known
+    // planner type, requirement, and resource spellings before strict
+    // contract validation; unknown values still fail closed.
     const normalizeCall = call => label.startsWith('planner')
         ? { ...call, value: normalizeWorkflowPlannerResult(call.value, { existingWorkflow }) }
         : call;
+    const recordPlannerValidationFailure = async ({ phase, failedCall, failedIssues }) => {
+        if (!label.startsWith('planner')) return;
+        const output = failedCall?.value;
+        await recordAiDiagnostic({
+            event: 'workflow_planner_validation_failed',
+            label,
+            phase,
+            output: describeAiOutput(output),
+            plannerType: isObject(output) && output.type !== undefined
+                ? String(output.type).slice(0, 160)
+                : null,
+            capabilityShapes: isObject(output) && Array.isArray(output.capabilities)
+                ? output.capabilities.slice(0, 8).map(describeAiOutput)
+                : null,
+            issues: (failedIssues || []).slice(0, 8).map(({ code, path, message }) => ({ code, path, message }))
+        });
+    };
     let call = normalizeCall(await requestWorkflowJson({ label, prompt, systemInstruction: instruction, provider, budget, onActivity, maxAttempts }));
     let nextUsage = addWorkflowUsage(usage, call.response, label);
     let issues = workflowOutputIssues({ call, validate });
     if (issues.length === 0) return { call, usage: nextUsage };
+    await recordPlannerValidationFailure({ phase: 'initial', failedCall: call, failedIssues: issues });
 
     call = normalizeCall(await requestWorkflowJson({
         label: `${label} repair`,
@@ -1195,6 +1212,7 @@ const requestAndValidate = async ({
     nextUsage = addWorkflowUsage(nextUsage, call.response, `${label} repair`);
     issues = workflowOutputIssues({ call, validate });
     if (issues.length > 0) {
+        await recordPlannerValidationFailure({ phase: 'repair', failedCall: call, failedIssues: issues });
         throw createPipelineError(`Workflow AI returned an invalid ${label} response. No changes were applied.`, `WORKFLOW_AI_INVALID_${label.toUpperCase()}`, issues);
     }
     return { call, usage: nextUsage };
@@ -2018,6 +2036,27 @@ export const generateWorkflowTurn = async ({
     };
     let unverifiedProposal = null;
     let workerTransientError = null;
+    const workerRepairProviders = new Set();
+    const rememberWorkerProvider = workerCall => {
+        const providerName = String(workerCall?.response?.provider || '').trim().toLowerCase();
+        if (providerName) workerRepairProviders.add(providerName);
+    };
+    const scheduleWorkerRepair = async ({ workerIssues, workerCall, attempt }) => {
+        onProgress?.({ status: 'repairing', phase: 'draft', label: 'Repairing an invalid workflow draft', message: 'The draft needs a correction', detail: `${workerIssues.length} issue${workerIssues.length === 1 ? '' : 's'} found before the workflow could be checked.` });
+        rememberWorkerProvider(workerCall);
+        previousResponse = workerCall.rawText || workerCall.value;
+        if (repeatsRepairIssues(repairIssues, workerIssues)) {
+            captureRepairIssues(workerIssues);
+            await recordAiDiagnostic({
+                event: 'workflow_worker_repair_stopped_repeated',
+                attempt: attempt + 1,
+                issues: workerIssues.slice(0, 20).map(item => ({ code: item.code, path: item.path }))
+            });
+            return false;
+        }
+        captureRepairIssues(workerIssues);
+        return true;
+    };
 
     for (let attempt = 0; attempt < complexity.buildAttempts; attempt += 1) {
         onProgress?.({
@@ -2064,7 +2103,8 @@ export const generateWorkflowTurn = async ({
                     provider,
                     budget,
                     onActivity: reportProviderActivity,
-                    maxAttempts: complexity.providerAttempts
+                    maxAttempts: complexity.providerAttempts,
+                    excludeProviders: [...workerRepairProviders]
                 });
                 usage = addWorkflowUsage(usage, workerCall.response, label);
             } catch (error) {
@@ -2078,6 +2118,14 @@ export const generateWorkflowTurn = async ({
                 });
                 break;
             }
+        }
+
+        // JSON parsing happens before the worker validator. Preserve the raw
+        // response for the repair prompt instead of dereferencing its null
+        // parsed value while preparing spreadsheet operations.
+        if (workerCall.parseIssues?.length) {
+            if (!(await scheduleWorkerRepair({ workerIssues: workerCall.parseIssues, workerCall, attempt }))) break;
+            continue;
         }
 
         const selectedSpreadsheetOperations = applySelectedSpreadsheetToOperations({
@@ -2116,18 +2164,7 @@ export const generateWorkflowTurn = async ({
             ...destinationIssues
         ];
         if (workerIssues.length > 0) {
-            onProgress?.({ status: 'repairing', phase: 'draft', label: 'Repairing an invalid workflow draft', message: 'The draft needs a correction', detail: `${workerIssues.length} issue${workerIssues.length === 1 ? '' : 's'} found before the workflow could be checked.` });
-            previousResponse = workerCall.rawText || workerCall.value;
-            if (repeatsRepairIssues(repairIssues, workerIssues)) {
-                captureRepairIssues(workerIssues);
-                await recordAiDiagnostic({
-                    event: 'workflow_worker_repair_stopped_repeated',
-                    attempt: attempt + 1,
-                    issues: workerIssues.slice(0, 20).map(item => ({ code: item.code, path: item.path }))
-                });
-                break;
-            }
-            captureRepairIssues(workerIssues);
+            if (!(await scheduleWorkerRepair({ workerIssues, workerCall, attempt }))) break;
             continue;
         }
 

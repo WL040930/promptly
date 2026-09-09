@@ -117,6 +117,7 @@ export const createAIClient = ({
         providerOverride = null,
         mode = null,
         maxAttempts = null,
+        excludeProviders = [],
         budget = null,
         onActivity = null
     } = {}) => {
@@ -126,6 +127,7 @@ export const createAIClient = ({
             providerOverride,
             mode,
             maxAttempts,
+            excludeProviders,
             profiles,
             fallbackProviders
         });
@@ -177,7 +179,13 @@ export const createAIClient = ({
                 let json = null;
                 if (policy.responseFormat === 'json') {
                     try {
-                        json = parseAiJson(result.text, { recoverTruncation: false });
+                        json = parseAiJson(result.text, {
+                            recoverTruncation: false,
+                            // Workflow proposals go through strict semantic validation after
+                            // parsing, so recover the one unambiguous missing-comma defect
+                            // emitted by some OpenAI-compatible providers.
+                            recoverMissingSeparator: task.startsWith('workflow.')
+                        });
                     } catch (error) {
                         throw new AIError(`${operation} AI returned invalid JSON.`, {
                             code: 'AI_INVALID_OUTPUT',
@@ -186,7 +194,7 @@ export const createAIClient = ({
                             task,
                             operation,
                             rawText: result.text,
-                            response: result,
+                            response: { ...result, provider: route.providerName, model: route.model },
                             parserError: error.message
                         });
                     }

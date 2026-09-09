@@ -14,6 +14,14 @@ const MAX_VERIFIER_ISSUES = 3;
 const INPUT_TYPES = new Set(['single_choice', 'multiple_choice', 'text', 'textarea', 'resource_choice', 'resource_picker']);
 const PLANNER_TYPES = new Set(['reply', 'message', 'inspect_form', 'inspect_resource', 'resolve_resource', 'diagnose_run', 'direct_plan', 'plan_complete']);
 const CAPABILITIES = new Set(['respondent_confirmation', 'owner_approval', 'per_submission_spreadsheet']);
+const PLANNER_CAPABILITY_ALIASES = Object.freeze({
+    approval: 'owner_approval',
+    approval_gate: 'owner_approval',
+    approval_step: 'owner_approval',
+    request_approval: 'owner_approval',
+    human_approval: 'owner_approval',
+    manual_approval: 'owner_approval'
+});
 const RESOURCE_CHANGE_TYPES = new Set(['create_google_spreadsheet']);
 const RESOURCE_CHANGE_TYPE_ALIASES = Object.freeze({
     create_google_sheet: 'create_google_spreadsheet',
@@ -25,12 +33,22 @@ const RESOURCE_CHANGE_TYPE_ALIASES = Object.freeze({
     creategooglesheet: 'create_google_spreadsheet',
     creategooglespreadsheet: 'create_google_spreadsheet'
 });
+const NON_CAPABILITY_PLANNER_LABELS = new Set([
+    'form', 'forms', 'promptly_form', 'promptly_forms', 'form_submission',
+    'google_sheet', 'google_sheets', 'google_spreadsheet', 'google_spreadsheets',
+    'email', 'emails'
+]);
 
 const issue = (code, path, message) => ({ code, path, message });
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const RAW_WORKFLOW_REFERENCE_RE = /\{\{[^{}]+\}\}/g;
 
 const normalizedResourceChangeType = value => String(value || '')
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[\s-]+/g, '_');
+
+const normalizedPlannerCapability = value => String(value || '')
     .trim()
     .toLocaleLowerCase()
     .replace(/[\s-]+/g, '_');
@@ -65,6 +83,139 @@ const normalizeLinearStepRefs = steps => {
     });
 };
 
+const uniquePlannerRequirementId = (index, usedIds) => {
+    const base = `req_${index + 1}`;
+    let id = base;
+    let suffix = 2;
+    while (usedIds.has(id)) {
+        id = `${base}_${suffix}`;
+        suffix += 1;
+    }
+    return id;
+};
+
+const normalizePlannerRequirements = requirements => {
+    if (!Array.isArray(requirements)) return requirements;
+    const usedIds = new Set();
+    return requirements.map((requirement, index) => {
+        if (typeof requirement === 'string') {
+            const description = requirement.trim();
+            if (!description) return requirement;
+            const id = uniquePlannerRequirementId(index, usedIds);
+            usedIds.add(id);
+            return { id, description };
+        }
+        if (!isObject(requirement)) return requirement;
+
+        const description = typeof requirement.description === 'string'
+            ? requirement.description.trim()
+            : requirement.description;
+        if (typeof description !== 'string' || !description) return requirement;
+
+        const hasId = typeof requirement.id === 'string' && requirement.id.trim();
+        const id = hasId ? requirement.id : uniquePlannerRequirementId(index, usedIds);
+        usedIds.add(id);
+        if (id === requirement.id && description === requirement.description) return requirement;
+        return { ...requirement, id, description };
+    });
+};
+
+const normalizePlannerResourceChanges = changes => {
+    if (!Array.isArray(changes)) return changes;
+    const usedRefs = new Set(changes
+        .filter(isObject)
+        .map(change => change.ref)
+        .filter(ref => typeof ref === 'string' && ref.trim()));
+    let generatedRefIndex = 0;
+
+    return changes.map(change => {
+        if (!isObject(change)) return change;
+        const alias = RESOURCE_CHANGE_TYPE_ALIASES[normalizedResourceChangeType(change.type)];
+        let normalized = alias ? { ...change, type: alias } : change;
+        if (normalized.type !== 'create_google_spreadsheet') return normalized;
+        if (typeof normalized.ref === 'string' && normalized.ref.trim()) return normalized;
+
+        let ref;
+        do {
+            generatedRefIndex += 1;
+            ref = generatedRefIndex === 1
+                ? 'response_spreadsheet'
+                : `response_spreadsheet_${generatedRefIndex}`;
+        } while (usedRefs.has(ref));
+        usedRefs.add(ref);
+        normalized = { ...normalized, ref };
+        return normalized;
+    });
+};
+
+const normalizePlannerCapabilities = capabilities => {
+    if (!Array.isArray(capabilities)) return capabilities;
+    return capabilities.flatMap(capability => {
+        const namedCapability = isObject(capability)
+            ? ['capability', 'name', 'value', 'id'].map(key => capability[key]).find(value => typeof value === 'string')
+            : capability;
+        if (typeof namedCapability !== 'string') return [capability];
+        const normalized = normalizedPlannerCapability(namedCapability);
+        // Node and resource catalog labels describe selectedNodeKeys, not
+        // execution capabilities. Dropping only these known labels keeps
+        // unknown capability values strict for validation and repair.
+        if (NON_CAPABILITY_PLANNER_LABELS.has(normalized)) return [];
+        const canonical = PLANNER_CAPABILITY_ALIASES[normalized] || normalized;
+        return [CAPABILITIES.has(canonical) ? canonical : namedCapability];
+    });
+};
+
+const normalizePlannerLinearSteps = (steps, requirements) => {
+    if (!Array.isArray(steps)) return steps;
+    const normalizedSteps = normalizeLinearStepRefs(steps);
+    if (normalizedSteps.length < 2 || normalizedSteps.length > 8) return undefined;
+
+    const requirementIds = new Set((requirements || [])
+        .filter(isObject)
+        .map(requirement => requirement.id)
+        .filter(id => typeof id === 'string' && id));
+    const mappedRequirementIds = new Set();
+    for (const step of normalizedSteps) {
+        if (!isObject(step)
+            || typeof step.ref !== 'string' || !step.ref.trim()
+            || typeof step.nodeKey !== 'string' || !step.nodeKey.trim()
+            || (step.config !== undefined && !isObject(step.config))
+            || !Array.isArray(step.requirementIds) || step.requirementIds.length === 0) {
+            return undefined;
+        }
+        for (const requirementId of step.requirementIds) {
+            if (typeof requirementId !== 'string' || !requirementId.trim() || !requirementIds.has(requirementId)) {
+                return undefined;
+            }
+            mappedRequirementIds.add(requirementId);
+        }
+    }
+    return [...requirementIds].every(requirementId => mappedRequirementIds.has(requirementId))
+        ? normalizedSteps
+        : undefined;
+};
+
+const normalizePlannerType = result => {
+    if (!isObject(result)) return result;
+    const type = String(result.type || '').trim().toLocaleLowerCase();
+    if (PLANNER_TYPES.has(type)) return type === result.type ? result : { ...result, type };
+    // Some OpenAI-compatible models preserve every required plan field but
+    // occasionally omit the discriminator. Infer it only from the complete
+    // plan core, so ordinary incomplete objects remain validation failures.
+    const hasCompletePlanCore = typeof result.summary === 'string'
+        && Array.isArray(result.requirements)
+        && Array.isArray(result.selectedNodeKeys);
+    if (!type && hasCompletePlanCore) {
+        return { ...result, type: Array.isArray(result.operations) ? 'direct_plan' : 'plan_complete' };
+    }
+    if (['clarification', 'clarify', 'question'].includes(type)) return { ...result, type: 'message' };
+    if (['response', 'answer', 'text'].includes(type)) return { ...result, type: 'reply' };
+    if (['proposal', 'plan', 'workflow', 'workflow_plan', 'workflow_proposal', 'direct_proposal'].includes(type)) {
+        return { ...result, type: Array.isArray(result.operations) ? 'direct_plan' : 'plan_complete' };
+    }
+    return result;
+};
+
 /**
  * Keep the planner contract strict while tolerating common model spellings at
  * the AI boundary. The persisted/apply contract remains exactly
@@ -73,18 +224,26 @@ const normalizeLinearStepRefs = steps => {
  */
 export const normalizeWorkflowPlannerResult = (result, { existingWorkflow = null } = {}) => {
     if (!isObject(result)) return result;
+    result = normalizePlannerType(result);
     const hasExistingGraph = (existingWorkflow?.nodes || []).length > 0
         || (existingWorkflow?.edges || []).length > 0;
     const { linearSteps, ...withoutLinearBlueprint } = result;
+    const requirements = Array.isArray(withoutLinearBlueprint.requirements)
+        ? normalizePlannerRequirements(withoutLinearBlueprint.requirements)
+        : withoutLinearBlueprint.requirements;
+    const normalizedLinearSteps = normalizePlannerLinearSteps(linearSteps, requirements);
     return {
         ...withoutLinearBlueprint,
-        ...(!hasExistingGraph && Array.isArray(linearSteps) ? { linearSteps: normalizeLinearStepRefs(linearSteps) } : {}),
+        ...(Array.isArray(withoutLinearBlueprint.requirements) ? { requirements } : {}),
+        ...(Array.isArray(withoutLinearBlueprint.capabilities) ? {
+            capabilities: normalizePlannerCapabilities(withoutLinearBlueprint.capabilities)
+        } : {}),
+        // linearSteps are an optional deterministic fallback. If the model
+        // supplied an incomplete blueprint, omit it and let the worker build
+        // from the validated requirements and selected node keys instead.
+        ...(!hasExistingGraph && normalizedLinearSteps !== undefined ? { linearSteps: normalizedLinearSteps } : {}),
         ...(Array.isArray(withoutLinearBlueprint.resourceChanges) ? {
-            resourceChanges: withoutLinearBlueprint.resourceChanges.map(change => {
-                if (!isObject(change)) return change;
-                const alias = RESOURCE_CHANGE_TYPE_ALIASES[normalizedResourceChangeType(change.type)];
-                return alias ? { ...change, type: alias } : change;
-            })
+            resourceChanges: normalizePlannerResourceChanges(withoutLinearBlueprint.resourceChanges)
         } : {})
     };
 };

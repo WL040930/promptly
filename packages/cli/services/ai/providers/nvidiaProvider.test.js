@@ -28,3 +28,25 @@ test('NVIDIA provider sends the direct endpoint and thinking controls', async t 
     assert.equal(body.reasoning_budget, 16_384);
     assert.equal(result.text, 'Ready.');
 });
+
+test('NVIDIA provider disables reasoning for machine-readable JSON responses', async t => {
+    const originalFetch = globalThis.fetch;
+    let request = null;
+    globalThis.fetch = async (url, options) => {
+        request = { url, options };
+        return new Response(JSON.stringify({
+            choices: [{ message: { content: '{"ok":true}' }, finish_reason: 'stop' }]
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
+    t.after(() => { globalThis.fetch = originalFetch; });
+
+    const provider = new NvidiaProvider({ apiKey: 'test-key', timeoutMs: 500, reasoningBudget: 16_384, enableThinking: true });
+    await provider.generateContent([{ role: 'user', parts: [{ text: 'Return JSON.' }] }], {
+        responseMimeType: 'application/json'
+    });
+    const body = JSON.parse(request.options.body);
+
+    assert.deepEqual(body.response_format, { type: 'json_object' });
+    assert.deepEqual(body.chat_template_kwargs, { enable_thinking: false });
+    assert.equal(body.reasoning_budget, undefined);
+});

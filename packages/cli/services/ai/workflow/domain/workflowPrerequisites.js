@@ -6,7 +6,7 @@ const activeFields = formSchema => (formSchema?.fields || [])
 
 const text = value => String(value || '').trim();
 
-const formSubmissionPattern = /\b(?:when|after|once|whenever)\b[\s\S]{0,120}\b(?:submit(?:s|ted|ting)?|submission|response|feedback)\b|\bform[- ]submission\b|\bform\s+(?:response|submission)\b/i;
+const formSubmissionPattern = /\b(?:when|after|once|whenever|trigger(?:s|ed|ing)?)\b[\s\S]{0,120}\b(?:submit(?:s|ted|ting)?|submission(?:s)?|response(?:s)?|feedback)\b|\bform[- ]submission\b|\bform\s+(?:response|submission)\b/i;
 const externalFormPattern = /\bgoogle\s+forms?\b/i;
 const ratingPattern = /\b(?:rating|score)\b/i;
 const aiSummaryPattern = /\b(?:summar(?:y|ies|ize|ized|izing|ise|ised|ising)|summarization)\b/i;

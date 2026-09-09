@@ -14,6 +14,25 @@ test('extracts a named Google Sheet destination from a save request', () => {
     );
 });
 
+test('extracts the name after a create-and-call Sheet phrase', () => {
+    assert.equal(
+        namedSpreadsheetFromText('If approved, create one Google Sheet called Customer Feedback Responses, then save all answers.'),
+        'Customer Feedback Responses'
+    );
+    assert.deepEqual(resolveSpreadsheetIntent({
+        request: 'If approved, create one Google Sheet called Customer Feedback Responses, then save all answers.'
+    }), {
+        mode: 'create', source: 'request', name: 'Customer Feedback Responses'
+    });
+});
+
+test('extracts the actual name from a shared Excel or Google Sheet phrase', () => {
+    assert.equal(
+        namedSpreadsheetFromText('Save the response to one shared Excel/Google Sheet called Customer Feedback Responses.'),
+        'Customer Feedback Responses'
+    );
+});
+
 test('a clarification URL takes precedence over the request destination', () => {
     assert.deepEqual(resolveSpreadsheetIntent({
         request: 'Save the response to the Event Registration Google Sheet.',

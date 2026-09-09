@@ -21,6 +21,7 @@ const feedbackForm = {
 
 test('detects a form-submission request without requiring a model plan', () => {
     assert.equal(isFormSubmissionRequest({ request: 'When a customer submits feedback, save the response.' }), true);
+    assert.equal(isFormSubmissionRequest({ request: 'Build a workflow triggered by its submissions.' }), true);
     assert.equal(isFormSubmissionRequest({ request: 'Send a weekly summary email to support.' }), false);
     assert.equal(isFormSubmissionRequest({
         request: 'Add an AI node to summarize the comment.',

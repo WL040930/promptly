@@ -1476,6 +1476,47 @@ test('pipeline repairs a malformed worker response and produces a valid proposal
     assert.ok(workerAttempt >= 2, `Expected worker repair attempt, got ${workerAttempt}`);
 });
 
+test('pipeline repairs malformed worker JSON instead of accessing a null parsed response', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let repairCalls = 0;
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return {
+                    text: JSON.stringify({
+                        type: 'plan_complete',
+                        summary: 'Update email.',
+                        requirements: [{ id: 'req_1', description: 'Update email config.' }],
+                        selectedNodeKeys: ['trigger:webhook', 'action:email'],
+                        capabilities: []
+                    })
+                };
+            }
+            if (options.operation === 'workflow:worker') return { text: '{"operations":[{"op":"update_node"}' };
+            if (options.operation === 'workflow:worker repair') {
+                repairCalls += 1;
+                return {
+                    text: JSON.stringify({
+                        operations: [{ op: 'update_node', nodeRef: 'n2', updates: { config: { to: 'test@example.com' } } }]
+                    })
+                };
+            }
+            return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'Update the email to test@example.com',
+        currentWorkflow: existingWorkflow,
+        provider,
+        registry: makeRegistry(),
+        resourceLoader
+    });
+
+    assert.equal(repairCalls, 1);
+    assert.equal(result.type, 'proposal');
+});
+
 test('pipeline stops repeating the same malformed worker draft', async () => {
     const { generateWorkflowTurn } = await import('./pipeline.js');
     let workerAttempt = 0;
@@ -2863,7 +2904,9 @@ test('pipeline compiles an if/otherwise notification branch when the worker repe
                         requirements: [{ id: 'req_branch', description: 'After approval, send online instructions when attendance is Online; otherwise send venue instructions.' }],
                         // The pipeline must add the semantic Condition and Email specs even when the planner omits them.
                         selectedNodeKeys: [],
-                        capabilities: []
+                        // Models sometimes use this display-style token even though the
+                        // persisted planner contract calls it owner_approval.
+                        capabilities: ['approval']
                     })
                 };
             }
@@ -2930,6 +2973,7 @@ test('pipeline compiles an if/otherwise notification branch when the worker repe
     });
 
     assert.equal(result.type, 'proposal');
+    assert.equal(result.capabilities.includes('owner_approval'), true);
     assert.equal(workerCalls, 1);
     assert.match(workerPrompt, /"logic:condition"/);
     assert.match(workerPrompt, /"action:email"/);

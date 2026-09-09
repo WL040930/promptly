@@ -16,14 +16,24 @@ export class NvidiaProvider extends OpenAICompatibleProvider {
             displayName: 'NVIDIA',
             defaultModel: DEFAULT_AI_MODELS.nvidia,
             timeoutMs,
-            requestBodyExtras: () => ({
-                // The shared provider contract consumes one completed JSON response.
-                stream: false,
-                temperature: 1,
-                top_p: 0.95,
-                ...(enableThinking ? { chat_template_kwargs: { enable_thinking: true } } : {}),
-                ...(Number.isInteger(reasoningBudget) && reasoningBudget > 0 ? { reasoning_budget: reasoningBudget } : {})
-            })
+            requestBodyExtras: options => {
+                const machineReadableJson = options.responseMimeType === 'application/json';
+                return {
+                    // The shared provider contract consumes one completed JSON response.
+                    stream: false,
+                    // Nemotron recommends this sampling pair across its supported tasks.
+                    temperature: 1,
+                    top_p: 0.95,
+                    // A reasoning trace is useful for normal chat, but JSON consumers must
+                    // receive only the final machine-readable object.
+                    ...(machineReadableJson
+                        ? { chat_template_kwargs: { enable_thinking: false } }
+                        : enableThinking ? { chat_template_kwargs: { enable_thinking: true } } : {}),
+                    ...(!machineReadableJson && Number.isInteger(reasoningBudget) && reasoningBudget > 0
+                        ? { reasoning_budget: reasoningBudget }
+                        : {})
+                };
+            }
         });
     }
 }

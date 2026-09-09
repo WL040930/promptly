@@ -27,10 +27,10 @@ const normalizedName = value => text(value)
     .trim();
 
 const namedSheetPatterns = [
-    /\bcreate\s+(?:a|an)?\s*(?:new\s+)?(.+?)\s+(?:google\s*sheet|spreadsheet|sheet)\b/i,
-    /\b(?:save|store|record|write|append|add)\b[\s\S]{0,120}?\b(?:to|into|in)\s+(?:the\s+)?(.+?)\s+(?:google\s*sheet|spreadsheet|sheet)\b/i,
     /\b(?:google\s*sheet|spreadsheet|sheet)\s+(?:named|called)\s+["“']?([^"”'.,!?]+)["”']?/i,
-    /\b(?:named|called)\s+["“']?([^"”'.,!?]+)["”']?\s+(?:google\s*sheet|spreadsheet|sheet)\b/i
+    /\b(?:named|called)\s+["“']?([^"”'.,!?]+)["”']?\s+(?:google\s*sheet|spreadsheet|sheet)\b/i,
+    /\bcreate\s+(?:(?:a|an|one|new)\s+){0,3}(.+?)\s+(?:google\s*sheet|spreadsheet|sheet)\b/i,
+    /\b(?:save|store|record|write|append|add)\b[\s\S]{0,120}?\b(?:to|into|in)\s+(?:the\s+)?(.+?)\s+(?:google\s*sheet|spreadsheet|sheet)\b/i
 ];
 
 export const namedSpreadsheetFromText = value => {

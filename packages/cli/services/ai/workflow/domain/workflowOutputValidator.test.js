@@ -128,6 +128,132 @@ test('planner normalization canonicalizes display-style linear step refs before 
     assert.deepEqual(validateWorkflowPlannerResult(normalized), []);
 });
 
+test('planner normalization canonicalizes shorthand string requirements before validation', () => {
+    const normalized = normalizeWorkflowPlannerResult({
+        type: 'plan_complete',
+        summary: 'Route customer feedback by rating.',
+        requirements: [
+            'Ask for approval before saving low-rated feedback.',
+            'Save every response and email the respondent.'
+        ],
+        selectedNodeKeys: ['trigger:form-submission', 'logic:approval', 'action:googleSheets', 'action:email'],
+        capabilities: []
+    });
+
+    assert.deepEqual(normalized.requirements, [
+        { id: 'req_1', description: 'Ask for approval before saving low-rated feedback.' },
+        { id: 'req_2', description: 'Save every response and email the respondent.' }
+    ]);
+    assert.deepEqual(validateWorkflowPlannerResult(normalized), []);
+});
+
+test('planner normalization canonicalizes common proposal type aliases', () => {
+    const normalized = normalizeWorkflowPlannerResult({
+        type: 'proposal',
+        summary: 'Route customer feedback by rating.',
+        requirements: [{ id: 'req_1', description: 'Ask for approval before saving low-rated feedback.' }],
+        selectedNodeKeys: ['trigger:form-submission', 'logic:approval'],
+        capabilities: ['owner_approval']
+    });
+
+    assert.equal(normalized.type, 'plan_complete');
+    assert.deepEqual(validateWorkflowPlannerResult(normalized), []);
+});
+
+test('planner normalization maps a proposal with operations to a direct plan', () => {
+    const normalized = normalizeWorkflowPlannerResult({
+        type: 'workflow',
+        summary: 'Update the approval email.',
+        requirements: [{ id: 'req_1', description: 'Change the approval email subject.' }],
+        selectedNodeKeys: ['action:email'],
+        capabilities: [],
+        operations: [{ op: 'update_node', nodeRef: 'n1', updates: { config: { subject: 'Review feedback' } } }]
+    });
+
+    assert.equal(normalized.type, 'direct_plan');
+    assert.deepEqual(validateWorkflowPlannerResult(normalized), []);
+});
+
+test('planner normalization infers a complete plan when the model omits its type', () => {
+    const normalized = normalizeWorkflowPlannerResult({
+        summary: 'Route customer feedback by rating and save every response.',
+        requirements: [{ id: 'req_1', description: 'Use the selected form, route low ratings through approval, then save and email responses.' }],
+        selectedNodeKeys: ['trigger:form-submission', 'logic:condition', 'logic:approval', 'action:googleSheets', 'action:email'],
+        capabilities: ['owner_approval', 'respondent_confirmation'],
+        resourceChanges: [{ type: 'create_google_sheet', title: 'Customer Feedback Responses' }],
+        contextDelta: {},
+        linearSteps: [
+            { ref: 'form submission', nodeKey: 'trigger:form-submission', requirementIds: ['req_1'], config: {} },
+            { ref: 'route low ratings', nodeKey: 'logic:condition', requirementIds: ['req_1'], config: {} },
+            { ref: 'approval', nodeKey: 'logic:approval', requirementIds: ['req_1'], config: {} },
+            { ref: 'save response', nodeKey: 'action:googleSheets', requirementIds: ['req_1'], config: {} },
+            { ref: 'email respondent', nodeKey: 'action:email', requirementIds: ['req_1'], config: {} }
+        ]
+    });
+
+    assert.equal(normalized.type, 'plan_complete');
+    assert.deepEqual(validateWorkflowPlannerResult(normalized), []);
+});
+
+test('planner normalization drops catalog labels from capabilities and an unusable optional linear blueprint', () => {
+    const normalized = normalizeWorkflowPlannerResult({
+        type: 'plan_complete',
+        summary: 'Route customer feedback by rating and save every response.',
+        requirements: [
+            { id: 'req_low_rating', description: 'Ask for approval when the rating is 2 or lower.' },
+            { id: 'req_response', description: 'Save every response and email the respondent.' }
+        ],
+        selectedNodeKeys: ['trigger:form-submission', 'logic:condition', 'logic:approval', 'action:googleSheets', 'action:email'],
+        capabilities: ['forms', { name: 'google-spreadsheets' }, { capability: 'email' }, { value: 'owner approval' }],
+        linearSteps: [{ nodeKey: 'trigger:form-submission' }]
+    });
+
+    assert.deepEqual(normalized.capabilities, ['owner_approval']);
+    assert.equal(Object.hasOwn(normalized, 'linearSteps'), false);
+    assert.deepEqual(validateWorkflowPlannerResult(normalized), []);
+    assert.deepEqual(normalizeWorkflowPlannerResult({
+        type: 'plan_complete',
+        summary: 'Build.',
+        requirements: [{ id: 'req_1', description: 'Do it.' }],
+        selectedNodeKeys: [],
+        capabilities: ['invent_magic']
+    }).capabilities, ['invent_magic']);
+});
+
+test('planner normalization maps a generic approval capability to owner approval', () => {
+    const normalized = normalizeWorkflowPlannerResult({
+        type: 'plan_complete',
+        summary: 'Ask for approval before saving the registration.',
+        requirements: [{ id: 'req_1', description: 'Request approval before saving the response.' }],
+        selectedNodeKeys: ['logic:approval'],
+        capabilities: ['approval']
+    });
+
+    assert.deepEqual(normalized.capabilities, ['owner_approval']);
+    assert.deepEqual(validateWorkflowPlannerResult(normalized), []);
+});
+
+test('planner normalization fills omitted requirement IDs and one-off Sheet refs', () => {
+    const normalized = normalizeWorkflowPlannerResult({
+        type: 'plan_complete',
+        summary: 'Save customer feedback.',
+        requirements: [{ description: 'Append the submitted answers to the response Sheet.' }],
+        selectedNodeKeys: ['trigger:form-submission', 'action:googleSheets'],
+        capabilities: [],
+        resourceChanges: [{ type: 'create_google_sheet', title: 'Customer Feedback Responses' }]
+    });
+
+    assert.deepEqual(normalized.requirements, [
+        { id: 'req_1', description: 'Append the submitted answers to the response Sheet.' }
+    ]);
+    assert.deepEqual(normalized.resourceChanges, [{
+        ref: 'response_spreadsheet',
+        type: 'create_google_spreadsheet',
+        title: 'Customer Feedback Responses'
+    }]);
+    assert.deepEqual(validateWorkflowPlannerResult(normalized), []);
+});
+
 test('planner normalization removes a linear blueprint when editing an existing workflow', () => {
     const raw = {
         type: 'plan_complete',

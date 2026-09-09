@@ -105,6 +105,80 @@ test('AI client parses JSON tasks and exposes invalid output without retrying do
     assert.equal(calls, 1);
 });
 
+test('AI client repairs one missing JSON separator for workflow tasks before domain validation', async () => {
+    const ai = createAIClient({
+        registry: createRegistry({
+            gemini: {
+                async generateContent() {
+                    return { text: '{"operations":[{"op":"create_node"} {"op":"connect"}]}' };
+                }
+            }
+        }),
+        profiles: {
+            fast: { provider: 'gemini', model: 'fast-model' },
+            quality: { provider: 'gemini', model: 'quality-model' },
+            default: { provider: 'gemini', model: 'default-model' }
+        },
+        fallbackProviders: [],
+        logger: { info() {}, warn() {}, error() {} }
+    });
+
+    const result = await ai.run({ task: 'workflow.build', messages: [] });
+
+    assert.deepEqual(result.json, {
+        operations: [{ op: 'create_node' }, { op: 'connect' }]
+    });
+});
+
+test('AI client repairs a bounded sequence of missing JSON separators for workflow tasks', async () => {
+    const ai = createAIClient({
+        registry: createRegistry({
+            gemini: {
+                async generateContent() {
+                    return { text: '{"operations":[{"op":"create_node"} {"op":"connect"} {"op":"update_node"}]}' };
+                }
+            }
+        }),
+        profiles: {
+            fast: { provider: 'gemini', model: 'fast-model' },
+            quality: { provider: 'gemini', model: 'quality-model' },
+            default: { provider: 'gemini', model: 'default-model' }
+        },
+        fallbackProviders: [],
+        logger: { info() {}, warn() {}, error() {} }
+    });
+
+    const result = await ai.run({ task: 'workflow.build', messages: [] });
+
+    assert.deepEqual(result.json, {
+        operations: [{ op: 'create_node' }, { op: 'connect' }, { op: 'update_node' }]
+    });
+});
+
+test('AI client keeps malformed JSON strict outside workflow tasks', async () => {
+    const ai = createAIClient({
+        registry: createRegistry({
+            gemini: {
+                async generateContent() {
+                    return { text: '{"intent":"create" "confidence":1}' };
+                }
+            }
+        }),
+        profiles: {
+            fast: { provider: 'gemini', model: 'fast-model' },
+            quality: { provider: 'gemini', model: 'quality-model' },
+            default: { provider: 'gemini', model: 'default-model' }
+        },
+        fallbackProviders: [],
+        logger: { info() {}, warn() {}, error() {} }
+    });
+
+    await assert.rejects(
+        () => ai.run({ task: 'agent.intent', messages: [] }),
+        error => error.code === 'AI_INVALID_OUTPUT'
+    );
+});
+
 test('AI client does not fail over authentication errors', async () => {
     const calls = [];
     const ai = createAIClient({
@@ -263,6 +337,42 @@ test('AI client accepts a workflow-specific provider-attempt override', async ()
 
     assert.equal(calls, 3);
     assert.deepEqual(result.json, { type: 'reply', message: 'Ready' });
+});
+
+test('AI client skips a provider that produced an invalid workflow draft during repair', async () => {
+    const calls = [];
+    const ai = createAIClient({
+        registry: createRegistry({
+            nvidia: {
+                async generateContent() {
+                    calls.push('nvidia');
+                    return { text: '{"type":"reply","message":"NVIDIA"}' };
+                }
+            },
+            gemini: {
+                async generateContent() {
+                    calls.push('gemini');
+                    return { text: '{"type":"reply","message":"Gemini"}' };
+                }
+            }
+        }),
+        profiles: {
+            quality: { provider: 'nvidia', model: 'quality-model' },
+            default: { provider: 'gemini', model: 'default-model' },
+            fast: { provider: 'nvidia', model: 'fast-model' }
+        },
+        fallbackProviders: [],
+        logger: { info() {}, warn() {}, error() {} }
+    });
+
+    const result = await ai.run({
+        task: 'workflow.build',
+        messages: [],
+        excludeProviders: ['nvidia']
+    });
+
+    assert.deepEqual(calls, ['gemini']);
+    assert.equal(result.provider, 'gemini');
 });
 
 test('AI client enforces the caller request budget across fallback attempts', async () => {
