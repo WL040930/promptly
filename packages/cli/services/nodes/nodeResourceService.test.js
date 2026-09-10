@@ -33,6 +33,27 @@ test('node resource service exposes account-owned resources without leaking mode
     assert.equal(records.options[0].value, 'run_1234567890');
 });
 
+test('node resource service excludes onboarding sample forms from the live form picker', async () => {
+    const forms = [
+        { id: 'form_event', userId: 'user_1', title: 'Event Registration', demoKey: null },
+        { id: 'form_demo', userId: 'user_1', title: 'Support request intake', demoKey: 'onboarding-v3' }
+    ];
+    const service = createService({
+        models: {
+            Form: {
+                findAll: async query => forms.filter(form => Object.entries(query.where || {}).every(([key, value]) => form[key] === value))
+            },
+            Workflow: model([]),
+            AutomationRun: model([]),
+            Connection: model([])
+        }
+    });
+
+    const result = await service.list({ userId: 'user_1', resource: 'forms' });
+
+    assert.deepEqual(result.options, [{ value: 'form_event', label: 'Event Registration', description: 'Promptly form' }]);
+});
+
 test('node resource service lists spreadsheets and derives friendly full-sheet ranges', async () => {
     const service = createService();
     const spreadsheets = await service.list({ userId: 'user_1', resource: 'google-spreadsheets' });

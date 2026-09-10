@@ -9,3 +9,10 @@ test('workflow form loading targets the full schema for each linked form trigger
         { id: 'form_b', subType: 'form-submission', config: { formId: 'form_registration' } }
     ]), ['form_registration']);
 });
+
+test('workflow form loading skips unapplied form artifact placeholders', () => {
+    assert.deepEqual(workflowFormIds([
+        { id: 'proposed_form', subType: 'form-submission', config: { formId: 'artifact:artifact_form' } },
+        { id: 'saved_form', subType: 'form-submission', config: { formId: 'form_registration' } }
+    ]), ['form_registration']);
+});

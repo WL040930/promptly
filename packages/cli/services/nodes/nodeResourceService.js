@@ -93,7 +93,7 @@ export const createNodeResourceService = ({
     const providers = {
         forms: async ({ userId }) => ({
             options: await listModel(models.Form, {
-                where: { userId },
+                where: { userId, demoKey: null },
                 attributes: ['id', 'title', 'updatedAt'],
                 order: [['updatedAt', 'DESC']],
                 limit: 100

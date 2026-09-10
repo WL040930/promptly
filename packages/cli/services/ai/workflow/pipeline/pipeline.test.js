@@ -271,6 +271,26 @@ test('workflow budgets reserve four provider attempts for planner and draft reco
     });
 });
 
+test('workflow repair keeps trying a new model after it repeats an approval-gate issue', async () => {
+    const { shouldStopRepeatedWorkerRepair } = (await import('./pipeline.js')).workflowPipelineInternals;
+    const approvalIssue = [{
+        code: 'WORKFLOW_APPROVAL_GATE_OPERATION_REQUIRED',
+        path: 'operations[1].node.nodeKey',
+        message: 'Use add_approval_gate to add an Approval step and its routes.'
+    }];
+
+    assert.equal(shouldStopRepeatedWorkerRepair({
+        previousIssues: approvalIssue,
+        workerIssues: approvalIssue,
+        usedNewRoute: true
+    }), false);
+    assert.equal(shouldStopRepeatedWorkerRepair({
+        previousIssues: approvalIssue,
+        workerIssues: approvalIssue,
+        usedNewRoute: false
+    }), true);
+});
+
 /**
  * Build a provider object (with generateContent) that returns responses in
  * sequence, keyed by the `operation` option so tests can be precise.
@@ -3095,6 +3115,185 @@ test('pipeline keeps the original invalid reference when a repair returns no ope
         assert.ok(error.issues.some(issue => issue.code === 'EMPTY_OPERATIONS'));
         return true;
     });
+});
+
+test('pipeline repairs a generic approval node with a partial approval-gate operation from a new workflow', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    let repairCalls = 0;
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Ask for approval before the leave-request confirmation email.',
+                    requirements: [{ id: 'req_approval', description: 'Request owner approval before sending the leave-request confirmation.' }],
+                    selectedNodeKeys: ['trigger:form-submission', 'logic:approval', 'action:email'],
+                    capabilities: ['owner_approval']
+                }) };
+            }
+            if (options.operation === 'workflow:worker') {
+                return { text: JSON.stringify({
+                    operations: [
+                        { op: 'create_node', node: { ref: 'form_trigger', nodeKey: 'trigger:form-submission', title: 'Leave request submitted', config: { formId: 'form_leave' } } },
+                        { op: 'create_node', node: { ref: 'save_to_sheet', nodeKey: 'action:email', title: 'Confirm leave request', config: { to: 'employee@example.com', subject: 'Leave request received' }, afterNodeRef: 'form_trigger' } },
+                        // This is the invalid legacy shape emitted by the first model.
+                        { op: 'create_node', node: { ref: 'approval', nodeKey: 'logic:approval', title: 'Manager approval', config: {}, afterNodeRef: 'form_trigger' } },
+                        { op: 'connect', from: { nodeRef: 'form_trigger', handle: 'event' }, to: { nodeRef: 'approval', handle: 'event' } },
+                        { op: 'connect', from: { nodeRef: 'approval', handle: 'approved' }, to: { nodeRef: 'save_to_sheet', handle: 'event' } }
+                    ]
+                }) };
+            }
+            if (options.operation === 'workflow:worker repair') {
+                repairCalls += 1;
+                // The repair is intentionally a delta: it relies on the valid
+                // form_trigger and save_to_sheet steps in the previous draft.
+                return { text: JSON.stringify({
+                    operations: [{
+                        op: 'add_approval_gate',
+                        connection: { from: { nodeRef: 'form_trigger', handle: 'event' }, to: { nodeRef: 'save_to_sheet', handle: 'event' } },
+                        approval: { ref: 'approval', title: 'Manager approval', config: {} }
+                    }]
+                }) };
+            }
+            if (options.operation === 'workflow:verifier') return { text: JSON.stringify({ status: 'pass', issues: [] }) };
+            throw new Error(`Unexpected workflow operation: ${options.operation}`);
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'When the Leave Request form is submitted, ask for my approval before confirming it by email.',
+        currentWorkflow: { nodes: [], edges: [] },
+        userContext: { forms: [{ id: 'form_leave', title: 'Leave Request' }] },
+        turnContext: { command: { type: 'submit_clarification', state: { formId: 'form_leave' } } },
+        formLoader: async () => ({ id: 'form_leave', title: 'Leave Request', fields: [{ id: 'email', label: 'Employee email', type: 'email', required: true }] }),
+        provider,
+        registry: makeRegistry([formSubmissionSpec, approvalSpec, emailSpec]),
+        resourceLoader: async () => ({ forms: { resource: 'forms', options: [{ value: 'form_leave', label: 'Leave Request' }] } })
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(repairCalls, 1);
+    const form = result.nodes.find(node => node.subType === 'form-submission');
+    const approval = result.nodes.find(node => node.subType === 'approval');
+    const email = result.nodes.find(node => node.subType === 'email');
+    assert.ok(form);
+    assert.ok(approval);
+    assert.ok(email);
+    assert.ok(result.edges.some(edge => edge.source === form.id && edge.target === approval.id));
+    assert.ok(result.edges.some(edge => edge.source === approval.id && edge.sourceHandle === 'approved' && edge.target === email.id));
+});
+
+test('pipeline applies a verifier correction delta to the valid draft it is repairing', async () => {
+    const { generateWorkflowTurn } = await import('./pipeline.js');
+    const mergeSpec = {
+        nodeKey: 'logic:merge',
+        type: 'logic',
+        subType: 'merge',
+        title: 'Merge',
+        description: 'Joins workflow branches',
+        implementationStatus: 'experimental',
+        schema: {
+            inputs: [{ name: 'input1', isConnection: true }, { name: 'mergeMode', type: 'select' }],
+            outputs: [{ name: 'outputData', isConnection: true }]
+        },
+        ui: {}
+    };
+    const currentWorkflow = {
+        revision: 2,
+        nodes: [
+            { id: 'form', type: 'trigger', subType: 'form-submission', nodeKey: 'trigger:form-submission', title: 'Event Registration Form', config: { formId: 'form_event' }, position: { x: 50, y: 200 } },
+            { id: 'sheet', type: 'action', subType: 'googleSheets', nodeKey: 'action:googleSheets', title: 'Append Form Data to Responses', config: { operation: 'append', spreadsheetId: 'sheet_event', range: "'Responses'!A1", values: [['response']] }, position: { x: 400, y: 200 } }
+        ],
+        edges: [{ id: 'form_sheet', source: 'form', sourceHandle: 'event', target: 'sheet', targetHandle: 'event' }]
+    };
+    const initialOperations = [
+        {
+            op: 'add_approval_gate',
+            connection: { from: { nodeRef: 'n1', handle: 'event' }, to: { nodeRef: 'n2', handle: 'event' } },
+            approval: { ref: 'review_response', title: 'Review response', config: { title: 'Review response' } }
+        },
+        {
+            op: 'add_condition_branch',
+            from: { nodeRef: 'review_response', handle: 'approved' },
+            condition: { ref: 'attendance_online', title: 'Attendance is Online', config: { valueA: { $binding: 'form_field_2' }, operator: 'equals', valueB: 'Online' } },
+            whenTrue: { ref: 'send_joining_instructions', nodeKey: 'action:email', title: 'Send joining instructions', config: { to: { $binding: 'form_field_1' }, subject: 'Joining instructions' } },
+            whenFalse: { ref: 'send_venue_instructions', nodeKey: 'action:email', title: 'Send venue instructions', config: { to: { $binding: 'form_field_1' }, subject: 'Venue instructions' } }
+        }
+    ];
+    let verifierCalls = 0;
+    const provider = {
+        async generateContent(_contents, options) {
+            if (options.operation === 'workflow:planner') {
+                return { text: JSON.stringify({
+                    type: 'plan_complete',
+                    summary: 'Approve, send attendance instructions, then save the registration.',
+                    requirements: [
+                        { id: 'req_1', description: 'Request approval before saving the response.' },
+                        { id: 'req_2', description: 'Send joining instructions for Online attendance and venue instructions otherwise.' },
+                        { id: 'req_3', description: 'After either email, save the response to Google Sheets.' }
+                    ],
+                    selectedNodeKeys: ['logic:approval', 'logic:condition', 'action:email', 'logic:merge', 'action:googleSheets'],
+                    capabilities: ['owner_approval']
+                }) };
+            }
+            if (options.operation === 'workflow:worker') {
+                return { text: JSON.stringify({ operations: initialOperations }) };
+            }
+            if (options.operation === 'workflow:verifier') {
+                verifierCalls += 1;
+                return { text: JSON.stringify(verifierCalls === 1
+                    ? { status: 'repair', issues: [{ requirementId: 'req_3', message: 'Join both email routes before saving.' }] }
+                    : { status: 'pass', issues: [] }) };
+            }
+            if (options.operation === 'workflow:worker repair') {
+                // The verifier asked for one correction. The model therefore
+                // returns only that delta and references nodes from the valid
+                // draft shown in Previous Invalid Operations.
+                return { text: JSON.stringify({ operations: [
+                    { op: 'remove_node', nodeRef: 'n2' },
+                    {
+                        op: 'join_branches',
+                        branches: [
+                            { from: { nodeRef: 'send_joining_instructions', handle: 'done' } },
+                            { from: { nodeRef: 'send_venue_instructions', handle: 'done' } }
+                        ],
+                        merge: { ref: 'join_notifications', title: 'Join notifications', config: { mergeMode: 'last' } },
+                        continueWith: {
+                            ref: 'save_response',
+                            nodeKey: 'action:googleSheets',
+                            title: 'Append Form Data to Responses',
+                            config: { operation: 'append', spreadsheetId: 'sheet_event', range: "'Responses'!A1", values: [['response']] }
+                        }
+                    }
+                ] }) };
+            }
+            throw new Error(`Unexpected workflow operation: ${options.operation}`);
+        }
+    };
+
+    const result = await generateWorkflowTurn({
+        request: 'Request approval before saving the response. If attendance mode is Online, send joining instructions; otherwise send venue instructions.',
+        currentWorkflow,
+        formSchema: {
+            id: 'form_event',
+            title: 'Event Registration',
+            fields: [
+                { id: 'email', label: 'Email', type: 'email', required: true },
+                { id: 'attendance_mode', label: 'Attendance mode', type: 'select', required: true }
+            ]
+        },
+        provider,
+        registry: makeRegistry([formSubmissionSpec, approvalSpec, conditionSpec, emailSpec, mergeSpec, googleSheetsSpec]),
+        resourceLoader
+    });
+
+    assert.equal(result.type, 'proposal');
+    assert.equal(verifierCalls, 2);
+    assert.ok(result.nodes.some(node => node.nodeKey === 'logic:approval'));
+    assert.ok(result.nodes.some(node => node.nodeKey === 'logic:condition'));
+    assert.equal(result.nodes.filter(node => node.nodeKey === 'action:email').length, 2);
+    assert.ok(result.nodes.some(node => node.nodeKey === 'logic:merge'));
+    assert.equal(result.nodes.filter(node => node.nodeKey === 'action:googleSheets').length, 1);
 });
 
 test('pipeline repairs the historical true source-handle mistake as a semantic branch', async () => {

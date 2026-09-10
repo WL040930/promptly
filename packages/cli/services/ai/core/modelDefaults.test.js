@@ -36,6 +36,19 @@ test('AI tier configuration inherits the default model only within the same prov
     });
 });
 
+test('AI configuration preserves ordered model-level fallback routes', () => {
+    const config = createAIConfig({
+        AI_FALLBACK_ROUTES: 'openrouter=nvidia/nemotron-3-super-120b-a12b:free,openrouter=google/gemini-3.5-flash-lite,groq=openai/gpt-oss-120b',
+        AI_FALLBACK_PROVIDERS: 'cerebras,groq'
+    });
+
+    assert.deepEqual(config.ai.fallbackRoutes, [
+        { provider: 'openrouter', model: 'nvidia/nemotron-3-super-120b-a12b:free' },
+        { provider: 'openrouter', model: 'google/gemini-3.5-flash-lite' },
+        { provider: 'groq', model: 'openai/gpt-oss-120b' }
+    ]);
+});
+
 test('NVIDIA can be selected as a direct provider with its reasoning controls', () => {
     const config = createAIConfig({
         AI_DEFAULT_PROVIDER: 'nvidia',

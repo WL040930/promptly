@@ -51,6 +51,23 @@ const readFallbackProviders = source => Object.freeze([...new Set(
         .filter(Boolean)
 )]);
 
+const readFallbackRoutes = source => Object.freeze([...new Map(
+    readString(source, 'AI_FALLBACK_ROUTES')
+        .split(',')
+        .map(value => value.trim())
+        .filter(Boolean)
+        .map(value => {
+            const separator = value.indexOf('=');
+            const provider = separator === -1 ? value : value.slice(0, separator);
+            const model = separator === -1 ? '' : value.slice(separator + 1);
+            return Object.freeze({
+                provider: provider.trim().toLowerCase(),
+                model: model.trim()
+            });
+        })
+        .map(route => [`${route.provider}:${route.model}`, route])
+).values()]);
+
 /**
  * Builds the complete AI runtime configuration from environment values.
  * The returned shape intentionally preserves the existing env interface so
@@ -86,6 +103,7 @@ export const createAIConfig = (source = process.env) => {
     return Object.freeze({
         ai: Object.freeze({
             tiers,
+            fallbackRoutes: readFallbackRoutes(source),
             fallbackProviders: readFallbackProviders(source)
         }),
         aiThinkingLevel: readThinkingLevel(source),

@@ -106,7 +106,11 @@ export default function WorkflowDiffPreviewModal({ isOpen, onClose, currentWorkf
         (versionWorkflow?.nodes || []).forEach(node => nodes.set(node.id, node));
         return [...nodes.values()];
     }, [currentWorkflow?.nodes, versionWorkflow?.nodes]);
-    const { formsById } = useWorkflowForms(previewNodes);
+    const { formsById: loadedFormsById } = useWorkflowForms(previewNodes);
+    const formsById = useMemo(() => ({
+        ...(versionWorkflow?.previewFormsById || {}),
+        ...loadedFormsById
+    }), [loadedFormsById, versionWorkflow?.previewFormsById]);
     const isProposal = mode === 'proposal';
     const previewName = isProposal
         ? currentWorkflow?.name || versionWorkflow?.name || 'Automation'

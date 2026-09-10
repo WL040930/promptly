@@ -76,6 +76,73 @@ test('AI client fails over retryable provider errors and normalizes the response
     assert.ok(calls[1].options.signal instanceof AbortSignal);
 });
 
+test('AI client skips a payment-required provider for a distinct fallback', async () => {
+    const calls = [];
+    const ai = createAIClient({
+        registry: createRegistry({
+            cerebras: {
+                async generateContent() {
+                    calls.push('cerebras');
+                    const error = new Error('402 Payment required to access this resource.');
+                    error.status = 402;
+                    throw error;
+                }
+            },
+            groq: {
+                async generateContent() {
+                    calls.push('groq');
+                    return { text: '{"ok":true}' };
+                }
+            }
+        }),
+        profiles: {
+            fast: { provider: 'cerebras', model: 'cerebras-model' },
+            quality: { provider: 'cerebras', model: 'cerebras-model' },
+            default: { provider: 'cerebras', model: 'cerebras-model' }
+        },
+        fallbackProviders: ['groq'],
+        logger: { info() {}, warn() {}, error() {} }
+    });
+
+    const result = await ai.run({
+        task: 'workflow.build',
+        messages: [{ role: 'user', parts: [{ text: 'Build a workflow.' }] }]
+    });
+
+    assert.equal(result.provider, 'groq');
+    assert.deepEqual(result.json, { ok: true });
+    assert.deepEqual(calls, ['cerebras', 'groq']);
+});
+
+test('AI client does not retry a payment-required provider when no alternate route exists', async () => {
+    let calls = 0;
+    const ai = createAIClient({
+        registry: createRegistry({
+            cerebras: {
+                async generateContent() {
+                    calls += 1;
+                    const error = new Error('402 Payment required to access this resource.');
+                    error.status = 402;
+                    throw error;
+                }
+            }
+        }),
+        profiles: {
+            fast: { provider: 'cerebras', model: 'cerebras-model' },
+            quality: { provider: 'cerebras', model: 'cerebras-model' },
+            default: { provider: 'cerebras', model: 'cerebras-model' }
+        },
+        fallbackProviders: [],
+        logger: { info() {}, warn() {}, error() {} }
+    });
+
+    await assert.rejects(
+        () => ai.run({ task: 'workflow.build', messages: [] }),
+        error => error.category === 'payment_required' && error.attempt === 1
+    );
+    assert.equal(calls, 1);
+});
+
 test('AI client parses JSON tasks and exposes invalid output without retrying domain repair', async () => {
     let calls = 0;
     const adapter = {
@@ -373,6 +440,139 @@ test('AI client skips a provider that produced an invalid workflow draft during 
 
     assert.deepEqual(calls, ['gemini']);
     assert.equal(result.provider, 'gemini');
+});
+
+test('AI client retries OpenRouter with Gemini after the Nemotron model fails', async () => {
+    const calls = [];
+    const nemotron = 'nvidia/nemotron-3-super-120b-a12b:free';
+    const gemini = 'google/gemini-3.5-flash-lite';
+    const ai = createAIClient({
+        registry: createRegistry({
+            openrouter: {
+                async generateContent(_contents, options) {
+                    calls.push(options.model);
+                    if (options.model === nemotron) {
+                        const error = new Error('Service temporarily unavailable.');
+                        error.status = 503;
+                        throw error;
+                    }
+                    return { text: '{"type":"reply","message":"Ready"}' };
+                }
+            }
+        }),
+        profiles: {
+            fast: { provider: 'openrouter', model: nemotron },
+            quality: { provider: 'openrouter', model: nemotron },
+            default: { provider: 'openrouter', model: nemotron }
+        },
+        fallbackRoutes: [{ provider: 'openrouter', model: gemini }],
+        fallbackProviders: [],
+        logger: { info() {}, warn() {}, error() {} }
+    });
+
+    const result = await ai.run({ task: 'workflow.build', messages: [] });
+
+    assert.equal(result.provider, 'openrouter');
+    assert.equal(result.model, gemini);
+    assert.deepEqual(calls, [nemotron, gemini]);
+});
+
+test('AI client retries OpenRouter with Gemini after Nemotron returns empty JSON output', async () => {
+    const calls = [];
+    const nemotron = 'nvidia/nemotron-3-super-120b-a12b:free';
+    const gemini = 'google/gemini-3.5-flash-lite';
+    const ai = createAIClient({
+        registry: createRegistry({
+            openrouter: {
+                async generateContent(_contents, options) {
+                    calls.push(options.model);
+                    if (options.model === nemotron) return { text: '' };
+                    return { text: '{"type":"reply","message":"Ready"}' };
+                }
+            }
+        }),
+        profiles: {
+            fast: { provider: 'openrouter', model: nemotron },
+            quality: { provider: 'openrouter', model: nemotron },
+            default: { provider: 'openrouter', model: nemotron }
+        },
+        fallbackRoutes: [{ provider: 'openrouter', model: gemini }],
+        fallbackProviders: [],
+        logger: { info() {}, warn() {}, error() {} }
+    });
+
+    const result = await ai.run({ task: 'workflow.build', messages: [] });
+
+    assert.equal(result.provider, 'openrouter');
+    assert.equal(result.model, gemini);
+    assert.deepEqual(calls, [nemotron, gemini]);
+});
+
+test('AI client falls back after Groq rejects the generated JSON', async () => {
+    const calls = [];
+    const ai = createAIClient({
+        registry: createRegistry({
+            groq: {
+                async generateContent() {
+                    calls.push('groq');
+                    const error = new Error('Groq API Error: 400 - {"error":{"message":"Failed to generate JSON. Please adjust your prompt.","code":"json_validate_failed"}}');
+                    error.status = 400;
+                    throw error;
+                }
+            },
+            openrouter: {
+                async generateContent() {
+                    calls.push('openrouter');
+                    return { text: '{"type":"reply","message":"Ready"}' };
+                }
+            }
+        }),
+        profiles: {
+            quality: { provider: 'groq', model: 'openai/gpt-oss-120b' },
+            default: { provider: 'openrouter', model: 'google/gemini-3.5-flash-lite' },
+            fast: { provider: 'groq', model: 'openai/gpt-oss-120b' }
+        },
+        fallbackProviders: [],
+        logger: { info() {}, warn() {}, error() {} }
+    });
+
+    const result = await ai.run({ task: 'workflow.build', messages: [] });
+
+    assert.equal(result.provider, 'openrouter');
+    assert.deepEqual(calls, ['groq', 'openrouter']);
+});
+
+test('AI client excludes only the failed OpenRouter model during a workflow repair', async () => {
+    const calls = [];
+    const nemotron = 'nvidia/nemotron-3-super-120b-a12b:free';
+    const gemini = 'google/gemini-3.5-flash-lite';
+    const ai = createAIClient({
+        registry: createRegistry({
+            openrouter: {
+                async generateContent(_contents, options) {
+                    calls.push(options.model);
+                    return { text: '{"type":"reply","message":"Ready"}' };
+                }
+            }
+        }),
+        profiles: {
+            fast: { provider: 'openrouter', model: nemotron },
+            quality: { provider: 'openrouter', model: nemotron },
+            default: { provider: 'openrouter', model: nemotron }
+        },
+        fallbackRoutes: [{ provider: 'openrouter', model: gemini }],
+        fallbackProviders: [],
+        logger: { info() {}, warn() {}, error() {} }
+    });
+
+    const result = await ai.run({
+        task: 'workflow.build',
+        messages: [],
+        excludeRoutes: [{ provider: 'openrouter', model: nemotron }]
+    });
+
+    assert.equal(result.model, gemini);
+    assert.deepEqual(calls, [gemini]);
 });
 
 test('AI client enforces the caller request budget across fallback attempts', async () => {

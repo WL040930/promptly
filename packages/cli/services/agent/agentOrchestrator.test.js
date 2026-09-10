@@ -9,6 +9,7 @@ import {
     proposedFormSchemaForWorkflow,
     research,
     shouldPauseForPlanReview,
+    workflowFormsForUser,
     workflowTurnContextForAgent
 } from './agentOrchestrator.js';
 import { compileExecutionPlan, makeAdaptivePlan, makeFallbackOutcomePlan } from './agentPlanCompiler.js';
@@ -141,6 +142,26 @@ test('form references used by a workflow are inputs, not form work', () => {
     const plan = makeAdaptivePlan({}, intent);
     assert.deepEqual(plan.steps.map(step => step.type), ['design_workflow']);
     assert.deepEqual(plan.outcomes.map(outcome => outcome.artifactTypes[0]), ['workflow_proposal']);
+});
+
+test('workflow form choices exclude onboarding sample forms', async () => {
+    const forms = [
+        { id: 'form_event', userId: 'user_1', title: 'Event Registration', demoKey: null },
+        { id: 'form_demo', userId: 'user_1', title: 'Support request intake', demoKey: 'onboarding-v3' }
+    ];
+    const result = await workflowFormsForUser({
+        userId: 'user_1',
+        formModel: {
+            findAll: async query => forms.filter(form => Object.entries(query.where || {}).every(([key, value]) => form[key] === value))
+        }
+    });
+
+    assert.deepEqual(result, [{
+        id: 'form_event',
+        title: 'Event Registration',
+        description: null,
+        updatedAt: null
+    }]);
 });
 
 test('compound form and workflow requests retain both requested operations', () => {

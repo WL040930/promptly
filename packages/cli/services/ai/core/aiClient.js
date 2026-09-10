@@ -105,8 +105,11 @@ export const createAIClient = ({
     logger = defaultLogger,
     profiles = undefined,
     fallbackProviders = undefined,
+    fallbackRoutes = undefined,
     providerLiveness = runWithProviderLiveness
 } = {}) => {
+    const configuredFallbackRoutes = fallbackRoutes ?? (fallbackProviders === undefined ? undefined : []);
+
     const run = async ({
         task,
         messages,
@@ -118,6 +121,7 @@ export const createAIClient = ({
         mode = null,
         maxAttempts = null,
         excludeProviders = [],
+        excludeRoutes = [],
         budget = null,
         onActivity = null
     } = {}) => {
@@ -128,8 +132,10 @@ export const createAIClient = ({
             mode,
             maxAttempts,
             excludeProviders,
+            excludeRoutes,
             profiles,
-            fallbackProviders
+            fallbackProviders,
+            fallbackRoutes: configuredFallbackRoutes
         });
         let lastError = null;
 
@@ -243,7 +249,7 @@ export const createAIClient = ({
                 }));
 
                 const nextRoute = routes[index + 1];
-                if (!shouldFailover({ error: normalized, hasNextRoute: Boolean(nextRoute) })) throw normalized;
+                if (!shouldFailover({ error: normalized, currentRoute: route, nextRoute })) throw normalized;
 
                 onActivity?.({
                     type: 'provider_fallback', operation, attempt, maxAttempts: routes.length,

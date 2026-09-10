@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compoundProposalPresentation, solutionArtifactFor } from './solutionProposalPresentation.js';
+import { describeWorkflowVariable } from '../builder/utils/workflowVariableDisplay.js';
 
 const proposal = {
     plan: {
@@ -30,7 +31,7 @@ const proposal = {
             content: {
                 name: 'Save contact submissions',
                 nodes: [
-                    { id: 'trigger', subType: 'form-submission' },
+                    { id: 'trigger', title: 'Contact form', subType: 'form-submission', config: { formId: 'artifact:artifact_form' } },
                     { id: 'sheet', label: 'Append to Google Sheets' }
                 ],
                 edges: [{ source: 'trigger', target: 'sheet' }],
@@ -46,7 +47,7 @@ test('compound proposal presentation exposes separate form and workflow previews
     assert.equal(result.formTitle, 'Contact form');
     assert.deepEqual(result.formFields.map(field => field.label), ['Name', 'Email']);
     assert.equal(result.workflowTitle, 'Save contact submissions');
-    assert.deepEqual(result.flow, ['Form submission', 'Append to Google Sheets']);
+    assert.deepEqual(result.flow, ['Contact form', 'Append to Google Sheets']);
     assert.equal(result.resourceChanges[0].displayLabel, 'Create Google Sheet');
     assert.equal(result.resourceChanges[0].displayDetail, 'Tab: Responses · Single sheet for all submissions');
     assert.equal(solutionArtifactFor(proposal, 'workflow_proposal').name, 'Save contact submissions');
@@ -61,4 +62,32 @@ test('compound proposal presentation supports the form artifact spread onto the 
     assert.equal(result.formTitle, 'Existing form');
     assert.equal(result.formFields[0].label, 'Message');
     assert.deepEqual(result.flow, ['Send email']);
+});
+
+test('compound proposal workflow preview resolves fields from its sibling form artifact', () => {
+    const productProposal = structuredClone(proposal);
+    productProposal.solution[0].content.schema = {
+        title: 'Product Feedback',
+        fields: [
+            { id: 'f_email_1', label: 'Email Address', type: 'email' },
+            { id: 'f_rating_1', label: 'Product Rating', type: 'rating' }
+        ]
+    };
+    productProposal.solution[1].content.nodes[0].title = 'Product Feedback';
+    const result = compoundProposalPresentation(productProposal);
+    const email = describeWorkflowVariable(
+        'trigger.fields.f_email_1',
+        result.workflowPreview.nodes,
+        result.workflowPreview.previewFormsById
+    );
+    const rating = describeWorkflowVariable(
+        'trigger.fields.f_rating_1',
+        result.workflowPreview.nodes,
+        result.workflowPreview.previewFormsById
+    );
+
+    assert.equal(email.displayLabel, 'Product Feedback › Email Address');
+    assert.equal(rating.displayLabel, 'Product Feedback › Product Rating');
+    assert.equal(email.isResolved, true);
+    assert.equal(rating.isResolved, true);
 });

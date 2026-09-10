@@ -60,6 +60,23 @@ export const validateAIConfig = ({ config = env, policies = TASK_POLICIES } = {}
         }
     }
 
+    for (const [index, route] of (config.ai?.fallbackRoutes || []).entries()) {
+        if (!SUPPORTED_PROVIDERS.has(route?.provider)) {
+            issues.push({
+                code: 'UNKNOWN_FALLBACK_PROVIDER',
+                path: `ai.fallbackRoutes.${index}.provider`,
+                message: `Unsupported fallback provider '${route?.provider || ''}'.`
+            });
+        }
+        if (!route?.model) {
+            issues.push({
+                code: 'MODEL_REQUIRED',
+                path: `ai.fallbackRoutes.${index}.model`,
+                message: `Fallback route ${index + 1} must define a model.`
+            });
+        }
+    }
+
     return {
         valid: issues.every(issue => issue.code !== 'TASK_NO_CREDENTIALS'),
         issues

@@ -32,6 +32,7 @@ import {
 } from '../domain/resourceResolution.js';
 import { assembleLinearWorkflow } from '../domain/linearWorkflowAssembler.js';
 import { normalizeSemanticWorkflowOperations } from '../domain/semanticOperationNormalizer.js';
+import { CONTROL_FLOW_NODE_KEYS } from '../domain/editCompiler/contracts.js';
 import {
     defaultSpreadsheetTitle,
     isInstructionLikeSpreadsheetTitle,
@@ -134,6 +135,217 @@ const isSwitchRouteRequest = request => switchRouteRequestPattern.test(String(re
 const isErrorHandlerRequest = request => errorHandlerRequestPattern.test(String(request || ''));
 const isBranchJoinRequest = request => branchJoinRequestPattern.test(String(request || ''));
 
+const workerOperationsFromResponse = response => {
+    let parsed = response;
+    if (typeof parsed === 'string') {
+        try {
+            parsed = JSON.parse(parsed);
+        } catch {
+            return [];
+        }
+    }
+    return Array.isArray(parsed?.operations) ? parsed.operations : [];
+};
+
+const sameEndpoint = (left, right) => left?.nodeRef === right?.nodeRef
+    && (left?.handle || null) === (right?.handle || null);
+
+const isConnection = operation => operation?.op === 'connect'
+    && operation?.from?.nodeRef
+    && operation?.to?.nodeRef;
+
+const operationReferencesNodeRefs = (value, refs) => {
+    if (Array.isArray(value)) return value.some(item => operationReferencesNodeRefs(item, refs));
+    if (!value || typeof value !== 'object') return false;
+    return Object.entries(value).some(([key, nested]) => (
+        ['nodeRef', 'afterNodeRef', 'approvalNodeRef', 'nodeId'].includes(key)
+        && typeof nested === 'string'
+        && refs.has(nested)
+    ) || operationReferencesNodeRefs(nested, refs));
+};
+
+const createdNodeRefs = operations => new Set((operations || [])
+    .filter(operation => operation?.op === 'create_node' && typeof operation?.node?.ref === 'string')
+    .map(operation => operation.node.ref));
+
+const repairGateConnections = operations => (operations || [])
+    .filter(operation => operation?.op === 'add_approval_gate' && operation?.connection?.from?.nodeRef && operation?.connection?.to?.nodeRef)
+    .map(operation => operation.connection);
+
+/**
+ * Some models repair a legacy Approval node by returning only the correct
+ * add_approval_gate delta. The compiler still starts from the persisted
+ * workflow, so a new workflow needs the non-approval prefix from that draft
+ * for the delta's node refs to exist. Keep only a prefix that can be
+ * independently validated with the repaired operation; never invent refs.
+ */
+const approvalRepairFoundation = ({ previousResponse, repairIssues, repairOperations, currentWorkflow }) => {
+    if (!repairIssues.some(issue => issue?.code === 'WORKFLOW_APPROVAL_GATE_OPERATION_REQUIRED')) return null;
+    const gateConnections = repairGateConnections(repairOperations);
+    if (!gateConnections.length) return null;
+
+    const previousOperations = workerOperationsFromResponse(previousResponse);
+    const legacyApprovalRefs = new Set(previousOperations
+        .filter(operation => operation?.op === 'create_node' && operation?.node?.nodeKey === CONTROL_FLOW_NODE_KEYS.approval)
+        .map(operation => operation.node.ref)
+        .filter(ref => typeof ref === 'string' && ref));
+    if (!legacyApprovalRefs.size) return null;
+
+    const legacyConnections = previousOperations.filter(isConnection);
+    const retainedOperations = previousOperations.flatMap(operation => {
+        if (operation?.op === 'create_node' && legacyApprovalRefs.has(operation?.node?.ref)) return [];
+        if (operation?.op === 'create_node' && legacyApprovalRefs.has(operation?.node?.afterNodeRef)) {
+            return [{ ...operation, node: { ...operation.node, afterNodeRef: undefined } }];
+        }
+        return operationReferencesNodeRefs(operation, legacyApprovalRefs) ? [] : [operation];
+    });
+
+    const hasRetainedConnection = connection => retainedOperations.some(operation => isConnection(operation)
+        && sameEndpoint(operation.from, connection.from)
+        && sameEndpoint(operation.to, connection.to));
+    const bridgeOperations = [];
+    for (const connection of gateConnections) {
+        if (hasRetainedConnection(connection) || bridgeOperations.some(operation => sameEndpoint(operation.from, connection.from) && sameEndpoint(operation.to, connection.to))) continue;
+        const replacedApprovalRoute = [...legacyApprovalRefs].some(approvalRef => (
+            legacyConnections.some(operation => sameEndpoint(operation.from, connection.from) && operation.to?.nodeRef === approvalRef)
+            && legacyConnections.some(operation => operation.from?.nodeRef === approvalRef && sameEndpoint(operation.to, connection.to))
+        ));
+        if (replacedApprovalRoute) bridgeOperations.push({ op: 'connect', from: connection.from, to: connection.to });
+    }
+
+    const foundation = [...retainedOperations, ...bridgeOperations];
+    const existingRefs = new Set(buildWorkflowEditView(currentWorkflow).nodes.map(node => node.ref));
+    const repairRefs = createdNodeRefs(repairOperations);
+    const missingGateRefs = gateConnections.flatMap(connection => [connection.from.nodeRef, connection.to.nodeRef])
+        .filter(ref => !existingRefs.has(ref) && !repairRefs.has(ref));
+    const foundationRefs = createdNodeRefs(foundation);
+    return missingGateRefs.length > 0 && missingGateRefs.every(ref => foundationRefs.has(ref))
+        ? foundation
+        : null;
+};
+
+const combineApprovalRepairFoundation = ({ foundation, repairOperations, currentWorkflow }) => {
+    if (!foundation?.length) return repairOperations;
+    const existingRefs = new Set(buildWorkflowEditView(currentWorkflow).nodes.map(node => node.ref));
+    const repairRefs = createdNodeRefs(repairOperations);
+    const foundationRefs = createdNodeRefs(foundation);
+    const missingRefs = repairGateConnections(repairOperations)
+        .flatMap(connection => [connection.from.nodeRef, connection.to.nodeRef])
+        .filter(ref => !existingRefs.has(ref) && !repairRefs.has(ref));
+    return missingRefs.length > 0 && missingRefs.every(ref => foundationRefs.has(ref))
+        ? [...foundation, ...repairOperations]
+        : repairOperations;
+};
+
+const operationNodeDefinitions = operation => {
+    switch (operation?.op) {
+    case 'create_node':
+    case 'insert_between':
+    case 'insert_after_route':
+        return [operation.node];
+    case 'add_condition_branch':
+        return [operation.condition, operation.whenTrue, operation.whenFalse];
+    case 'add_switch_routes':
+        return [operation.switch, ...(operation.cases || []).map(item => item?.action), operation.otherwise];
+    case 'add_error_handler':
+        return [operation.handler, operation.whenError];
+    case 'add_approval_gate':
+        return [operation.approval, operation.whenApproved, operation.whenRejected];
+    case 'add_terminal_approval':
+        return [operation.approval];
+    case 'join_branches':
+        return [operation.merge, operation.continueWith];
+    default:
+        return [];
+    }
+};
+
+const declaredOperationNodeRefs = operations => new Set((operations || [])
+    .flatMap(operationNodeDefinitions)
+    .map(definition => typeof definition?.ref === 'string' ? definition.ref.trim() : '')
+    .filter(Boolean));
+
+const referencedOperationNodeRefs = value => {
+    const refs = new Set();
+    const visit = nested => {
+        if (Array.isArray(nested)) {
+            nested.forEach(visit);
+            return;
+        }
+        if (!nested || typeof nested !== 'object') return;
+        Object.entries(nested).forEach(([key, item]) => {
+            if (['nodeRef', 'afterNodeRef', 'approvalNodeRef', 'nodeId'].includes(key) && typeof item === 'string' && item.trim()) {
+                refs.add(item.trim());
+            }
+            visit(item);
+        });
+    };
+    visit(value);
+    return refs;
+};
+
+const repairRefAlias = value => String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+const repairCandidateAliases = operations => {
+    const aliases = new Map();
+    const ambiguous = new Set();
+    const register = (alias, ref) => {
+        if (!alias || !ref || ambiguous.has(alias)) return;
+        if (aliases.has(alias) && aliases.get(alias) !== ref) {
+            aliases.delete(alias);
+            ambiguous.add(alias);
+            return;
+        }
+        aliases.set(alias, ref);
+    };
+    (operations || []).flatMap(operationNodeDefinitions).forEach(definition => {
+        const ref = typeof definition?.ref === 'string' ? definition.ref.trim() : '';
+        if (!ref) return;
+        register(ref, ref);
+        register(repairRefAlias(definition.title), ref);
+    });
+    return aliases;
+};
+
+const rewriteRepairCandidateRefs = ({ value, aliases }) => {
+    if (Array.isArray(value)) return value.map(item => rewriteRepairCandidateRefs({ value: item, aliases }));
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value).map(([key, nested]) => {
+        if (['nodeRef', 'afterNodeRef', 'approvalNodeRef', 'nodeId'].includes(key) && typeof nested === 'string') {
+            const replacement = aliases.get(nested) || aliases.get(repairRefAlias(nested));
+            if (replacement) return [key, replacement];
+        }
+        return [key, rewriteRepairCandidateRefs({ value: nested, aliases })];
+    }));
+};
+
+/**
+ * A verifier asks the worker to correct a graph that already compiled. Some
+ * models answer with only the requested delta. Apply that delta to the exact
+ * valid candidate when (and only when) it references nodes declared there.
+ * Unique title aliases are accepted because repairs often use readable step
+ * names instead of the compiler-owned cf_* refs shown in the prior response.
+ */
+const combineVerifierRepairFoundation = ({ foundation, repairOperations, currentWorkflow }) => {
+    if (!foundation?.length) return repairOperations;
+    const rewrittenRepair = rewriteRepairCandidateRefs({
+        value: repairOperations,
+        aliases: repairCandidateAliases(foundation)
+    });
+    const existingRefs = new Set(buildWorkflowEditView(currentWorkflow).nodes.map(node => node.ref));
+    const repairRefs = declaredOperationNodeRefs(rewrittenRepair);
+    const foundationRefs = declaredOperationNodeRefs(foundation);
+    const missingRefs = [...referencedOperationNodeRefs(rewrittenRepair)]
+        .filter(ref => !existingRefs.has(ref) && !repairRefs.has(ref));
+    return missingRefs.length > 0 && missingRefs.every(ref => foundationRefs.has(ref))
+        ? [...foundation, ...rewrittenRepair]
+        : repairOperations;
+};
+
 const workflowRenameProposal = ({ workflow, name, usage = {} }) => {
     if (name === String(workflow?.name || '').trim()) {
         return {
@@ -180,7 +392,8 @@ export const workflowPipelineInternals = Object.freeze({
     isErrorHandlerRequest,
     isBranchJoinRequest,
     ensureWebhookBodyContractInPlan,
-    workflowPlanNeedsWebhookBodyClarification
+    workflowPlanNeedsWebhookBodyClarification,
+    shouldStopRepeatedWorkerRepair
 });
 
 const mergeRepairIssues = (first = [], latest = []) => {
@@ -1232,6 +1445,10 @@ const repeatsRepairIssues = (previousIssues, nextIssues) => {
     return Boolean(previousSignature) && previousSignature === repairIssueSignature(nextIssues);
 };
 
+function shouldStopRepeatedWorkerRepair({ previousIssues, workerIssues, usedNewRoute }) {
+    return repeatsRepairIssues(previousIssues, workerIssues) && !usedNewRoute;
+}
+
 export const generateWorkflowTurn = async ({
     request,
     currentWorkflow,
@@ -2036,16 +2253,22 @@ export const generateWorkflowTurn = async ({
     };
     let unverifiedProposal = null;
     let workerTransientError = null;
-    const workerRepairProviders = new Set();
-    const rememberWorkerProvider = workerCall => {
+    const workerRepairRoutes = [];
+    let workerApprovalRepairFoundation = null;
+    let workerVerifierRepairFoundation = null;
+    const rememberWorkerRoute = workerCall => {
         const providerName = String(workerCall?.response?.provider || '').trim().toLowerCase();
-        if (providerName) workerRepairProviders.add(providerName);
+        const model = String(workerCall?.response?.model || '').trim();
+        if (!providerName || !model) return false;
+        if (workerRepairRoutes.some(route => route.provider === providerName && route.model === model)) return false;
+        workerRepairRoutes.push({ provider: providerName, model });
+        return true;
     };
     const scheduleWorkerRepair = async ({ workerIssues, workerCall, attempt }) => {
         onProgress?.({ status: 'repairing', phase: 'draft', label: 'Repairing an invalid workflow draft', message: 'The draft needs a correction', detail: `${workerIssues.length} issue${workerIssues.length === 1 ? '' : 's'} found before the workflow could be checked.` });
-        rememberWorkerProvider(workerCall);
-        previousResponse = workerCall.rawText || workerCall.value;
-        if (repeatsRepairIssues(repairIssues, workerIssues)) {
+        const usedNewRoute = rememberWorkerRoute(workerCall);
+        previousResponse = workerCall.value ?? workerCall.rawText;
+        if (shouldStopRepeatedWorkerRepair({ previousIssues: repairIssues, workerIssues, usedNewRoute })) {
             captureRepairIssues(workerIssues);
             await recordAiDiagnostic({
                 event: 'workflow_worker_repair_stopped_repeated',
@@ -2104,7 +2327,7 @@ export const generateWorkflowTurn = async ({
                     budget,
                     onActivity: reportProviderActivity,
                     maxAttempts: complexity.providerAttempts,
-                    excludeProviders: [...workerRepairProviders]
+                    excludeRoutes: workerRepairRoutes
                 });
                 usage = addWorkflowUsage(usage, workerCall.response, label);
             } catch (error) {
@@ -2128,8 +2351,26 @@ export const generateWorkflowTurn = async ({
             continue;
         }
 
+        if (!workerApprovalRepairFoundation && attempt > 0) {
+            workerApprovalRepairFoundation = approvalRepairFoundation({
+                previousResponse,
+                repairIssues,
+                repairOperations: workerCall.value.operations,
+                currentWorkflow
+            });
+        }
+        const approvalRepairAwareOperations = combineApprovalRepairFoundation({
+            foundation: workerApprovalRepairFoundation,
+            repairOperations: workerCall.value.operations,
+            currentWorkflow
+        });
+        const repairAwareOperations = combineVerifierRepairFoundation({
+            foundation: workerVerifierRepairFoundation,
+            repairOperations: approvalRepairAwareOperations,
+            currentWorkflow
+        });
         const selectedSpreadsheetOperations = applySelectedSpreadsheetToOperations({
-            operations: workerCall.value.operations,
+            operations: repairAwareOperations,
             workflow: currentWorkflow,
             spreadsheetIntent,
             range: spreadsheetRange
@@ -2257,6 +2498,7 @@ export const generateWorkflowTurn = async ({
         if (verifier.call.value.status === 'repair') {
             onProgress?.({ status: 'repairing', phase: 'check', label: 'Repairing a requirement mismatch', message: 'The verifier found a requirement to correct', detail: `${verifier.call.value.issues.length} requested detail${verifier.call.value.issues.length === 1 ? '' : 's'} still needs attention.` });
             previousResponse = workerCall.value;
+            workerVerifierRepairFoundation = workerCall.value.operations;
             captureRepairIssues(verifier.call.value.issues.map(item => ({
                 code: 'REQUIREMENT_NOT_SATISFIED',
                 path: item.requirementId || 'requirements',

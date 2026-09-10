@@ -138,11 +138,11 @@ const workflowFormSummary = form => {
         : null;
 };
 
-const ownedWorkflowForms = async ({ userId, selectedForm = null } = {}) => {
+export const workflowFormsForUser = async ({ userId, selectedForm = null, formModel = Form } = {}) => {
     let forms = [];
     try {
-        forms = await Form.findAll({
-            where: { userId },
+        forms = await formModel.findAll({
+            where: { userId, demoKey: null },
             attributes: ['id', 'title', 'description', 'updatedAt'],
             order: [['updatedAt', 'DESC']],
             limit: 50
@@ -449,7 +449,7 @@ const designWorkflow = async ({ run, userId, message, workflow, form, formSchema
     const step = await createStep(run, { stepKey: 'design_workflow', type: 'design_workflow' });
     await startStep(step);
     try {
-        const workflowForms = await ownedWorkflowForms({ userId, selectedForm: form });
+        const workflowForms = await workflowFormsForUser({ userId, selectedForm: form });
         const result = await generateWorkflowTurn({
             request: message,
             currentWorkflow: workflow?.toJSON?.() || workflow || { nodes: [], edges: [] },
