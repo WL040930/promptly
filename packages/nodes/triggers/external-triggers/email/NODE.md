@@ -2,6 +2,7 @@
 title: "Email Received"
 type: trigger
 subType: email
+implementationStatus: disabled
 description: "Trigger on incoming email"
 ui:
   icon: email

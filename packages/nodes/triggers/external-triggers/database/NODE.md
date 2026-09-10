@@ -2,6 +2,7 @@
 title: "Database Event"
 type: trigger
 subType: database
+implementationStatus: disabled
 description: "Trigger on row changes"
 ui:
   icon: database

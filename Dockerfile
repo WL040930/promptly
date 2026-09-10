@@ -20,8 +20,9 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-# Copy server code, dynamic node definitions, and built UI assets
+# Copy server code, shared modules, dynamic node definitions, and built UI assets
 COPY --from=build /app/packages/cli ./packages/cli
+COPY --from=build /app/packages/shared ./packages/shared
 COPY --from=build /app/packages/nodes ./packages/nodes
 COPY --from=build /app/packages/ui/dist ./packages/ui/dist
 
